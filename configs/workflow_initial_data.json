@@ -1,0 +1,64 @@
+{
+  "work_types": [
+    ["REQUIREMENT", "需求"],
+    ["TEST_CASE", "测试用例"]
+  ],
+  "states": [
+    ["DRAFT", "草稿"],
+    ["PENDING_AUDIT", "待审核"],
+    ["ASSIGNED", "已指派"],
+    ["DEVELOPING", "开发中"],
+    ["PENDING_REVIEW", "待评审"],
+    ["DONE", "已完成"]
+  ],
+  "workflow_configs": [
+    {
+      "type_code": "REQUIREMENT",
+      "from_state": "DRAFT",
+      "action": "SUBMIT",
+      "to_state": "PENDING_AUDIT",
+      "target_owner_strategy": "TO_SPECIFIC_USER",
+      "required_fields": ["priority", "target_owner_id"]
+    },
+    {
+      "type_code": "REQUIREMENT",
+      "from_state": "PENDING_AUDIT",
+      "action": "APPROVE",
+      "to_state": "DONE",
+      "target_owner_strategy": "KEEP",
+      "required_fields": ["comment"]
+    },
+    {
+      "type_code": "TEST_CASE",
+      "from_state": "DRAFT",
+      "action": "ASSIGN",
+      "to_state": "ASSIGNED",
+      "target_owner_strategy": "TO_SPECIFIC_USER",
+      "required_fields": ["target_owner_id"]
+    },
+    {
+      "type_code": "TEST_CASE",
+      "from_state": "ASSIGNED",
+      "action": "START_DEVELOP",
+      "to_state": "DEVELOPING",
+      "target_owner_strategy": "KEEP",
+      "required_fields": []
+    },
+    {
+      "type_code": "TEST_CASE",
+      "from_state": "DEVELOPING",
+      "action": "FINISH_DEVELOP",
+      "to_state": "PENDING_REVIEW",
+      "target_owner_strategy": "TO_SPECIFIC_USER",
+      "required_fields": ["target_owner_id"]
+    },
+    {
+      "type_code": "TEST_CASE",
+      "from_state": "PENDING_REVIEW",
+      "action": "APPROVE",
+      "to_state": "DONE",
+      "target_owner_strategy": "KEEP",
+      "required_fields": ["comment"]
+    }
+  ]
+}
