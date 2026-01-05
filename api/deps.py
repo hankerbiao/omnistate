@@ -17,12 +17,10 @@ from db.relational import get_async_session
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """
     异步数据库会话依赖
-
-    作为生成器函数，FastAPI 会自动处理生命周期
     """
     async for session in get_async_session():
         yield session
 
 
-# 类型别名，方便使用
+# 类型别名
 DatabaseDep = Annotated[AsyncSession, Depends(get_db)]

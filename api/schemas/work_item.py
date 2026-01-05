@@ -37,6 +37,7 @@ class WorkItemResponse(BaseModel):
     current_owner_id: Optional[int]
     creator_id: int
     created_at: datetime
+    updated_at: datetime
 
     class Config:
         from_attributes = True
@@ -52,6 +53,7 @@ class TransitionLogResponse(BaseModel):
     operator_id: int
     payload: Dict[str, Any]
     created_at: datetime
+    updated_at: datetime
 
     class Config:
         from_attributes = True

@@ -34,7 +34,6 @@ async def generic_exception_handler(request: Request, exc: Exception):
 
 def setup_exception_handlers(app):
     """配置全局异常处理器"""
-    from fastapi import FastAPI
 
     # 注册异常处理器
     app.add_exception_handler(StarletteHTTPException, http_exception_handler)

@@ -3,8 +3,9 @@
 
 包含类型、状态、配置相关的请求/响应模型
 """
-from typing import Optional, List, Any
-from pydantic import BaseModel, Field
+from datetime import datetime
+from typing import Optional, List
+from pydantic import BaseModel
 
 
 # ==================== Response Models ====================
@@ -13,6 +14,8 @@ class WorkTypeResponse(BaseModel):
     """事项类型响应"""
     code: str
     name: str
+    created_at: datetime
+    updated_at: datetime
 
 
 class WorkflowStateResponse(BaseModel):
@@ -20,6 +23,8 @@ class WorkflowStateResponse(BaseModel):
     code: str
     name: str
     is_end: bool
+    created_at: datetime
+    updated_at: datetime
 
 
 class WorkflowConfigResponse(BaseModel):
@@ -31,8 +36,8 @@ class WorkflowConfigResponse(BaseModel):
     to_state: str
     target_owner_strategy: str
     required_fields: List[str]
-    created_at: Any
-    updated_at: Any
+    created_at: datetime
+    updated_at: datetime
 
     class Config:
         from_attributes = True

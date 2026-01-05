@@ -3,11 +3,10 @@
 
 提供工作项的 CRUD 和状态流转接口
 """
-from typing import List, Optional
+from typing import List, Optional, Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import desc, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from models import BusWorkItem
 from services.workflow_service import AsyncWorkflowService
@@ -16,7 +15,7 @@ from services.exceptions import (
     InvalidTransitionError,
     MissingRequiredFieldError,
 )
-from api.deps import get_db
+from api.deps import DatabaseDep
 from api.schemas.work_item import (
     CreateWorkItemRequest,
     TransitionRequest,
@@ -31,13 +30,15 @@ from api.schemas.workflow import (
     ErrorResponse,
 )
 
-
 router = APIRouter(prefix="/work-items", tags=["WorkItems"])
 
 
-def get_workflow_service(session: AsyncSession = Depends(get_db)) -> AsyncWorkflowService:
+async def get_workflow_service(session: DatabaseDep) -> AsyncWorkflowService:
     """依赖注入：获取 AsyncWorkflowService 实例"""
     return AsyncWorkflowService(session)
+
+
+WorkflowServiceDep = Annotated[AsyncWorkflowService, Depends(get_workflow_service)]
 
 
 # ==================== 事项类型和状态管理 ====================
@@ -47,7 +48,7 @@ def get_workflow_service(session: AsyncSession = Depends(get_db)) -> AsyncWorkfl
     response_model=List[WorkTypeResponse],
     summary="获取事项类型列表"
 )
-async def get_work_types(session: AsyncSession = Depends(get_db)):
+async def get_work_types(session: DatabaseDep):
     """获取系统中定义的所有业务事项类型"""
     from models import SysWorkType
     stmt = select(SysWorkType)
@@ -61,7 +62,7 @@ async def get_work_types(session: AsyncSession = Depends(get_db)):
     response_model=List[WorkflowStateResponse],
     summary="获取流程状态列表"
 )
-async def get_workflow_states(session: AsyncSession = Depends(get_db)):
+async def get_workflow_states(session: DatabaseDep):
     """获取系统中定义的所有流程状态"""
     from models import SysWorkflowState
     stmt = select(SysWorkflowState)
@@ -77,8 +78,8 @@ async def get_workflow_states(session: AsyncSession = Depends(get_db)):
     responses={404: {"model": ErrorResponse, "description": "类型不存在"}}
 )
 async def get_workflow_configs(
-    type_code: str = Query(..., description="事项类型编码"),
-    session: AsyncSession = Depends(get_db)
+        session: DatabaseDep,
+        type_code: str = Query(..., description="事项类型编码"),
 ):
     """获取指定事项类型的所有流转配置规则"""
     from models import SysWorkflowConfig
@@ -99,9 +100,8 @@ async def get_workflow_configs(
     summary="创建业务事项"
 )
 async def create_work_item(
-    request: CreateWorkItemRequest,
-    service: AsyncWorkflowService = Depends(get_workflow_service),
-    session: AsyncSession = Depends(get_db)
+        request: CreateWorkItemRequest,
+        service: WorkflowServiceDep,
 ):
     """创建一个新的业务事项，初始状态为 DRAFT"""
     try:
@@ -111,10 +111,8 @@ async def create_work_item(
             content=request.content,
             creator_id=request.creator_id
         )
-        await session.commit()
         return item
     except Exception as e:
-        await session.rollback()
         raise HTTPException(status_code=400, detail=str(e))
 
 
@@ -124,12 +122,12 @@ async def create_work_item(
     summary="获取事项列表"
 )
 async def list_work_items(
-    type_code: Optional[str] = Query(None, description="按类型筛选"),
-    state: Optional[str] = Query(None, description="按状态筛选"),
-    owner_id: Optional[int] = Query(None, description="按当前处理人筛选"),
-    limit: int = Query(20, ge=1, le=100, description="返回数量限制"),
-    offset: int = Query(0, ge=0, description="分页偏移"),
-    session: AsyncSession = Depends(get_db)
+        session: DatabaseDep,
+        type_code: Optional[str] = Query(None, description="按类型筛选"),
+        state: Optional[str] = Query(None, description="按状态筛选"),
+        owner_id: Optional[int] = Query(None, description="按当前处理人筛选"),
+        limit: int = Query(20, ge=1, le=100, description="返回数量限制"),
+        offset: int = Query(0, ge=0, description="分页偏移"),
 ):
     """查询业务事项列表，支持按类型、状态、处理人筛选"""
     stmt = select(BusWorkItem)
@@ -155,8 +153,8 @@ async def list_work_items(
     responses={404: {"model": ErrorResponse, "description": "事项不存在"}}
 )
 async def get_work_item(
-    item_id: int,
-    session: AsyncSession = Depends(get_db)
+        item_id: int,
+        session: DatabaseDep
 ):
     """根据 ID 获取业务事项详情"""
     item = await session.get(BusWorkItem, item_id)
@@ -177,42 +175,32 @@ async def get_work_item(
     }
 )
 async def transition_work_item(
-    item_id: int,
-    request: TransitionRequest,
-    service: AsyncWorkflowService = Depends(get_workflow_service),
-    session: AsyncSession = Depends(get_db)
+        item_id: int,
+        request: TransitionRequest,
+        service: WorkflowServiceDep,
+        session: DatabaseDep
 ):
     """
     执行状态流转
-
-    根据事项当前状态和触发的动作，执行预定义的流转规则。
-    需要注意必填字段（如 target_owner_id、comment 等）。
-
-    ### 必填字段参考：
-    - SUBMIT: priority, target_owner_id
-    - APPROVE: comment
-    - REJECT: comment
-    - ASSIGN: target_owner_id
-    - FINISH_DEVELOP: target_owner_id
     """
     try:
-        stmt = select(BusWorkItem).where(BusWorkItem.id == item_id)
-        result = await session.execute(stmt)
-        old_item = result.scalar_one_or_none()
-        if not old_item:
+        # 1. 先获取旧状态（用于返回响应）
+        item_before = await session.get(BusWorkItem, item_id)
+        if not item_before:
             raise HTTPException(status_code=404, detail=f"事项 ID={item_id} 不存在")
+        old_state = item_before.current_state
 
+        # 2. 调用 Service 执行流转（Service 内部负责事务提交）
         item = await service.handle_transition(
             work_item_id=item_id,
             action=request.action,
             operator_id=request.operator_id,
             form_data=request.form_data
         )
-        await session.commit()
 
         return TransitionResponse(
             work_item_id=item.id,
-            from_state=old_item.current_state,
+            from_state=old_state,
             to_state=item.current_state,
             action=request.action,
             new_owner_id=item.current_owner_id,
@@ -220,12 +208,9 @@ async def transition_work_item(
         )
     except WorkItemNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
-    except InvalidTransitionError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except MissingRequiredFieldError as e:
+    except (InvalidTransitionError, MissingRequiredFieldError) as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        await session.rollback()
         raise HTTPException(status_code=400, detail=str(e))
 
 
@@ -235,9 +220,9 @@ async def transition_work_item(
     summary="获取流转历史"
 )
 async def get_transition_logs(
-    item_id: int,
-    limit: int = Query(50, ge=1, le=200, description="返回数量限制"),
-    session: AsyncSession = Depends(get_db)
+        item_id: int,
+        session: DatabaseDep,
+        limit: int = Query(50, ge=1, le=200, description="返回数量限制"),
 ):
     """获取指定事项的所有流转日志（按时间倒序）"""
     from models import BusFlowLog
@@ -261,8 +246,8 @@ async def get_transition_logs(
     summary="获取可用的下一步流转"
 )
 async def get_available_transitions(
-    item_id: int,
-    session: AsyncSession = Depends(get_db)
+        item_id: int,
+        session: DatabaseDep,
 ):
     """获取指定事项在当前状态下可以执行的所有流转动作"""
     from models import SysWorkflowConfig

@@ -17,13 +17,11 @@ from api.schemas.workflow import (
 )
 
 __all__ = [
-    # WorkItem schemas
     "CreateWorkItemRequest",
     "TransitionRequest",
     "TransitionResponse",
     "WorkItemResponse",
     "TransitionLogResponse",
-    # Workflow schemas
     "WorkTypeResponse",
     "WorkflowStateResponse",
     "WorkflowConfigResponse",

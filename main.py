@@ -1,9 +1,8 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
 
-from db.relational import init_db, init_mock_config, get_session
+from db.relational import init_db, init_mock_config
 from core.logger import log
 from api.main import api_router
 from api.errors.handlers import setup_exception_handlers
@@ -13,11 +12,12 @@ from api.errors.handlers import setup_exception_handlers
 async def lifespan(app: FastAPI):
     """应用生命周期管理：启动时初始化数据库和配置"""
     log.info("正在初始化数据库...")
-    init_db()
+    await init_db()
 
     log.info("正在初始化流程配置...")
-    with get_session() as session:
-        init_mock_config(session)
+    from db.relational import AsyncSessionLocal
+    async with AsyncSessionLocal() as session:
+        await init_mock_config(session)
 
     log.success("FastAPI 服务启动完成")
     yield

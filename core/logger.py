@@ -3,7 +3,8 @@ import os
 from loguru import logger
 
 # 日志目录设置
-LOG_DIR = os.path.join(os.getcwd(), "logs")
+BASE_DIR = os.path.dirname(os.path.dirname(__file__))
+LOG_DIR = os.path.join(BASE_DIR, "logs")
 if not os.path.exists(LOG_DIR):
     os.makedirs(LOG_DIR)
 
@@ -15,6 +16,7 @@ LOG_FORMAT = (
     "<level>{level: <8}</level> | "
     "<cyan>{file}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>"
 )
+
 
 def setup_logger(console_level="DEBUG"):
     """
@@ -38,10 +40,10 @@ def setup_logger(console_level="DEBUG"):
         os.path.join(LOG_DIR, "info.log"),
         level="INFO",
         format=LOG_FORMAT,
-        rotation="10 MB",      # 文件超过 10MB 自动切割
-        retention="1 week",    # 保留一周
+        rotation="10 MB",  # 文件超过 10MB 自动切割
+        retention="1 week",  # 保留一周
         encoding="utf-8",
-        enqueue=True           # 异步写入，提升性能
+        enqueue=True  # 异步写入，提升性能
     )
 
     # ERROR 及以上级别的日志 (包含 ERROR, CRITICAL)
@@ -54,8 +56,8 @@ def setup_logger(console_level="DEBUG"):
         retention="1 month",
         encoding="utf-8",
         enqueue=True,
-        backtrace=True,        # 记录完整的异常堆栈
-        diagnose=True          # 记录变量值，极大方便调试
+        backtrace=True,  # 记录完整的异常堆栈
+        diagnose=True  # 记录变量值，极大方便调试
     )
 
     # DEBUG 级别的日志单独记录
@@ -66,10 +68,11 @@ def setup_logger(console_level="DEBUG"):
         rotation="10 MB",
         retention="3 days",
         encoding="utf-8",
-        filter=lambda record: record["level"].name == "DEBUG" # 仅记录 DEBUG
+        filter=lambda record: record["level"].name == "DEBUG"  # 仅记录 DEBUG
     )
 
     return logger
+
 
 # 初始化全局 logger
 log = setup_logger()
