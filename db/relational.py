@@ -1,27 +1,57 @@
 import json
 import os
 from models import (
-    SysWorkflowConfig, SysWorkType, SysWorkflowState, Session, SQLModel, 
+    SysWorkflowConfig, SysWorkType, SysWorkflowState, Session, SQLModel,
     select
 )
-from sqlmodel import create_engine
-from contextlib import contextmanager
+from sqlmodel import create_engine, Session
+from sqlmodel.ext.asyncio.session import AsyncSession
+from sqlalchemy.pool import StaticPool
+from contextlib import contextmanager, asynccontextmanager
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from .config import settings
 from core.logger import log
-
-# 创建数据库引擎
+from  typing import AsyncGenerator
+# 创建数据库引擎（同步）
 # echo=False 关闭 SQL 日志输出，生产环境建议根据需要开启
 engine = create_engine(settings.DATABASE_URL, echo=False)
+
+# 异步引擎 - 必须使用 create_async_engine
+async_engine = create_async_engine(
+    settings.DATABASE_URL,
+    echo=False,
+)
+
 
 @contextmanager
 def get_session():
     """
-    提供数据库会话的上下文管理器
+    提供数据库会话的上下文管理器（同步版本）
     - 确保 Session 在使用后能被正确关闭
     - 典型的用法: with get_session() as session: ...
     """
     with Session(engine) as session:
         yield session
+
+
+async def get_async_session() -> AsyncGenerator[AsyncSession, None]:
+    """
+    提供数据库会话的异步生成器
+    - 供 FastAPI 依赖注入使用
+    - 使用 async_sessionmaker 创建会话
+    """
+    async_session_maker = async_sessionmaker(
+        async_engine,
+        class_=AsyncSession,
+        expire_on_commit=False
+    )
+
+    async with async_session_maker() as session:
+        yield session
+
+
+# 类型别名
+AsyncSessionDep = AsyncGenerator[AsyncSession, None]
 
 def init_db():
     """

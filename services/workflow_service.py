@@ -1,6 +1,9 @@
 from typing import Dict, Any, Optional, Union
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+
 from models import (
-    Session, select, SysWorkflowConfig, BusWorkItem, BusFlowLog, 
+    SysWorkflowConfig, BusWorkItem, BusFlowLog,
     OwnerStrategy
 )
 from .exceptions import (
@@ -8,16 +11,18 @@ from .exceptions import (
 )
 from core.logger import log as logger
 
-class WorkflowService:
+
+class AsyncWorkflowService:
     """
-    工作流核心服务（基于有限状态机 FSM 设计）
+    工作流核心服务（异步版本，基于有限状态机 FSM 设计）
     - 职责：管理业务事项（BusWorkItem）的状态生命周期。
     - 驱动方式：通过 SysWorkflowConfig 配置表驱动状态迁移，实现解耦。
     """
-    def __init__(self, session: Session) -> None:
+
+    def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
-    def create_item(self, type_code: str, title: str, content: str, creator_id: int) -> BusWorkItem:
+    async def create_item(self, type_code: str, title: str, content: str, creator_id: int) -> BusWorkItem:
         """
         初始化业务事项
         - 设置初始状态为 DRAFT。
@@ -33,12 +38,13 @@ class WorkflowService:
             current_state="DRAFT"
         )
         self.session.add(new_item)
-        self.session.flush()  # 获取自增 ID
-        self.session.refresh(new_item)
+        await self.session.flush()
+        await self.session.refresh(new_item)
         logger.success(f"业务事项创建成功: ID={new_item.id}, state={new_item.current_state}")
         return new_item
 
-    def get_next_transition(self, type_code: str, current_state: str, action_val: str) -> Optional[SysWorkflowConfig]:
+    async def get_next_transition(self, type_code: str, current_state: str, action_val: str) -> Optional[
+        SysWorkflowConfig]:
         """
         查询状态机迁移规则 (Transition Map)
         - 参数：事项类型、当前状态、执行动作。
@@ -49,14 +55,15 @@ class WorkflowService:
             SysWorkflowConfig.from_state == current_state,
             SysWorkflowConfig.action == action_val
         )
-        return self.session.exec(statement).first()
+        result = await self.session.execute(statement)
+        return result.scalar_one_or_none()
 
-    def handle_transition(
-        self, 
-        work_item_id: int, 
-        action: str, 
-        operator_id: int, 
-        form_data: Dict[str, Any]
+    async def handle_transition(
+            self,
+            work_item_id: int,
+            action: str,
+            operator_id: int,
+            form_data: Dict[str, Any]
     ) -> BusWorkItem:
         """
         执行状态流转核心逻辑
@@ -67,13 +74,13 @@ class WorkflowService:
         """
         logger.info(f"开始处理状态流转: work_item_id={work_item_id}, action={action}, operator={operator_id}")
         # 1. 获取事项实例
-        work_item = self.session.get(BusWorkItem, work_item_id)
+        work_item = await self.session.get(BusWorkItem, work_item_id)
         if not work_item:
             logger.error(f"流转失败: 未找到业务事项 ID={work_item_id}")
             raise WorkItemNotFoundError(work_item_id)
 
         # 2. 匹配迁移规则
-        config = self.get_next_transition(work_item.type_code, work_item.current_state, action)
+        config = await self.get_next_transition(work_item.type_code, work_item.current_state, action)
         if not config:
             logger.error(f"流转失败: 非法操作。当前状态 {work_item.current_state} 不支持动作 {action}")
             raise InvalidTransitionError(work_item.current_state, action)
@@ -108,13 +115,14 @@ class WorkflowService:
         )
         self.session.add(log)
 
-        self.session.flush()
-        self.session.refresh(work_item)
+        await self.session.flush()
+        await self.session.refresh(work_item)
         logger.success(f"状态流转完成: ID={work_item.id}, new_state={work_item.current_state}")
 
         return work_item
 
-    def _apply_owner_strategy(self, work_item: BusWorkItem, config: SysWorkflowConfig, form_data: Dict[str, Any]) -> None:
+    def _apply_owner_strategy(self, work_item: BusWorkItem, config: SysWorkflowConfig,
+                              form_data: Dict[str, Any]) -> None:
         """
         内部逻辑：根据策略更新当前处理人 (Owner)
         - TO_CREATOR: 回退/流转给事项发起人。

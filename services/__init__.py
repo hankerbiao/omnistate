@@ -1,11 +1,11 @@
-from .workflow_service import WorkflowService
+from .workflow_service import AsyncWorkflowService
 from .exceptions import (
-    WorkflowError, WorkItemNotFoundError, InvalidTransitionError, 
+    WorkflowError, WorkItemNotFoundError, InvalidTransitionError,
     MissingRequiredFieldError, PermissionDeniedError
 )
 
 __all__ = [
-    "WorkflowService",
+    "AsyncWorkflowService",
     "WorkflowError",
     "WorkItemNotFoundError",
     "InvalidTransitionError",
