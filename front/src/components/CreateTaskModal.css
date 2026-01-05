@@ -1,0 +1,90 @@
+.create-modal {
+  max-width: 500px;
+}
+
+.create-form {
+  padding: 24px;
+}
+
+.create-form .form-group {
+  margin-bottom: 16px;
+}
+
+.create-form label {
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+  color: #374151;
+  margin-bottom: 6px;
+}
+
+.create-form select,
+.create-form input,
+.create-form textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 14px;
+  box-sizing: border-box;
+}
+
+.create-form textarea {
+  min-height: 80px;
+  resize: vertical;
+}
+
+.create-form select:focus,
+.create-form input:focus,
+.create-form textarea:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.creator-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: #f3f4f6;
+  border-radius: 8px;
+}
+
+.creator-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+}
+
+.creator-info span {
+  font-size: 14px;
+  color: #374151;
+}
+
+.form-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.cancel-btn {
+  flex: 1;
+  padding: 10px 20px;
+  background: #fff;
+  color: #374151;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.cancel-btn:hover {
+  background: #f9fafb;
+}
+
+.form-actions .submit-btn {
+  flex: 1;
+  margin: 0;
+}

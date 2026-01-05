@@ -9,7 +9,8 @@
     ["ASSIGNED", "已指派"],
     ["DEVELOPING", "开发中"],
     ["PENDING_REVIEW", "待评审"],
-    ["DONE", "已完成"]
+    ["DONE", "已完成"],
+    ["REJECTED", "已拒绝"]
   ],
   "workflow_configs": [
     {
@@ -26,6 +27,14 @@
       "action": "APPROVE",
       "to_state": "DONE",
       "target_owner_strategy": "KEEP",
+      "required_fields": ["comment"]
+    },
+    {
+      "type_code": "REQUIREMENT",
+      "from_state": "PENDING_AUDIT",
+      "action": "REJECT",
+      "to_state": "DRAFT",
+      "target_owner_strategy": "TO_CREATOR",
       "required_fields": ["comment"]
     },
     {
@@ -58,6 +67,14 @@
       "action": "APPROVE",
       "to_state": "DONE",
       "target_owner_strategy": "KEEP",
+      "required_fields": ["comment"]
+    },
+    {
+      "type_code": "TEST_CASE",
+      "from_state": "PENDING_REVIEW",
+      "action": "REJECT",
+      "to_state": "DEVELOPING",
+      "target_owner_strategy": "TO_CREATOR",
       "required_fields": ["comment"]
     }
   ]
