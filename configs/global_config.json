@@ -1,0 +1,11 @@
+{
+  "states": [
+    ["DRAFT", "草稿"],
+    ["PENDING_AUDIT", "待审核"],
+    ["ASSIGNED", "已指派"],
+    ["DEVELOPING", "开发中"],
+    ["PENDING_REVIEW", "待评审"],
+    ["DONE", "已完成"],
+    ["REJECTED", "已拒绝"]
+  ]
+}

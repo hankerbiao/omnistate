@@ -1,0 +1,30 @@
+{
+  "work_types": [
+    ["REQUIREMENT", "需求"]
+  ],
+  "workflow_configs": {
+    "REQUIREMENT": [
+      {
+        "from_state": "DRAFT",
+        "action": "SUBMIT",
+        "to_state": "PENDING_AUDIT",
+        "target_owner_strategy": "TO_SPECIFIC_USER",
+        "required_fields": ["priority", "target_owner_id"]
+      },
+      {
+        "from_state": "PENDING_AUDIT",
+        "action": "APPROVE",
+        "to_state": "DONE",
+        "target_owner_strategy": "KEEP",
+        "required_fields": ["comment"]
+      },
+      {
+        "from_state": "PENDING_AUDIT",
+        "action": "REJECT",
+        "to_state": "DRAFT",
+        "target_owner_strategy": "TO_CREATOR",
+        "required_fields": ["comment"]
+      }
+    ]
+  }
+}

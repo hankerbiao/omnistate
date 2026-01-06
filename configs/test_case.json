@@ -1,0 +1,44 @@
+{
+  "work_types": [
+    ["TEST_CASE", "测试用例"]
+  ],
+  "workflow_configs": {
+    "TEST_CASE": [
+      {
+        "from_state": "DRAFT",
+        "action": "ASSIGN",
+        "to_state": "ASSIGNED",
+        "target_owner_strategy": "TO_SPECIFIC_USER",
+        "required_fields": ["target_owner_id"]
+      },
+      {
+        "from_state": "ASSIGNED",
+        "action": "START_DEVELOP",
+        "to_state": "DEVELOPING",
+        "target_owner_strategy": "KEEP",
+        "required_fields": []
+      },
+      {
+        "from_state": "DEVELOPING",
+        "action": "FINISH_DEVELOP",
+        "to_state": "PENDING_REVIEW",
+        "target_owner_strategy": "TO_SPECIFIC_USER",
+        "required_fields": ["target_owner_id"]
+      },
+      {
+        "from_state": "PENDING_REVIEW",
+        "action": "APPROVE",
+        "to_state": "DONE",
+        "target_owner_strategy": "KEEP",
+        "required_fields": ["comment"]
+      },
+      {
+        "from_state": "PENDING_REVIEW",
+        "action": "REJECT",
+        "to_state": "DEVELOPING",
+        "target_owner_strategy": "TO_CREATOR",
+        "required_fields": ["comment"]
+      }
+    ]
+  }
+}
