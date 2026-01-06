@@ -147,10 +147,7 @@ async def get_work_item(
 ):
     """根据 ID 获取业务事项详情"""
     try:
-        # 虽然可以直接用 session.get，但为了统一建议也通过 service 获取（如果后续有权限校验）
-        # 这里为了保持简洁，我们先增加一个简单的 service 方法或直接在 service 里处理异常
-        from models import BusWorkItem
-        item = await service.session.get(BusWorkItem, item_id)
+        item = await service.get_item_by_id(item_id)
         if not item:
             raise HTTPException(status_code=404, detail=f"事项 ID={item_id} 不存在")
         return item
@@ -207,8 +204,7 @@ async def transition_work_item(
     """
     try:
         # 1. 先获取旧状态（用于返回响应）
-        from models import BusWorkItem
-        item_before = await service.session.get(BusWorkItem, item_id)
+        item_before = await service.get_item_by_id(item_id)
         if not item_before:
             raise HTTPException(status_code=404, detail=f"事项 ID={item_id} 不存在")
         old_state = item_before.current_state

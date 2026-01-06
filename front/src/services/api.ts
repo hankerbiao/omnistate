@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const API_BASE = "http://localhost:8000/api/v1";
+const API_BASE = "http://10.2.50.30:8000/api/v1";
 
 // 创建 axios 实例
 const api = axios.create({

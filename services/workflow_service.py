@@ -1,6 +1,7 @@
 from typing import Dict, Any, Optional, List
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc, or_
+from sqlalchemy import select, desc, or_, func
+from sqlalchemy.orm import aliased
 
 from models import (
     SysWorkflowConfig, BusWorkItem, BusFlowLog,
@@ -50,7 +51,7 @@ class AsyncWorkflowService:
             offset: int = 0
     ) -> List[BusWorkItem]:
         """查询业务事项列表，支持多种筛选条件"""
-        stmt = select(BusWorkItem)
+        stmt = select(BusWorkItem).where(BusWorkItem.is_deleted == False)
 
         if type_code:
             stmt = stmt.where(BusWorkItem.type_code == type_code)
@@ -73,27 +74,40 @@ class AsyncWorkflowService:
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
-    async def delete_item(self, item_id: int) -> bool:
-        """删除业务事项及其关联的流转日志"""
+    async def get_item_by_id(self, item_id: int) -> Optional[BusWorkItem]:
+        """根据 ID 获取业务事项详情"""
         item = await self.session.get(BusWorkItem, item_id)
-        if not item:
+        if item and not item.is_deleted:
+            return item
+        return None
+
+    async def delete_item(self, item_id: int) -> bool:
+        """逻辑删除业务事项"""
+        item = await self.session.get(BusWorkItem, item_id)
+        if not item or item.is_deleted:
             raise WorkItemNotFoundError(item_id)
 
         try:
-            # 删除关联日志
-            stmt = select(BusFlowLog).where(BusFlowLog.work_item_id == item_id)
-            logs_result = await self.session.execute(stmt)
-            logs = logs_result.scalars().all()
-            for log in logs:
-                await self.session.delete(log)
+            # 记录删除操作到流转日志（可选，但推荐保留审计轨迹）
+            log_entry = BusFlowLog(
+                work_item_id=item.id,
+                from_state=item.current_state,
+                to_state=item.current_state,
+                action="DELETE",
+                operator_id=item.creator_id,  # 实际应用中应传入当前操作人ID
+                payload={"info": "Soft deleted"}
+            )
+            self.session.add(log_entry)
 
-            # 删除事项
-            await self.session.delete(item)
+            # 执行逻辑删除
+            item.is_deleted = True
+            self.session.add(item)
             await self.session.commit()
+            logger.success(f"事项 ID={item_id} 已逻辑删除")
             return True
         except Exception as e:
             await self.session.rollback()
-            logger.error(f"删除事项失败 ID={item_id}: {e}")
+            logger.error(f"逻辑删除事项失败 ID={item_id}: {e}")
             raise
 
     async def reassign_item(self, item_id: int, operator_id: int, target_owner_id: int) -> BusWorkItem:
@@ -128,7 +142,7 @@ class AsyncWorkflowService:
 
     async def get_logs(self, item_id: int, limit: int = 50) -> List[BusFlowLog]:
         """获取指定事项的流转日志"""
-        item = await self.session.get(BusWorkItem, item_id)
+        item = await self.get_item_by_id(item_id)
         if not item:
             raise WorkItemNotFoundError(item_id)
 
@@ -140,25 +154,54 @@ class AsyncWorkflowService:
         return list(result.scalars().all())
 
     async def batch_get_logs(self, item_ids: List[int], limit: int = 20) -> Dict[int, List[BusFlowLog]]:
-        """批量获取多个事项的流转日志"""
+        """
+        批量获取多个事项的流转日志 (已优化 N+1 查询，且仅包含未删除事项)
+        使用窗口函数 ROW_NUMBER() 一次性查询所有事项的前 N 条日志
+        """
         if not item_ids:
             return {}
 
-        result_dict = {}
-        for item_id in item_ids:
-            # 注意：此处为简单实现，实际高并发下建议使用更优化的批量查询 SQL
-            stmt = select(BusFlowLog).where(
-                BusFlowLog.work_item_id == item_id
-            ).order_by(desc(BusFlowLog.created_at)).limit(limit)
+        # 1. 首先过滤掉已删除的事项 ID
+        active_items_stmt = select(BusWorkItem.id).where(
+            BusWorkItem.id.in_(item_ids),
+            BusWorkItem.is_deleted == False
+        )
+        active_items_result = await self.session.execute(active_items_stmt)
+        active_ids = [row[0] for row in active_items_result.all()]
 
-            logs_result = await self.session.execute(stmt)
-            result_dict[item_id] = list(logs_result.scalars().all())
+        if not active_ids:
+            return {}
+
+        # 2. 定义子查询，使用窗口函数为每个事项的日志按时间倒序编号
+        subq = (
+            select(
+                BusFlowLog,
+                func.row_number().over(
+                    partition_by=BusFlowLog.work_item_id,
+                    order_by=desc(BusFlowLog.created_at)
+                ).label("rn")
+            )
+            .where(BusFlowLog.work_item_id.in_(active_ids))
+        ).subquery()
+
+        # 2. 使用 aliased 将子查询结果映射回 BusFlowLog 模型
+        log_alias = aliased(BusFlowLog, subq)
+
+        # 3. 执行主查询，过滤出每个事项的前 limit 条日志
+        stmt = select(log_alias).where(subq.c.rn <= limit).order_by(subq.c.work_item_id, subq.c.rn)
+        result = await self.session.execute(stmt)
+        logs = result.scalars().all()
+
+        # 4. 按 item_id 分组整理结果
+        result_dict: Dict[int, List[BusFlowLog]] = {item_id: [] for item_id in item_ids}
+        for log in logs:
+            result_dict[log.work_item_id].append(log)
 
         return result_dict
 
     async def get_item_with_transitions(self, item_id: int) -> Dict[str, Any]:
         """获取事项详情及其当前可用的流转动作"""
-        item = await self.session.get(BusWorkItem, item_id)
+        item = await self.get_item_by_id(item_id)
         if not item:
             raise WorkItemNotFoundError(item_id)
 

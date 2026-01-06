@@ -15,6 +15,7 @@ class BusWorkItem(SQLModel, table=True):
     current_state: str = Field(default="DRAFT")  # 当前状态指针（状态机核心）
     current_owner_id: Optional[int] = None  # 当前处理人（可能为空）
     creator_id: int  # 创建者用户ID
+    is_deleted: bool = Field(default=False, index=True)  # 逻辑删除标志
 
     created_at: datetime = Field(
         sa_column=Column(DateTime, server_default=func.now(), nullable=False)
