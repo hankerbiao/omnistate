@@ -56,6 +56,7 @@ class SysWorkflowConfig(SQLModel, table=True):
     to_state: str  # 迁移目标状态
     target_owner_strategy: str = Field(default=OwnerStrategy.KEEP)  # 处理人策略
     required_fields: List[str] = Field(default=[], sa_column=Column(JSON))  # 必填字段列表
+    properties: dict = Field(default={}, sa_column=Column(JSON))  # 扩展属性（如 UI 样式、权限等）
 
     created_at: datetime = Field(
         sa_column=Column(DateTime, server_default=func.now(), nullable=False)

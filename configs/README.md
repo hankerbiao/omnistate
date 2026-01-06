@@ -4,8 +4,11 @@
 
 ## 1. 配置文件概览
 
-### `workflow_initial_data.json`
-这是系统的核心配置文件，定义了所有的业务类型、状态以及工作流迁移规则。系统启动或初始化时会读取此文件并持久化到数据库。
+系统采用多文件模块化配置模式，自动加载 `configs/` 目录下所有的 `.json` 文件并进行合并。
+
+- **`global_config.json`**: 存放全局共享配置，如流程状态（`states`）定义。
+- **`requirement.json`**: 需求业务（`REQUIREMENT`）的专属配置。
+- **`test_case.json`**: 测试用例业务（`TEST_CASE`）的专属配置。
 
 ---
 
@@ -24,70 +27,53 @@
 - **说明**: 状态是全局共享的，不同业务流程可以复用相同的状态代码。
 
 ### 2.3 `workflow_configs` (工作流迁移规则)
-定义状态机的流转逻辑。这是配置中最核心的部分。
+定义状态机的流转逻辑。
+- **支持格式**: 推荐使用以 `type_code` 为 Key 的对象格式。
 
 | 字段名 | 类型 | 说明 |
 | :--- | :--- | :--- |
-| `type_code` | String | 关联的业务类型代码 (需在 `work_types` 中定义) |
 | `from_state` | String | 流转的起始状态 |
 | `action` | String | 触发流转的操作动作名称 |
 | `to_state` | String | 流转的目标状态 |
 | `target_owner_strategy` | String | 负责人处理策略 (详见下文) |
-| `required_fields` | Array | 执行该动作时，`form_data` 中必须包含的字段列表 |
+| `required_fields` | Array | 执行该动作时，必须包含的字段列表 |
+| `properties` | Object | 扩展属性（如按钮颜色、权限标识等） |
 
 #### 负责人处理策略 (`target_owner_strategy`)
 - `KEEP`: 负责人保持不变。
 - `TO_CREATOR`: 负责人变更为事项的最初创建者。
-- `TO_SPECIFIC_USER`: 从操作请求的 `form_data` 中提取 `target_owner_id` 作为新负责人。
+- `TO_SPECIFIC_USER`: 从操作请求中提取 `target_owner_id` 作为新负责人。
 
 ---
 
-## 3. 配置示例：新增一个“缺陷管理”流程
+## 3. 如何新增一个业务流程（以“缺陷 BUG”为例）
 
-假设我们要增加一个“缺陷(BUG)”流程，步骤如下：
-
-### 第一步：在 `work_types` 中注册
-```json
-"work_types": [
-  ...
-  ["BUG", "缺陷"]
-]
-```
-
-### 第二步：定义流转规则
-在 `workflow_configs` 中添加规则：
-
-```json
-{
-  "type_code": "BUG",
-  "from_state": "DRAFT",
-  "action": "REPORT",
-  "to_state": "OPEN",
-  "target_owner_strategy": "TO_SPECIFIC_USER",
-  "required_fields": ["severity", "target_owner_id"]
-},
-{
-  "type_code": "BUG",
-  "from_state": "OPEN",
-  "action": "FIX",
-  "to_state": "RESOLVED",
-  "target_owner_strategy": "TO_CREATOR",
-  "required_fields": ["solution"]
-},
-{
-  "type_code": "BUG",
-  "from_state": "RESOLVED",
-  "action": "CLOSE",
-  "to_state": "DONE",
-  "target_owner_strategy": "KEEP",
-  "required_fields": []
-}
-```
+1. **创建新文件**: 在 `configs/` 下创建 `bug.json`。
+2. **定义类型**:
+   ```json
+   "work_types": [["BUG", "缺陷"]]
+   ```
+3. **编写流转规则**:
+   ```json
+   "workflow_configs": {
+     "BUG": [
+       {
+         "from_state": "DRAFT",
+         "action": "REPORT",
+         "to_state": "OPEN",
+         "target_owner_strategy": "TO_SPECIFIC_USER",
+         "required_fields": ["severity", "target_owner_id"],
+         "properties": { "button_color": "red" }
+       }
+     ]
+   }
+   ```
+4. **重启服务**: 初始化逻辑会自动将新配置同步至数据库。
 
 ---
 
 ## 4. 注意事项
 
-1. **幂等性**：初始化逻辑会检查 `type_code`、`from_state` 和 `action` 的组合，如果数据库已存在相同配置则不会重复插入。
-2. **字段一致性**：确保 `workflow_configs` 中引用的 `type_code` 和 `state` 已经在对应的定义列表中存在。
-3. **JSON 格式**：修改后请确保 JSON 语法正确，否则初始化会报错并跳过加载。
+1. **自动同步 (Upsert)**：初始化逻辑会自动更新已有配置或插入新配置。如果你修改了 JSON 中的字段，重启服务后数据库将同步更新。
+2. **数据完整性校验**：系统会自动检查 `workflow_configs` 中引用的 `type_code` 和 `state` 是否已定义。若未定义，该条配置将被跳过并记录警告。
+3. **JSON 格式**：修改后请确保 JSON 语法正确，否则初始化会报错。
