@@ -6,9 +6,7 @@
 from typing import Dict, List, Optional, Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import desc, select
 
-from models import BusWorkItem
 from services.workflow_service import AsyncWorkflowService
 from services.exceptions import (
     WorkItemNotFoundError,
@@ -48,13 +46,9 @@ WorkflowServiceDep = Annotated[AsyncWorkflowService, Depends(get_workflow_servic
     response_model=List[WorkTypeResponse],
     summary="获取事项类型列表"
 )
-async def get_work_types(session: DatabaseDep):
+async def get_work_types(service: WorkflowServiceDep):
     """获取系统中定义的所有业务事项类型"""
-    from models import SysWorkType
-    stmt = select(SysWorkType)
-    result = await session.execute(stmt)
-    work_types = result.scalars().all()
-    return work_types
+    return await service.get_work_types()
 
 
 @router.get(
@@ -62,13 +56,9 @@ async def get_work_types(session: DatabaseDep):
     response_model=List[WorkflowStateResponse],
     summary="获取流程状态列表"
 )
-async def get_workflow_states(session: DatabaseDep):
+async def get_workflow_states(service: WorkflowServiceDep):
     """获取系统中定义的所有流程状态"""
-    from models import SysWorkflowState
-    stmt = select(SysWorkflowState)
-    result = await session.execute(stmt)
-    states = result.scalars().all()
-    return states
+    return await service.get_workflow_states()
 
 
 @router.get(
@@ -78,14 +68,11 @@ async def get_workflow_states(session: DatabaseDep):
     responses={404: {"model": ErrorResponse, "description": "类型不存在"}}
 )
 async def get_workflow_configs(
-        session: DatabaseDep,
+        service: WorkflowServiceDep,
         type_code: str = Query(..., description="事项类型编码"),
 ):
     """获取指定事项类型的所有流转配置规则"""
-    from models import SysWorkflowConfig
-    stmt = select(SysWorkflowConfig).where(SysWorkflowConfig.type_code == type_code)
-    result = await session.execute(stmt)
-    configs = result.scalars().all()
+    configs = await service.get_workflow_configs(type_code)
     if not configs:
         raise HTTPException(status_code=404, detail=f"类型 '{type_code}' 的流转配置不存在")
     return configs
@@ -122,7 +109,7 @@ async def create_work_item(
     summary="获取事项列表"
 )
 async def list_work_items(
-        session: DatabaseDep,
+        service: WorkflowServiceDep,
         type_code: Optional[str] = Query(None, description="按类型筛选"),
         state: Optional[str] = Query(None, description="按状态筛选"),
         owner_id: Optional[int] = Query(None, description="按当前处理人筛选"),
@@ -138,34 +125,14 @@ async def list_work_items(
     - 即：当前处理人是 owner_id OR 创建人是 creator_id
     - 这样创建者可以始终看到自己创建的任务，无论任务被指派给谁
     """
-    from sqlalchemy import or_
-
-    stmt = select(BusWorkItem)
-
-    if type_code:
-        stmt = stmt.where(BusWorkItem.type_code == type_code)
-    if state:
-        stmt = stmt.where(BusWorkItem.current_state == state)
-
-    # 处理 owner_id 和 creator_id 的逻辑
-    if owner_id is not None and creator_id is not None:
-        # 两者都提供时，使用 OR 逻辑
-        stmt = stmt.where(
-            or_(
-                BusWorkItem.current_owner_id == owner_id,
-                BusWorkItem.creator_id == creator_id
-            )
-        )
-    elif owner_id is not None:
-        stmt = stmt.where(BusWorkItem.current_owner_id == owner_id)
-    elif creator_id is not None:
-        stmt = stmt.where(BusWorkItem.creator_id == creator_id)
-
-    stmt = stmt.order_by(desc(BusWorkItem.created_at)).offset(offset).limit(limit)
-
-    result = await session.execute(stmt)
-    items = result.scalars().all()
-    return items
+    return await service.list_items(
+        type_code=type_code,
+        state=state,
+        owner_id=owner_id,
+        creator_id=creator_id,
+        limit=limit,
+        offset=offset
+    )
 
 
 @router.get(
@@ -176,13 +143,21 @@ async def list_work_items(
 )
 async def get_work_item(
         item_id: int,
-        session: DatabaseDep
+        service: WorkflowServiceDep
 ):
     """根据 ID 获取业务事项详情"""
-    item = await session.get(BusWorkItem, item_id)
-    if not item:
-        raise HTTPException(status_code=404, detail=f"事项 ID={item_id} 不存在")
-    return item
+    try:
+        # 虽然可以直接用 session.get，但为了统一建议也通过 service 获取（如果后续有权限校验）
+        # 这里为了保持简洁，我们先增加一个简单的 service 方法或直接在 service 里处理异常
+        from models import BusWorkItem
+        item = await service.session.get(BusWorkItem, item_id)
+        if not item:
+            raise HTTPException(status_code=404, detail=f"事项 ID={item_id} 不存在")
+        return item
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.delete(
@@ -195,35 +170,19 @@ async def get_work_item(
 )
 async def delete_work_item(
         item_id: int,
-        session: DatabaseDep,
+        service: WorkflowServiceDep,
 ):
     """
     删除业务事项（及其所有流转日志）
 
     注意：实际项目中建议使用软删除（is_deleted 标志位）替代硬删除
     """
-    from models import BusFlowLog
-
-    # 1. 检查事项是否存在
-    item = await session.get(BusWorkItem, item_id)
-    if not item:
-        raise HTTPException(status_code=404, detail=f"事项 ID={item_id} 不存在")
-
     try:
-        # 2. 先删除关联的流转日志
-        stmt = select(BusFlowLog).where(BusFlowLog.work_item_id == item_id)
-        logs_result = await session.execute(stmt)
-        logs = logs_result.scalars().all()
-        for log in logs:
-            await session.delete(log)
-
-        # 3. 删除事项
-        await session.delete(item)
-        await session.commit()
-
+        await service.delete_item(item_id)
         return {"message": f"事项 ID={item_id} 已删除", "item_id": item_id}
+    except WorkItemNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
-        await session.rollback()
         raise HTTPException(status_code=400, detail=f"删除失败: {str(e)}")
 
 
@@ -242,14 +201,14 @@ async def transition_work_item(
         item_id: int,
         request: TransitionRequest,
         service: WorkflowServiceDep,
-        session: DatabaseDep
 ):
     """
     执行状态流转
     """
     try:
         # 1. 先获取旧状态（用于返回响应）
-        item_before = await session.get(BusWorkItem, item_id)
+        from models import BusWorkItem
+        item_before = await service.session.get(BusWorkItem, item_id)
         if not item_before:
             raise HTTPException(status_code=404, detail=f"事项 ID={item_id} 不存在")
         old_state = item_before.current_state
@@ -289,7 +248,7 @@ async def transition_work_item(
 )
 async def reassign_work_item(
         item_id: int,
-        session: DatabaseDep,
+        service: WorkflowServiceDep,
         operator_id: int = Query(..., description="操作人ID"),
         target_owner_id: int = Query(..., description="目标处理人ID"),
 ):
@@ -299,33 +258,12 @@ async def reassign_work_item(
     - 无需经过工作流配置，通用改派逻辑
     - 更新当前处理人并记录操作日志
     """
-    from models import BusFlowLog
-
-    # 1. 获取事项
-    item = await session.get(BusWorkItem, item_id)
-    if not item:
-        raise HTTPException(status_code=404, detail=f"事项 ID={item_id} 不存在")
-
-    # 2. 记录改派日志
-    log_entry = BusFlowLog(
-        work_item_id=item.id,
-        from_state=item.current_state,
-        to_state=item.current_state,
-        action="REASSIGN",
-        operator_id=operator_id,
-        payload={"target_owner_id": target_owner_id}
-    )
-    session.add(log_entry)
-
-    # 3. 更新处理人
-    old_owner = item.current_owner_id
-    item.current_owner_id = target_owner_id
-    session.add(item)
-
-    await session.commit()
-    await session.refresh(item)
-
-    return item
+    try:
+        return await service.reassign_item(item_id, operator_id, target_owner_id)
+    except WorkItemNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"改派失败: {str(e)}")
 
 
 @router.get(
@@ -335,24 +273,16 @@ async def reassign_work_item(
 )
 async def get_transition_logs(
         item_id: int,
-        session: DatabaseDep,
+        service: WorkflowServiceDep,
         limit: int = Query(50, ge=1, le=200, description="返回数量限制"),
 ):
     """获取指定事项的所有流转日志（按时间倒序）"""
-    from models import BusFlowLog
-
-    # 检查事项是否存在
-    item = await session.get(BusWorkItem, item_id)
-    if not item:
-        raise HTTPException(status_code=404, detail=f"事项 ID={item_id} 不存在")
-
-    stmt = select(BusFlowLog).where(
-        BusFlowLog.work_item_id == item_id
-    ).order_by(desc(BusFlowLog.created_at)).limit(limit)
-
-    result = await session.execute(stmt)
-    logs = result.scalars().all()
-    return logs
+    try:
+        return await service.get_logs(item_id, limit)
+    except WorkItemNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get(
@@ -361,7 +291,7 @@ async def get_transition_logs(
     summary="批量获取事项流转日志"
 )
 async def batch_get_transition_logs(
-        session: DatabaseDep,
+        service: WorkflowServiceDep,
         item_ids: str = Query(..., description="事项ID列表，逗号分隔，如: 1,2,3"),
         limit: int = Query(20, ge=1, le=100, description="每个事项最多返回的日志数量"),
 ):
@@ -372,8 +302,6 @@ async def batch_get_transition_logs(
 
     用途：在看板列表中展示任务的状态流转时间线
     """
-    from models import BusFlowLog
-
     # 解析 item_ids
     try:
         ids = [int(x.strip()) for x in item_ids.split(",") if x.strip()]
@@ -383,17 +311,7 @@ async def batch_get_transition_logs(
     if not ids:
         return {}
 
-    result = {}
-    for item_id in ids:
-        stmt = select(BusFlowLog).where(
-            BusFlowLog.work_item_id == item_id
-        ).order_by(desc(BusFlowLog.created_at)).limit(limit)
-
-        logs_result = await session.execute(stmt)
-        logs = logs_result.scalars().all()
-        result[item_id] = list(logs)
-
-    return result
+    return await service.batch_get_logs(ids, limit)
 
 
 @router.get(
@@ -402,32 +320,18 @@ async def batch_get_transition_logs(
 )
 async def get_available_transitions(
         item_id: int,
-        session: DatabaseDep,
+        service: WorkflowServiceDep,
 ):
     """获取指定事项在当前状态下可以执行的所有流转动作"""
-    from models import SysWorkflowConfig
-
-    item = await session.get(BusWorkItem, item_id)
-    if not item:
-        raise HTTPException(status_code=404, detail=f"事项 ID={item_id} 不存在")
-
-    stmt = select(SysWorkflowConfig).where(
-        SysWorkflowConfig.type_code == item.type_code,
-        SysWorkflowConfig.from_state == item.current_state
-    )
-    result = await session.execute(stmt)
-    configs = result.scalars().all()
-
-    return {
-        "item_id": item_id,
-        "current_state": item.current_state,
-        "available_transitions": [
-            {
-                "action": config.action,
-                "to_state": config.to_state,
-                "target_owner_strategy": config.target_owner_strategy,
-                "required_fields": config.required_fields
-            }
-            for config in configs
-        ]
-    }
+    try:
+        result = await service.get_item_with_transitions(item_id)
+        item = result["item"]
+        return {
+            "item_id": item_id,
+            "current_state": item.current_state,
+            "available_transitions": result["available_transitions"]
+        }
+    except WorkItemNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
