@@ -2,9 +2,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    # PostgreSQL 配置（保留但不再使用）
-    DATABASE_URL: str = "postgresql+asyncpg://postgres:kk123123@10.17.154.252/postgres"
-
     # MongoDB 配置
     MONGO_URI: str = "mongodb://10.17.154.252:27018"
     MONGO_DB_NAME: str = "workflow_db"

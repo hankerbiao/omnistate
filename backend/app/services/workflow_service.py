@@ -23,6 +23,47 @@ class AsyncWorkflowService:
 
     # ========== 查询方法 ==========
 
+    def _base_item_query(
+            self,
+            type_code: Optional[str] = None,
+            state: Optional[str] = None,
+            owner_id: Optional[int] = None,
+            creator_id: Optional[int] = None,
+    ):
+        # 构建业务事项的基础查询条件：
+        # - 过滤掉已逻辑删除的数据
+        # - 支持按事项类型、当前状态过滤
+        # - 支持按当前处理人或创建人进行「或」条件过滤
+        query = BusWorkItemDoc.find(BusWorkItemDoc.is_deleted == False)
+
+        # 精确匹配事项类型
+        if type_code:
+            query = query.find(BusWorkItemDoc.type_code == type_code)
+        # 精确匹配当前状态
+        if state:
+            query = query.find(BusWorkItemDoc.current_state == state)
+
+        # 组合处理人相关的「或」查询条件
+        or_conditions = []
+        if owner_id is not None:
+            or_conditions.append(BusWorkItemDoc.current_owner_id == owner_id)
+        if creator_id is not None:
+            or_conditions.append(BusWorkItemDoc.creator_id == creator_id)
+
+        # 如果存在处理人/创建人条件，则使用 $or 包裹
+        if or_conditions:
+            query = query.find({"$or": or_conditions})
+
+        return query
+
+    def _docs_to_dicts(self, docs: List[BusWorkItemDoc]) -> List[Dict]:
+        results: List[Dict] = []
+        for doc in docs:
+            d = doc.model_dump()
+            d["id"] = str(doc.id)
+            results.append(d)
+        return results
+
     async def get_work_types(self) -> List[Dict]:
         # 查询所有「事项类型」配置，常用于前端下拉列表或配置管理页面
         docs = await SysWorkTypeDoc.find_all().to_list()
@@ -47,29 +88,9 @@ class AsyncWorkflowService:
             limit: int = 20,
             offset: int = 0
     ) -> List[Dict]:
-        query = BusWorkItemDoc.find(BusWorkItemDoc.is_deleted == False)
-
-        if type_code:
-            query = query.find(BusWorkItemDoc.type_code == type_code)
-        if state:
-            query = query.find(BusWorkItemDoc.current_state == state)
-
-        or_conditions = []
-        if owner_id is not None:
-            or_conditions.append(BusWorkItemDoc.current_owner_id == owner_id)
-        if creator_id is not None:
-            or_conditions.append(BusWorkItemDoc.creator_id == creator_id)
-
-        if or_conditions:
-            query = query.find({"$or": or_conditions})
-
+        query = self._base_item_query(type_code, state, owner_id, creator_id)
         docs = await query.sort("-created_at").skip(offset).limit(limit).to_list()
-        results = []
-        for doc in docs:
-            d = doc.model_dump()
-            d["id"] = str(doc.id)
-            results.append(d)
-        return results
+        return self._docs_to_dicts(docs)
 
     async def list_items_sorted(
             self,
@@ -82,21 +103,7 @@ class AsyncWorkflowService:
             order_by: str = "created_at",
             direction: str = "desc"
     ) -> List[Dict]:
-        query = BusWorkItemDoc.find(BusWorkItemDoc.is_deleted == False)
-
-        if type_code:
-            query = query.find(BusWorkItemDoc.type_code == type_code)
-        if state:
-            query = query.find(BusWorkItemDoc.current_state == state)
-
-        or_conditions = []
-        if owner_id is not None:
-            or_conditions.append(BusWorkItemDoc.current_owner_id == owner_id)
-        if creator_id is not None:
-            or_conditions.append(BusWorkItemDoc.creator_id == creator_id)
-
-        if or_conditions:
-            query = query.find({"$or": or_conditions})
+        query = self._base_item_query(type_code, state, owner_id, creator_id)
 
         allowed_fields = {"created_at": "created_at", "updated_at": "updated_at", "title": "title"}
         field = allowed_fields.get(order_by, "created_at")
@@ -104,12 +111,7 @@ class AsyncWorkflowService:
         sort_expr = f"{prefix}{field}"
 
         docs = await query.sort(sort_expr).skip(offset).limit(limit).to_list()
-        results = []
-        for doc in docs:
-            d = doc.model_dump()
-            d["id"] = str(doc.id)
-            results.append(d)
-        return results
+        return self._docs_to_dicts(docs)
 
     async def search_items(
             self,
@@ -121,22 +123,7 @@ class AsyncWorkflowService:
             limit: int = 20,
             offset: int = 0
     ) -> List[Dict]:
-        query = BusWorkItemDoc.find(BusWorkItemDoc.is_deleted == False)
-
-        if type_code:
-            query = query.find(BusWorkItemDoc.type_code == type_code)
-        if state:
-            query = query.find(BusWorkItemDoc.current_state == state)
-
-        or_conditions = []
-        if owner_id is not None:
-            or_conditions.append(BusWorkItemDoc.current_owner_id == owner_id)
-        if creator_id is not None:
-            or_conditions.append(BusWorkItemDoc.creator_id == creator_id)
-
-        if or_conditions:
-            query = query.find({"$or": or_conditions})
-
+        query = self._base_item_query(type_code, state, owner_id, creator_id)
         search_conditions = [
             {"title": {"$regex": keyword, "$options": "i"}},
             {"content": {"$regex": keyword, "$options": "i"}},
@@ -144,12 +131,7 @@ class AsyncWorkflowService:
         query = query.find({"$or": search_conditions})
 
         docs = await query.sort("-created_at").skip(offset).limit(limit).to_list()
-        results = []
-        for doc in docs:
-            d = doc.model_dump()
-            d["id"] = str(doc.id)
-            results.append(d)
-        return results
+        return self._docs_to_dicts(docs)
 
     async def get_item_by_id(self, item_id: str) -> Optional[Dict]:
         # 根据业务事项 ID 查询详情
@@ -234,15 +216,6 @@ class AsyncWorkflowService:
                 for config in configs
             ]
         }
-
-    async def get_next_transition(self, type_code: str, from_state: str, action: str) -> Optional[Dict]:
-        # 根据「事项类型 + 当前状态 + 动作」查询唯一匹配的流转配置
-        doc = await SysWorkflowConfigDoc.find_one(
-            SysWorkflowConfigDoc.type_code == type_code,
-            SysWorkflowConfigDoc.from_state == from_state,
-            SysWorkflowConfigDoc.action == action
-        )
-        return doc.model_dump() if doc else None
 
     # ========== 核心流转逻辑 ==========
 

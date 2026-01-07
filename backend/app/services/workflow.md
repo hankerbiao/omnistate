@@ -1,350 +1,278 @@
-# 配置驱动工作流后端（MongoDB 版本）
+# 任务流转说明（AsyncWorkflowService）
 
-基于 **FastAPI + MongoDB (PyMongo Async + Beanie)** 的通用工作流后台服务，支持：
+本文档只关注「任务/事项流转」相关的核心设计与实现，方便前后端在对接和扩展流程时统一理解。
 
-- 通过 JSON 配置驱动工作流类型、状态与流转规则，无需改动代码即可新增业务流程
-- 提供统一的事项 CRUD、状态流转、改派、流转日志查询等接口
-- 适合作为「需求管理」「测试用例管理」「缺陷管理」等系统的工作流核心后端
+相关核心代码：
 
----
-
-## 1. 技术栈与架构概览
-
-- 编程语言：Python 3.12
-- Web 框架：FastAPI
-- 数据库：MongoDB
-- Mongo 客户端：PyMongo Async (`AsyncMongoClient`)
-- ODM：Beanie（基于 Pydantic 的异步 ODM）
-- 配置管理：`pydantic-settings` + `.env`
-
-整体架构：
-
-- FastAPI 负责 HTTP 接入层和路由定义（见 [app/api](file:///Users/libiao/Desktop/github/test/backend/app/api)）
-- `AsyncWorkflowService` 封装工作流业务规则（见 [workflow_service.py](file:///Users/libiao/Desktop/github/test/backend/app/services/workflow_service.py)）
-- Beanie 文档模型封装 MongoDB 持久化（见 [models](file:///Users/libiao/Desktop/github/test/backend/app/models)）
-- `configs/*.json` 配置文件驱动业务类型、状态及流转规则（见 [configs/README.md](file:///Users/libiao/Desktop/github/test/backend/app/configs/README.md)）
+- 工作流服务：[workflow_service.py](file:///Users/libiao/Desktop/github/test/backend/app/services/workflow_service.py)
+- 业务路由：[work_items.py](file:///Users/libiao/Desktop/github/test/backend/app/api/routes/work_items.py)
+- 文档模型：
+  - 系统配置模型：[system.py](file:///Users/libiao/Desktop/github/test/backend/app/models/system.py)
+  - 业务模型：[business.py](file:///Users/libiao/Desktop/github/test/backend/app/models/business.py)
 
 ---
 
-## 2. 目录结构
+## 1. 核心概念
 
-核心目录结构如下：
+### 1.1 业务事项（BusWorkItemDoc）
 
-```text
-backend/
-├── app/
-│   ├── api/                # HTTP 接口层
-│   │   ├── main.py         # 路由聚合入口
-│   │   ├── errors/         # 全局异常处理
-│   │   ├── routes/
-│   │   │   ├── health.py   # 健康检查接口
-│   │   │   └── work_items.py  # 业务事项 CRUD & 流转接口
-│   │   └── schemas/        # Pydantic 请求/响应模型
-│   ├── configs/            # 工作流配置（JSON）及说明
-│   │   ├── README.md
-│   │   ├── global_config.json
-│   │   ├── requirement.json
-│   │   └── test_case.json
-│   ├── core/
-│   │   ├── logger.py       # 日志封装
-│   │   └── mongo_client.py # 全局 AsyncMongoClient 管理
-│   ├── db/
-│   │   └── config.py       # Settings（Mongo 连接、CORS 等）
-│   ├── models/             # Beanie 文档模型 + Pydantic 模型
-│   ├── services/
-│   │   ├── exceptions.py   # 业务异常定义
-│   │   └── workflow_service.py  # 工作流领域服务
-│   ├── init_mongodb.py     # 独立运行的 Mongo 初始化脚本
-│   └── main.py             # FastAPI 应用入口（Mongo/Beanie 初始化）
-└── README.md
+业务事项是整个任务流转的核心实体，对应：
+
+- 模型：`BusWorkItemDoc`（业务文档）
+- 关键字段：
+  - `type_code`：事项类型（如 `REQUIREMENT`、`TEST_CASE`）
+  - `current_state`：当前状态（对应 `WorkItemState` 枚举）
+  - `current_owner_id`：当前处理人
+  - `creator_id`：创建人
+  - `is_deleted`：逻辑删除标记
+
+所有与流转相关的读写，都围绕这一实体展开。
+
+### 1.2 流转配置（SysWorkflowConfigDoc）
+
+流转规则由配置驱动，对应：
+
+- 模型：`SysWorkflowConfigDoc`
+- 核心字段：
+  - `type_code`：事项类型
+  - `from_state`：当前状态
+  - `action`：动作（如 `SUBMIT`、`APPROVE`、`REJECT`）
+  - `to_state`：流转后的目标状态
+  - `target_owner_strategy`：处理人策略（见 1.4）
+  - `required_fields`：执行此动作时必填的业务字段
+
+每一条配置代表「某类型事项在某状态下执行某动作时该如何流转」。
+
+### 1.3 流转日志（BusFlowLogDoc）
+
+每一次状态变更或处理人变更，都会记录一条流转日志，对应：
+
+- 模型：`BusFlowLogDoc`
+- 关键字段：
+  - `work_item_id`：对应的业务事项 ID
+  - `from_state`：原状态
+  - `to_state`：目标状态
+  - `action`：执行的动作（包括业务动作、`REASSIGN`、`DELETE` 等）
+  - `operator_id`：操作人
+  - `payload`：本次操作携带的业务数据（如审批意见、改派目标等）
+
+### 1.4 处理人策略（OwnerStrategy）
+
+流转配置中的 `target_owner_strategy` 控制「流转后任务的处理人」：
+
+- `KEEP`：保持当前处理人不变
+- `TO_CREATOR`：流转回创建人
+- `TO_SPECIFIC_USER`：流转到表单中指定的用户（需要 `target_owner_id` 字段）
+
+实际计算逻辑由 `AsyncWorkflowService._apply_owner_strategy` 负责。
+
+---
+
+## 2. 状态流转核心流程（handle_transition）
+
+核心接口：
+
+- 服务方法：`AsyncWorkflowService.handle_transition`
+- 典型调用路径：
+  - HTTP 路由：[work_items.py](file:///Users/libiao/Desktop/github/test/backend/app/api/routes/work_items.py)
+    中的 `POST /api/v1/work-items/{item_id}/transition`
+
+### 2.1 入参
+
+`handle_transition` 的关键入参：
+
+- `work_item_id: str`：要流转的事项 ID
+- `action: str`：当前要执行的动作
+- `operator_id: int`：操作人 ID
+- `form_data: Dict[str, Any]`：业务表单数据（用于校验必填字段和计算处理人）
+
+### 2.2 流程步骤
+
+状态流转的完整流程如下（对应 `handle_transition` 内部实现）：
+
+1. **校验事项存在性**
+   - 根据 `work_item_id` 读取 `BusWorkItemDoc`
+   - 若不存在或已逻辑删除（`is_deleted = True`），抛出 `WorkItemNotFoundError`
+
+2. **匹配流转配置**
+   - 根据：
+     - `item_doc.type_code`
+     - `item_doc.current_state`
+     - `action`
+   - 在 `SysWorkflowConfigDoc` 中查找唯一匹配的配置
+   - 若找不到，抛出 `InvalidTransitionError`，表示当前状态下不允许执行该动作
+
+3. **校验必填业务字段**
+   - 读取配置中的 `required_fields`
+   - 检查这些字段是否全部存在于 `form_data` 中
+   - 若缺失，抛出 `MissingRequiredFieldError`
+   - 同时构造本次操作的 `process_payload`，写入日志使用
+
+4. **计算新状态与处理人**
+   - `old_state = item_doc.current_state`
+   - `new_state = config_doc.to_state`
+   - 调用 `_apply_owner_strategy` 根据策略计算 `new_owner_id`：
+     - `TO_CREATOR`：使用 `creator_id`
+     - `TO_SPECIFIC_USER`：从 `form_data["target_owner_id"]` 读取
+     - 其他情况：保持 `current_owner_id` 不变
+
+5. **更新事项**
+   - 更新 `item_doc.current_state = new_state`
+   - 更新 `item_doc.current_owner_id = new_owner_id`
+   - 调用 `item_doc.save()` 持久化到数据库
+
+6. **写入流转日志**
+   - 创建 `BusFlowLogDoc`，字段包括：
+     - `work_item_id`
+     - `from_state`
+     - `to_state`
+     - `action`
+     - `operator_id`
+     - `payload`（即 `process_payload`）
+   - 调用 `log_entry.insert()` 写入日志集合
+
+7. **返回结果**
+   - 将最新的 `item_doc` 转为字典并附带字符串化的 `id`
+   - 返回结构包含：
+     - `work_item_id`
+     - `from_state`
+     - `to_state`
+     - `action`
+     - `new_owner_id`
+     - `work_item`（更新后的事项详情）
+
+---
+
+## 3. 处理人策略逻辑（_apply_owner_strategy）
+
+实现位置：
+
+- [workflow_service.py](file:///Users/libiao/Desktop/github/test/backend/app/services/workflow_service.py)
+  中的 `AsyncWorkflowService._apply_owner_strategy`
+
+输入参数：
+
+- `work_item: Dict[str, Any]`：当前事项信息（字典形式）
+- `config: Dict[str, Any]`：当前匹配到的流转配置
+- `form_data: Dict[str, Any]`：本次操作的表单数据
+
+核心逻辑：
+
+- 读取 `config["target_owner_strategy"]`，默认 `KEEP`
+- 分支处理：
+  - `TO_CREATOR`：返回 `work_item["creator_id"]`
+  - `TO_SPECIFIC_USER`：
+    - 从 `form_data` 中读取 `target_owner_id`
+    - 若不存在则抛出 `MissingRequiredFieldError("target_owner_id")`
+  - 其他（含 `KEEP`）：返回 `work_item["current_owner_id"]`
+
+这一策略保证了「状态如何跳转」和「任务归谁处理」都可以通过配置文件控制，而无需改动代码。
+
+---
+
+## 4. 与任务流转直接相关的 HTTP 接口
+
+所有接口前缀：`/api/v1/work-items`
+
+路由实现见：
+
+- [work_items.py](file:///Users/libiao/Desktop/github/test/backend/app/api/routes/work_items.py)
+
+### 4.1 创建事项（设置初始状态）
+
+- 方法：`POST /api/v1/work-items`
+- 对应服务方法：`AsyncWorkflowService.create_item`
+- 关键行为：
+  - 创建 `BusWorkItemDoc`
+  - 初始状态设置为 `WorkItemState.DRAFT`
+  - `current_owner_id` 默认设置为 `creator_id`
+
+虽然严格意义上这是「创建」而不是「流转」，但它定义了任务流转的起点（初始状态）。
+
+### 4.2 执行状态流转
+
+- 方法：`POST /api/v1/work-items/{item_id}/transition`
+- 对应服务方法：`handle_transition`
+- 功能：
+  - 按第 2 节所述流程执行状态切换
+  - 校验配置和必填字段
+  - 应用处理人策略
+  - 记录流转日志
+
+### 4.3 改派处理人
+
+- 方法：`POST /api/v1/work-items/{item_id}/reassign`
+- 对应服务方法：`reassign_item`
+- 特点：
+  - 只修改 `current_owner_id`
+  - 不改变 `current_state`
+  - 写入一条 `action="REASSIGN"` 的流转日志，记录改派信息（以及可选的 `remark`）
+
+在看板等场景下，这属于「任务分配」层面的流转。
+
+### 4.4 流转日志查询
+
+- 方法：`GET /api/v1/work-items/{item_id}/logs`
+  - 对应服务方法：`get_logs`
+  - 返回单个事项的流转历史，按时间倒序
+
+- 方法：`GET /api/v1/work-items/logs/batch?item_ids=id1,id2,...`
+  - 对应服务方法：`batch_get_logs`
+  - 批量返回多个事项的流转历史列表
+  - 常用于看板：一次性拉取多个任务的状态时间线
+
+这两类接口都是围绕「任务流转历史」展开的。
+
+### 4.5 获取可用下一步动作
+
+- 方法：`GET /api/v1/work-items/{item_id}/transitions`
+- 对应服务方法：`get_item_with_transitions`
+- 返回结构：
+  - `item`：当前事项详情
+  - `available_transitions`：当前状态下所有可执行的动作列表，每项内容包括：
+    - `action`
+    - `to_state`
+    - `target_owner_strategy`
+    - `required_fields`
+
+前端可以基于这个接口动态渲染「操作按钮」和「表单必填项」。
+
+---
+
+## 5. 配置驱动的流转规则示例
+
+流转规则配置位于：
+
+- 目录：[app/configs](file:///Users/libiao/Desktop/github/test/backend/app/configs)
+
+典型 `workflow_configs` 字段示例（简化）：
+
+```json
+{
+  "type_code": "REQUIREMENT",
+  "from_state": "DRAFT",
+  "action": "SUBMIT",
+  "to_state": "PENDING_REVIEW",
+  "target_owner_strategy": "TO_SPECIFIC_USER",
+  "required_fields": ["title", "content", "target_owner_id"]
+}
 ```
 
----
+含义：
 
-## 3. 环境准备
+- 当一个 `REQUIREMENT` 类型的事项处于 `DRAFT` 状态时：
+  - 执行 `SUBMIT` 动作
+  - 若请求体中包含 `required_fields` 中的所有字段：
+    - 状态会流转到 `PENDING_REVIEW`
+    - 新处理人会根据 `target_owner_id` 决定
 
-### 3.1 必要环境
-
-- Python：建议 3.10 或以上
-- MongoDB：建议 4.4 或以上
-
-### 3.2 Python 依赖（示例）
-
-项目本身未固定提供 `requirements.txt`，可以根据实际需要创建，典型依赖包括：
-
-```bash
-pip install \
-  fastapi \
-  "uvicorn[standard]" \
-  beanie \
-  "pymongo[srv]" \
-  pydantic \
-  pydantic-settings
-```
-
-如果你有自己的依赖管理方式（如 Poetry、pip-tools），可以按上述包名自行整理。
+`AsyncWorkflowService.handle_transition` 会使用这些配置完成实际的状态和处理人变更，同时写入流转日志。
 
 ---
 
-## 4. 配置说明
+通过以上约定，本项目实现了「**配置驱动的任务流转**」：
 
-配置入口位于 [app/db/config.py](file:///Users/libiao/Desktop/github/test/backend/app/db/config.py#L1-L18)，通过 Pydantic Settings 从环境变量 / `.env` 读取：
+- 代码（`AsyncWorkflowService`）只实现通用的流转引擎
+- 具体有哪些状态、动作、谁处理、必填什么字段，全部由配置决定
+- 修改或新增流程时，只需要调整配置，无需改动核心代码
 
-```python
-class Settings(BaseSettings):
-    # MongoDB 配置
-    MONGO_URI: str = "mongodb://10.17.154.252:27018"
-    MONGO_DB_NAME: str = "workflow_db"
-
-    # CORS 配置
-    CORS_ORIGINS: list[str] = ["*"]
-
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
-```
-
-推荐在项目根目录创建 `.env` 文件覆盖默认值，例如：
-
-```env
-MONGO_URI=mongodb://localhost:27017
-MONGO_DB_NAME=workflow_db
-CORS_ORIGINS=["http://localhost:3000"]
-```
-
-> 提示：`DATABASE_URL`（PostgreSQL）字段已保留但当前实现中未使用，可忽略。
-
-更多关于 JSON 配置文件的字段含义与扩展方法，请参考：
-[configs/README.md](file:///Users/libiao/Desktop/github/test/backend/app/configs/README.md#L1-L79)。
-
----
-
-## 5. 数据库初始化（导入配置驱动工作流）
-
-初始化脚本见 [init_mongodb.py](file:///Users/libiao/Desktop/github/test/backend/app/init_mongodb.py#L1-L148)，主要功能：
-
-- 连接 MongoDB 并初始化 Beanie
-- 扫描 `app/configs/` 目录下所有 `.json`
-- 整合：
-  - `work_types`：业务类型
-  - `states`：全局状态（部分在代码中内置）
-  - `workflow_configs`：状态流转规则
-- 以「插入或更新（upsert）」方式写入以下集合：
-  - `sys_work_types`
-  - `sys_workflow_states`
-  - `sys_workflow_configs`
-
-### 5.1 执行初始化
-
-在项目根目录下运行：
-
-```bash
-# 建议使用模块方式运行，确保 import 前缀正确
-python -m app.init_mongodb
-```
-
-或：
-
-```bash
-python app/init_mongodb.py
-```
-
-看到类似日志（MongoDB 连接成功 / Beanie 初始化完成 / 基础数据初始化完成）即表示初始化成功。
-
----
-
-## 6. 启动 FastAPI 服务
-
-FastAPI 应用入口位于 [app/main.py](file:///Users/libiao/Desktop/github/test/backend/app/main.py#L1-L86)，其中：
-
-- 使用 `AsyncMongoClient` 连接 MongoDB 并做 `ping` 健康检查
-- 初始化 Beanie 并注册所有文档模型
-- 注入全局 Mongo 客户端（供低层事务或原生操作使用）
-
-### 6.1 开发模式启动
-
-在项目根目录执行：
-
-```bash
-uvicorn app.main:app --reload
-```
-
-默认监听：`http://127.0.0.1:8000`
-
-你也可以直接运行：
-
-```bash
-python -m app.main
-```
-
-### 6.2 健康检查
-
-- 根路径健康检查：`GET /`
-- API 健康路由（见 [health.py](file:///Users/libiao/Desktop/github/test/backend/app/api/routes/health.py#L1-L26)）：
-  - `GET /health`       — 简单健康检查
-  - `GET /health/ready` — 就绪检查
-  - `GET /health/live`  — 存活检查
-
-### 6.3 文档界面
-
-FastAPI 自动提供 Swagger 文档：
-
-- Swagger UI：`http://127.0.0.1:8000/docs`
-- ReDoc：`http://127.0.0.1:8000/redoc`
-
----
-
-## 7. 主要接口说明（业务事项 / 工作流）
-
-所有业务接口均挂载在 `/api/v1` 前缀下，对应路由见：
-[work_items.py](file:///Users/libiao/Desktop/github/test/backend/app/api/routes/work_items.py#L1-L319)。
-
-### 7.1 工作流元数据
-
-前缀：`/api/v1/work-items`
-
-- `GET /api/v1/work-items/types`
-  - 功能：获取所有事项类型（如 REQUIREMENT、TEST_CASE）
-  - 返回：`List[WorkTypeResponse]`
-
-- `GET /api/v1/work-items/states`
-  - 功能：获取系统支持的所有状态（如 DRAFT、PENDING_AUDIT、DONE 等）
-  - 返回：`List[WorkflowStateResponse]`
-
-- `GET /api/v1/work-items/configs?type_code=REQUIREMENT`
-  - 功能：获取指定事项类型的所有流转配置规则
-  - 返回：`List[WorkflowConfigResponse]`
-  - 若类型不存在：返回 404
-
-### 7.2 事项 CRUD
-
-- `POST /api/v1/work-items`
-  - 功能：创建业务事项，初始状态通常为 `DRAFT`
-  - 请求体：`CreateWorkItemRequest`
-  - 返回：`WorkItemResponse`
-
-- `GET /api/v1/work-items`
-  - 功能：分页查询事项列表
-  - 支持筛选：
-    - `type_code`：按类型筛选
-    - `state`：按当前状态筛选
-    - `owner_id`：按当前处理人筛选
-    - `creator_id`：按创建人筛选
-  - 特别说明：同时传入 `owner_id` 和 `creator_id` 时为「或」逻辑
-
-- `GET /api/v1/work-items/{item_id}`
-  - 功能：获取单个事项详情
-
-- `DELETE /api/v1/work-items/{item_id}`
-  - 功能：删除事项及其流转日志
-  - 当前实现为真实删除，实际业务中建议使用软删除（`is_deleted` 字段）
-
-### 7.3 状态流转与改派
-
-- `POST /api/v1/work-items/{item_id}/transition`
-  - 功能：根据配置执行状态流转
-  - 请求体：`TransitionRequest`
-  - 业务规则：
-    - 校验当前状态是否允许执行该 `action`
-    - 校验必填字段 `required_fields`
-    - 根据 `target_owner_strategy` 决定下一处理人
-    - 记录流转日志
-
-- `POST /api/v1/work-items/{item_id}/reassign`
-  - 功能：改派任务给其他处理人（不改变状态）
-  - 查询参数：
-    - `operator_id`：操作人 ID
-    - `target_owner_id`：目标处理人 ID
-
-### 7.4 流转历史与可用操作
-
-- `GET /api/v1/work-items/{item_id}/logs`
-  - 功能：查询指定事项的流转日志
-
-- `GET /api/v1/work-items/logs/batch?item_ids=id1,id2,...`
-  - 功能：批量查询多个事项的流转日志
-  - 用途：看板场景下一次性拉取多个任务的状态时间线
-
-- `GET /api/v1/work-items/{item_id}/transitions`
-  - 功能：获取当前状态下可执行的所有下一步流转动作
-  - 返回字段示例：
-    - `item_id`
-    - `current_state`
-    - `available_transitions`: 某状态下允许的所有动作列表
-
----
-
-## 8. 工作流配置驱动模型
-
-配置文件位于 [app/configs](file:///Users/libiao/Desktop/github/test/backend/app/configs)，示例：
-
-- `global_config.json`：全局状态等公共配置
-- `requirement.json`：需求业务（REQUIREMENT）的工作流配置
-- `test_case.json`：测试用例业务（TEST_CASE）的工作流配置
-
-字段说明及新增业务流程示例详见：
-[configs/README.md](file:///Users/libiao/Desktop/github/test/backend/app/configs/README.md#L1-L79)。
-
-典型字段：
-
-- `work_types`：业务类型列表，如 `["REQUIREMENT", "需求"]`
-- `states`：状态枚举，如 `["DRAFT", "草稿"]`
-- `workflow_configs`：状态迁移配置，定义 `from_state` / `action` / `to_state` / `target_owner_strategy` / `required_fields` 等
-
-> 核心设计：**所有工作流规则只写在配置中；代码中的 `AsyncWorkflowService` 只负责执行这些规则。**
-
----
-
-## 9. 核心代码模块速览
-
-- [app/services/workflow_service.py](file:///Users/libiao/Desktop/github/test/backend/app/services/workflow_service.py)
-  - `AsyncWorkflowService`：工作流领域服务
-  - 负责：
-    - 创建 / 查询 / 删除事项
-    - 按配置执行状态流转
-    - 记录流转日志
-    - 计算可用下一步流转动作
-
-- [app/models/system.py](file:///Users/libiao/Desktop/github/test/backend/app/models/system.py)
-  - `SysWorkTypeDoc` / `SysWorkflowStateDoc` / `SysWorkflowConfigDoc`
-  - 存储配置驱动的工作流元数据
-
-- [app/models/business.py](file:///Users/libiao/Desktop/github/test/backend/app/models/business.py)
-  - `BusWorkItemDoc`：业务事项文档
-  - `BusFlowLogDoc`：流转日志文档
-  - 对应 API 层的响应模型 `BusWorkItemModel` / `BusFlowLogModel`
-
-- [app/core/mongo_client.py](file:///Users/libiao/Desktop/github/test/backend/app/core/mongo_client.py#L1-L24)
-  - 全局 `AsyncMongoClient` 存取工具
-  - 可用于需要底层事务或原生 Mongo 操作的场景
-
-- [app/api/errors/handlers.py](file:///Users/libiao/Desktop/github/test/backend/app/api/errors/handlers.py)
-  - 全局异常处理，将业务异常统一映射为结构化错误响应
-
----
-
-## 10. 本地开发建议流程
-
-1. 克隆代码并进入 `backend` 目录
-2. 创建并激活虚拟环境（任选其一）
-   - `python -m venv .venv && source .venv/bin/activate`（Linux/macOS）
-3. 安装依赖（参考第 3 节）
-4. 配置 `.env`（配置 Mongo 连接、CORS 等）
-5. 确保本地 MongoDB 已启动
-6. 运行数据库初始化脚本：
-   - `python -m app.init_mongodb`
-7. 启动 FastAPI 服务：
-   - `uvicorn app.main:app --reload`
-8. 打开 `http://127.0.0.1:8000/docs` 进行接口调试
-
----
-
-## 11. 后续扩展方向（建议）
-
-以下是一些自然的扩展点，便于将来继续演进本项目：
-
-- 增加鉴权与多租户支持（在现有路由和 Service 上增加用户/租户隔离）
-- 引入软删除策略（统一用 `is_deleted` 标记替代物理删除）
-- 增加审计字段（如最后操作人、最后操作时间）
-- 为核心业务逻辑补充单元测试和集成测试
-- 提供前端 SDK 或 API 调用示例，方便业务系统集成
-
-如你有具体的扩展需求，后续可以在此 README 的基础上继续细化。
