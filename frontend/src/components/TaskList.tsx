@@ -38,8 +38,12 @@ const TaskList: React.FC = () => {
         const logs = await workItemApi.batchGetLogs(itemIds);
         setLogsMap(logs);
       }
-    } catch (err: any) {
-      setError(err.message || "获取任务列表失败");
+    } catch (err) {
+      if (err instanceof Error) {
+        setError(err.message || "获取任务列表失败");
+      } else {
+        setError("获取任务列表失败");
+      }
     } finally {
       setLoading(false);
     }
@@ -249,7 +253,6 @@ const TaskList: React.FC = () => {
         <div className="task-grid">
           {filteredTasks.map((task) => {
             const isCreator = task.creator_id === currentUser.id;
-            const creator = mockUsers.find((u) => u.id === task.creator_id);
             const currentOwner = task.current_owner_id
               ? mockUsers.find((u) => u.id === task.current_owner_id)
               : null;
