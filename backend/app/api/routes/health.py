@@ -24,3 +24,4 @@ def readiness_check():
 def liveness_check():
     """检查服务是否存活"""
     return {"status": "alive", "message": "Service is alive"}
+

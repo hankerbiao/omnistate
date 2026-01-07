@@ -52,3 +52,4 @@ class ErrorResponse(BaseModel):
 class SuccessResponse(BaseModel):
     """通用成功响应"""
     message: str
+

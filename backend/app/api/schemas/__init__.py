@@ -1,14 +1,14 @@
 # Pydantic 模型导出
 # 按照功能模块组织，便于维护
 
-from api.schemas.work_item import (
+from .work_item import (
     CreateWorkItemRequest,
     TransitionRequest,
     TransitionResponse,
     WorkItemResponse,
     TransitionLogResponse,
 )
-from api.schemas.workflow import (
+from .workflow import (
     WorkTypeResponse,
     WorkflowStateResponse,
     WorkflowConfigResponse,
@@ -28,3 +28,4 @@ __all__ = [
     "ErrorResponse",
     "SuccessResponse",
 ]
+

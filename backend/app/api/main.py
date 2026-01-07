@@ -5,8 +5,8 @@ API 路由汇总入口
 """
 from fastapi import APIRouter
 
-from api.routes.work_items import router as work_items_router
-from api.routes.health import router as health_router
+from app.api.routes.work_items import router as work_items_router
+from app.api.routes.health import router as health_router
 
 api_router = APIRouter()
 
@@ -15,3 +15,4 @@ api_router.include_router(health_router, prefix="/health", tags=["Health"])
 
 # 业务路由
 api_router.include_router(work_items_router, prefix="/api/v1", tags=["WorkItems"])
+

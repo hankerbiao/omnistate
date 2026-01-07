@@ -1,6 +1,6 @@
 # Workflow State Machine
 
-配置驱动的工作流状态机系统，基于 Python、SQLModel 和 PostgreSQL。
+配置驱动的工作流状态机系统，基于 Python、FastAPI、Beanie 和 MongoDB。
 
 ## 特性
 
@@ -12,34 +12,47 @@
 ## 快速开始
 
 ```bash
-# 安装依赖
+# 安装后端依赖
+cd backend
 pip install -r requirements.txt
 
-# 启动服务
-python main.py
+# 启动后端服务
+python -m backend.main
+
+# 另开一个终端，启动前端
+cd ../frontend
+npm install
+npm run dev
 ```
 
-服务运行在 `http://localhost:8000`，API 文档：`http://localhost:8000/docs`
+后端服务默认运行在 `http://localhost:8000`，API 文档：`http://localhost:8000/docs`  
+前端开发服务默认运行在 `http://localhost:5173`
 
 ## 项目结构
 
 ```
-├── api/                # FastAPI 路由层
-│   ├── deps.py         # 依赖注入
-│   ├── main.py         # 路由汇总
-│   ├── routes/         # API 端点
-│   └── schemas/        # Pydantic 模型
-├── configs/            # 配置文件
-│   └── workflow_initial_data.json
-├── db/
-│   └── relational.py   # 数据库初始化
-├── models/             # SQLModel 数据模型
-│   ├── system.py       # 系统配置表
-│   └── business.py     # 业务实体表
-├── services/           # 业务逻辑层
-│   ├── exceptions.py   # 自定义异常
-│   └── workflow_service.py
-└── main.py             # 应用入口
+├── backend/                    # 后端应用（Python / FastAPI / MongoDB）
+│   ├── api/                    # FastAPI 路由层
+│   │   ├── deps.py             # 依赖注入
+│   │   ├── main.py             # 路由汇总
+│   │   ├── routes/             # API 端点
+│   │   └── schemas/            # Pydantic 模型
+│   ├── configs/                # 工作流 JSON 配置
+│   ├── core/                   # 通用基础设施（日志、Mongo 客户端等）
+│   ├── db/                     # 数据库配置与连接管理
+│   ├── models/                 # 领域模型与 Beanie 文档模型
+│   ├── services/               # 业务逻辑层
+│   ├── init_mongodb.py         # MongoDB 初始化脚本
+│   ├── main.py                 # FastAPI 应用入口（可用 python -m backend.main 启动）
+│   └── requirements.txt        # 后端依赖
+├── frontend/                   # 前端应用（Vite + React + TypeScript）
+│   ├── src/
+│   │   ├── components/         # UI 组件
+│   │   ├── context/            # React Context
+│   │   ├── services/           # 前端 API 封装
+│   │   └── assets/             # 静态资源
+│   ├── vite.config.ts
+│   └── package.json
 ```
 
 ## 数据模型

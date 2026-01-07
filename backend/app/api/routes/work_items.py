@@ -1,5 +1,5 @@
 """
-业务事项路由
+业务事项路由（MongoDB 版本）
 
 提供工作项的 CRUD 和状态流转接口
 """
@@ -7,36 +7,34 @@ from typing import Dict, List, Optional, Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from services.workflow_service import AsyncWorkflowService
-from services.exceptions import (
+from app.services.exceptions import (
     WorkItemNotFoundError,
     InvalidTransitionError,
     MissingRequiredFieldError,
 )
-from api.deps import DatabaseDep
-from api.schemas.work_item import (
+from app.api.schemas.work_item import (
     CreateWorkItemRequest,
     TransitionRequest,
     TransitionResponse,
     WorkItemResponse,
     TransitionLogResponse,
 )
-from api.schemas.workflow import (
+from app.api.schemas.workflow import (
     WorkTypeResponse,
     WorkflowStateResponse,
     WorkflowConfigResponse,
     ErrorResponse,
 )
+from app.services.workflow_service import WorkflowMongoDBService
 
 router = APIRouter(prefix="/work-items", tags=["WorkItems"])
 
 
-async def get_workflow_service(session: DatabaseDep) -> AsyncWorkflowService:
-    """依赖注入：获取 AsyncWorkflowService 实例"""
-    return AsyncWorkflowService(session)
+def get_workflow_service() -> WorkflowMongoDBService:
+    return WorkflowMongoDBService()
 
 
-WorkflowServiceDep = Annotated[AsyncWorkflowService, Depends(get_workflow_service)]
+WorkflowServiceDep = Annotated[WorkflowMongoDBService, Depends(get_workflow_service)]
 
 
 # ==================== 事项类型和状态管理 ====================
@@ -68,8 +66,8 @@ async def get_workflow_states(service: WorkflowServiceDep):
     responses={404: {"model": ErrorResponse, "description": "类型不存在"}}
 )
 async def get_workflow_configs(
-        service: WorkflowServiceDep,
-        type_code: str = Query(..., description="事项类型编码"),
+    service: WorkflowServiceDep,
+    type_code: str = Query(..., description="事项类型编码"),
 ):
     """获取指定事项类型的所有流转配置规则"""
     configs = await service.get_workflow_configs(type_code)
@@ -87,8 +85,8 @@ async def get_workflow_configs(
     summary="创建业务事项"
 )
 async def create_work_item(
-        request: CreateWorkItemRequest,
-        service: WorkflowServiceDep,
+    request: CreateWorkItemRequest,
+    service: WorkflowServiceDep,
 ):
     """创建一个新的业务事项，初始状态为 DRAFT"""
     try:
@@ -109,13 +107,13 @@ async def create_work_item(
     summary="获取事项列表"
 )
 async def list_work_items(
-        service: WorkflowServiceDep,
-        type_code: Optional[str] = Query(None, description="按类型筛选"),
-        state: Optional[str] = Query(None, description="按状态筛选"),
-        owner_id: Optional[int] = Query(None, description="按当前处理人筛选"),
-        creator_id: Optional[int] = Query(None, description="按创建人筛选"),
-        limit: int = Query(20, ge=1, le=100, description="返回数量限制"),
-        offset: int = Query(0, ge=0, description="分页偏移"),
+    service: WorkflowServiceDep,
+    type_code: Optional[str] = Query(None, description="按类型筛选"),
+    state: Optional[str] = Query(None, description="按状态筛选"),
+    owner_id: Optional[int] = Query(None, description="按当前处理人筛选"),
+    creator_id: Optional[int] = Query(None, description="按创建人筛选"),
+    limit: int = Query(20, ge=1, le=100, description="返回数量限制"),
+    offset: int = Query(0, ge=0, description="分页偏移"),
 ):
     """
     查询业务事项列表，支持按类型、状态、处理人、创建人筛选
@@ -142,8 +140,8 @@ async def list_work_items(
     responses={404: {"model": ErrorResponse, "description": "事项不存在"}}
 )
 async def get_work_item(
-        item_id: int,
-        service: WorkflowServiceDep
+    item_id: str,
+    service: WorkflowServiceDep
 ):
     """根据 ID 获取业务事项详情"""
     try:
@@ -166,8 +164,8 @@ async def get_work_item(
     }
 )
 async def delete_work_item(
-        item_id: int,
-        service: WorkflowServiceDep,
+    item_id: str,
+    service: WorkflowServiceDep,
 ):
     """
     删除业务事项（及其所有流转日志）
@@ -195,36 +193,23 @@ async def delete_work_item(
     }
 )
 async def transition_work_item(
-        item_id: int,
-        request: TransitionRequest,
-        service: WorkflowServiceDep,
+    item_id: str,
+    request: TransitionRequest,
+    service: WorkflowServiceDep,
 ):
     """
     执行状态流转
     """
     try:
-        # 1. 先获取旧状态（用于返回响应）
-        item_before = await service.get_item_by_id(item_id)
-        if not item_before:
-            raise HTTPException(status_code=404, detail=f"事项 ID={item_id} 不存在")
-        old_state = item_before.current_state
-
-        # 2. 调用 Service 执行流转（Service 内部负责事务提交）
-        item = await service.handle_transition(
+        # 调用 Service 执行流转（Service 内部负责事务提交）
+        result = await service.handle_transition(
             work_item_id=item_id,
             action=request.action,
             operator_id=request.operator_id,
             form_data=request.form_data
         )
 
-        return TransitionResponse(
-            work_item_id=item.id,
-            from_state=old_state,
-            to_state=item.current_state,
-            action=request.action,
-            new_owner_id=item.current_owner_id,
-            work_item=item
-        )
+        return result
     except WorkItemNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except (InvalidTransitionError, MissingRequiredFieldError) as e:
@@ -243,10 +228,10 @@ async def transition_work_item(
     }
 )
 async def reassign_work_item(
-        item_id: int,
-        service: WorkflowServiceDep,
-        operator_id: int = Query(..., description="操作人ID"),
-        target_owner_id: int = Query(..., description="目标处理人ID"),
+    item_id: str,
+    service: WorkflowServiceDep,
+    operator_id: int = Query(..., description="操作人ID"),
+    target_owner_id: int = Query(..., description="目标处理人ID"),
 ):
     """
     改派任务给其他处理人（不改变状态）
@@ -268,9 +253,9 @@ async def reassign_work_item(
     summary="获取流转历史"
 )
 async def get_transition_logs(
-        item_id: int,
-        service: WorkflowServiceDep,
-        limit: int = Query(50, ge=1, le=200, description="返回数量限制"),
+    item_id: str,
+    service: WorkflowServiceDep,
+    limit: int = Query(50, ge=1, le=200, description="返回数量限制"),
 ):
     """获取指定事项的所有流转日志（按时间倒序）"""
     try:
@@ -283,13 +268,13 @@ async def get_transition_logs(
 
 @router.get(
     "/logs/batch",
-    response_model=Dict[int, List[TransitionLogResponse]],
+    response_model=Dict[str, List[TransitionLogResponse]],
     summary="批量获取事项流转日志"
 )
 async def batch_get_transition_logs(
-        service: WorkflowServiceDep,
-        item_ids: str = Query(..., description="事项ID列表，逗号分隔，如: 1,2,3"),
-        limit: int = Query(20, ge=1, le=100, description="每个事项最多返回的日志数量"),
+    service: WorkflowServiceDep,
+    item_ids: str = Query(..., description="事项ID列表，逗号分隔，如: id1,id2,id3"),
+    limit: int = Query(20, ge=1, le=100, description="每个事项最多返回的日志数量"),
 ):
     """
     批量获取多个事项的流转日志
@@ -298,11 +283,8 @@ async def batch_get_transition_logs(
 
     用途：在看板列表中展示任务的状态流转时间线
     """
-    # 解析 item_ids
-    try:
-        ids = [int(x.strip()) for x in item_ids.split(",") if x.strip()]
-    except ValueError:
-        raise HTTPException(status_code=400, detail="item_ids 格式错误，应为逗号分隔的数字")
+    # 解析 item_ids（MongoDB ObjectId 是字符串）
+    ids = [x.strip() for x in item_ids.split(",") if x.strip()]
 
     if not ids:
         return {}
@@ -315,8 +297,8 @@ async def batch_get_transition_logs(
     summary="获取可用的下一步流转"
 )
 async def get_available_transitions(
-        item_id: int,
-        service: WorkflowServiceDep,
+    item_id: str,
+    service: WorkflowServiceDep,
 ):
     """获取指定事项在当前状态下可以执行的所有流转动作"""
     try:
@@ -324,7 +306,7 @@ async def get_available_transitions(
         item = result["item"]
         return {
             "item_id": item_id,
-            "current_state": item.current_state,
+            "current_state": item["current_state"],
             "available_transitions": result["available_transitions"]
         }
     except WorkItemNotFoundError as e:

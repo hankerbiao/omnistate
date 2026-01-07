@@ -4,8 +4,9 @@
 包含事项的 CRUD 和流转相关的请求/响应模型
 """
 from datetime import datetime
-from typing import Optional, Dict, Any
-from pydantic import BaseModel, Field
+from typing import Optional, Dict, Any, List
+from pydantic import BaseModel, Field, ConfigDict
+from beanie import PydanticObjectId
 
 
 # ==================== Request Models ====================
@@ -29,7 +30,7 @@ class TransitionRequest(BaseModel):
 
 class WorkItemResponse(BaseModel):
     """业务事项响应"""
-    id: int
+    id: str
     type_code: str
     title: str
     content: str
@@ -39,14 +40,13 @@ class WorkItemResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TransitionLogResponse(BaseModel):
     """流转日志响应"""
-    id: int
-    work_item_id: int
+    id: str
+    work_item_id: str
     from_state: str
     to_state: str
     action: str
@@ -55,15 +55,17 @@ class TransitionLogResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TransitionResponse(BaseModel):
     """状态流转响应"""
-    work_item_id: int
+    work_item_id: str
     from_state: str
     to_state: str
     action: str
     new_owner_id: Optional[int]
     work_item: WorkItemResponse
+
+    model_config = ConfigDict(from_attributes=True)
+
