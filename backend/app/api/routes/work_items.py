@@ -31,6 +31,7 @@ router = APIRouter(prefix="/work-items", tags=["WorkItems"])
 
 
 def get_workflow_service() -> AsyncWorkflowService:
+    # 通过 FastAPI 依赖注入按请求构造领域服务实例
     return AsyncWorkflowService()
 
 
@@ -199,6 +200,9 @@ async def transition_work_item(
 ):
     """
     执行状态流转
+
+    该接口只负责 HTTP 层参数校验与异常到 HTTP 状态码的映射，
+    核心业务规则全部在 AsyncWorkflowService.handle_transition 中实现。
     """
     try:
         # 调用 Service 执行流转（Service 内部负责事务提交）

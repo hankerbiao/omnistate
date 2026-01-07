@@ -1,13 +1,16 @@
 """
 全局异常处理器
 
-统一处理各类异常，返回格式化的错误响应
+统一收敛业务异常与 HTTP 异常，返回结构化的错误响应：
+- 业务类错误：WorkflowError 体系
+- HTTP 协议错误：StarletteHTTPException
+- 未预料异常：统一映射为 InternalServerError，隐藏内部细节
 """
 from fastapi import Request, status
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from ..schemas.workflow import ErrorResponse
+from app.api.schemas.workflow import ErrorResponse
 from app.services import (
     WorkflowError,
     WorkItemNotFoundError,
@@ -67,4 +70,3 @@ def setup_exception_handlers(app):
     app.add_exception_handler(WorkflowError, workflow_exception_handler)
     app.add_exception_handler(StarletteHTTPException, http_exception_handler)
     app.add_exception_handler(Exception, generic_exception_handler)
-

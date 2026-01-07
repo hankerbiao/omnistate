@@ -1,5 +1,9 @@
 """
 业务实体模型 (Beanie ODM 版本)
+
+该模块同时包含：
+- MongoDB 持久化文档模型（Document）
+- 对应的 Pydantic 响应模型（用于 API 层返回）
 """
 from typing import Optional, Dict, Any, List
 from datetime import datetime, timezone
@@ -11,7 +15,7 @@ from pymongo import IndexModel, ASCENDING, DESCENDING
 # ========== Beanie 文档模型 ==========
 
 class BusWorkItemDoc(Document):
-    """业务事项 - 数据库模型"""
+    """业务事项 - 数据库模型（存储任务主体信息）"""
     type_code: str = Field(..., description="事项类型标识")
     title: str = Field(..., description="标题")
     content: str = Field(..., description="内容/描述")
@@ -39,7 +43,7 @@ class BusWorkItemDoc(Document):
 
 
 class BusFlowLogDoc(Document):
-    """流转日志 - 数据库模型"""
+    """流转日志 - 数据库模型（记录每一次状态变更轨迹）"""
     work_item_id: PydanticObjectId = Field(..., description="关联事项ID (ObjectId)")
     from_state: str = Field(..., description="变更前状态")
     to_state: str = Field(..., description="变更后状态")
@@ -93,5 +97,4 @@ class BusFlowLogModel(BaseModel):
 
     class Config:
         from_attributes = True
-
 

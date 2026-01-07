@@ -3,8 +3,8 @@
 MongoDB 数据库初始化脚本
 
 功能：
-1. 创建集合和索引
-2. 从 configs/ 目录加载初始配置数据
+1. 创建集合和索引（由 Beanie 自动完成）
+2. 从 configs/ 目录加载初始配置数据并写入 MongoDB
 """
 import asyncio
 import json
@@ -114,7 +114,7 @@ async def init_config_data():
 
 
 async def main():
-    """主函数 (Beanie ODM 版本)"""
+    """主函数 (Beanie ODM 版本)，可独立运行完成初始化"""
     log.info("开始 MongoDB 初始化...")
 
     client = AsyncMongoClient(settings.MONGO_URI)

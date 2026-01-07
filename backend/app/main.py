@@ -18,6 +18,7 @@ from app.models import (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # 应用生命周期钩子：统一管理 Mongo 连接和 Beanie 初始化
     log.info("正在连接 MongoDB...")
 
     client = AsyncMongoClient(settings.MONGO_URI)
@@ -26,8 +27,10 @@ async def lifespan(app: FastAPI):
         await client.admin.command('ping')
         log.success("MongoDB 连接成功")
 
+        # 注入全局 Mongo 客户端，供需要底层访问或事务的代码使用
         set_mongo_client(client)
 
+        # 初始化 Beanie ODM，注册所有文档模型并确保索引
         await init_beanie(
             database=client[settings.MONGO_DB_NAME],
             document_models=[
@@ -57,6 +60,7 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# CORS 与中间件、错误处理和业务路由都在这里统一挂载
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
@@ -72,6 +76,7 @@ app.include_router(api_router)
 
 @app.get("/", summary="健康检查")
 def root():
+    # 简单健康检查，用于基础存活探测
     return {"status": "ok", "message": "Workflow API 服务运行中 (MongoDB)"}
 
 
