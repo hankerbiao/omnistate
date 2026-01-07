@@ -20,19 +20,19 @@ const TaskList: React.FC = () => {
   const [selectedTask, setSelectedTask] = useState<WorkItem | null>(null);
   const [filterState, setFilterState] = useState<string>("all");
   const [expandedTasks, setExpandedTasks] = useState<Set<number>>(new Set());
+  const [sortField, setSortField] = useState<"created_at" | "updated_at" | "title">(
+    "created_at"
+  );
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
+  const [searchKeyword, setSearchKeyword] = useState<string>("");
 
-  const fetchTasks = async () => {
+  const loadTasks = async (fetcher: () => Promise<WorkItem[]>) => {
     try {
       setLoading(true);
-      const data = await workItemApi.list({
-        ownerId: currentUser.id,
-        creatorId: currentUser.id,
-        limit: 100,
-      });
+      const data = await fetcher();
       setTasks(data);
       setError(null);
 
-      // 获取所有任务的流转日志
       if (data.length > 0) {
         const itemIds = data.map((t) => t.id);
         const logs = await workItemApi.batchGetLogs(itemIds);
@@ -43,6 +43,43 @@ const TaskList: React.FC = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const fetchTasks = async () => {
+    await loadTasks(() =>
+      workItemApi.list({
+        ownerId: currentUser.id,
+        creatorId: currentUser.id,
+        limit: 100,
+      })
+    );
+  };
+
+  const applySortedQuery = async () => {
+    await loadTasks(() =>
+      workItemApi.sortedList({
+        ownerId: currentUser.id,
+        creatorId: currentUser.id,
+        limit: 100,
+        orderBy: sortField,
+        direction: sortDirection,
+      })
+    );
+  };
+
+  const applySearch = async () => {
+    const keyword = searchKeyword.trim();
+    if (!keyword) {
+      return;
+    }
+    await loadTasks(() =>
+      workItemApi.search({
+        keyword,
+        ownerId: currentUser.id,
+        creatorId: currentUser.id,
+        limit: 100,
+      })
+    );
   };
 
   useEffect(() => {
@@ -166,6 +203,44 @@ const TaskList: React.FC = () => {
             {stateLabels[state]}
           </button>
         ))}
+
+        <input
+          className="search-input"
+          type="text"
+          value={searchKeyword}
+          onChange={(e) => setSearchKeyword(e.target.value)}
+          placeholder="按标题或内容搜索"
+        />
+        <button className="filter-btn" onClick={applySearch}>
+          搜索
+        </button>
+
+        <select
+          className="filter-select"
+          value={sortField}
+          onChange={(e) =>
+            setSortField(
+              e.target.value as "created_at" | "updated_at" | "title"
+            )
+          }
+        >
+          <option value="created_at">按创建时间</option>
+          <option value="updated_at">按更新时间</option>
+          <option value="title">按标题</option>
+        </select>
+        <select
+          className="filter-select"
+          value={sortDirection}
+          onChange={(e) =>
+            setSortDirection(e.target.value as "asc" | "desc")
+          }
+        >
+          <option value="desc">降序</option>
+          <option value="asc">升序</option>
+        </select>
+        <button className="filter-btn" onClick={applySortedQuery}>
+          应用排序
+        </button>
       </div>
 
       {filteredTasks.length === 0 ? (

@@ -150,6 +150,54 @@ export const workItemApi = {
     return response.data;
   },
 
+  sortedList: async (params?: {
+    typeCode?: string;
+    state?: string;
+    ownerId?: number;
+    creatorId?: number;
+    limit?: number;
+    offset?: number;
+    orderBy?: "created_at" | "updated_at" | "title";
+    direction?: "asc" | "desc";
+  }): Promise<WorkItem[]> => {
+    const response = await api.get("/work-items/sorted", {
+      params: {
+        type_code: params?.typeCode,
+        state: params?.state,
+        owner_id: params?.ownerId,
+        creator_id: params?.creatorId,
+        limit: params?.limit ?? 100,
+        offset: params?.offset ?? 0,
+        order_by: params?.orderBy ?? "created_at",
+        direction: params?.direction ?? "desc",
+      },
+    });
+    return response.data;
+  },
+
+  search: async (options: {
+    keyword: string;
+    typeCode?: string;
+    state?: string;
+    ownerId?: number;
+    creatorId?: number;
+    limit?: number;
+    offset?: number;
+  }): Promise<WorkItem[]> => {
+    const response = await api.get("/work-items/search", {
+      params: {
+        keyword: options.keyword,
+        type_code: options.typeCode,
+        state: options.state,
+        owner_id: options.ownerId,
+        creator_id: options.creatorId,
+        limit: options.limit ?? 100,
+        offset: options.offset ?? 0,
+      },
+    });
+    return response.data;
+  },
+
   // 获取事项详情
   get: async (itemId: number): Promise<WorkItem> => {
     const response = await api.get(`/work-items/${itemId}`);

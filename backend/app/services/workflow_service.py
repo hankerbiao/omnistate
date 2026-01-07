@@ -47,7 +47,6 @@ class AsyncWorkflowService:
             limit: int = 20,
             offset: int = 0
     ) -> List[Dict]:
-        # 综合查询业务事项列表，支持按类型、状态、当前处理人、创建人等多条件过滤
         query = BusWorkItemDoc.find(BusWorkItemDoc.is_deleted == False)
 
         if type_code:
@@ -55,7 +54,6 @@ class AsyncWorkflowService:
         if state:
             query = query.find(BusWorkItemDoc.current_state == state)
 
-        # owner_id 与 creator_id 使用 OR 关系，方便同时看到「自己创建」或「自己负责」的任务
         or_conditions = []
         if owner_id is not None:
             or_conditions.append(BusWorkItemDoc.current_owner_id == owner_id)
@@ -66,7 +64,86 @@ class AsyncWorkflowService:
             query = query.find({"$or": or_conditions})
 
         docs = await query.sort("-created_at").skip(offset).limit(limit).to_list()
-        # 转成字典时显式写入字符串形式的 id，方便前端直接使用
+        results = []
+        for doc in docs:
+            d = doc.model_dump()
+            d["id"] = str(doc.id)
+            results.append(d)
+        return results
+
+    async def list_items_sorted(
+            self,
+            type_code: Optional[str] = None,
+            state: Optional[str] = None,
+            owner_id: Optional[int] = None,
+            creator_id: Optional[int] = None,
+            limit: int = 20,
+            offset: int = 0,
+            order_by: str = "created_at",
+            direction: str = "desc"
+    ) -> List[Dict]:
+        query = BusWorkItemDoc.find(BusWorkItemDoc.is_deleted == False)
+
+        if type_code:
+            query = query.find(BusWorkItemDoc.type_code == type_code)
+        if state:
+            query = query.find(BusWorkItemDoc.current_state == state)
+
+        or_conditions = []
+        if owner_id is not None:
+            or_conditions.append(BusWorkItemDoc.current_owner_id == owner_id)
+        if creator_id is not None:
+            or_conditions.append(BusWorkItemDoc.creator_id == creator_id)
+
+        if or_conditions:
+            query = query.find({"$or": or_conditions})
+
+        allowed_fields = {"created_at": "created_at", "updated_at": "updated_at", "title": "title"}
+        field = allowed_fields.get(order_by, "created_at")
+        prefix = "-" if direction.lower() == "desc" else ""
+        sort_expr = f"{prefix}{field}"
+
+        docs = await query.sort(sort_expr).skip(offset).limit(limit).to_list()
+        results = []
+        for doc in docs:
+            d = doc.model_dump()
+            d["id"] = str(doc.id)
+            results.append(d)
+        return results
+
+    async def search_items(
+            self,
+            keyword: str,
+            type_code: Optional[str] = None,
+            state: Optional[str] = None,
+            owner_id: Optional[int] = None,
+            creator_id: Optional[int] = None,
+            limit: int = 20,
+            offset: int = 0
+    ) -> List[Dict]:
+        query = BusWorkItemDoc.find(BusWorkItemDoc.is_deleted == False)
+
+        if type_code:
+            query = query.find(BusWorkItemDoc.type_code == type_code)
+        if state:
+            query = query.find(BusWorkItemDoc.current_state == state)
+
+        or_conditions = []
+        if owner_id is not None:
+            or_conditions.append(BusWorkItemDoc.current_owner_id == owner_id)
+        if creator_id is not None:
+            or_conditions.append(BusWorkItemDoc.creator_id == creator_id)
+
+        if or_conditions:
+            query = query.find({"$or": or_conditions})
+
+        search_conditions = [
+            {"title": {"$regex": keyword, "$options": "i"}},
+            {"content": {"$regex": keyword, "$options": "i"}},
+        ]
+        query = query.find({"$or": search_conditions})
+
+        docs = await query.sort("-created_at").skip(offset).limit(limit).to_list()
         results = []
         for doc in docs:
             d = doc.model_dump()

@@ -135,6 +135,60 @@ async def list_work_items(
 
 
 @router.get(
+    "/sorted",
+    response_model=List[WorkItemResponse],
+    summary="获取排序后的事项列表"
+)
+async def list_work_items_sorted(
+    service: WorkflowServiceDep,
+    type_code: Optional[str] = Query(None, description="按类型筛选"),
+    state: Optional[str] = Query(None, description="按状态筛选"),
+    owner_id: Optional[int] = Query(None, description="按当前处理人筛选"),
+    creator_id: Optional[int] = Query(None, description="按创建人筛选"),
+    limit: int = Query(20, ge=1, le=100, description="返回数量限制"),
+    offset: int = Query(0, ge=0, description="分页偏移"),
+    order_by: str = Query("created_at", description="排序字段: created_at/updated_at/title"),
+    direction: str = Query("desc", description="排序方向: asc/desc"),
+):
+    return await service.list_items_sorted(
+        type_code=type_code,
+        state=state,
+        owner_id=owner_id,
+        creator_id=creator_id,
+        limit=limit,
+        offset=offset,
+        order_by=order_by,
+        direction=direction,
+    )
+
+
+@router.get(
+    "/search",
+    response_model=List[WorkItemResponse],
+    summary="模糊搜索事项"
+)
+async def search_work_items(
+    service: WorkflowServiceDep,
+    keyword: str = Query(..., min_length=1, description="关键词，模糊匹配标题和内容"),
+    type_code: Optional[str] = Query(None, description="按类型筛选"),
+    state: Optional[str] = Query(None, description="按状态筛选"),
+    owner_id: Optional[int] = Query(None, description="按当前处理人筛选"),
+    creator_id: Optional[int] = Query(None, description="按创建人筛选"),
+    limit: int = Query(20, ge=1, le=100, description="返回数量限制"),
+    offset: int = Query(0, ge=0, description="分页偏移"),
+):
+    return await service.search_items(
+        keyword=keyword,
+        type_code=type_code,
+        state=state,
+        owner_id=owner_id,
+        creator_id=creator_id,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get(
     "/{item_id}",
     response_model=WorkItemResponse,
     summary="获取事项详情",
