@@ -25,16 +25,16 @@ from app.api.schemas.workflow import (
     WorkflowConfigResponse,
     ErrorResponse,
 )
-from app.services.workflow_service import WorkflowMongoDBService
+from app.services.workflow_service import AsyncWorkflowService
 
 router = APIRouter(prefix="/work-items", tags=["WorkItems"])
 
 
-def get_workflow_service() -> WorkflowMongoDBService:
-    return WorkflowMongoDBService()
+def get_workflow_service() -> AsyncWorkflowService:
+    return AsyncWorkflowService()
 
 
-WorkflowServiceDep = Annotated[WorkflowMongoDBService, Depends(get_workflow_service)]
+WorkflowServiceDep = Annotated[AsyncWorkflowService, Depends(get_workflow_service)]
 
 
 # ==================== 事项类型和状态管理 ====================
