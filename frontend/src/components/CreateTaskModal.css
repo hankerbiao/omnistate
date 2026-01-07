@@ -1,5 +1,51 @@
+/* CreateTaskModal 独立样式 */
+
 .create-modal {
+  background: #fff;
+  border-radius: 16px;
+  width: 100%;
   max-width: 500px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  display: flex;
+  flex-direction: column;
+}
+
+/* 兼容 .modal-content 类名 */
+.modal-content.create-modal {
+  /* 确保优先级 */
+  background: #fff;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 18px;
+  color: #111827;
+  font-weight: 600;
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  font-size: 24px;
+  color: #9ca3af;
+  cursor: pointer;
+  padding: 4px;
+  line-height: 1;
+  transition: color 0.2s;
+}
+
+.close-btn:hover {
+  color: #1f2937;
 }
 
 .create-form {
@@ -7,7 +53,7 @@
 }
 
 .create-form .form-group {
-  margin-bottom: 16px;
+  margin-bottom: 20px;
 }
 
 .create-form label {
@@ -15,7 +61,7 @@
   font-size: 14px;
   font-weight: 500;
   color: #374151;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 
 .create-form select,
@@ -27,10 +73,11 @@
   border-radius: 8px;
   font-size: 14px;
   box-sizing: border-box;
+  transition: border-color 0.2s, box-shadow 0.2s;
 }
 
 .create-form textarea {
-  min-height: 80px;
+  min-height: 100px;
   resize: vertical;
 }
 
@@ -45,27 +92,30 @@
 .creator-info {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  background: #f3f4f6;
+  gap: 12px;
+  padding: 12px;
+  background: #f9fafb;
   border-radius: 8px;
+  border: 1px solid #f3f4f6;
 }
 
 .creator-avatar {
   width: 32px;
   height: 32px;
   border-radius: 50%;
+  object-fit: cover;
 }
 
 .creator-info span {
   font-size: 14px;
-  color: #374151;
+  color: #4b5563;
+  font-weight: 500;
 }
 
 .form-actions {
   display: flex;
   gap: 12px;
-  margin-top: 24px;
+  margin-top: 32px;
 }
 
 .cancel-btn {
@@ -78,13 +128,33 @@
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
+  transition: all 0.2s;
 }
 
 .cancel-btn:hover {
   background: #f9fafb;
+  border-color: #9ca3af;
 }
 
-.form-actions .submit-btn {
+.create-form .submit-btn {
   flex: 1;
   margin: 0;
+  padding: 10px 20px;
+  background: #3b82f6;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.create-form .submit-btn:hover {
+  background: #2563eb;
+}
+
+.create-form .submit-btn:disabled {
+  background: #93c5fd;
+  cursor: not-allowed;
 }

@@ -189,17 +189,18 @@ const TaskList: React.FC = () => {
                 onClick={() => setSelectedTask(task)}
               >
                 <div className="task-card-header">
-                  <div>
+                  <div className="header-tags">
                     <span className="task-type">{task.type_code}</span>
                     {isCreator && <span className="task-badge">我创建的</span>}
                   </div>
-                  <button
-                    className={`expand-btn ${isExpanded ? "expanded" : ""}`}
-                    onClick={(e) => toggleExpand(e, task.id)}
+                  <span
+                    className="task-state-badge"
+                    style={{ backgroundColor: stateColors[task.current_state] }}
                   >
-                    {isExpanded ? "收起" : "查看流程"}
-                  </button>
+                    {stateLabels[task.current_state] || task.current_state}
+                  </span>
                 </div>
+                
                 <h3 className="task-title">{task.title}</h3>
                 <p className="task-content">{task.content}</p>
 
@@ -270,22 +271,19 @@ const TaskList: React.FC = () => {
                 )}
 
                 <div className="task-meta">
-                  <span className="task-creator">
-                    创建者: {creator?.name || `用户 ${task.creator_id}`}
-                  </span>
                   <span className="task-owner">
-                    当前:{" "}
-                    {currentOwner?.name || `用户 ${task.current_owner_id}` || "无"}
+                    当前: {currentOwner?.name || `用户 ${task.current_owner_id}` || "无"}
                   </span>
                 </div>
+                
                 <div className="task-footer">
-                  <span
-                    className="task-state"
-                    style={{ backgroundColor: stateColors[task.current_state] }}
-                  >
-                    {stateLabels[task.current_state] || task.current_state}
-                  </span>
                   <span className="task-id">#{task.id}</span>
+                  <button
+                    className={`expand-btn ${isExpanded ? "expanded" : ""}`}
+                    onClick={(e) => toggleExpand(e, task.id)}
+                  >
+                    {isExpanded ? "收起" : "查看流程"}
+                  </button>
                 </div>
               </div>
             );

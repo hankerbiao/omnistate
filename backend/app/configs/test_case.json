@@ -13,14 +13,14 @@
       },
       {
         "from_state": "ASSIGNED",
-        "action": "START_DEVELOP",
+        "action": "START_WRITE",
         "to_state": "DEVELOPING",
         "target_owner_strategy": "KEEP",
         "required_fields": []
       },
       {
         "from_state": "DEVELOPING",
-        "action": "FINISH_DEVELOP",
+        "action": "SUBMIT_REVIEW",
         "to_state": "PENDING_REVIEW",
         "target_owner_strategy": "TO_SPECIFIC_USER",
         "required_fields": ["target_owner_id"]
@@ -36,8 +36,8 @@
         "from_state": "PENDING_REVIEW",
         "action": "REJECT",
         "to_state": "DEVELOPING",
-        "target_owner_strategy": "TO_CREATOR",
-        "required_fields": ["comment"]
+        "target_owner_strategy": "TO_SPECIFIC_USER",
+        "required_fields": ["target_owner_id", "comment"]
       }
     ]
   }

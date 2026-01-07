@@ -55,7 +55,7 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
     setTransitionLoading(true);
     try {
       const formData: Record<string, any> = {};
-      if (reassignUserId && action !== "REJECT") {
+      if (reassignUserId) {
         formData.target_owner_id = reassignUserId;
       }
       if (comment) {
@@ -101,7 +101,12 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
     }
     setReassignLoading(true);
     try {
-      await workItemApi.reassign(task.id, currentUser.id, reassignUserId);
+      await workItemApi.reassign(
+        task.id,
+        currentUser.id,
+        reassignUserId,
+        comment || undefined
+      );
       onRefresh();
       onClose();
     } catch (err: any) {
@@ -136,230 +141,214 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-header">
-          <h2>任务详情</h2>
-          <div className="header-actions">
-            <button className="delete-btn" onClick={handleDelete}>
-              删除任务
-            </button>
-            <button className="close-btn" onClick={onClose}>
-              ×
-            </button>
+      <div className="modal-content modern-layout" onClick={(e) => e.stopPropagation()}>
+        {/* 顶部栏：极简信息 */}
+        <header className="modern-header">
+          <div className="header-left">
+            <span className="task-id">#{task.id}</span>
+            <span 
+              className="status-badge-large"
+              style={{ backgroundColor: stateColors[task.current_state] }}
+            >
+              {stateLabels[task.current_state] || task.current_state}
+            </span>
           </div>
-        </div>
-
-        <div className="modal-body">
-          {/* 基本信息 */}
-          <div className="task-info">
-            <div className="info-row">
-              <span className="label">ID:</span>
-              <span>#{task.id}</span>
-            </div>
-            <div className="info-row">
-              <span className="label">类型:</span>
-              <span>{task.type_code}</span>
-            </div>
-            <div className="info-row">
-              <span className="label">状态:</span>
-              <span
-                className="state-badge"
-                style={{ backgroundColor: stateColors[task.current_state] }}
-              >
-                {stateLabels[task.current_state] || task.current_state}
-              </span>
-            </div>
-            <div className="info-row">
-              <span className="label">标题:</span>
-              <span>{task.title}</span>
-            </div>
-            <div className="info-row">
-              <span className="label">内容:</span>
-              <p>{task.content}</p>
-            </div>
-            <div className="info-row">
-              <span className="label">当前处理人:</span>
-              <span>
-                {currentOwner
-                  ? `${currentOwner.name} (${currentOwner.role})`
-                  : `用户 ${task.current_owner_id}`}
-              </span>
-            </div>
-            <div className="info-row">
-              <span className="label">创建者:</span>
-              <span>
-                {mockUsers.find((u) => u.id === task.creator_id)?.name ||
-                  `用户 ${task.creator_id}`}
-              </span>
-            </div>
+          <div className="header-right">
+             <button className="icon-btn delete-btn-simple" onClick={handleDelete} title="删除任务">
+               🗑
+             </button>
+             <button className="icon-btn close-btn-simple" onClick={onClose}>
+               ✕
+             </button>
           </div>
+        </header>
 
-          {/* 改派操作（独立区域，不走工作流配置） */}
-          {reassignableUsers.length > 0 && task.current_state !== "DONE" && (
-            <div className="reassign-section">
-              <h3>改派任务</h3>
-              <div className="reassign-form">
-                <div className="form-group">
-                  <label>指派给:</label>
-                  <select
-                    value={reassignUserId || ""}
-                    onChange={(e) => setReassignUserId(Number(e.target.value))}
-                  >
-                    <option value="">请选择用户</option>
-                    {reassignableUsers.map((user) => (
-                      <option key={user.id} value={user.id}>
-                        {user.name} - {user.role}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <button
-                  className="submit-btn reassign-btn"
-                  onClick={handleReassign}
-                  disabled={reassignLoading || !reassignUserId}
-                >
-                  {reassignLoading ? "改派中..." : "确认改派"}
-                </button>
-              </div>
+        <div className="modern-body">
+          {/* 左侧：核心内容与操作 */}
+          <div className="main-column">
+            <h1 className="task-title">{task.title}</h1>
+            
+            <div className="meta-grid">
+               <div className="meta-item">
+                 <label>类型</label>
+                 <span>{task.type_code}</span>
+               </div>
+               <div className="meta-item">
+                 <label>创建人</label>
+                 <span>{mockUsers.find((u) => u.id === task.creator_id)?.name || task.creator_id}</span>
+               </div>
+               <div className="meta-item">
+                 <label>当前处理</label>
+                 <span className="owner-highlight">
+                    {currentOwner ? currentOwner.name : "未指派"}
+                 </span>
+               </div>
             </div>
-          )}
 
-          {/* 可执行操作 */}
-          {loading ? (
-            <div className="loading">加载中...</div>
-          ) : (
-            <div className="transitions-section">
-              <h3>状态流转</h3>
-              {transitions?.available_transitions.length === 0 ? (
-                <p className="no-action">当前状态无可执行操作</p>
+            <div className="description-box">
+              <label>描述</label>
+              <p>{task.content || "无描述内容"}</p>
+            </div>
+
+            {/* 操作区域 */}
+            <div className="action-section">
+              <h3>处理任务</h3>
+              {loading ? (
+                <div className="loading-dots">加载可用操作...</div>
               ) : (
-                <div className="action-list">
+                <div className="action-buttons-grid">
+                  {/* 状态流转按钮 */}
                   {transitions?.available_transitions.map((t) => (
-                    <div key={t.action} className="action-item">
-                      <button
-                        className={`action-btn ${
-                          selectedAction === t.action ? "selected" : ""
-                        } ${t.action === "REJECT" ? "action-reject" : ""}`}
-                        onClick={() => {
-                          setSelectedAction(t.action);
-                          // 重置相关字段
+                    <button
+                      key={t.action}
+                      className={`action-chip ${t.action === "REJECT" ? "reject" : "primary"} ${selectedAction === t.action ? "active" : ""}`}
+                      onClick={() => {
+                          setSelectedAction(selectedAction === t.action ? null : t.action);
                           setReassignUserId(null);
                           setComment("");
-                        }}
-                      >
-                        <span className="action-main">
-                          {t.action} → {stateLabels[t.to_state] || t.to_state}
-                        </span>
-                        <span className="action-owner">
-                          → {getTargetOwnerDisplay(t.target_owner_strategy, reassignUserId || undefined)}
-                        </span>
-                      </button>
-                      {selectedAction === t.action && (
-                        <div className="action-form">
-                          {t.required_fields.includes("target_owner_id") && (
-                            <div className="form-group">
-                              <label>指派给:</label>
+                      }}
+                    >
+                      {t.action}
+                      <span className="arrow">→</span>
+                      {stateLabels[t.to_state] || t.to_state}
+                    </button>
+                  ))}
+                  
+                  {/* 改派按钮 (作为一种特殊操作) */}
+                  {reassignableUsers.length > 0 && task.current_state !== "DONE" && (
+                     <button 
+                       className={`action-chip secondary ${selectedAction === "REASSIGN" ? "active" : ""}`}
+                       onClick={() => {
+                         setSelectedAction(selectedAction === "REASSIGN" ? null : "REASSIGN");
+                         setReassignUserId(null);
+                         setComment("");
+                       }}
+                     >
+                       改派任务
+                     </button>
+                  )}
+                </div>
+              )}
+
+              {/* 动态操作表单 (展开式) */}
+              {selectedAction && selectedAction !== "REASSIGN" && (
+                <div className="action-form-panel">
+                  {(() => {
+                    const t = transitions?.available_transitions.find(tr => tr.action === selectedAction);
+                    if (!t) return null;
+                    return (
+                      <>
+                        <div className="form-row">
+                           {t.required_fields.includes("target_owner_id") && (
+                            <div className="form-field">
+                              <label>指派给</label>
                               <select
                                 value={reassignUserId || ""}
-                                onChange={(e) =>
-                                  setReassignUserId(Number(e.target.value))
-                                }
+                                onChange={(e) => setReassignUserId(Number(e.target.value))}
                               >
-                                <option value="">请选择用户</option>
+                                <option value="">选择处理人...</option>
                                 {mockUsers
                                   .filter((u) => u.id !== currentUser.id)
                                   .map((user) => (
-                                    <option key={user.id} value={user.id}>
-                                      {user.name} - {user.role}
-                                    </option>
+                                    <option key={user.id} value={user.id}>{user.name}</option>
                                   ))}
                               </select>
                             </div>
-                          )}
-                          {t.required_fields.includes("priority") && (
-                            <div className="form-group">
-                              <label>优先级:</label>
-                              <select
-                                value={priority}
-                                onChange={(e) => setPriority(e.target.value)}
-                              >
-                                <option value="">请选择优先级</option>
+                           )}
+                           {t.required_fields.includes("priority") && (
+                            <div className="form-field">
+                              <label>优先级</label>
+                              <select value={priority} onChange={(e) => setPriority(e.target.value)}>
+                                <option value="">选择...</option>
                                 <option value="P0">P0 - 紧急</option>
                                 <option value="P1">P1 - 高</option>
                                 <option value="P2">P2 - 中</option>
-                                <option value="P3">P3 - 低</option>
                               </select>
                             </div>
-                          )}
-                          {t.required_fields.includes("comment") && (
-                            <div className="form-group">
-                              <label>备注:</label>
-                              <textarea
-                                value={comment}
-                                onChange={(e) => setComment(e.target.value)}
-                                placeholder="请输入备注"
-                              />
-                            </div>
-                          )}
-                          <button
-                            className="submit-btn"
-                            onClick={() => handleTransition(t.action)}
-                            disabled={transitionLoading}
-                          >
-                            {transitionLoading ? "处理中..." : "确认执行"}
-                          </button>
+                           )}
                         </div>
-                      )}
-                    </div>
-                  ))}
+                        <div className="form-field">
+                           <input 
+                             type="text" 
+                             placeholder="添加备注..." 
+                             value={comment}
+                             onChange={(e) => setComment(e.target.value)}
+                             className="simple-input"
+                           />
+                        </div>
+                        <div className="form-actions">
+                           <button className="confirm-btn" onClick={() => handleTransition(t.action)} disabled={transitionLoading}>
+                             {transitionLoading ? "提交中..." : "确认流转"}
+                           </button>
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
               )}
-            </div>
-          )}
 
-          {/* 操作历史 */}
-          <div className="logs-section">
-            <h3>操作历史</h3>
-            {logs.length === 0 ? (
-              <p className="no-logs">暂无操作记录</p>
-            ) : (
-              <div className="log-list">
-                {logs.map((log) => (
-                  <div key={log.id} className="log-item">
-                    <div className="log-header">
-                      <span
-                        className="log-state"
-                        style={{ backgroundColor: stateColors[log.from_state] }}
+              {/* 改派表单 */}
+              {selectedAction === "REASSIGN" && (
+                 <div className="action-form-panel">
+                    <div className="form-field">
+                      <label>改派给</label>
+                      <select
+                        value={reassignUserId || ""}
+                        onChange={(e) => setReassignUserId(Number(e.target.value))}
                       >
-                        {stateLabels[log.from_state] || log.from_state}
-                      </span>
-                      <span className="log-action">{log.action}</span>
-                      <span
-                        className="log-state"
-                        style={{ backgroundColor: stateColors[log.to_state] }}
-                      >
-                        {stateLabels[log.to_state] || log.to_state}
-                      </span>
+                        <option value="">选择新处理人...</option>
+                        {reassignableUsers.map((user) => (
+                          <option key={user.id} value={user.id}>{user.name}</option>
+                        ))}
+                      </select>
                     </div>
-                    <div className="log-meta">
-                      <span>
-                        操作人:{" "}
-                        {mockUsers.find((u) => u.id === log.operator_id)?.name ||
-                          `用户 ${log.operator_id}`}
-                      </span>
-                      <span>
-                        {new Date(log.created_at).toLocaleString("zh-CN")}
-                      </span>
+                    <div className="form-field">
+                         <input 
+                           type="text" 
+                           placeholder="改派备注..." 
+                           value={comment}
+                           onChange={(e) => setComment(e.target.value)}
+                           className="simple-input"
+                         />
                     </div>
-                    {log.payload && Object.keys(log.payload).length > 0 && (
-                      <pre className="log-payload">
-                        {JSON.stringify(log.payload, null, 2)}
-                      </pre>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
+                    <div className="form-actions">
+                       <button className="confirm-btn" onClick={handleReassign} disabled={reassignLoading || !reassignUserId}>
+                         {reassignLoading ? "提交中..." : "确认改派"}
+                       </button>
+                    </div>
+                 </div>
+              )}
+            </div>
+          </div>
+
+          {/* 右侧：时间轴 */}
+          <div className="timeline-column">
+             <h3>流转时间轴</h3>
+             <div className="timeline-container">
+               {logs.length === 0 ? (
+                 <div className="empty-timeline">暂无记录</div>
+               ) : (
+                 logs.map((log, index) => (
+                   <div key={log.id} className="timeline-item">
+                     <div className="timeline-line"></div>
+                     <div className="timeline-dot" style={{ backgroundColor: stateColors[log.to_state] }}></div>
+                     <div className="timeline-content">
+                        <div className="timeline-header">
+                           <span className="timeline-action">{log.action}</span>
+                           <span className="timeline-date">{new Date(log.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                        </div>
+                        <div className="timeline-desc">
+                           {mockUsers.find((u) => u.id === log.operator_id)?.name || log.operator_id} 
+                           <span className="state-arrow"> {stateLabels[log.from_state]} → {stateLabels[log.to_state]}</span>
+                        </div>
+                        {log.payload?.remark && (
+                          <div className="timeline-remark">“{log.payload.remark}”</div>
+                        )}
+                     </div>
+                   </div>
+                 ))
+               )}
+             </div>
           </div>
         </div>
       </div>

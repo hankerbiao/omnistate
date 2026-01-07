@@ -200,12 +200,14 @@ export const workItemApi = {
   reassign: async (
     itemId: number,
     operatorId: number,
-    targetOwnerId: number
+    targetOwnerId: number,
+    remark?: string
   ): Promise<WorkItem> => {
     const response = await api.post(`/work-items/${itemId}/reassign`, null, {
       params: {
         operator_id: operatorId,
         target_owner_id: targetOwnerId,
+        remark,
       },
     });
     return response.data;
@@ -220,13 +222,18 @@ export const workItemApi = {
 
 // 状态颜色映射
 export const stateColors: Record<string, string> = {
-  DRAFT: "#6b7280",
-  PENDING_AUDIT: "#f59e0b",
-  ASSIGNED: "#3b82f6",
-  DEVELOPING: "#8b5cf6",
-  PENDING_REVIEW: "#06b6d4",
-  DONE: "#10b981",
-  REJECTED: "#ef4444",
+  DRAFT: "#9ca3af",          // Gray 400
+  PENDING_REVIEW: "#f59e0b", // Amber 500 (待评审)
+  PENDING_AUDIT: "#f59e0b",  // 兼容旧数据
+  PENDING_DEVELOP: "#ec4899",// Pink 500 (待开发)
+  DEVELOPING: "#3b82f6",     // Blue 500 (开发中)
+  PENDING_TEST: "#8b5cf6",   // Violet 500 (待测试)
+  PENDING_UAT: "#f97316",    // Orange 500 (待验收)
+  PENDING_RELEASE: "#06b6d4",// Cyan 500 (待上线)
+  RELEASED: "#10b981",       // Emerald 500 (已上线)
+  DONE: "#10b981",           // 兼容旧数据
+  ASSIGNED: "#6366f1",       // Indigo 500
+  REJECTED: "#ef4444",       // Red 500
 };
 
 // 状态中文映射
@@ -236,6 +243,11 @@ export const stateLabels: Record<string, string> = {
   ASSIGNED: "已指派",
   DEVELOPING: "开发中",
   PENDING_REVIEW: "待评审",
+  PENDING_DEVELOP: "待开发",
+  PENDING_TEST: "待测试",
+  PENDING_UAT: "待验收",
+  PENDING_RELEASE: "待上线",
+  RELEASED: "已上线",
   DONE: "已完成",
   REJECTED: "已拒绝",
 };

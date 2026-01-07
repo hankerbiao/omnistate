@@ -4,57 +4,112 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-A configuration-driven workflow/state machine system built with Python, SQLModel, and PostgreSQL. The system manages business item lifecycles through configurable state transitions without hardcoding workflow logic.
+A configuration-driven workflow/state machine system built with Python, FastAPI, Beanie ODM, and MongoDB. Manages business item lifecycles through configurable state transitions without hardcoding workflow logic.
 
 ## Common Commands
 
 ```bash
-# Run workflow tests
-python test_complex_workflows.py
+# Run MongoDB initialization (seeds config from JSON files)
+cd backend && python init_mongodb.py
 
-# Install dependencies
-pip install -r requirements.txt
+# Start backend service
+cd backend && python -m app.main
+
+# Start frontend development server
+cd frontend && npm install && npm run dev
 ```
 
 ## Architecture
 
-### Core Components
+### Stack
+- **Backend**: FastAPI + Beanie ODM (MongoDB async driver)
+- **Frontend**: Vite + React + TypeScript
+- **Database**: MongoDB (async)
 
-**Models (`models/`)**
-- `system.py` - System configuration tables: `SysWorkType`, `SysWorkflowState`, `SysWorkflowConfig`, and `OwnerStrategy` enum
-- `business.py` - Business entities: `BusWorkItem` (stateful items) and `BusFlowLog` (audit trail)
+### Directory Structure
 
-**Services (`services/`)**
-- `workflow_service.py` - Core FSM engine. Entry points:
-  - `create_item()` - Create new business item in DRAFT state
-  - `handle_transition()` - Execute state transitions with validation
-  - `get_next_transition()` - Query transition rules from config
+```
+backend/
+├── app/
+│   ├── api/              # FastAPI routes, schemas, error handlers
+│   ├── configs/          # JSON workflow configurations
+│   ├── core/             # Logger, MongoDB client
+│   ├── db/               # Database configuration (settings)
+│   ├── models/           # Beanie Document models & Pydantic schemas
+│   ├── services/         # Business logic (AsyncWorkflowService)
+│   ├── init_mongodb.py   # DB initialization script
+│   └── main.py           # FastAPI app entry point
+frontend/                 # Vite + React + TypeScript app
+```
 
-**Database (`db/`)**
-- `relational.py` - Contains `init_db()` (DDL) and `init_mock_config()` (seeding from JSON)
+### Key Models (`backend/app/models/`)
+
+**System Config Documents**:
+- `SysWorkTypeDoc` - Business item types (REQUIREMENT, TEST_CASE)
+- `SysWorkflowStateDoc` - Workflow states with `is_end` flag
+- `SysWorkflowConfigDoc` - Transition rules: `type_code` + `from_state` + `action` → `to_state`
+
+**Business Documents**:
+- `BusWorkItemDoc` - Stateful items with `current_state`, `current_owner_id`, `creator_id`
+- `BusFlowLogDoc` - Audit trail linking to work items
+
+### Core Service (`backend/app/services/workflow_service.py`)
+
+Entry points:
+- `create_item()` - Creates item in DRAFT state
+- `handle_transition()` - Validates and executes state transitions
+- `get_item_with_transitions()` - Returns item + available next actions
+- `list_items()` - Filters by type_code, state, owner_id, creator_id (OR logic)
 
 ### Configuration-Driven Design
 
-All workflow rules are defined in `configs/workflow_initial_data.json`:
-- `work_types` - Business item types (REQUIREMENT, TEST_CASE)
-- `states` - Valid states (DRAFT, PENDING_AUDIT, etc.)
-- `workflow_configs` - Transition rules defining from_state + action → to_state
+Workflow rules defined in `backend/app/configs/*.json`:
+```json
+{
+  "work_types": [["REQUIREMENT", "需求"]],
+  "workflow_configs": {
+    "REQUIREMENT": [
+      {
+        "from_state": "DRAFT",
+        "action": "SUBMIT",
+        "to_state": "PENDING_AUDIT",
+        "target_owner_strategy": "TO_SPECIFIC_USER",
+        "required_fields": ["priority", "target_owner_id"]
+      }
+    ]
+  }
+}
+```
 
-To add a new workflow:
-1. Add type to `work_types`
-2. Add states to `states`
-3. Define transitions in `workflow_configs` with `target_owner_strategy` (KEEP, TO_CREATOR, TO_SPECIFIC_USER) and `required_fields`
-
-### Owner Strategy Patterns
-
+**Owner Strategy Options**:
 - `KEEP` - Maintain current owner
 - `TO_CREATOR` - Reassign to item creator
 - `TO_SPECIFIC_USER` - Use `target_owner_id` from form_data
 
 ### Data Flow
 
-1. `init_db()` creates tables from SQLModel metadata
-2. `init_mock_config()` seeds workflow rules from JSON
-3. `WorkflowService.create_item()` creates item with DRAFT state
-4. `WorkflowService.handle_transition()` validates and executes state changes
-5. Each transition logs to `BusFlowLog` for audit trail
+1. `main.py` lifespan handler initializes MongoDB connection and Beanie ODM
+2. `init_mongodb.py` seeds workflow rules from JSON configs into MongoDB
+3. `AsyncWorkflowService.create_item()` creates item with DRAFT state
+4. `AsyncWorkflowService.handle_transition()` validates rules, updates state/owner, logs to `BusFlowLogDoc`
+5. Queries filter by `is_deleted == false`
+
+### API Endpoints (prefix: `/api/v1`)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/work-items/types` | List work types |
+| GET | `/work-items/states` | List workflow states |
+| POST | `/work-items` | Create new item |
+| GET | `/work-items` | List items (filterable) |
+| GET | `/work-items/{id}` | Get item details |
+| POST | `/work-items/{id}/transition` | Execute state transition |
+| POST | `/work-items/{id}/reassign` | Reassign owner |
+| GET | `/work-items/{id}/logs` | Get transition history |
+| GET | `/work-items/{id}/transitions` | Get available actions |
+
+### Database Settings
+
+Configured in `backend/app/db/config.py`:
+- `MONGO_URI`: Default `mongodb://10.17.154.252:27018`
+- `MONGO_DB_NAME`: Default `workflow_db`

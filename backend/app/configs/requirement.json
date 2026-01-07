@@ -7,23 +7,72 @@
       {
         "from_state": "DRAFT",
         "action": "SUBMIT",
-        "to_state": "PENDING_AUDIT",
+        "to_state": "PENDING_REVIEW",
         "target_owner_strategy": "TO_SPECIFIC_USER",
-        "required_fields": ["priority", "target_owner_id"]
+        "required_fields": ["target_owner_id", "priority"]
       },
       {
-        "from_state": "PENDING_AUDIT",
+        "from_state": "PENDING_REVIEW",
         "action": "APPROVE",
-        "to_state": "DONE",
-        "target_owner_strategy": "KEEP",
-        "required_fields": ["comment"]
+        "to_state": "PENDING_DEVELOP",
+        "target_owner_strategy": "TO_SPECIFIC_USER",
+        "required_fields": ["target_owner_id", "comment"]
       },
       {
-        "from_state": "PENDING_AUDIT",
+        "from_state": "PENDING_REVIEW",
         "action": "REJECT",
         "to_state": "DRAFT",
         "target_owner_strategy": "TO_CREATOR",
         "required_fields": ["comment"]
+      },
+      {
+        "from_state": "PENDING_DEVELOP",
+        "action": "START",
+        "to_state": "DEVELOPING",
+        "target_owner_strategy": "KEEP",
+        "required_fields": []
+      },
+      {
+        "from_state": "DEVELOPING",
+        "action": "FINISH",
+        "to_state": "PENDING_TEST",
+        "target_owner_strategy": "TO_SPECIFIC_USER",
+        "required_fields": ["target_owner_id"]
+      },
+      {
+        "from_state": "PENDING_TEST",
+        "action": "PASS",
+        "to_state": "PENDING_UAT",
+        "target_owner_strategy": "TO_SPECIFIC_USER",
+        "required_fields": ["target_owner_id"]
+      },
+      {
+        "from_state": "PENDING_TEST",
+        "action": "REJECT",
+        "to_state": "DEVELOPING",
+        "target_owner_strategy": "TO_SPECIFIC_USER",
+        "required_fields": ["target_owner_id", "comment"]
+      },
+      {
+        "from_state": "PENDING_UAT",
+        "action": "PASS",
+        "to_state": "PENDING_RELEASE",
+        "target_owner_strategy": "TO_SPECIFIC_USER",
+        "required_fields": ["target_owner_id"]
+      },
+      {
+        "from_state": "PENDING_UAT",
+        "action": "REJECT",
+        "to_state": "DEVELOPING",
+        "target_owner_strategy": "TO_SPECIFIC_USER",
+        "required_fields": ["target_owner_id", "comment"]
+      },
+      {
+        "from_state": "PENDING_RELEASE",
+        "action": "PUBLISH",
+        "to_state": "RELEASED",
+        "target_owner_strategy": "KEEP",
+        "required_fields": []
       }
     ]
   }

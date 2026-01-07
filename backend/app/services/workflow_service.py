@@ -100,8 +100,9 @@ class AsyncWorkflowService:
         if not item:
             raise WorkItemNotFoundError(item_id)
 
-        docs = await BusFlowLogDoc.find(BusFlowLogDoc.work_item_id == item_id).sort("-created_at").limit(
-            limit).to_list()
+        docs = await BusFlowLogDoc.find(
+            BusFlowLogDoc.work_item_id == PydanticObjectId(item_id)
+        ).sort("-created_at").limit(limit).to_list()
         results = []
         for doc in docs:
             d = doc.model_dump()
@@ -226,6 +227,8 @@ class AsyncWorkflowService:
                 raise MissingRequiredFieldError(field)
 
         process_payload = {field: form_data[field] for field in required_fields}
+        if "remark" in form_data and form_data["remark"] is not None:
+            process_payload["remark"] = form_data["remark"]
 
         old_state = item_doc.current_state
         new_state = config_doc.to_state
@@ -308,7 +311,7 @@ class AsyncWorkflowService:
         logger.success(f"事项 ID={item_id} 已逻辑删除")
         return True
 
-    async def reassign_item(self, item_id: str, operator_id: int, target_owner_id: int) -> Dict:
+    async def reassign_item(self, item_id: str, operator_id: int, target_owner_id: int, remark: Optional[str] = None) -> Dict:
         # 改派当前事项的处理人：
         # - 记录一条「REASSIGN」流转日志
         # - 只改变 current_owner_id，不改变状态
@@ -316,13 +319,17 @@ class AsyncWorkflowService:
         if not item_doc or item_doc.is_deleted:
             raise WorkItemNotFoundError(item_id)
 
+        payload: Dict[str, Any] = {"target_owner_id": target_owner_id}
+        if remark is not None:
+            payload["remark"] = remark
+
         log_entry = BusFlowLogDoc(
             work_item_id=PydanticObjectId(item_id),
             from_state=item_doc.current_state,
             to_state=item_doc.current_state,
             action="REASSIGN",
             operator_id=operator_id,
-            payload={"target_owner_id": target_owner_id}
+            payload=payload
         )
         await log_entry.insert()
 

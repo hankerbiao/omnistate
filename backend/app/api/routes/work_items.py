@@ -236,6 +236,7 @@ async def reassign_work_item(
     service: WorkflowServiceDep,
     operator_id: int = Query(..., description="操作人ID"),
     target_owner_id: int = Query(..., description="目标处理人ID"),
+    remark: Optional[str] = Query(None, description="备注信息（非必填）"),
 ):
     """
     改派任务给其他处理人（不改变状态）
@@ -244,7 +245,7 @@ async def reassign_work_item(
     - 更新当前处理人并记录操作日志
     """
     try:
-        return await service.reassign_item(item_id, operator_id, target_owner_id)
+        return await service.reassign_item(item_id, operator_id, target_owner_id, remark)
     except WorkItemNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:

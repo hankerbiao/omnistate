@@ -9,7 +9,7 @@ MongoDB 数据库初始化脚本
 import asyncio
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from pymongo import AsyncMongoClient
@@ -35,12 +35,18 @@ async def init_config_data():
     # 预定义的状态映射
     states_map = {
         "DRAFT": "草稿",
+        "PENDING_REVIEW": "待评审",
+        "PENDING_DEVELOP": "待开发",
+        "DEVELOPING": "开发中",
+        "PENDING_TEST": "待测试",
+        "PENDING_UAT": "待验收",
+        "PENDING_RELEASE": "待上线",
+        "RELEASED": "已上线",
         "DONE": "已完成",
         "REJECTED": "已拒绝",
+        # 兼容旧配置
         "PENDING_AUDIT": "待审核",
-        "ASSIGNED": "已指派",
-        "DEVELOPING": "开发中",
-        "PENDING_REVIEW": "待审核"
+        "ASSIGNED": "已指派"
     }
     workflow_configs_map = {}
 
@@ -75,16 +81,16 @@ async def init_config_data():
     # 2. 初始化事项类型
     for code, name in work_types_map.items():
         await SysWorkTypeDoc.find_one(SysWorkTypeDoc.code == code).upsert(
-            {"$set": {"name": name, "updated_at": datetime.utcnow()}},
+            {"$set": {"name": name, "updated_at": datetime.now(timezone.utc)}},
             on_insert=SysWorkTypeDoc(code=code, name=name)
         )
         log.info(f"初始化事项类型: {code}")
 
     # 3. 初始化流程状态
     for code, name in states_map.items():
-        is_end = code in ["DONE", "REJECTED"]
+        is_end = code in ["DONE", "REJECTED", "RELEASED"]
         await SysWorkflowStateDoc.find_one(SysWorkflowStateDoc.code == code).upsert(
-            {"$set": {"name": name, "is_end": is_end, "updated_at": datetime.utcnow()}},
+            {"$set": {"name": name, "is_end": is_end, "updated_at": datetime.now(timezone.utc)}},
             on_insert=SysWorkflowStateDoc(code=code, name=name, is_end=is_end)
         )
         log.info(f"初始化流程状态: {code}")
@@ -104,11 +110,32 @@ async def init_config_data():
                     "target_owner_strategy": cfg.get("target_owner_strategy", "KEEP"),
                     "required_fields": cfg.get("required_fields", []),
                     "properties": cfg.get("properties", {}),
-                    "updated_at": datetime.utcnow()
+                    "updated_at": datetime.now(timezone.utc)
                 }},
-                on_insert=SysWorkflowConfigDoc(**cfg)
+                on_insert=SysWorkflowConfigDoc(type_code=type_code, **cfg)
             )
             log.info(f"初始化流转配置: {type_code} {cfg.get('from_state')} -> {cfg.get('action')}")
+
+    existing_types = await SysWorkTypeDoc.find_all().to_list()
+    for doc in existing_types:
+        if doc.code not in work_types_map:
+            await doc.delete()
+            log.info(f"删除已下线事项类型: {doc.code}")
+
+    desired_workflow_keys = set()
+    for type_code, configs in workflow_configs_map.items():
+        if type_code not in work_types_map:
+            continue
+        for cfg in configs:
+            key = (type_code, cfg.get("from_state"), cfg.get("action"))
+            desired_workflow_keys.add(key)
+
+    existing_workflows = await SysWorkflowConfigDoc.find_all().to_list()
+    for cfg_doc in existing_workflows:
+        key = (cfg_doc.type_code, cfg_doc.from_state, cfg_doc.action)
+        if key not in desired_workflow_keys:
+            await cfg_doc.delete()
+            log.info(f"删除已下线流转配置: {cfg_doc.type_code} {cfg_doc.from_state} -> {cfg_doc.action}")
 
     log.success("基础数据初始化完成")
 
@@ -140,7 +167,10 @@ async def main():
         log.error(f"MongoDB 初始化失败: {e}")
         raise
     finally:
-        client.close()
+        # 兼容同步/异步的 close 调用
+        close_result = client.close()
+        if asyncio.iscoroutine(close_result):
+            await close_result
         log.info("MongoDB 连接已关闭")
 
 

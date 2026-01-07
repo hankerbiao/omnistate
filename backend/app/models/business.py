@@ -38,7 +38,10 @@ class BusWorkItemDoc(Document):
             IndexModel("current_owner_id"),
             IndexModel("creator_id"),
             IndexModel("is_deleted"),
-            IndexModel("created_at")
+            IndexModel("created_at"),
+            # 复合索引优化：支持按 owner/creator 筛选并按时间倒序
+            IndexModel([("current_owner_id", ASCENDING), ("created_at", DESCENDING)]),
+            IndexModel([("creator_id", ASCENDING), ("created_at", DESCENDING)])
         ]
 
 
