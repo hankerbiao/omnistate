@@ -38,6 +38,7 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
   const [testCaseFormVisible, setTestCaseFormVisible] = useState(false);
   const [testCaseTitle, setTestCaseTitle] = useState("");
   const [testCaseContent, setTestCaseContent] = useState("");
+  const [testCaseAssigneeId, setTestCaseAssigneeId] = useState<number | null>(null);
   const [relatedTestCases, setRelatedTestCases] = useState<WorkItem[]>([]);
   const [parentRequirement, setParentRequirement] = useState<WorkItem | null>(null);
 
@@ -80,16 +81,27 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
     }
     setCreateTestCaseLoading(true);
     try {
-      await workItemApi.create(
+      const assigneeId = testCaseAssigneeId ?? currentUser.id;
+      const newItem = await workItemApi.create(
         "TEST_CASE",
         testCaseTitle,
         testCaseContent,
         currentUser.id,
         task.id
       );
+      if (assigneeId && assigneeId !== currentUser.id) {
+        await workItemApi.reassign(
+          newItem.id,
+          currentUser.id,
+          assigneeId
+        );
+      }
       onRefresh();
       alert("测试用例创建成功");
       setTestCaseFormVisible(false);
+      setTestCaseAssigneeId(null);
+      setTestCaseTitle("");
+      setTestCaseContent("");
     } catch (err: any) {
       alert(err.response?.data?.detail || "创建测试用例失败");
     } finally {
@@ -105,7 +117,12 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
         formData.target_owner_id = reassignUserId;
       }
       if (comment) {
+        // 为兼容当前工作流配置中可能声明的必填字段 "comment"
+        // 同时提交 comment 与 remark 两个字段：
+        // - comment: 满足 required_fields 校验
+        // - remark: 写入到日志 payload.remark，以便前端时间轴展示
         formData.comment = comment;
+        formData.remark = comment;
       }
       if (priority) {
         formData.priority = priority;
@@ -303,6 +320,9 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                             if (!testCaseContent) {
                               setTestCaseContent(defaultContent);
                             }
+                            if (!testCaseAssigneeId) {
+                              setTestCaseAssigneeId(currentUser.id);
+                            }
                           }
                           setTestCaseFormVisible(!testCaseFormVisible);
                           setSelectedAction(null);
@@ -440,6 +460,19 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
               {testCaseFormVisible && (
                 <div className="action-form-panel">
                   <div className="form-field">
+                    <label>指派给</label>
+                    <select
+                      value={testCaseAssigneeId ?? currentUser.id}
+                      onChange={(e) => setTestCaseAssigneeId(Number(e.target.value))}
+                    >
+                      {mockUsers.map((user) => (
+                        <option key={user.id} value={user.id}>
+                          {user.name} - {user.role}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="form-field">
                     <label>测试用例标题 *</label>
                     <input
                       type="text"
@@ -493,7 +526,13 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                      <div className="timeline-content">
                         <div className="timeline-header">
                            <span className="timeline-action">{log.action}</span>
-                           <span className="timeline-date">{new Date(log.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                           <span className="timeline-date">
+                             {(() => {
+                               const raw = new Date(log.created_at);
+                               const adjusted = new Date(raw.getTime() + 8 * 60 * 60 * 1000);
+                               return adjusted.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+                             })()}
+                           </span>
                         </div>
                         <div className="timeline-desc">
                            {mockUsers.find((u) => u.id === log.operator_id)?.name || log.operator_id} 
