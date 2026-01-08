@@ -95,7 +95,8 @@ async def create_work_item(
             type_code=request.type_code,
             title=request.title,
             content=request.content,
-            creator_id=request.creator_id
+            creator_id=request.creator_id,
+            parent_item_id=str(request.parent_item_id) if request.parent_item_id else None,
         )
         return item
     except Exception as e:
@@ -206,6 +207,44 @@ async def get_work_item(
         return item
     except HTTPException:
         raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get(
+    "/{item_id}/test-cases",
+    response_model=List[WorkItemResponse],
+    summary="获取某个需求下的测试用例列表",
+    responses={404: {"model": ErrorResponse, "description": "需求不存在"}}
+)
+async def list_test_cases_for_requirement(
+    item_id: str,
+    service: WorkflowServiceDep,
+):
+    """根据需求 ID 获取其关联的所有测试用例"""
+    try:
+        return await service.list_test_cases_for_requirement(item_id)
+    except WorkItemNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get(
+    "/{item_id}/requirement",
+    response_model=Optional[WorkItemResponse],
+    summary="获取测试用例所属的需求（如果存在）",
+)
+async def get_requirement_for_test_case(
+    item_id: str,
+    service: WorkflowServiceDep,
+):
+    """
+    根据测试用例 ID 查找其所属需求。
+    若事项不是测试用例或没有关联需求，则返回 null。
+    """
+    try:
+        return await service.get_requirement_for_test_case(item_id)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 

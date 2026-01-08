@@ -8,7 +8,7 @@
 from typing import Optional, Dict, Any, List
 from datetime import datetime, timezone
 from pydantic import BaseModel, Field
-from beanie import Document, Indexed, PydanticObjectId, before_event, Save, Insert
+from beanie import Document, PydanticObjectId, before_event, Save, Insert
 from pymongo import IndexModel, ASCENDING, DESCENDING
 
 
@@ -19,6 +19,9 @@ class BusWorkItemDoc(Document):
     type_code: str = Field(..., description="事项类型标识")
     title: str = Field(..., description="标题")
     content: str = Field(..., description="内容/描述")
+    parent_item_id: Optional[PydanticObjectId] = Field(
+        default=None, description="父事项ID（例如测试用例关联的需求ID）"
+    )
     current_state: str = Field(default="DRAFT", description="当前状态指针")
     current_owner_id: Optional[int] = Field(None, description="当前处理人")
     creator_id: int = Field(..., description="创建者用户ID")
@@ -41,7 +44,9 @@ class BusWorkItemDoc(Document):
             IndexModel("created_at"),
             # 复合索引优化：支持按 owner/creator 筛选并按时间倒序
             IndexModel([("current_owner_id", ASCENDING), ("created_at", DESCENDING)]),
-            IndexModel([("creator_id", ASCENDING), ("created_at", DESCENDING)])
+            IndexModel([("creator_id", ASCENDING), ("created_at", DESCENDING)]),
+            IndexModel("parent_item_id"),
+            IndexModel([("parent_item_id", ASCENDING), ("created_at", DESCENDING)]),
         ]
 
 
@@ -76,6 +81,7 @@ class BusWorkItemModel(BaseModel):
     type_code: str
     title: str
     content: str
+    parent_item_id: Optional[str] = None
     current_state: str
     current_owner_id: Optional[int]
     creator_id: int
@@ -100,4 +106,3 @@ class BusFlowLogModel(BaseModel):
 
     class Config:
         from_attributes = True
-

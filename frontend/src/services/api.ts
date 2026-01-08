@@ -117,13 +117,15 @@ export const workItemApi = {
     typeCode: string,
     title: string,
     content: string,
-    creatorId: number
+    creatorId: number,
+    parentItemId?: string | number
   ): Promise<WorkItem> => {
     const response = await api.post("/work-items", {
       type_code: typeCode,
       title,
       content,
       creator_id: creatorId,
+      parent_item_id: parentItemId ?? null,
     });
     return response.data;
   },
@@ -201,6 +203,20 @@ export const workItemApi = {
   // 获取事项详情
   get: async (itemId: number): Promise<WorkItem> => {
     const response = await api.get(`/work-items/${itemId}`);
+    return response.data;
+  },
+
+  listTestCasesForRequirement: async (
+    requirementId: string | number
+  ): Promise<WorkItem[]> => {
+    const response = await api.get(`/work-items/${requirementId}/test-cases`);
+    return response.data;
+  },
+
+  getRequirementForTestCase: async (
+    testCaseId: string | number
+  ): Promise<WorkItem | null> => {
+    const response = await api.get(`/work-items/${testCaseId}/requirement`);
     return response.data;
   },
 

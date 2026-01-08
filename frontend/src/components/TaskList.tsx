@@ -2,7 +2,6 @@ import { useState, useEffect } from "react";
 import {
   workItemApi,
   type WorkItem,
-  type TransitionLog,
   stateLabels,
   stateColors,
 } from "../services/api";
@@ -11,19 +10,17 @@ import { mockUsers } from "../services/mockUsers";
 import TaskDetailModal from "./TaskDetailModal";
 import "./TaskList.css";
 
-const TaskList: React.FC = () => {
+interface TaskListProps {
+  filterType: "all" | "requirement" | "test_case";
+  onCreateClick: () => void;
+}
+
+const TaskList: React.FC<TaskListProps> = ({ filterType, onCreateClick }) => {
   const { currentUser } = useUser();
   const [tasks, setTasks] = useState<WorkItem[]>([]);
-  const [logsMap, setLogsMap] = useState<Record<number, TransitionLog[]>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedTask, setSelectedTask] = useState<WorkItem | null>(null);
-  const [filterState, setFilterState] = useState<string>("all");
-  const [expandedTasks, setExpandedTasks] = useState<Set<number>>(new Set());
-  const [sortField, setSortField] = useState<"created_at" | "updated_at" | "title">(
-    "created_at"
-  );
-  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
   const [searchKeyword, setSearchKeyword] = useState<string>("");
 
   const loadTasks = async (fetcher: () => Promise<WorkItem[]>) => {
@@ -32,12 +29,6 @@ const TaskList: React.FC = () => {
       const data = await fetcher();
       setTasks(data);
       setError(null);
-
-      if (data.length > 0) {
-        const itemIds = data.map((t) => t.id);
-        const logs = await workItemApi.batchGetLogs(itemIds);
-        setLogsMap(logs);
-      }
     } catch (err) {
       if (err instanceof Error) {
         setError(err.message || "获取任务列表失败");
@@ -59,106 +50,36 @@ const TaskList: React.FC = () => {
     );
   };
 
-  const applySortedQuery = async () => {
-    await loadTasks(() =>
-      workItemApi.sortedList({
-        ownerId: currentUser.id,
-        creatorId: currentUser.id,
-        limit: 100,
-        orderBy: sortField,
-        direction: sortDirection,
-      })
-    );
-  };
-
-  const applySearch = async () => {
-    const keyword = searchKeyword.trim();
-    if (!keyword) {
-      return;
-    }
-    await loadTasks(() =>
-      workItemApi.search({
-        keyword,
-        ownerId: currentUser.id,
-        creatorId: currentUser.id,
-        limit: 100,
-      })
-    );
-  };
-
   useEffect(() => {
     fetchTasks();
   }, [currentUser.id]);
 
-  const filteredTasks =
-    filterState === "all"
-      ? tasks
-      : tasks.filter((t) => t.current_state === filterState);
-
-  const taskCounts = tasks.reduce(
-    (acc, task) => {
-      acc[task.current_state] = (acc[task.current_state] || 0) + 1;
-      return acc;
-    },
-    {} as Record<string, number>
-  );
-
-  // 展开/收起任务详情
-  const toggleExpand = (e: React.MouseEvent, taskId: number) => {
+  const handleDeleteTask = async (e: React.MouseEvent, task: WorkItem) => {
     e.stopPropagation();
-    setExpandedTasks((prev) => {
-      const newSet = new Set(prev);
-      if (newSet.has(taskId)) {
-        newSet.delete(taskId);
-      } else {
-        newSet.add(taskId);
-      }
-      return newSet;
-    });
-  };
-
-  // 构建状态流转路径（从创建到当前）
-  const getStateFlow = (task: WorkItem): { state: string; label: string }[] => {
-    const logs = logsMap[task.id] || [];
-    const flow: { state: string; label: string }[] = [];
-
-    // 初始状态是 DRAFT
-    flow.push({ state: "DRAFT", label: "草稿" });
-
-    // 按时间顺序添加所有流转记录
-    for (const log of logs) {
-      flow.push({ state: log.to_state, label: stateLabels[log.to_state] || log.to_state });
+    if (!confirm(`确定要删除任务「${task.title}」吗？此操作不可恢复。`)) {
+      return;
     }
-
-    // 如果当前状态不是最后一个（有可能有并发操作），确保包含当前状态
-    if (flow.length === 0 || flow[flow.length - 1].state !== task.current_state) {
-      // 检查是否已存在
-      if (!flow.some((f) => f.state === task.current_state)) {
-        flow.push({
-          state: task.current_state,
-          label: stateLabels[task.current_state] || task.current_state,
-        });
-      }
+    try {
+      await workItemApi.delete(task.id);
+      fetchTasks();
+    } catch (err: any) {
+      alert(err.response?.data?.detail || "删除失败");
     }
-
-    return flow;
   };
 
-  // 格式化时间
-  const formatTime = (timestamp: string) => {
-    const date = new Date(timestamp);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
-
-    if (diffMins < 1) return "刚刚";
-    if (diffMins < 60) return `${diffMins}分钟前`;
-    if (diffHours < 24) return `${diffHours}小时前`;
-    if (diffDays < 7) return `${diffDays}天前`;
-    return date.toLocaleDateString("zh-CN");
-  };
+  const filteredTasks = tasks.filter((t) => {
+    const matchesType = 
+      filterType === "all" ? true : 
+      filterType === "requirement" ? t.type_code === "REQUIREMENT" :
+      t.type_code === "TEST_CASE";
+      
+    const matchesSearch = searchKeyword 
+      ? (t.title.toLowerCase().includes(searchKeyword.toLowerCase()) || 
+         t.content.toLowerCase().includes(searchKeyword.toLowerCase()))
+      : true;
+      
+    return matchesType && matchesSearch;
+  });
 
   if (loading) {
     return <div className="loading">加载中...</div>;
@@ -169,211 +90,101 @@ const TaskList: React.FC = () => {
   }
 
   return (
-    <div className="task-list">
-      <div className="task-header">
-        <h2>我的任务</h2>
-        <div className="task-stats">
-          <span className="stat-item">
-            全部: <strong>{tasks.length}</strong>
-          </span>
-          {Object.entries(taskCounts).map(([state, count]) => (
-            <span
-              key={state}
-              className="stat-item"
-              style={{ color: stateColors[state] }}
-            >
-              {stateLabels[state] || state}: <strong>{count}</strong>
-            </span>
-          ))}
-        </div>
+    <div className="task-list-container">
+      <div className="task-toolbar">
+         <div className="search-box">
+           <span className="search-icon">🔍</span>
+           <input 
+             type="text" 
+             placeholder="搜索标题或内容..." 
+             value={searchKeyword}
+             onChange={(e) => setSearchKeyword(e.target.value)}
+           />
+         </div>
+         <button className="btn btn-primary" onClick={onCreateClick}>
+           + 创建任务
+         </button>
       </div>
 
-      <div className="filter-bar">
-        <button
-          className={`filter-btn ${filterState === "all" ? "active" : ""}`}
-          onClick={() => setFilterState("all")}
-        >
-          全部
-        </button>
-        {Object.keys(stateLabels).map((state) => (
-          <button
-            key={state}
-            className={`filter-btn ${filterState === state ? "active" : ""}`}
-            style={{
-              borderColor: filterState === state ? stateColors[state] : undefined,
-            }}
-            onClick={() => setFilterState(state)}
-          >
-            {stateLabels[state]}
-          </button>
-        ))}
-
-        <input
-          className="search-input"
-          type="text"
-          value={searchKeyword}
-          onChange={(e) => setSearchKeyword(e.target.value)}
-          placeholder="按标题或内容搜索"
-        />
-        <button className="filter-btn" onClick={applySearch}>
-          搜索
-        </button>
-
-        <select
-          className="filter-select"
-          value={sortField}
-          onChange={(e) =>
-            setSortField(
-              e.target.value as "created_at" | "updated_at" | "title"
-            )
-          }
-        >
-          <option value="created_at">按创建时间</option>
-          <option value="updated_at">按更新时间</option>
-          <option value="title">按标题</option>
-        </select>
-        <select
-          className="filter-select"
-          value={sortDirection}
-          onChange={(e) =>
-            setSortDirection(e.target.value as "asc" | "desc")
-          }
-        >
-          <option value="desc">降序</option>
-          <option value="asc">升序</option>
-        </select>
-        <button className="filter-btn" onClick={applySortedQuery}>
-          应用排序
-        </button>
+      <div className="task-table-wrapper">
+        <table className="task-table">
+          <thead>
+            <tr>
+              <th className="th-type">类型</th>
+              <th className="th-info">事项详情</th>
+              <th className="th-status">状态</th>
+              <th className="th-owner">处理人</th>
+              <th className="th-actions">操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredTasks.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="empty-cell">暂无任务</td>
+              </tr>
+            ) : (
+              filteredTasks.map(task => {
+                const isCreator = task.creator_id === currentUser.id;
+                const currentOwner = task.current_owner_id
+                    ? mockUsers.find((u) => u.id === task.current_owner_id)
+                    : null;
+                
+                return (
+                  <tr key={task.id} onClick={() => setSelectedTask(task)} className="task-tr">
+                     <td className="td-type">
+                       <span className={`type-badge ${task.type_code.toLowerCase()}`}>
+                         {task.type_code === "REQUIREMENT" ? "需求" : "用例"}
+                       </span>
+                     </td>
+                     <td className="td-info">
+                       <div className="info-title">
+                         {task.title}
+                         {isCreator && <span className="creator-badge">我创建的</span>}
+                       </div>
+                       <div className="info-content">
+                         {task.content || "无详细描述"}
+                       </div>
+                     </td>
+                     <td className="td-status">
+                       <div className="status-cell">
+                         <span 
+                           className="status-dot" 
+                           style={{ backgroundColor: stateColors[task.current_state] }}
+                         />
+                         {stateLabels[task.current_state] || task.current_state}
+                       </div>
+                     </td>
+                     <td className="td-owner">
+                       <div className="owner-cell">
+                         <div className="avatar-sm">
+                           {currentOwner?.name?.[0] || "?"}
+                         </div>
+                         <span>{currentOwner?.name || "未分配"}</span>
+                       </div>
+                     </td>
+                     <td className="td-actions">
+                       <button
+                          className="icon-btn delete-btn-table"
+                          onClick={(e) => handleDeleteTask(e, task)}
+                          title="删除任务"
+                        >
+                          🗑
+                        </button>
+                     </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
       </div>
-
-      {filteredTasks.length === 0 ? (
-        <div className="empty-state">暂无任务</div>
-      ) : (
-        <div className="task-grid">
-          {filteredTasks.map((task) => {
-            const isCreator = task.creator_id === currentUser.id;
-            const currentOwner = task.current_owner_id
-              ? mockUsers.find((u) => u.id === task.current_owner_id)
-              : null;
-            const logs = logsMap[task.id] || [];
-            const isExpanded = expandedTasks.has(task.id);
-            const stateFlow = getStateFlow(task);
-
-            return (
-              <div
-                key={task.id}
-                className={`task-card ${isCreator ? "task-created-by-me" : ""}`}
-                onClick={() => setSelectedTask(task)}
-              >
-                <div className="task-card-header">
-                  <div className="header-tags">
-                    <span className="task-type">{task.type_code}</span>
-                    {isCreator && <span className="task-badge">我创建的</span>}
-                  </div>
-                  <span
-                    className="task-state-badge"
-                    style={{ backgroundColor: stateColors[task.current_state] }}
-                  >
-                    {stateLabels[task.current_state] || task.current_state}
-                  </span>
-                </div>
-                
-                <h3 className="task-title">{task.title}</h3>
-                <p className="task-content">{task.content}</p>
-
-                {/* 状态流转时间线 */}
-                {isExpanded && (
-                  <div className="state-timeline">
-                    <div className="timeline-header">状态流转历程</div>
-                    <div className="timeline-flow">
-                      {stateFlow.map((item, index) => (
-                        <div key={item.state} className="timeline-item">
-                          <div
-                            className="timeline-dot"
-                            style={{
-                              backgroundColor:
-                                index === stateFlow.length - 1
-                                  ? stateColors[item.state]
-                                  : "#d1d5db",
-                            }}
-                          />
-                          <span
-                            className="timeline-state"
-                            style={{
-                              color:
-                                index === stateFlow.length - 1
-                                  ? stateColors[item.state]
-                                  : "#6b7280",
-                              fontWeight:
-                                index === stateFlow.length - 1 ? 600 : 400,
-                            }}
-                          >
-                            {item.label}
-                          </span>
-                          {index < stateFlow.length - 1 && (
-                            <div className="timeline-line" />
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                    {logs.length > 0 && (
-                      <div className="timeline-logs">
-                        {logs.slice(0, 3).map((log) => {
-                          const operator = mockUsers.find(
-                            (u) => u.id === log.operator_id
-                          );
-                          return (
-                            <div key={log.id} className="timeline-log-item">
-                              <span className="log-time">
-                                {formatTime(log.created_at)}
-                              </span>
-                              <span className="log-action">
-                                {operator?.name || `用户 ${log.operator_id}`}
-                              </span>
-                              <span className="log-arrow">
-                                {stateLabels[log.from_state]} →{" "}
-                                {stateLabels[log.to_state]}
-                              </span>
-                              {log.payload && Object.keys(log.payload).length > 0 && (
-                                <span className="log-detail">
-                                  {JSON.stringify(log.payload)}
-                                </span>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                <div className="task-meta">
-                  <span className="task-owner">
-                    当前: {currentOwner?.name || `用户 ${task.current_owner_id}` || "无"}
-                  </span>
-                </div>
-                
-                <div className="task-footer">
-                  <span className="task-id">#{task.id}</span>
-                  <button
-                    className={`expand-btn ${isExpanded ? "expanded" : ""}`}
-                    onClick={(e) => toggleExpand(e, task.id)}
-                  >
-                    {isExpanded ? "收起" : "查看流程"}
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
+      
       {selectedTask && (
         <TaskDetailModal
           task={selectedTask}
           onClose={() => setSelectedTask(null)}
           onRefresh={fetchTasks}
+          onOpenTask={(task) => setSelectedTask(task)}
         />
       )}
     </div>

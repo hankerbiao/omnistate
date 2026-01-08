@@ -15,33 +15,55 @@ interface TaskDetailModalProps {
   task: WorkItem;
   onClose: () => void;
   onRefresh: () => void;
+  onOpenTask: (task: WorkItem) => void;
 }
 
 const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
   task,
   onClose,
   onRefresh,
+  onOpenTask,
 }) => {
   const { currentUser } = useUser();
   const [transitions, setTransitions] = useState<AvailableTransitionsResponse | null>(null);
   const [logs, setLogs] = useState<TransitionLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [transitionLoading, setTransitionLoading] = useState(false);
+  const [createTestCaseLoading, setCreateTestCaseLoading] = useState(false);
   const [reassignLoading, setReassignLoading] = useState(false);
   const [selectedAction, setSelectedAction] = useState<string | null>(null);
   const [reassignUserId, setReassignUserId] = useState<number | null>(null);
   const [comment, setComment] = useState("");
   const [priority, setPriority] = useState<string>("");
+  const [testCaseFormVisible, setTestCaseFormVisible] = useState(false);
+  const [testCaseTitle, setTestCaseTitle] = useState("");
+  const [testCaseContent, setTestCaseContent] = useState("");
+  const [relatedTestCases, setRelatedTestCases] = useState<WorkItem[]>([]);
+  const [parentRequirement, setParentRequirement] = useState<WorkItem | null>(null);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [transData, logData] = await Promise.all([
+        const promises: Promise<any>[] = [
           workItemApi.getAvailableTransitions(task.id),
           workItemApi.getLogs(task.id),
-        ]);
+        ];
+
+        if (task.type_code === "REQUIREMENT") {
+          promises.push(workItemApi.listTestCasesForRequirement(task.id));
+        } else if (task.type_code === "TEST_CASE") {
+          promises.push(workItemApi.getRequirementForTestCase(task.id));
+        }
+
+        const [transData, logData, extra] = await Promise.all(promises);
         setTransitions(transData);
         setLogs(logData);
+
+        if (task.type_code === "REQUIREMENT") {
+          setRelatedTestCases(extra || []);
+        } else if (task.type_code === "TEST_CASE") {
+          setParentRequirement(extra || null);
+        }
       } catch (err: any) {
         console.error("获取数据失败:", err);
       } finally {
@@ -50,6 +72,30 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
     };
     fetchData();
   }, [task.id]);
+
+  const handleCreateTestCase = async () => {
+    if (!testCaseTitle.trim()) {
+      alert("请输入测试用例标题");
+      return;
+    }
+    setCreateTestCaseLoading(true);
+    try {
+      await workItemApi.create(
+        "TEST_CASE",
+        testCaseTitle,
+        testCaseContent,
+        currentUser.id,
+        task.id
+      );
+      onRefresh();
+      alert("测试用例创建成功");
+      setTestCaseFormVisible(false);
+    } catch (err: any) {
+      alert(err.response?.data?.detail || "创建测试用例失败");
+    } finally {
+      setCreateTestCaseLoading(false);
+    }
+  };
 
   const handleTransition = async (action: string) => {
     setTransitionLoading(true);
@@ -145,7 +191,6 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
         {/* 顶部栏：极简信息 */}
         <header className="modern-header">
           <div className="header-left">
-            <span className="task-id">#{task.id}</span>
             <span 
               className="status-badge-large"
               style={{ backgroundColor: stateColors[task.current_state] }}
@@ -155,7 +200,7 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
           </div>
           <div className="header-right">
              <button className="icon-btn delete-btn-simple" onClick={handleDelete} title="删除任务">
-               🗑
+               <span style={{ marginRight: "4px" }}>🗑</span> 删除
              </button>
              <button className="icon-btn close-btn-simple" onClick={onClose}>
                ✕
@@ -165,8 +210,8 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
 
         <div className="modern-body">
           {/* 左侧：核心内容与操作 */}
-          <div className="main-column">
-            <h1 className="task-title">{task.title}</h1>
+            <div className="main-column">
+              <h1 className="task-title">{task.title}</h1>
             
             <div className="meta-grid">
                <div className="meta-item">
@@ -190,6 +235,50 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
               <p>{task.content || "无描述内容"}</p>
             </div>
 
+            {task.type_code === "TEST_CASE" && parentRequirement && (
+              <div className="description-box">
+                <label>来源需求</label>
+                <p>
+                  {parentRequirement.title}
+                </p>
+              </div>
+            )}
+
+            {task.type_code === "REQUIREMENT" && (
+              <div className="description-box">
+                <label>关联测试用例</label>
+                {relatedTestCases.length === 0 ? (
+                  <p>暂无关联测试用例</p>
+                ) : (
+                  <ul>
+                    {relatedTestCases.map((tc) => {
+                      const clickable = task.current_state === "DEVELOPING";
+                      return (
+                        <li
+                          key={tc.id}
+                          className={`related-testcase ${
+                            clickable ? "clickable" : "disabled"
+                          }`}
+                          onClick={() => {
+                            if (clickable) {
+                              onOpenTask(tc);
+                            }
+                          }}
+                        >
+                          <span className="related-main">
+                            <span className="related-state">
+                              {stateLabels[tc.current_state] || tc.current_state}
+                            </span>
+                          </span>
+                          <span className="related-title">{tc.title}</span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
+            )}
+
             {/* 操作区域 */}
             <div className="action-section">
               <h3>处理任务</h3>
@@ -198,6 +287,35 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
               ) : (
                 <div className="action-buttons-grid">
                   {/* 状态流转按钮 */}
+                  {task.type_code === "REQUIREMENT" &&
+                    task.current_state === "DEVELOPING" && (
+                      <button
+                        className="action-chip secondary"
+                        onClick={() => {
+                          if (!testCaseFormVisible) {
+                            const defaultTitle = `【测试用例】${task.title}`;
+                            const defaultContent = `来源需求 #${task.id}\n\n${
+                              task.content || ""
+                            }`;
+                            if (!testCaseTitle) {
+                              setTestCaseTitle(defaultTitle);
+                            }
+                            if (!testCaseContent) {
+                              setTestCaseContent(defaultContent);
+                            }
+                          }
+                          setTestCaseFormVisible(!testCaseFormVisible);
+                          setSelectedAction(null);
+                          setReassignUserId(null);
+                          setComment("");
+                        }}
+                        disabled={createTestCaseLoading}
+                      >
+                        {testCaseFormVisible
+                          ? "收起测试用例表单"
+                          : "创建测试用例"}
+                      </button>
+                    )}
                   {transitions?.available_transitions.map((t) => (
                     <button
                       key={t.action}
@@ -231,7 +349,7 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
               )}
 
               {/* 动态操作表单 (展开式) */}
-              {selectedAction && selectedAction !== "REASSIGN" && (
+              {selectedAction && selectedAction !== "REASSIGN" && !testCaseFormVisible && (
                 <div className="action-form-panel">
                   {(() => {
                     const t = transitions?.available_transitions.find(tr => tr.action === selectedAction);
@@ -250,7 +368,7 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                                 {mockUsers
                                   .filter((u) => u.id !== currentUser.id)
                                   .map((user) => (
-                                    <option key={user.id} value={user.id}>{user.name}</option>
+                                    <option key={user.id} value={user.id}>{user.name} - {user.role}</option>
                                   ))}
                               </select>
                             </div>
@@ -288,7 +406,7 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
               )}
 
               {/* 改派表单 */}
-              {selectedAction === "REASSIGN" && (
+              {selectedAction === "REASSIGN" && !testCaseFormVisible && (
                  <div className="action-form-panel">
                     <div className="form-field">
                       <label>改派给</label>
@@ -298,7 +416,7 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                       >
                         <option value="">选择新处理人...</option>
                         {reassignableUsers.map((user) => (
-                          <option key={user.id} value={user.id}>{user.name}</option>
+                          <option key={user.id} value={user.id}>{user.name} - {user.role}</option>
                         ))}
                       </select>
                     </div>
@@ -316,7 +434,47 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                          {reassignLoading ? "提交中..." : "确认改派"}
                        </button>
                     </div>
-                 </div>
+                </div>
+              )}
+
+              {testCaseFormVisible && (
+                <div className="action-form-panel">
+                  <div className="form-field">
+                    <label>测试用例标题 *</label>
+                    <input
+                      type="text"
+                      value={testCaseTitle}
+                      onChange={(e) => setTestCaseTitle(e.target.value)}
+                      className="simple-input"
+                      placeholder="请输入测试用例标题"
+                    />
+                  </div>
+                  <div className="form-field">
+                    <label>测试用例内容</label>
+                    <textarea
+                      value={testCaseContent}
+                      onChange={(e) => setTestCaseContent(e.target.value)}
+                      placeholder="请输入测试步骤、预期结果等"
+                      rows={4}
+                    />
+                  </div>
+                  <div className="form-actions">
+                    <button
+                      className="confirm-btn"
+                      onClick={handleCreateTestCase}
+                      disabled={createTestCaseLoading}
+                    >
+                      {createTestCaseLoading ? "创建中..." : "确认创建"}
+                    </button>
+                    <button
+                      className="cancel-btn"
+                      type="button"
+                      onClick={() => setTestCaseFormVisible(false)}
+                    >
+                      取消
+                    </button>
+                  </div>
+                </div>
               )}
             </div>
           </div>

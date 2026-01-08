@@ -61,6 +61,8 @@ class AsyncWorkflowService:
         for doc in docs:
             d = doc.model_dump()
             d["id"] = str(doc.id)
+            if d.get("parent_item_id") is not None:
+                d["parent_item_id"] = str(d["parent_item_id"])
             results.append(d)
         return results
 
@@ -144,6 +146,8 @@ class AsyncWorkflowService:
             if doc and not doc.is_deleted:
                 d = doc.model_dump()
                 d["id"] = str(doc.id)
+                if d.get("parent_item_id") is not None:
+                    d["parent_item_id"] = str(d["parent_item_id"])
                 return d
         except Exception as e:
             # 兜底捕获异常，避免非法 ID 导致接口 500
@@ -217,17 +221,61 @@ class AsyncWorkflowService:
             ]
         }
 
+    async def list_test_cases_for_requirement(self, requirement_id: str) -> List[Dict]:
+        requirement = await self.get_item_by_id(requirement_id)
+        if not requirement or requirement.get("type_code") != "REQUIREMENT":
+            raise WorkItemNotFoundError(requirement_id)
+
+        docs = await BusWorkItemDoc.find(
+            BusWorkItemDoc.is_deleted == False,
+            BusWorkItemDoc.type_code == "TEST_CASE",
+            BusWorkItemDoc.parent_item_id == PydanticObjectId(requirement_id)
+        ).sort("-created_at").to_list()
+        return self._docs_to_dicts(docs)
+
+    async def get_requirement_for_test_case(self, test_case_id: str) -> Optional[Dict]:
+        doc = await BusWorkItemDoc.get(test_case_id)
+        if not doc or doc.is_deleted or doc.type_code != "TEST_CASE":
+            return None
+        if not doc.parent_item_id:
+            return None
+        parent_id = str(doc.parent_item_id)
+        return await self.get_item_by_id(parent_id)
+
     # ========== 核心流转逻辑 ==========
 
-    async def create_item(self, type_code: str, title: str, content: str, creator_id: int) -> Dict:
+    async def create_item(
+            self,
+            type_code: str,
+            title: str,
+            content: str,
+            creator_id: int,
+            parent_item_id: Optional[str] = None
+    ) -> Dict:
         # 创建新的业务事项：
         # - 初始状态为 DRAFT
         # - 当前处理人默认设置为创建人
         try:
+            # 校验同类型下标题唯一性
+            existing_item = await BusWorkItemDoc.find_one(
+                BusWorkItemDoc.type_code == type_code,
+                BusWorkItemDoc.title == title,
+                BusWorkItemDoc.is_deleted == False
+            )
+            if existing_item:
+                raise ValueError(f"已存在相同标题的{type_code}: {title}")
+
+            parent_oid = None
+            if parent_item_id:
+                if PydanticObjectId.is_valid(parent_item_id):
+                    parent_oid = PydanticObjectId(parent_item_id)
+                else:
+                    logger.warning(f"无效的父事项 ID: {parent_item_id}，将忽略 parent_item_id")
             new_item = BusWorkItemDoc(
                 type_code=type_code,
                 title=title,
                 content=content,
+                parent_item_id=parent_oid,
                 creator_id=creator_id,
                 current_owner_id=creator_id,
                 current_state=WorkItemState.DRAFT.value
@@ -236,6 +284,8 @@ class AsyncWorkflowService:
             logger.success(f"业务事项创建成功: ID={new_item.id}, state={new_item.current_state}")
             d = new_item.model_dump()
             d["id"] = str(new_item.id)
+            if d.get("parent_item_id") is not None:
+                d["parent_item_id"] = str(d["parent_item_id"])
             return d
         except Exception as e:
             logger.error(f"创建业务事项失败: {e}")
@@ -304,6 +354,8 @@ class AsyncWorkflowService:
 
         item_dict = item_doc.model_dump()
         item_dict["id"] = str(item_doc.id)
+        if item_dict.get("parent_item_id") is not None:
+            item_dict["parent_item_id"] = str(item_dict["parent_item_id"])
 
         return {
             "work_item_id": str(item_doc.id),
@@ -388,4 +440,6 @@ class AsyncWorkflowService:
 
         d = item_doc.model_dump()
         d["id"] = str(item_doc.id)
+        if d.get("parent_item_id") is not None:
+            d["parent_item_id"] = str(d["parent_item_id"])
         return d

@@ -2,19 +2,18 @@
 
 .create-modal {
   background: #fff;
-  border-radius: 16px;
+  border-radius: var(--radius-xl);
   width: 100%;
   max-width: 500px;
   max-height: 90vh;
   overflow-y: auto;
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  box-shadow: var(--shadow-xl);
   display: flex;
   flex-direction: column;
 }
 
 /* 兼容 .modal-content 类名 */
 .modal-content.create-modal {
-  /* 确保优先级 */
   background: #fff;
 }
 
@@ -23,13 +22,13 @@
   justify-content: space-between;
   align-items: center;
   padding: 20px 24px;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--gray-200);
 }
 
 .modal-header h2 {
   margin: 0;
   font-size: 18px;
-  color: #111827;
+  color: var(--gray-900);
   font-weight: 600;
 }
 
@@ -37,7 +36,7 @@
   background: none;
   border: none;
   font-size: 24px;
-  color: #9ca3af;
+  color: var(--gray-400);
   cursor: pointer;
   padding: 4px;
   line-height: 1;
@@ -45,7 +44,7 @@
 }
 
 .close-btn:hover {
-  color: #1f2937;
+  color: var(--gray-800);
 }
 
 .create-form {
@@ -60,7 +59,7 @@
   display: block;
   font-size: 14px;
   font-weight: 500;
-  color: #374151;
+  color: var(--gray-700);
   margin-bottom: 8px;
 }
 
@@ -69,8 +68,8 @@
 .create-form textarea {
   width: 100%;
   padding: 10px 12px;
-  border: 1px solid #d1d5db;
-  border-radius: 8px;
+  border: 1px solid var(--gray-300);
+  border-radius: var(--radius-md);
   font-size: 14px;
   box-sizing: border-box;
   transition: border-color 0.2s, box-shadow 0.2s;
@@ -85,8 +84,8 @@
 .create-form input:focus,
 .create-form textarea:focus {
   outline: none;
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  border-color: var(--primary-500);
+  box-shadow: 0 0 0 3px var(--primary-100);
 }
 
 .creator-info {
@@ -94,9 +93,9 @@
   align-items: center;
   gap: 12px;
   padding: 12px;
-  background: #f9fafb;
-  border-radius: 8px;
-  border: 1px solid #f3f4f6;
+  background: var(--gray-50);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--gray-100);
 }
 
 .creator-avatar {
@@ -108,7 +107,7 @@
 
 .creator-info span {
   font-size: 14px;
-  color: #4b5563;
+  color: var(--gray-600);
   font-weight: 500;
 }
 
@@ -122,9 +121,9 @@
   flex: 1;
   padding: 10px 20px;
   background: #fff;
-  color: #374151;
-  border: 1px solid #d1d5db;
-  border-radius: 8px;
+  color: var(--gray-700);
+  border: 1px solid var(--gray-300);
+  border-radius: var(--radius-md);
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
@@ -132,18 +131,18 @@
 }
 
 .cancel-btn:hover {
-  background: #f9fafb;
-  border-color: #9ca3af;
+  background: var(--gray-50);
+  border-color: var(--gray-400);
 }
 
 .create-form .submit-btn {
   flex: 1;
   margin: 0;
   padding: 10px 20px;
-  background: #3b82f6;
+  background: var(--primary-600);
   color: #fff;
   border: none;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
@@ -151,10 +150,10 @@
 }
 
 .create-form .submit-btn:hover {
-  background: #2563eb;
+  background: var(--primary-700);
 }
 
 .create-form .submit-btn:disabled {
-  background: #93c5fd;
+  background: var(--primary-300);
   cursor: not-allowed;
 }

@@ -17,6 +17,9 @@ class CreateWorkItemRequest(BaseModel):
     title: str = Field(..., min_length=1, max_length=200, description="事项标题")
     content: str = Field(..., description="事项内容")
     creator_id: int = Field(..., description="创建者用户ID")
+    parent_item_id: Optional[PydanticObjectId] = Field(
+        default=None, description="父事项ID（例如测试用例所属的需求ID）"
+    )
 
 
 class TransitionRequest(BaseModel):
@@ -34,6 +37,7 @@ class WorkItemResponse(BaseModel):
     type_code: str
     title: str
     content: str
+    parent_item_id: Optional[str] = None
     current_state: str
     current_owner_id: Optional[int]
     creator_id: int
@@ -68,4 +72,3 @@ class TransitionResponse(BaseModel):
     work_item: WorkItemResponse
 
     model_config = ConfigDict(from_attributes=True)
-
