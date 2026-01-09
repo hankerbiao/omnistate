@@ -138,25 +138,6 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
     }
   };
 
-  // 获取目标处理人显示名称
-  const getTargetOwnerDisplay = (strategy: string, selectedId?: number): string => {
-    switch (strategy) {
-      case "KEEP":
-        return currentOwner ? currentOwner.name : "当前处理人";
-      case "TO_CREATOR":
-        const creator = mockUsers.find((u) => u.id === task.creator_id);
-        return creator ? creator.name : "创建者";
-      case "TO_SPECIFIC_USER":
-        if (selectedId) {
-          const user = mockUsers.find((u) => u.id === selectedId);
-          return user ? user.name : `用户 ${selectedId}`;
-        }
-        return "(请选择)";
-      default:
-        return "未知";
-    }
-  };
-
   const handleReassign = async () => {
     if (!reassignUserId) {
       alert("请选择要改派给的用户");
@@ -519,7 +500,7 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                {logs.length === 0 ? (
                  <div className="empty-timeline">暂无记录</div>
                ) : (
-                 logs.map((log, index) => (
+                 logs.map((log) => (
                    <div key={log.id} className="timeline-item">
                      <div className="timeline-line"></div>
                      <div className="timeline-dot" style={{ backgroundColor: stateColors[log.to_state] }}></div>

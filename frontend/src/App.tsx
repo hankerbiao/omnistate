@@ -1,68 +1,90 @@
 import { useState } from "react";
 import { UserProvider } from "./context/UserContext";
 import UserSwitcher from "./components/UserSwitcher";
-import TaskList from "./components/TaskList";
+import Sidebar from "./components/Sidebar";
+import FlowManagement from "./pages/FlowManagement";
 import CreateTaskModal from "./components/CreateTaskModal";
 import "./App.css";
 
 function App() {
+  const [activeModule, setActiveModule] = useState("workflow");
+  const [activePage, setActivePage] = useState("all");
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [taskListKey, setTaskListKey] = useState(0);
-  const [filterType, setFilterType] = useState<"all" | "requirement" | "test_case">("all");
 
-  const handleTaskCreated = () => {
-    // 通过改变 key 强制 TaskList 重新渲染和刷新数据
-    setTaskListKey((prev) => prev + 1);
+  const handleNavigate = (moduleId: string, pageId: string) => {
+    setActiveModule(moduleId);
+    setActivePage(pageId);
+  };
+
+  const filterType = activePage as "all" | "requirement" | "test_case";
+
+  const renderPage = () => {
+    // 流程管理模块
+    if (activeModule === "workflow") {
+      return (
+        <FlowManagement
+          filterType={filterType}
+          onCreateClick={() => setShowCreateModal(true)}
+        />
+      );
+    }
+
+    // 其他模块的占位页面
+    return (
+      <div className="coming-soon-page">
+        <div className="coming-soon-content">
+          <div className="coming-soon-icon">
+            <svg
+              width="48"
+              height="48"
+              viewBox="0 0 48 48"
+              fill="none"
+            >
+              <rect
+                x="8"
+                y="8"
+                width="32"
+                height="32"
+                rx="8"
+                stroke="currentColor"
+                strokeWidth="2"
+              />
+              <path
+                d="M16 24L22 30L32 18"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </div>
+          <h3>功能开发中</h3>
+          <p>该功能模块正在建设中，敬请期待...</p>
+        </div>
+      </div>
+    );
   };
 
   return (
     <UserProvider>
       <div className="app">
-        <aside className="sidebar">
-          <div className="sidebar-brand">
-            <div className="logo-placeholder">W</div>
-            <h1>工作流测试系统</h1>
-          </div>
-          
-          <nav className="sidebar-nav">
-            <button 
-              className={`nav-item ${filterType === "all" ? "active" : ""}`}
-              onClick={() => setFilterType("all")}
-            >
-              全部事项
-            </button>
-            <button 
-              className={`nav-item ${filterType === "requirement" ? "active" : ""}`}
-              onClick={() => setFilterType("requirement")}
-            >
-              需求开发
-            </button>
-            <button 
-              className={`nav-item ${filterType === "test_case" ? "active" : ""}`}
-              onClick={() => setFilterType("test_case")}
-            >
-              测试用例
-            </button>
-          </nav>
-        </aside>
+        <Sidebar
+          activeModule={activeModule}
+          activePage={activePage}
+          onNavigate={handleNavigate}
+        />
 
         <main className="main-content">
           <header className="main-header">
             <UserSwitcher />
           </header>
-          <div className="content-scroll-area">
-            <TaskList 
-              key={taskListKey} 
-              filterType={filterType} 
-              onCreateClick={() => setShowCreateModal(true)}
-            />
-          </div>
+          <div className="content-scroll-area">{renderPage()}</div>
         </main>
 
         {showCreateModal && (
           <CreateTaskModal
             onClose={() => setShowCreateModal(false)}
-            onSuccess={handleTaskCreated}
+            onSuccess={() => {}}
           />
         )}
       </div>
