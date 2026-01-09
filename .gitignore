@@ -61,3 +61,7 @@ htmlcov/
 .ruff_cache/
 .mypy_cache/
 .pyright/
+
+
+pytest_demo/reports/allure-results/
+pytest_demo/.pytest_cache/

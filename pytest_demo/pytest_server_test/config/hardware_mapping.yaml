@@ -1,0 +1,49 @@
+# 硬件模块与数据采集接口映射
+hardware_modules:
+  cpu:
+    description: "CPU 处理器模块"
+    interfaces:
+      - source: "redfish"
+        endpoint: "/Systems/system/Processors"
+      - source: "system"
+        command: "lscpu"
+
+  memory:
+    description: "内存模块"
+    interfaces:
+      - source: "redfish"
+        endpoint: "/Systems/system/Memory"
+      - source: "system"
+        command: "free -h"
+
+  storage:
+    description: "存储模块"
+    interfaces:
+      - source: "redfish"
+        endpoint: "/Systems/system/Storage"
+      - source: "system"
+        command: "lsblk -J"
+
+  power:
+    description: "电源模块"
+    interfaces:
+      - source: "redfish"
+        endpoint: "/Chassis/system/Power"
+      - source: "ipmi"
+        command: "sdr type 'Power'"
+
+  fan:
+    description: "风扇模块"
+    interfaces:
+      - source: "redfish"
+        endpoint: "/Chassis/system/Thermal"
+      - source: "ipmi"
+        command: "sdr type Fan"
+
+  network:
+    description: "网络接口模块"
+    interfaces:
+      - source: "redfish"
+        endpoint: "/Systems/system/EthernetInterfaces"
+      - source: "system"
+        command: "ip link show"

@@ -1,0 +1,22 @@
+# 预期值配置（硬件模块与阈值）
+hardware:
+  cpu:
+    min_cores: 8
+    min_frequency_mhz: 2000
+
+  memory:
+    min_total_gb: 16
+
+  storage:
+    min_disk_count: 1
+    min_capacity_gb: 100
+
+  power:
+    min_power_supply_count: 1
+    max_temperature_celsius: 85
+
+  fan:
+    min_fan_count: 2
+
+  network:
+    min_nic_count: 1
