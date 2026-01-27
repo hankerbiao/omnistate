@@ -2,7 +2,6 @@
 CPU 模块异常场景 Mock 测试用例
 """
 import allure
-import pytest
 
 
 @allure.feature("CPU Information")

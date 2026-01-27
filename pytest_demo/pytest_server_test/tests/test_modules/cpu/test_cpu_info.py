@@ -9,6 +9,8 @@ CPU 模块测试用例
 import allure
 import pytest
 import json
+import os
+
 
 
 @allure.feature("CPU Information")
@@ -84,3 +86,5 @@ class TestCPUStatus:
 
         # 验证逻辑
         assert isinstance(mock_data, dict)
+
+        TIME_OUT = os.environ.get('TIME_OUT', '10')

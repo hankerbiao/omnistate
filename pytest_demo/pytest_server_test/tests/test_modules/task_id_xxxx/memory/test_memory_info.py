@@ -1,9 +1,19 @@
 """
 内存模块测试用例
 """
+import os
+
 import allure
 import pytest
-import json
+
+
+# 前端获取测试用例，扫描TestCaseConstant内容，前端需要让用户输入
+class TestCaseConstant:
+    TIME_OUT: int = 10
+
+
+def upload_func(req_id):
+    pass
 
 
 @allure.feature("Memory Information")
@@ -31,7 +41,9 @@ class TestMemoryInfo:
 
         # 模拟解析的内存数据
         mock_memory = {"total": "32GB", "available": "16GB"}
-
         # 验证
         min_mem = expected_values["hardware"]["memory"]["min_total_gb"]
         assert int(mock_memory["total"].replace("GB", "")) >= min_mem
+
+        # 用户自定义的参数 TIME_OUT
+        TIME_OUT = TestCaseConstant.TIME_OUT

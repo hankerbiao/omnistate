@@ -1,7 +1,13 @@
 """
 风扇模块异常场景 Mock 测试用例
 """
+from enum import Enum
+
 import allure
+
+
+class Constant(Enum):
+    TIME_OUT = {'key': 10, 'desc': '超时时间'}
 
 
 @allure.feature("Fan Management")
@@ -21,6 +27,9 @@ class TestFanExceptionMock:
             "FAN2": {"speed_rpm": 5200, "min_rpm": 1000, "status": "OK", "health": "OK"},
             "FAN3": {"speed_rpm": 5100, "min_rpm": 1000, "status": "OK", "health": "OK"}
         }
+
+        # 需要超时参数
+        time_out = Constant.TIME_OUT.value.get('key')
 
         allure.attach(
             str(mock_fans),

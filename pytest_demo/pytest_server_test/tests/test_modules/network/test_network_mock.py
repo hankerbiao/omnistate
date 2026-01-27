@@ -6,6 +6,8 @@ import allure
 import pytest
 import json
 
+from tests.test_modules.task_id_xxxx.env import TIME_OUT
+print(TIME_OUT)
 
 @allure.feature("Network Management")
 @allure.story("Network Interface Information")
@@ -104,3 +106,4 @@ class TestNetworkLinkMock:
             name="Validation Result",
             attachment_type=allure.attachment_type.TEXT
         )
+
