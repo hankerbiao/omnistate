@@ -1,0 +1,8 @@
+# Pytest outputs
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Keep Python source files tracked
+!*.py

@@ -4,16 +4,22 @@ from fastapi.middleware.cors import CORSMiddleware
 from pymongo import AsyncMongoClient
 from beanie import init_beanie
 
-from app.api.errors.handlers import setup_exception_handlers
-from app.api.main import api_router
-from app.db.config import settings
-from app.core.logger import log
-from app.core.mongo_client import set_mongo_client
+from app.shared.api.errors.handlers import setup_exception_handlers
+from app.shared.api.main import api_router
+from app.shared.db.config import settings
+from app.shared.core.logger import log
+from app.shared.core.mongo_client import set_mongo_client
 
-from app.models import (
+from app.modules.workflow.repository.models import (
     SysWorkTypeDoc, SysWorkflowStateDoc, SysWorkflowConfigDoc,
     BusWorkItemDoc, BusFlowLogDoc
 )
+from app.modules.assets.repository.models import (
+    ComponentLibraryDoc,
+    DutDoc,
+    TestPlanComponentDoc,
+)
+from app.shared.api.schemas.base import APIResponse
 
 
 @asynccontextmanager
@@ -38,7 +44,10 @@ async def lifespan(app: FastAPI):
                 SysWorkflowStateDoc,
                 SysWorkflowConfigDoc,
                 BusWorkItemDoc,
-                BusFlowLogDoc
+                BusFlowLogDoc,
+                ComponentLibraryDoc,
+                DutDoc,
+                TestPlanComponentDoc,
             ]
         )
         log.success("Beanie ODM 初始化完成")
@@ -77,7 +86,7 @@ app.include_router(api_router)
 @app.get("/", summary="健康检查")
 def root():
     # 简单健康检查，用于基础存活探测
-    return {"status": "ok", "message": "Workflow API 服务运行中 (MongoDB)"}
+    return APIResponse(data={"status": "ok", "message": "Workflow API 服务运行中 (MongoDB)"})
 
 
 if __name__ == "__main__":

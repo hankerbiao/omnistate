@@ -29,10 +29,12 @@ from pathlib import Path
 from pymongo import AsyncMongoClient
 from beanie import init_beanie
 
-from app.db.config import settings
-from app.core.logger import log
-from app.models import (
-    SysWorkTypeDoc, SysWorkflowStateDoc, SysWorkflowConfigDoc,
+from app.shared.db.config import settings
+from app.shared.core.logger import log
+from app.modules.workflow.repository.models import (
+    SysWorkTypeDoc,
+    SysWorkflowStateDoc,
+    SysWorkflowConfigDoc,
 )
 
 
@@ -70,7 +72,6 @@ async def init_config_data():
         "RELEASED": "已上线",
         "DONE": "已完成",
         "REJECTED": "已拒绝",
-        # 兼容旧配置
         "PENDING_AUDIT": "待审核",
         "ASSIGNED": "已指派"
     }

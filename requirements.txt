@@ -32,6 +32,7 @@ pydeck==0.9.1
 python-dateutil==2.9.0.post0
 python-dotenv==1.2.1
 pytz==2025.2
+pytest==8.3.4
 referencing==0.36.2
 requests==2.32.5
 rpds-py==0.27.1
