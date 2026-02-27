@@ -1,0 +1,138 @@
+"""硬件与资产管理 API 模型"""
+from typing import Optional, Dict, Any, List
+from datetime import datetime
+from pydantic import BaseModel, Field
+
+
+# ========== Component Library ==========
+
+class CreateComponentRequest(BaseModel):
+    part_number: str = Field(..., description="唯一物料编号（PN）")
+    category: str = Field(..., description="大类")
+    subcategory: Optional[str] = None
+    vendor: Optional[str] = None
+    model: Optional[str] = None
+    revision: Optional[str] = None
+    form_factor: Optional[str] = None
+    interface_type: Optional[str] = None
+    interface_gen: Optional[str] = None
+    protocol: Optional[str] = None
+    attributes: Dict[str, Any] = Field(default_factory=dict)
+    power_watt: Optional[float] = None
+    firmware_baseline: Optional[str] = None
+    spec: Dict[str, Any] = Field(default_factory=dict)
+    datasheet_url: Optional[str] = None
+    lifecycle_status: Optional[str] = None
+    aliases: List[str] = Field(default_factory=list)
+
+
+class UpdateComponentRequest(BaseModel):
+    category: Optional[str] = None
+    subcategory: Optional[str] = None
+    vendor: Optional[str] = None
+    model: Optional[str] = None
+    revision: Optional[str] = None
+    form_factor: Optional[str] = None
+    interface_type: Optional[str] = None
+    interface_gen: Optional[str] = None
+    protocol: Optional[str] = None
+    attributes: Optional[Dict[str, Any]] = None
+    power_watt: Optional[float] = None
+    firmware_baseline: Optional[str] = None
+    spec: Optional[Dict[str, Any]] = None
+    datasheet_url: Optional[str] = None
+    lifecycle_status: Optional[str] = None
+    aliases: Optional[List[str]] = None
+
+
+class ComponentResponse(BaseModel):
+    id: str
+    part_number: str
+    category: str
+    subcategory: Optional[str]
+    vendor: Optional[str]
+    model: Optional[str]
+    revision: Optional[str]
+    form_factor: Optional[str]
+    interface_type: Optional[str]
+    interface_gen: Optional[str]
+    protocol: Optional[str]
+    attributes: Dict[str, Any]
+    power_watt: Optional[float]
+    firmware_baseline: Optional[str]
+    spec: Dict[str, Any]
+    datasheet_url: Optional[str]
+    lifecycle_status: Optional[str]
+    aliases: List[str]
+    created_at: datetime
+    updated_at: datetime
+
+
+# ========== DUT ==========
+
+class CreateDutRequest(BaseModel):
+    asset_id: str = Field(..., description="资产编号或 SN")
+    model: str = Field(..., description="整机型号/平台")
+    status: str = Field(default="可用")
+    owner_team: Optional[str] = None
+    rack_location: Optional[str] = None
+    mgmt_ip: Optional[str] = None
+    os_ip: Optional[str] = None
+    os_version: Optional[str] = None
+    bios_version: Optional[str] = None
+    last_seen_at: Optional[datetime] = None
+    health_status: Optional[str] = None
+    tags: List[str] = Field(default_factory=list)
+    current_bom: List[str] = Field(default_factory=list)
+    notes: Optional[str] = None
+
+
+class UpdateDutRequest(BaseModel):
+    model: Optional[str] = None
+    status: Optional[str] = None
+    owner_team: Optional[str] = None
+    rack_location: Optional[str] = None
+    mgmt_ip: Optional[str] = None
+    os_ip: Optional[str] = None
+    os_version: Optional[str] = None
+    bios_version: Optional[str] = None
+    last_seen_at: Optional[datetime] = None
+    health_status: Optional[str] = None
+    tags: Optional[List[str]] = None
+    current_bom: Optional[List[str]] = None
+    notes: Optional[str] = None
+
+
+class DutResponse(BaseModel):
+    id: str
+    asset_id: str
+    model: str
+    status: str
+    owner_team: Optional[str]
+    rack_location: Optional[str]
+    mgmt_ip: Optional[str]
+    os_ip: Optional[str]
+    os_version: Optional[str]
+    bios_version: Optional[str]
+    last_seen_at: Optional[datetime]
+    health_status: Optional[str]
+    tags: List[str]
+    current_bom: List[str]
+    notes: Optional[str]
+    created_at: datetime
+    updated_at: datetime
+
+
+# ========== Test Plan Component ==========
+
+class CreateTestPlanComponentRequest(BaseModel):
+    plan_id: str
+    part_number: str
+
+
+class TestPlanComponentResponse(BaseModel):
+    id: str
+    plan_id: str
+    part_number: str
+    created_at: datetime
+    updated_at: datetime
