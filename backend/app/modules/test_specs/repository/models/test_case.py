@@ -23,6 +23,7 @@ class TestCaseDoc(Document):
     """测试用例 - 数据库模型"""
     case_id: str = Field(..., description="唯一业务编号（如 TC-MEM-001）")
     ref_req_id: str = Field(..., description="关联需求 req_id")
+    workflow_item_id: Optional[str] = Field(None, description="关联工作流事项 ID")
     title: str = Field(..., description="用例名称")
     version: int = Field(default=1, description="版本号")
     is_active: bool = Field(default=True, description="是否为当前有效版本")
@@ -83,6 +84,7 @@ class TestCaseModel(BaseModel):
     id: Optional[str] = None
     case_id: str
     ref_req_id: str
+    workflow_item_id: Optional[str] = None
     title: str
     version: int
     is_active: bool

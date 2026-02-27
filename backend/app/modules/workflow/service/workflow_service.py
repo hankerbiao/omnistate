@@ -9,6 +9,7 @@ from app.modules.workflow.repository.models import (
     SysWorkflowStateDoc,
     WorkItemState,
 )
+from app.modules.test_specs.repository.models import TestRequirementDoc, TestCaseDoc
 from app.modules.workflow.domain.exceptions import (
     WorkItemNotFoundError,
     InvalidTransitionError,
@@ -47,8 +48,8 @@ class AsyncWorkflowService:
             self,
             type_code: Optional[str] = None,
             state: Optional[str] = None,
-            owner_id: Optional[int] = None,
-            creator_id: Optional[int] = None,
+            owner_id: Optional[str] = None,
+            creator_id: Optional[str] = None,
     ):
         """
         构建业务事项的基础查询对象。
@@ -132,8 +133,8 @@ class AsyncWorkflowService:
             self,
             type_code: Optional[str] = None,
             state: Optional[str] = None,
-            owner_id: Optional[int] = None,
-            creator_id: Optional[int] = None,
+            owner_id: Optional[str] = None,
+            creator_id: Optional[str] = None,
             limit: int = 20,
             offset: int = 0
     ) -> List[Dict]:
@@ -154,8 +155,8 @@ class AsyncWorkflowService:
             self,
             type_code: Optional[str] = None,
             state: Optional[str] = None,
-            owner_id: Optional[int] = None,
-            creator_id: Optional[int] = None,
+            owner_id: Optional[str] = None,
+            creator_id: Optional[str] = None,
             limit: int = 20,
             offset: int = 0,
             order_by: str = "created_at",
@@ -180,8 +181,8 @@ class AsyncWorkflowService:
             keyword: str,
             type_code: Optional[str] = None,
             state: Optional[str] = None,
-            owner_id: Optional[int] = None,
-            creator_id: Optional[int] = None,
+            owner_id: Optional[str] = None,
+            creator_id: Optional[str] = None,
             limit: int = 20,
             offset: int = 0
     ) -> List[Dict]:
@@ -360,7 +361,7 @@ class AsyncWorkflowService:
             type_code: str,
             title: str,
             content: str,
-            creator_id: int,
+            creator_id: str,
             parent_item_id: Optional[str] = None
     ) -> Dict:
         """
@@ -411,7 +412,7 @@ class AsyncWorkflowService:
             self,
             work_item_id: str,
             action: str,
-            operator_id: int,
+            operator_id: str,
             form_data: Dict[str, Any]
     ) -> Dict:
         """
@@ -478,6 +479,27 @@ class AsyncWorkflowService:
 
         logger.success(f"状态流转完成: ID={work_item_id}, new_state={new_state}")
 
+        # 同步业务实体状态（需求 / 用例）
+        try:
+            if item_doc.type_code == "REQUIREMENT":
+                requirement = await TestRequirementDoc.find_one(
+                    TestRequirementDoc.workflow_item_id == str(item_doc.id),
+                    TestRequirementDoc.is_deleted == False,
+                )
+                if requirement:
+                    requirement.status = new_state
+                    await requirement.save()
+            elif item_doc.type_code == "TEST_CASE":
+                test_case = await TestCaseDoc.find_one(
+                    TestCaseDoc.workflow_item_id == str(item_doc.id),
+                    TestCaseDoc.is_deleted == False,
+                )
+                if test_case:
+                    test_case.status = new_state
+                    await test_case.save()
+        except Exception as e:
+            logger.warning(f"同步业务状态失败: work_item_id={work_item_id}, error={e}")
+
         item_dict = item_doc.model_dump()
         item_dict["id"] = str(item_doc.id)
         if item_dict.get("parent_item_id") is not None:
@@ -519,7 +541,7 @@ class AsyncWorkflowService:
         logger.success(f"事项 ID={item_id} 已逻辑删除")
         return True
 
-    async def reassign_item(self, item_id: str, operator_id: int, target_owner_id: int, remark: Optional[str] = None) -> Dict:
+    async def reassign_item(self, item_id: str, operator_id: str, target_owner_id: str, remark: Optional[str] = None) -> Dict:
         """
         改派当前事项的处理人（不改变状态）。
 

@@ -84,6 +84,7 @@ class TestCaseResponse(BaseModel):
     id: str
     case_id: str
     ref_req_id: str
+    workflow_item_id: Optional[str] = None
     title: str
     version: int
     is_active: bool

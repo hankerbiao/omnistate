@@ -28,7 +28,7 @@ def resolve_owner(
     strategy: str,
     work_item: Dict[str, Any],
     form_data: Dict[str, Any],
-) -> Optional[int]:
+) -> Optional[str]:
     """
     根据处理人策略计算新的处理人。
 

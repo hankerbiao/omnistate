@@ -13,6 +13,7 @@ from pymongo import IndexModel, ASCENDING, DESCENDING
 class TestRequirementDoc(Document):
     """测试需求 - 数据库模型"""
     req_id: str = Field(..., description="唯一业务编号（如 TR-2026-001）")
+    workflow_item_id: Optional[str] = Field(None, description="关联工作流事项 ID")
     title: str = Field(..., description="需求简述")
     description: Optional[str] = Field(None, description="详细技术规范与验证目标")
     target_components: List[str] = Field(default_factory=list, description="BOM 覆盖范围")
@@ -48,6 +49,7 @@ class TestRequirementDoc(Document):
 class TestRequirementModel(BaseModel):
     id: Optional[str] = None
     req_id: str
+    workflow_item_id: Optional[str] = None
     title: str
     description: Optional[str] = None
     target_components: List[str]

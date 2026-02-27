@@ -7,6 +7,7 @@ AI 友好注释说明：
 """
 from typing import Dict, Any, Optional, List
 from app.shared.service import BaseService
+from app.shared.auth import hash_password, verify_password
 from app.modules.auth.repository.models import UserDoc, RoleDoc, PermissionDoc
 
 
@@ -26,9 +27,25 @@ class RbacService(BaseService):
         if existing:
             raise ValueError("user_id already exists")
         await self._ensure_roles_exist(data.get("role_ids", []))
+
+        # 密码加密存储
+        salt, pwd_hash = hash_password(data["password"])
+        data["password_salt"] = salt
+        data["password_hash"] = pwd_hash
+        data.pop("password", None)
+
         doc = UserDoc(**data)
         await doc.insert()
         return self._doc_to_dict(doc)
+
+    async def authenticate_user(self, user_id: str, password: str) -> Dict[str, Any]:
+        """校验用户密码，返回用户信息"""
+        user = await UserDoc.find_one(UserDoc.user_id == user_id)
+        if not user or user.status != "ACTIVE":
+            raise KeyError("user not found")
+        if not verify_password(password, user.password_salt, user.password_hash):
+            raise ValueError("invalid credentials")
+        return self._doc_to_dict(user)
 
     async def get_user(self, user_id: str) -> Dict[str, Any]:
         """根据 user_id 获取用户"""
@@ -72,6 +89,51 @@ class RbacService(BaseService):
         doc.role_ids = role_ids
         await doc.save()
         return self._doc_to_dict(doc)
+
+    async def update_user_password(self, user_id: str, new_password: str) -> Dict[str, Any]:
+        """更新用户密码（管理员或本人）"""
+        doc = await UserDoc.find_one(UserDoc.user_id == user_id)
+        if not doc:
+            raise KeyError("user not found")
+        salt, pwd_hash = hash_password(new_password)
+        doc.password_salt = salt
+        doc.password_hash = pwd_hash
+        await doc.save()
+        return self._doc_to_dict(doc)
+
+    async def change_password(self, user_id: str, old_password: str, new_password: str) -> Dict[str, Any]:
+        """用户自助修改密码（需要旧密码）"""
+        doc = await UserDoc.find_one(UserDoc.user_id == user_id)
+        if not doc:
+            raise KeyError("user not found")
+        if not verify_password(old_password, doc.password_salt, doc.password_hash):
+            raise ValueError("invalid credentials")
+        salt, pwd_hash = hash_password(new_password)
+        doc.password_salt = salt
+        doc.password_hash = pwd_hash
+        await doc.save()
+        return self._doc_to_dict(doc)
+
+    async def get_effective_permissions(self, user_id: str) -> Dict[str, Any]:
+        """获取用户有效权限（多角色并集）"""
+        user = await UserDoc.find_one(UserDoc.user_id == user_id)
+        if not user:
+            raise KeyError("user not found")
+
+        if not user.role_ids:
+            return {"user_id": user_id, "role_ids": [], "permissions": []}
+
+        roles = await RoleDoc.find({"role_id": {"$in": user.role_ids}}).to_list()
+        perm_ids: List[str] = []
+        for role in roles:
+            perm_ids.extend(role.permission_ids)
+
+        if not perm_ids:
+            return {"user_id": user_id, "role_ids": user.role_ids, "permissions": []}
+
+        perms = await PermissionDoc.find({"perm_id": {"$in": list(set(perm_ids))}}).to_list()
+        codes = sorted({perm.code for perm in perms})
+        return {"user_id": user_id, "role_ids": user.role_ids, "permissions": codes}
 
     # ===== Roles =====
 
@@ -154,7 +216,7 @@ class RbacService(BaseService):
         """校验角色是否都存在，避免绑定到无效角色"""
         if not role_ids:
             return
-        count = await RoleDoc.find(RoleDoc.role_id.in_(role_ids)).count()
+        count = await RoleDoc.find({"role_id": {"$in": role_ids}}).count()
         if count != len(set(role_ids)):
             raise KeyError("role not found")
 
@@ -162,6 +224,6 @@ class RbacService(BaseService):
         """校验权限是否都存在，避免角色绑定到无效权限"""
         if not permission_ids:
             return
-        count = await PermissionDoc.find(PermissionDoc.perm_id.in_(permission_ids)).count()
+        count = await PermissionDoc.find({"perm_id": {"$in": permission_ids}}).count()
         if count != len(set(permission_ids)):
             raise KeyError("permission not found")

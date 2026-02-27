@@ -35,6 +35,7 @@ from app.modules.workflow.schemas.workflow import (
     WorkflowConfigResponse,
 )
 from app.shared.api.schemas.base import APIResponse
+from app.shared.auth import require_permission
 from app.shared.api.schemas.error import ErrorResponse
 from app.modules.workflow.service.workflow_service import AsyncWorkflowService
 
@@ -120,7 +121,8 @@ async def get_workflow_configs(
     "",
     response_model=APIResponse[WorkItemResponse],
     status_code=201,
-    summary="创建业务事项"
+    summary="创建业务事项",
+    dependencies=[Depends(require_permission("work_items:write"))]
 )
 async def create_work_item(
     request: CreateWorkItemRequest,
@@ -150,14 +152,15 @@ async def create_work_item(
 @router.get(
     "",
     response_model=APIResponse[List[WorkItemResponse]],
-    summary="获取事项列表"
+    summary="获取事项列表",
+    dependencies=[Depends(require_permission("work_items:read"))]
 )
 async def list_work_items(
     service: WorkflowServiceDep,
     type_code: Optional[str] = Query(None, description="按类型筛选"),
     state: Optional[str] = Query(None, description="按状态筛选"),
-    owner_id: Optional[int] = Query(None, description="按当前处理人筛选"),
-    creator_id: Optional[int] = Query(None, description="按创建人筛选"),
+    owner_id: Optional[str] = Query(None, description="按当前处理人筛选"),
+    creator_id: Optional[str] = Query(None, description="按创建人筛选"),
     limit: int = Query(20, ge=1, le=100, description="返回数量限制"),
     offset: int = Query(0, ge=0, description="分页偏移"),
 ):
@@ -196,14 +199,15 @@ async def list_work_items(
 @router.get(
     "/sorted",
     response_model=APIResponse[List[WorkItemResponse]],
-    summary="获取排序后的事项列表"
+    summary="获取排序后的事项列表",
+    dependencies=[Depends(require_permission("work_items:read"))]
 )
 async def list_work_items_sorted(
     service: WorkflowServiceDep,
     type_code: Optional[str] = Query(None, description="按类型筛选"),
     state: Optional[str] = Query(None, description="按状态筛选"),
-    owner_id: Optional[int] = Query(None, description="按当前处理人筛选"),
-    creator_id: Optional[int] = Query(None, description="按创建人筛选"),
+    owner_id: Optional[str] = Query(None, description="按当前处理人筛选"),
+    creator_id: Optional[str] = Query(None, description="按创建人筛选"),
     limit: int = Query(20, ge=1, le=100, description="返回数量限制"),
     offset: int = Query(0, ge=0, description="分页偏移"),
     order_by: str = Query("created_at", description="排序字段: created_at/updated_at/title"),
@@ -233,15 +237,16 @@ async def list_work_items_sorted(
 @router.get(
     "/search",
     response_model=APIResponse[List[WorkItemResponse]],
-    summary="模糊搜索事项"
+    summary="模糊搜索事项",
+    dependencies=[Depends(require_permission("work_items:read"))]
 )
 async def search_work_items(
     service: WorkflowServiceDep,
     keyword: str = Query(..., min_length=1, description="关键词，模糊匹配标题和内容"),
     type_code: Optional[str] = Query(None, description="按类型筛选"),
     state: Optional[str] = Query(None, description="按状态筛选"),
-    owner_id: Optional[int] = Query(None, description="按当前处理人筛选"),
-    creator_id: Optional[int] = Query(None, description="按创建人筛选"),
+    owner_id: Optional[str] = Query(None, description="按当前处理人筛选"),
+    creator_id: Optional[str] = Query(None, description="按创建人筛选"),
     limit: int = Query(20, ge=1, le=100, description="返回数量限制"),
     offset: int = Query(0, ge=0, description="分页偏移"),
 ):
@@ -268,6 +273,7 @@ async def search_work_items(
     "/{item_id}",
     response_model=APIResponse[WorkItemResponse],
     summary="获取事项详情",
+    dependencies=[Depends(require_permission("work_items:read"))],
     responses={404: {"model": APIResponse[ErrorResponse], "description": "事项不存在"}}
 )
 async def get_work_item(
@@ -296,6 +302,7 @@ async def get_work_item(
     "/{item_id}/test-cases",
     response_model=APIResponse[List[WorkItemResponse]],
     summary="获取某个需求下的测试用例列表",
+    dependencies=[Depends(require_permission("work_items:read"))],
     responses={404: {"model": APIResponse[ErrorResponse], "description": "需求不存在"}}
 )
 async def list_test_cases_for_requirement(
@@ -322,6 +329,7 @@ async def list_test_cases_for_requirement(
     "/{item_id}/requirement",
     response_model=APIResponse[Optional[WorkItemResponse]],
     summary="获取测试用例所属的需求（如果存在）",
+    dependencies=[Depends(require_permission("work_items:read"))],
 )
 async def get_requirement_for_test_case(
     item_id: str,
@@ -346,6 +354,7 @@ async def get_requirement_for_test_case(
     "/{item_id}",
     response_model=APIResponse[DeleteWorkItemData],
     summary="删除事项",
+    dependencies=[Depends(require_permission("work_items:write"))],
     responses={
         404: {"model": APIResponse[ErrorResponse], "description": "事项不存在"},
         400: {"model": APIResponse[ErrorResponse], "description": "删除失败"}
@@ -378,6 +387,7 @@ async def delete_work_item(
     "/{item_id}/transition",
     response_model=APIResponse[TransitionResponse],
     summary="执行状态流转",
+    dependencies=[Depends(require_permission("work_items:transition"))],
     responses={
         404: {"model": APIResponse[ErrorResponse], "description": "事项不存在"},
         400: {"model": APIResponse[ErrorResponse], "description": "流转失败"}
@@ -413,6 +423,7 @@ async def transition_work_item(
     "/{item_id}/reassign",
     response_model=APIResponse[WorkItemResponse],
     summary="改派任务",
+    dependencies=[Depends(require_permission("work_items:write"))],
     responses={
         404: {"model": APIResponse[ErrorResponse], "description": "事项不存在"},
         400: {"model": APIResponse[ErrorResponse], "description": "改派失败"}
@@ -421,8 +432,8 @@ async def transition_work_item(
 async def reassign_work_item(
     item_id: str,
     service: WorkflowServiceDep,
-    operator_id: int = Query(..., description="操作人ID"),
-    target_owner_id: int = Query(..., description="目标处理人ID"),
+    operator_id: str = Query(..., description="操作人ID"),
+    target_owner_id: str = Query(..., description="目标处理人ID"),
     remark: Optional[str] = Query(None, description="备注信息（非必填）"),
 ):
     """
@@ -440,7 +451,8 @@ async def reassign_work_item(
 @router.get(
     "/{item_id}/logs",
     response_model=APIResponse[List[TransitionLogResponse]],
-    summary="获取流转历史"
+    summary="获取流转历史",
+    dependencies=[Depends(require_permission("work_items:read"))]
 )
 async def get_transition_logs(
     item_id: str,
@@ -462,7 +474,8 @@ async def get_transition_logs(
 @router.get(
     "/logs/batch",
     response_model=APIResponse[Dict[str, List[TransitionLogResponse]]],
-    summary="批量获取事项流转日志"
+    summary="批量获取事项流转日志",
+    dependencies=[Depends(require_permission("work_items:read"))]
 )
 async def batch_get_transition_logs(
     service: WorkflowServiceDep,
@@ -487,7 +500,8 @@ async def batch_get_transition_logs(
 @router.get(
     "/{item_id}/transitions",
     response_model=APIResponse[AvailableTransitionsResponse],
-    summary="获取可用的下一步流转"
+    summary="获取可用的下一步流转",
+    dependencies=[Depends(require_permission("work_items:read"))]
 )
 async def get_available_transitions(
     item_id: str,

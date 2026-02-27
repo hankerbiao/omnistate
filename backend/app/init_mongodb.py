@@ -36,6 +36,10 @@ from app.modules.workflow.repository.models import (
     SysWorkflowStateDoc,
     SysWorkflowConfigDoc,
 )
+from app.modules.auth.repository.models import (
+    PermissionDoc,
+    RoleDoc,
+)
 
 
 async def init_config_data():
@@ -184,6 +188,57 @@ async def init_config_data():
     log.success("基础数据初始化完成")
 
 
+async def init_rbac_data():
+    """
+    初始化 RBAC 默认权限与 ADMIN 角色。
+
+    说明：
+    - 权限以 perm_id/code 统一为权限码（如 work_items:read）
+    - ADMIN 角色默认拥有全部权限
+    """
+    log.info("开始初始化 RBAC 权限与角色...")
+
+    default_permissions = [
+        # workflow
+        ("work_items:read", "工作流读取权限"),
+        ("work_items:write", "工作流写入权限"),
+        ("work_items:transition", "工作流流转权限"),
+        # rbac
+        ("users:read", "用户读取权限"),
+        ("users:write", "用户写入权限"),
+        ("roles:read", "角色读取权限"),
+        ("roles:write", "角色写入权限"),
+        ("permissions:read", "权限读取权限"),
+        ("permissions:write", "权限写入权限"),
+        ("menu:read", "菜单读取权限"),
+        ("menu:write", "菜单写入权限"),
+        # assets (预留)
+        ("assets:read", "资产读取权限"),
+        ("assets:write", "资产写入权限"),
+        # test specs (预留)
+        ("requirements:read", "需求读取权限"),
+        ("requirements:write", "需求写入权限"),
+        ("test_cases:read", "用例读取权限"),
+        ("test_cases:write", "用例写入权限"),
+    ]
+
+    # 1) upsert 权限
+    for code, name in default_permissions:
+        await PermissionDoc.find_one(PermissionDoc.perm_id == code).upsert(
+            {"$set": {"code": code, "name": name, "updated_at": datetime.now(timezone.utc)}},
+            on_insert=PermissionDoc(perm_id=code, code=code, name=name)
+        )
+
+    # 2) upsert ADMIN 角色（拥有全部权限）
+    all_perm_ids = [code for code, _ in default_permissions]
+    await RoleDoc.find_one(RoleDoc.role_id == "ADMIN").upsert(
+        {"$set": {"name": "ADMIN", "permission_ids": all_perm_ids, "updated_at": datetime.now(timezone.utc)}},
+        on_insert=RoleDoc(role_id="ADMIN", name="ADMIN", permission_ids=all_perm_ids)
+    )
+
+    log.success("RBAC 初始化完成")
+
+
 async def main():
     """
     主函数 (Beanie ODM 版本)
@@ -209,13 +264,16 @@ async def main():
             document_models=[
                 SysWorkTypeDoc,
                 SysWorkflowStateDoc,
-                SysWorkflowConfigDoc
+                SysWorkflowConfigDoc,
+                PermissionDoc,
+                RoleDoc,
             ]
         )
         log.success("Beanie 初始化完成")
 
         # 执行核心同步逻辑
         await init_config_data()
+        await init_rbac_data()
 
         log.success("MongoDB 初始化完成!")
     except Exception as e:

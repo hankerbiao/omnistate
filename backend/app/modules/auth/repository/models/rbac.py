@@ -20,6 +20,9 @@ class UserDoc(Document):
     user_id: str = Field(..., description="用户唯一 ID")
     username: str = Field(..., description="用户名")
     email: Optional[str] = Field(None, description="邮箱")
+    # 密码存储为 hash + salt（避免明文）
+    password_hash: str = Field(..., description="密码哈希")
+    password_salt: str = Field(..., description="密码盐")
     # 一个用户可绑定多个角色
     role_ids: List[str] = Field(default_factory=list, description="角色 ID 列表")
     status: str = Field(default="ACTIVE", description="用户状态")

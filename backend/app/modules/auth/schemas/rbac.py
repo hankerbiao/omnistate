@@ -16,6 +16,7 @@ class CreateUserRequest(BaseModel):
     """创建用户请求体"""
     user_id: str = Field(..., description="用户唯一 ID")
     username: str = Field(..., description="用户名")
+    password: str = Field(..., min_length=6, description="登录密码")
     email: Optional[str] = None
     role_ids: List[str] = Field(default_factory=list)
     status: str = Field(default="ACTIVE")
@@ -33,6 +34,23 @@ class UpdateUserRolesRequest(BaseModel):
     role_ids: List[str] = Field(default_factory=list)
 
 
+class UpdateUserPasswordRequest(BaseModel):
+    """更新用户密码请求体（管理员或本人）"""
+    new_password: str = Field(..., min_length=6)
+
+
+class ChangePasswordRequest(BaseModel):
+    """用户自助修改密码请求体（需要旧密码）"""
+    old_password: str = Field(..., min_length=6)
+    new_password: str = Field(..., min_length=6)
+
+
+class LoginRequest(BaseModel):
+    """登录请求体"""
+    user_id: str
+    password: str
+
+
 class UserResponse(BaseModel):
     """用户返回结构"""
     id: str
@@ -43,6 +61,20 @@ class UserResponse(BaseModel):
     status: str
     created_at: datetime
     updated_at: datetime
+
+
+class LoginResponse(BaseModel):
+    """登录响应结构"""
+    access_token: str
+    token_type: str = "Bearer"
+    user: UserResponse
+
+
+class MePermissionsResponse(BaseModel):
+    """当前用户权限响应结构"""
+    user_id: str
+    role_ids: List[str]
+    permissions: List[str]
 
 
 # ========== Role ==========

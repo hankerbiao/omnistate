@@ -16,7 +16,7 @@ class CreateWorkItemRequest(BaseModel):
     type_code: str = Field(..., description="事项类型，如 REQUIREMENT, TEST_CASE")
     title: str = Field(..., min_length=1, max_length=200, description="事项标题")
     content: str = Field(..., description="事项内容")
-    creator_id: int = Field(..., description="创建者用户ID")
+    creator_id: str = Field(..., description="创建者用户ID")
     parent_item_id: Optional[PydanticObjectId] = Field(
         default=None, description="父事项ID（例如测试用例所属的需求ID）"
     )
@@ -25,7 +25,7 @@ class CreateWorkItemRequest(BaseModel):
 class TransitionRequest(BaseModel):
     """状态流转请求"""
     action: str = Field(..., description="触发的动作，如 SUBMIT, APPROVE, REJECT, ASSIGN 等")
-    operator_id: int = Field(..., description="执行操作的用户ID")
+    operator_id: str = Field(..., description="执行操作的用户ID")
     form_data: Dict[str, Any] = Field(default_factory=dict, description="表单数据，如 target_owner_id, comment 等")
 
 
@@ -39,8 +39,8 @@ class WorkItemResponse(BaseModel):
     content: str
     parent_item_id: Optional[str] = None
     current_state: str
-    current_owner_id: Optional[int]
-    creator_id: int
+    current_owner_id: Optional[str]
+    creator_id: str
     created_at: datetime
     updated_at: datetime
 
@@ -54,7 +54,7 @@ class TransitionLogResponse(BaseModel):
     from_state: str
     to_state: str
     action: str
-    operator_id: int
+    operator_id: str
     payload: Dict[str, Any]
     created_at: datetime
     updated_at: datetime
@@ -68,7 +68,7 @@ class TransitionResponse(BaseModel):
     from_state: str
     to_state: str
     action: str
-    new_owner_id: Optional[int]
+    new_owner_id: Optional[str]
     work_item: WorkItemResponse
 
     model_config = ConfigDict(from_attributes=True)

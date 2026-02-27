@@ -1,6 +1,7 @@
 """测试用例服务"""
 from typing import Dict, Any, Optional, List
 from app.modules.test_specs.repository.models import TestCaseDoc, TestRequirementDoc
+from app.modules.workflow.service.workflow_service import AsyncWorkflowService
 from app.shared.service import BaseService
 
 
@@ -41,10 +42,23 @@ class TestCaseService(BaseService):
     }
 
     async def create_test_case(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        await self._ensure_requirement_exists(data["ref_req_id"])
+        requirement = await self._ensure_requirement_exists(data["ref_req_id"])
         existing = await TestCaseDoc.find_one(TestCaseDoc.case_id == data["case_id"])
         if existing:
             raise ValueError("case_id already exists")
+
+        # 创建工作流事项，父事项指向需求的 workflow_item_id（如果存在）
+        workflow_service = AsyncWorkflowService()
+        workflow_item = await workflow_service.create_item(
+            type_code="TEST_CASE",
+            title=data["title"],
+            content=data.get("pre_condition") or data.get("post_condition") or data["title"],
+            creator_id=data.get("owner_id") or data.get("reviewer_id") or "system",
+            parent_item_id=requirement.workflow_item_id,
+        )
+        data["workflow_item_id"] = workflow_item["id"]
+        data["status"] = workflow_item["current_state"]
+
         doc = TestCaseDoc(**data)
         await doc.insert()
         return self._doc_to_dict(doc)
@@ -110,10 +124,11 @@ class TestCaseService(BaseService):
         await doc.save()
 
     @staticmethod
-    async def _ensure_requirement_exists(req_id: str) -> None:
+    async def _ensure_requirement_exists(req_id: str) -> TestRequirementDoc:
         existing = await TestRequirementDoc.find_one(
             TestRequirementDoc.req_id == req_id,
             TestRequirementDoc.is_deleted == False,
         )
         if not existing:
             raise KeyError("requirement not found")
+        return existing

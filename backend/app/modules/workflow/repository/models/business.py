@@ -23,8 +23,8 @@ class BusWorkItemDoc(Document):
         default=None, description="父事项ID（例如测试用例关联的需求ID）"
     )
     current_state: str = Field(default="DRAFT", description="当前状态指针")
-    current_owner_id: Optional[int] = Field(None, description="当前处理人")
-    creator_id: int = Field(..., description="创建者用户ID")
+    current_owner_id: Optional[str] = Field(None, description="当前处理人")
+    creator_id: str = Field(..., description="创建者用户ID")
     is_deleted: bool = Field(default=False, description="逻辑删除标志")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -56,7 +56,7 @@ class BusFlowLogDoc(Document):
     from_state: str = Field(..., description="变更前状态")
     to_state: str = Field(..., description="变更后状态")
     action: str = Field(..., description="触发动作")
-    operator_id: int = Field(..., description="操作人ID")
+    operator_id: str = Field(..., description="操作人ID")
     payload: Dict[str, Any] = Field(default_factory=dict, description="节点特有表单数据")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -83,8 +83,8 @@ class BusWorkItemModel(BaseModel):
     content: str
     parent_item_id: Optional[str] = None
     current_state: str
-    current_owner_id: Optional[int]
-    creator_id: int
+    current_owner_id: Optional[str]
+    creator_id: str
     is_deleted: bool
     created_at: datetime
     updated_at: datetime
@@ -98,7 +98,7 @@ class BusFlowLogModel(BaseModel):
     from_state: str
     to_state: str
     action: str
-    operator_id: int
+    operator_id: str
     payload: Dict[str, Any]
     created_at: datetime
     updated_at: datetime

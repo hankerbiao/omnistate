@@ -10,12 +10,19 @@ from typing import List, Optional, Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.shared.api.schemas.base import APIResponse
+from app.shared.auth import create_access_token, get_current_user
+from app.shared.auth import require_permission
 from app.modules.auth.service import RbacService
 from app.modules.auth.schemas import (
     CreateUserRequest,
     UpdateUserRequest,
     UpdateUserRolesRequest,
+    UpdateUserPasswordRequest,
+    ChangePasswordRequest,
+    LoginRequest,
     UserResponse,
+    LoginResponse,
+    MePermissionsResponse,
     CreateRoleRequest,
     UpdateRoleRequest,
     UpdateRolePermissionsRequest,
@@ -39,7 +46,11 @@ RbacServiceDep = Annotated[RbacService, Depends(get_rbac_service)]
 # ===== Users =====
 
 @router.post("/users", response_model=APIResponse[UserResponse], status_code=201, summary="创建用户")
-async def create_user(request: CreateUserRequest, service: RbacServiceDep):
+async def create_user(
+    request: CreateUserRequest,
+    service: RbacServiceDep,
+    _=Depends(require_permission("users:write")),
+):
     """创建用户（可包含角色绑定）"""
     try:
         data = await service.create_user(request.model_dump())
@@ -50,8 +61,32 @@ async def create_user(request: CreateUserRequest, service: RbacServiceDep):
         raise HTTPException(status_code=404, detail="role not found")
 
 
+@router.post(
+    "/login",
+    response_model=APIResponse[LoginResponse],
+    summary="用户登录",
+)
+async def login(
+    request: LoginRequest,
+    service: RbacServiceDep,
+):
+    """登录并返回 JWT"""
+    try:
+        user = await service.authenticate_user(request.user_id, request.password)
+        token = create_access_token(user["user_id"])
+        return APIResponse(data=LoginResponse(access_token=token, user=UserResponse(**user)))
+    except KeyError:
+        raise HTTPException(status_code=404, detail="user not found")
+    except ValueError:
+        raise HTTPException(status_code=401, detail="invalid credentials")
+
+
 @router.get("/users/{user_id}", response_model=APIResponse[UserResponse], summary="获取用户详情")
-async def get_user(user_id: str, service: RbacServiceDep):
+async def get_user(
+    user_id: str,
+    service: RbacServiceDep,
+    _=Depends(require_permission("users:read")),
+):
     """根据 user_id 获取用户详情"""
     try:
         data = await service.get_user(user_id)
@@ -63,6 +98,7 @@ async def get_user(user_id: str, service: RbacServiceDep):
 @router.get("/users", response_model=APIResponse[List[UserResponse]], summary="查询用户列表")
 async def list_users(
     service: RbacServiceDep,
+    _=Depends(require_permission("users:read")),
     status: Optional[str] = Query(None),
     role_id: Optional[str] = Query(None),
     limit: int = Query(20, ge=1, le=200),
@@ -74,7 +110,12 @@ async def list_users(
 
 
 @router.put("/users/{user_id}", response_model=APIResponse[UserResponse], summary="更新用户信息")
-async def update_user(user_id: str, request: UpdateUserRequest, service: RbacServiceDep):
+async def update_user(
+    user_id: str,
+    request: UpdateUserRequest,
+    service: RbacServiceDep,
+    _=Depends(require_permission("users:write")),
+):
     """更新用户基础信息（不包含角色）"""
     try:
         payload = request.model_dump(exclude_unset=True)
@@ -91,7 +132,12 @@ async def update_user(user_id: str, request: UpdateUserRequest, service: RbacSer
     response_model=APIResponse[UserResponse],
     summary="更新用户角色",
 )
-async def update_user_roles(user_id: str, request: UpdateUserRolesRequest, service: RbacServiceDep):
+async def update_user_roles(
+    user_id: str,
+    request: UpdateUserRolesRequest,
+    service: RbacServiceDep,
+    _=Depends(require_permission("users:write")),
+):
     """更新用户角色（管理员操作）"""
     try:
         data = await service.update_user_roles(user_id, request.role_ids)
@@ -102,10 +148,74 @@ async def update_user_roles(user_id: str, request: UpdateUserRolesRequest, servi
         raise HTTPException(status_code=404, detail="user not found")
 
 
+@router.patch(
+    "/users/{user_id}/password",
+    response_model=APIResponse[UserResponse],
+    summary="重置用户密码",
+)
+async def update_user_password(
+    user_id: str,
+    request: UpdateUserPasswordRequest,
+    service: RbacServiceDep,
+    _=Depends(require_permission("users:write")),
+):
+    """重置用户密码（管理员操作）"""
+    try:
+        data = await service.update_user_password(user_id, request.new_password)
+        return APIResponse(data=data)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="user not found")
+
+
+@router.post(
+    "/users/me/password",
+    response_model=APIResponse[UserResponse],
+    summary="用户自助修改密码",
+)
+async def change_my_password(
+    request: ChangePasswordRequest,
+    service: RbacServiceDep,
+    current_user=Depends(get_current_user),
+):
+    """用户自助修改密码（需要旧密码）"""
+    try:
+        data = await service.change_password(
+            current_user["user_id"],
+            request.old_password,
+            request.new_password,
+        )
+        return APIResponse(data=data)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="user not found")
+    except ValueError:
+        raise HTTPException(status_code=401, detail="invalid credentials")
+
+
+@router.get(
+    "/users/me/permissions",
+    response_model=APIResponse[MePermissionsResponse],
+    summary="获取当前用户权限",
+)
+async def get_my_permissions(
+    service: RbacServiceDep,
+    current_user=Depends(get_current_user),
+):
+    """返回当前登录用户的角色与有效权限（并集）。"""
+    try:
+        data = await service.get_effective_permissions(current_user["user_id"])
+        return APIResponse(data=MePermissionsResponse(**data))
+    except KeyError:
+        raise HTTPException(status_code=404, detail="user not found")
+
+
 # ===== Roles =====
 
 @router.post("/roles", response_model=APIResponse[RoleResponse], status_code=201, summary="创建角色")
-async def create_role(request: CreateRoleRequest, service: RbacServiceDep):
+async def create_role(
+    request: CreateRoleRequest,
+    service: RbacServiceDep,
+    _=Depends(require_permission("roles:write")),
+):
     """创建角色并绑定权限"""
     try:
         data = await service.create_role(request.model_dump())
@@ -117,7 +227,11 @@ async def create_role(request: CreateRoleRequest, service: RbacServiceDep):
 
 
 @router.get("/roles/{role_id}", response_model=APIResponse[RoleResponse], summary="获取角色详情")
-async def get_role(role_id: str, service: RbacServiceDep):
+async def get_role(
+    role_id: str,
+    service: RbacServiceDep,
+    _=Depends(require_permission("roles:read")),
+):
     """获取角色详情"""
     try:
         data = await service.get_role(role_id)
@@ -129,6 +243,7 @@ async def get_role(role_id: str, service: RbacServiceDep):
 @router.get("/roles", response_model=APIResponse[List[RoleResponse]], summary="查询角色列表")
 async def list_roles(
     service: RbacServiceDep,
+    _=Depends(require_permission("roles:read")),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ):
@@ -138,7 +253,12 @@ async def list_roles(
 
 
 @router.put("/roles/{role_id}", response_model=APIResponse[RoleResponse], summary="更新角色信息")
-async def update_role(role_id: str, request: UpdateRoleRequest, service: RbacServiceDep):
+async def update_role(
+    role_id: str,
+    request: UpdateRoleRequest,
+    service: RbacServiceDep,
+    _=Depends(require_permission("roles:write")),
+):
     """更新角色信息（不包含权限）"""
     try:
         payload = request.model_dump(exclude_unset=True)
@@ -155,7 +275,12 @@ async def update_role(role_id: str, request: UpdateRoleRequest, service: RbacSer
     response_model=APIResponse[RoleResponse],
     summary="更新角色权限",
 )
-async def update_role_permissions(role_id: str, request: UpdateRolePermissionsRequest, service: RbacServiceDep):
+async def update_role_permissions(
+    role_id: str,
+    request: UpdateRolePermissionsRequest,
+    service: RbacServiceDep,
+    _=Depends(require_permission("roles:write")),
+):
     """更新角色权限（管理员操作）"""
     try:
         data = await service.update_role_permissions(role_id, request.permission_ids)
@@ -174,7 +299,11 @@ async def update_role_permissions(role_id: str, request: UpdateRolePermissionsRe
     status_code=201,
     summary="创建权限",
 )
-async def create_permission(request: CreatePermissionRequest, service: RbacServiceDep):
+async def create_permission(
+    request: CreatePermissionRequest,
+    service: RbacServiceDep,
+    _=Depends(require_permission("permissions:write")),
+):
     """创建权限"""
     try:
         data = await service.create_permission(request.model_dump())
@@ -188,7 +317,11 @@ async def create_permission(request: CreatePermissionRequest, service: RbacServi
     response_model=APIResponse[PermissionResponse],
     summary="获取权限详情",
 )
-async def get_permission(perm_id: str, service: RbacServiceDep):
+async def get_permission(
+    perm_id: str,
+    service: RbacServiceDep,
+    _=Depends(require_permission("permissions:read")),
+):
     """获取权限详情"""
     try:
         data = await service.get_permission(perm_id)
@@ -204,6 +337,7 @@ async def get_permission(perm_id: str, service: RbacServiceDep):
 )
 async def list_permissions(
     service: RbacServiceDep,
+    _=Depends(require_permission("permissions:read")),
     limit: int = Query(100, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ):
@@ -217,7 +351,12 @@ async def list_permissions(
     response_model=APIResponse[PermissionResponse],
     summary="更新权限",
 )
-async def update_permission(perm_id: str, request: UpdatePermissionRequest, service: RbacServiceDep):
+async def update_permission(
+    perm_id: str,
+    request: UpdatePermissionRequest,
+    service: RbacServiceDep,
+    _=Depends(require_permission("permissions:write")),
+):
     """更新权限信息"""
     try:
         payload = request.model_dump(exclude_unset=True)

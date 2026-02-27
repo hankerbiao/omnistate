@@ -266,9 +266,9 @@ async def list_plan_components(
     summary="删除测试计划关联部件",
 )
 async def delete_plan_component(
+    service: AssetsServiceDep,
     plan_id: str = Query(...),
     part_number: str = Query(...),
-    service: AssetsServiceDep,
 ):
     try:
         await service.delete_plan_component(plan_id, part_number)

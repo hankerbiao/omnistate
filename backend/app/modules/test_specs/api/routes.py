@@ -111,5 +111,7 @@ async def delete_requirement(
     try:
         await service.delete_requirement(req_id)
         return APIResponse(data={"deleted": True})
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
     except KeyError:
         raise HTTPException(status_code=404, detail="requirement not found")

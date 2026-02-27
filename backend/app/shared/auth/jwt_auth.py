@@ -120,13 +120,13 @@ async def get_user_permissions(user_id: str) -> List[str]:
     user = await UserDoc.find_one(UserDoc.user_id == user_id)
     if not user:
         return []
-    roles = await RoleDoc.find(RoleDoc.role_id.in_(user.role_ids)).to_list()
+    roles = await RoleDoc.find({"role_id": {"$in": user.role_ids}}).to_list()
     perm_ids: List[str] = []
     for role in roles:
         perm_ids.extend(role.permission_ids)
     if not perm_ids:
         return []
-    perms = await PermissionDoc.find(PermissionDoc.perm_id.in_(list(set(perm_ids)))).to_list()
+    perms = await PermissionDoc.find({"perm_id": {"$in": list(set(perm_ids))}}).to_list()
     return [perm.code for perm in perms]
 
 

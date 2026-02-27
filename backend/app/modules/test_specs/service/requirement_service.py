@@ -1,6 +1,7 @@
 """测试需求服务"""
 from typing import Dict, Any, Optional, List
-from app.modules.test_specs.repository.models import TestRequirementDoc
+from app.modules.test_specs.repository.models import TestRequirementDoc, TestCaseDoc
+from app.modules.workflow.service.workflow_service import AsyncWorkflowService
 from app.shared.service import BaseService
 
 
@@ -22,6 +23,20 @@ class RequirementService(BaseService):
         )
         if existing:
             raise ValueError("req_id already exists")
+
+        # 1) 创建工作流事项（使用 tpm_owner_id 作为创建者）
+        workflow_service = AsyncWorkflowService()
+        workflow_item = await workflow_service.create_item(
+            type_code="REQUIREMENT",
+            title=data["title"],
+            content=data.get("description") or data["title"],
+            creator_id=data["tpm_owner_id"],
+            parent_item_id=None,
+        )
+
+        # 2) 写回 workflow_item_id 与初始状态
+        data["workflow_item_id"] = workflow_item["id"]
+        data["status"] = workflow_item["current_state"]
         doc = TestRequirementDoc(**data)
         await doc.insert()
         return self._doc_to_dict(doc)
@@ -75,5 +90,12 @@ class RequirementService(BaseService):
         )
         if not doc:
             raise KeyError("requirement not found")
+        # 若存在关联用例（未删除），则不允许删除需求
+        related_cases = await TestCaseDoc.find(
+            TestCaseDoc.ref_req_id == req_id,
+            TestCaseDoc.is_deleted == False,
+        ).count()
+        if related_cases > 0:
+            raise ValueError("requirement has related test cases")
         doc.is_deleted = True
         await doc.save()

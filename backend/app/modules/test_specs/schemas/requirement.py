@@ -28,6 +28,7 @@ class UpdateRequirementRequest(BaseModel):
 class RequirementResponse(BaseModel):
     id: str
     req_id: str
+    workflow_item_id: Optional[str] = None
     title: str
     description: Optional[str]
     target_components: List[str]
