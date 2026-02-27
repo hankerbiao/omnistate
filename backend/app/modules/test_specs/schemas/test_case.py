@@ -1,0 +1,111 @@
+"""测试用例 API 模型"""
+from typing import Optional, Dict, Any, List
+from datetime import datetime
+from pydantic import BaseModel, Field
+
+
+class CreateTestCaseRequest(BaseModel):
+    case_id: str = Field(..., description="唯一业务编号")
+    ref_req_id: str = Field(..., description="关联需求 req_id")
+    title: str = Field(..., description="用例名称")
+    version: int = 1
+    is_active: bool = True
+    change_log: Optional[str] = None
+    status: str = "draft"
+    owner_id: Optional[str] = None
+    reviewer_id: Optional[str] = None
+    priority: Optional[str] = None
+    estimated_duration_sec: Optional[int] = None
+    target_components: List[str] = Field(default_factory=list)
+    required_env: Dict[str, Any] = Field(default_factory=dict)
+    tags: List[str] = Field(default_factory=list)
+    test_category: Optional[str] = None
+    tooling_req: List[str] = Field(default_factory=list)
+    is_destructive: bool = False
+    pre_condition: Optional[str] = None
+    post_condition: Optional[str] = None
+    steps: List[Dict[str, Any]] = Field(default_factory=list)
+    is_need_auto: bool = False
+    is_automated: bool = False
+    automation_type: Optional[str] = None
+    script_entity_id: Optional[str] = None
+    risk_level: Optional[str] = None
+    failure_analysis: Optional[str] = None
+    confidentiality: Optional[str] = None
+    visibility_scope: Optional[str] = None
+    attachments: List[str] = Field(default_factory=list)
+    custom_fields: Dict[str, Any] = Field(default_factory=dict)
+    deprecation_reason: Optional[str] = None
+    approval_history: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class UpdateTestCaseRequest(BaseModel):
+    ref_req_id: Optional[str] = None
+    title: Optional[str] = None
+    version: Optional[int] = None
+    is_active: Optional[bool] = None
+    change_log: Optional[str] = None
+    status: Optional[str] = None
+    owner_id: Optional[str] = None
+    reviewer_id: Optional[str] = None
+    priority: Optional[str] = None
+    estimated_duration_sec: Optional[int] = None
+    target_components: Optional[List[str]] = None
+    required_env: Optional[Dict[str, Any]] = None
+    tags: Optional[List[str]] = None
+    test_category: Optional[str] = None
+    tooling_req: Optional[List[str]] = None
+    is_destructive: Optional[bool] = None
+    pre_condition: Optional[str] = None
+    post_condition: Optional[str] = None
+    steps: Optional[List[Dict[str, Any]]] = None
+    is_need_auto: Optional[bool] = None
+    is_automated: Optional[bool] = None
+    automation_type: Optional[str] = None
+    script_entity_id: Optional[str] = None
+    risk_level: Optional[str] = None
+    failure_analysis: Optional[str] = None
+    confidentiality: Optional[str] = None
+    visibility_scope: Optional[str] = None
+    attachments: Optional[List[str]] = None
+    custom_fields: Optional[Dict[str, Any]] = None
+    deprecation_reason: Optional[str] = None
+    approval_history: Optional[List[Dict[str, Any]]] = None
+
+
+class TestCaseResponse(BaseModel):
+    id: str
+    case_id: str
+    ref_req_id: str
+    title: str
+    version: int
+    is_active: bool
+    change_log: Optional[str]
+    status: str
+    owner_id: Optional[str]
+    reviewer_id: Optional[str]
+    priority: Optional[str]
+    estimated_duration_sec: Optional[int]
+    target_components: List[str]
+    required_env: Dict[str, Any]
+    tags: List[str]
+    test_category: Optional[str]
+    tooling_req: List[str]
+    is_destructive: bool
+    pre_condition: Optional[str]
+    post_condition: Optional[str]
+    steps: List[Dict[str, Any]]
+    is_need_auto: bool
+    is_automated: bool
+    automation_type: Optional[str]
+    script_entity_id: Optional[str]
+    risk_level: Optional[str]
+    failure_analysis: Optional[str]
+    confidentiality: Optional[str]
+    visibility_scope: Optional[str]
+    attachments: List[str]
+    custom_fields: Dict[str, Any]
+    deprecation_reason: Optional[str]
+    approval_history: List[Dict[str, Any]]
+    created_at: datetime
+    updated_at: datetime
