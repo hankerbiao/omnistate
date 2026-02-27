@@ -161,3 +161,41 @@
 2. 将权限校验注入到已有 API（FastAPI 依赖）
 3. 增加 ADMIN 编辑角色与用户权限接口
 4. 后续按需扩展项目级/资产级权限
+
+---
+
+## 11. 与代码实现的映射关系
+
+本节用于帮助开发者快速定位“设计 → 代码”的对应关系。
+
+### 11.1 模块路径
+- 用户/角色/权限模块：`app/modules/auth/`
+- 数据模型（Beanie）：`app/modules/auth/repository/models/rbac.py`
+- 服务层（业务规则）：`app/modules/auth/service/rbac_service.py`
+- API 路由层：`app/modules/auth/api/routes.py`
+- API 模型（请求/响应）：`app/modules/auth/schemas/rbac.py`
+
+### 11.2 路由与能力映射
+- 用户管理：`/api/v1/auth/users`（创建/查询/更新/角色绑定）
+- 角色管理：`/api/v1/auth/roles`（创建/查询/更新/权限绑定）
+- 权限管理：`/api/v1/auth/permissions`（创建/查询/更新）
+
+### 11.3 ADMIN 可编辑权限的落地点
+- 更新用户角色：`PATCH /api/v1/auth/users/{user_id}/roles`
+- 更新角色权限：`PATCH /api/v1/auth/roles/{role_id}/permissions`
+
+> 说明：当前接口已实现，但权限校验需在鉴权依赖中接入。
+
+---
+
+## 12. 权限校验依赖示例（FastAPI - 已实现）
+
+项目已提供真实可用的 JWT 鉴权依赖，位置：\n`app/shared/auth/jwt_auth.py`\n\n核心能力：\n- `create_access_token(subject)`：生成 JWT\n- `get_current_user`：解析 JWT 并返回当前用户\n- `require_permission(code)`：权限校验依赖\n\n### 路由使用示例\n```python
+from fastapi import Depends
+from app.shared.auth import require_permission
+
+@router.patch(
+    \"/roles/{role_id}/permissions\",\n    dependencies=[Depends(require_permission(\"roles:write\"))]\n)
+async def update_role_permissions(...):
+    ...
+```
