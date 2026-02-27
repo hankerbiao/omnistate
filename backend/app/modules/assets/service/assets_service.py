@@ -5,10 +5,44 @@ from app.modules.assets.repository.models import (
     DutDoc,
     TestPlanComponentDoc,
 )
+from app.shared.service import BaseService
 
 
-class AssetsService:
+class AssetsService(BaseService):
     """资产管理核心服务（异步）"""
+    _COMPONENT_UPDATABLE_FIELDS = {
+        "category",
+        "subcategory",
+        "vendor",
+        "model",
+        "revision",
+        "form_factor",
+        "interface_type",
+        "interface_gen",
+        "protocol",
+        "attributes",
+        "power_watt",
+        "firmware_baseline",
+        "spec",
+        "datasheet_url",
+        "lifecycle_status",
+        "aliases",
+    }
+    _DUT_UPDATABLE_FIELDS = {
+        "model",
+        "status",
+        "owner_team",
+        "rack_location",
+        "mgmt_ip",
+        "os_ip",
+        "os_version",
+        "bios_version",
+        "last_seen_at",
+        "health_status",
+        "tags",
+        "current_bom",
+        "notes",
+    }
 
     # ========== Component Library ==========
 
@@ -61,8 +95,7 @@ class AssetsService:
         )
         if not doc:
             raise KeyError("component not found")
-        for key, value in data.items():
-            setattr(doc, key, value)
+        self._apply_updates(doc, data, self._COMPONENT_UPDATABLE_FIELDS)
         await doc.save()
         return self._doc_to_dict(doc)
 
@@ -116,8 +149,7 @@ class AssetsService:
         doc = await DutDoc.find_one(DutDoc.asset_id == asset_id)
         if not doc:
             raise KeyError("dut not found")
-        for key, value in data.items():
-            setattr(doc, key, value)
+        self._apply_updates(doc, data, self._DUT_UPDATABLE_FIELDS)
         await doc.save()
         return self._doc_to_dict(doc)
 
@@ -166,9 +198,3 @@ class AssetsService:
         await doc.delete()
 
     # ========== Helpers ==========
-
-    @staticmethod
-    def _doc_to_dict(doc) -> Dict[str, Any]:
-        data = doc.model_dump()
-        data["id"] = str(doc.id)
-        return data

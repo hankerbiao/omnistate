@@ -1,10 +1,20 @@
 """测试需求服务"""
 from typing import Dict, Any, Optional, List
 from app.modules.test_specs.repository.models import TestRequirementDoc
+from app.shared.service import BaseService
 
 
-class RequirementService:
+class RequirementService(BaseService):
     """测试需求 CRUD 服务（异步）"""
+    _UPDATABLE_FIELDS = {
+        "title",
+        "description",
+        "target_components",
+        "tpm_owner_id",
+        "manual_dev_id",
+        "auto_dev_id",
+        "status",
+    }
 
     async def create_requirement(self, data: Dict[str, Any]) -> Dict[str, Any]:
         existing = await TestRequirementDoc.find_one(
@@ -17,7 +27,10 @@ class RequirementService:
         return self._doc_to_dict(doc)
 
     async def get_requirement(self, req_id: str) -> Dict[str, Any]:
-        doc = await TestRequirementDoc.find_one(TestRequirementDoc.req_id == req_id)
+        doc = await TestRequirementDoc.find_one(
+            TestRequirementDoc.req_id == req_id,
+            TestRequirementDoc.is_deleted == False,
+        )
         if not doc:
             raise KeyError("requirement not found")
         return self._doc_to_dict(doc)
@@ -31,7 +44,7 @@ class RequirementService:
         limit: int = 20,
         offset: int = 0,
     ) -> List[Dict[str, Any]]:
-        query = TestRequirementDoc.find()
+        query = TestRequirementDoc.find(TestRequirementDoc.is_deleted == False)
         if status:
             query = query.find(TestRequirementDoc.status == status)
         if tpm_owner_id:
@@ -45,22 +58,22 @@ class RequirementService:
         return [self._doc_to_dict(doc) for doc in docs]
 
     async def update_requirement(self, req_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
-        doc = await TestRequirementDoc.find_one(TestRequirementDoc.req_id == req_id)
+        doc = await TestRequirementDoc.find_one(
+            TestRequirementDoc.req_id == req_id,
+            TestRequirementDoc.is_deleted == False,
+        )
         if not doc:
             raise KeyError("requirement not found")
-        for key, value in data.items():
-            setattr(doc, key, value)
+        self._apply_updates(doc, data, self._UPDATABLE_FIELDS)
         await doc.save()
         return self._doc_to_dict(doc)
 
     async def delete_requirement(self, req_id: str) -> None:
-        doc = await TestRequirementDoc.find_one(TestRequirementDoc.req_id == req_id)
+        doc = await TestRequirementDoc.find_one(
+            TestRequirementDoc.req_id == req_id,
+            TestRequirementDoc.is_deleted == False,
+        )
         if not doc:
             raise KeyError("requirement not found")
-        await doc.delete()
-
-    @staticmethod
-    def _doc_to_dict(doc) -> Dict[str, Any]:
-        data = doc.model_dump()
-        data["id"] = str(doc.id)
-        return data
+        doc.is_deleted = True
+        await doc.save()

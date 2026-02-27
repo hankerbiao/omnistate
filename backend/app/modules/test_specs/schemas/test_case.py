@@ -4,6 +4,13 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 
+class TestCaseStepSchema(BaseModel):
+    step_id: str = Field(..., description="步骤 ID")
+    name: str = Field(..., description="步骤名称")
+    action: str = Field(..., description="执行动作")
+    expected: str = Field(..., description="预期结果")
+
+
 class CreateTestCaseRequest(BaseModel):
     case_id: str = Field(..., description="唯一业务编号")
     ref_req_id: str = Field(..., description="关联需求 req_id")
@@ -24,7 +31,7 @@ class CreateTestCaseRequest(BaseModel):
     is_destructive: bool = False
     pre_condition: Optional[str] = None
     post_condition: Optional[str] = None
-    steps: List[Dict[str, Any]] = Field(default_factory=list)
+    steps: List[TestCaseStepSchema] = Field(default_factory=list)
     is_need_auto: bool = False
     is_automated: bool = False
     automation_type: Optional[str] = None
@@ -58,7 +65,7 @@ class UpdateTestCaseRequest(BaseModel):
     is_destructive: Optional[bool] = None
     pre_condition: Optional[str] = None
     post_condition: Optional[str] = None
-    steps: Optional[List[Dict[str, Any]]] = None
+    steps: Optional[List[TestCaseStepSchema]] = None
     is_need_auto: Optional[bool] = None
     is_automated: Optional[bool] = None
     automation_type: Optional[str] = None
@@ -94,7 +101,7 @@ class TestCaseResponse(BaseModel):
     is_destructive: bool
     pre_condition: Optional[str]
     post_condition: Optional[str]
-    steps: List[Dict[str, Any]]
+    steps: List[TestCaseStepSchema]
     is_need_auto: bool
     is_automated: bool
     automation_type: Optional[str]

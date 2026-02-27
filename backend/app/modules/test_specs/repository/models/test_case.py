@@ -8,6 +8,15 @@ from beanie import Document, before_event, Save, Insert
 from pymongo import IndexModel, ASCENDING, DESCENDING
 
 
+# ========== 子结构 ==========
+
+class TestCaseStep(BaseModel):
+    step_id: str = Field(..., description="步骤 ID")
+    name: str = Field(..., description="步骤名称")
+    action: str = Field(..., description="执行动作")
+    expected: str = Field(..., description="预期结果")
+
+
 # ========== Beanie 文档模型 ==========
 
 class TestCaseDoc(Document):
@@ -31,7 +40,7 @@ class TestCaseDoc(Document):
     is_destructive: bool = Field(default=False, description="是否为破坏性测试")
     pre_condition: Optional[str] = Field(None, description="前置条件")
     post_condition: Optional[str] = Field(None, description="后置条件")
-    steps: List[Dict[str, Any]] = Field(default_factory=list, description="步骤定义列表")
+    steps: List[TestCaseStep] = Field(default_factory=list, description="步骤定义列表")
     is_need_auto: bool = Field(default=False, description="是否需要自动化")
     is_automated: bool = Field(default=False, description="是否已自动化")
     automation_type: Optional[str] = Field(None, description="自动化类型")
@@ -44,6 +53,7 @@ class TestCaseDoc(Document):
     custom_fields: Dict[str, Any] = Field(default_factory=dict, description="自定义字段")
     deprecation_reason: Optional[str] = Field(None, description="废弃原因")
     approval_history: List[Dict[str, Any]] = Field(default_factory=list, description="审批记录")
+    is_deleted: bool = Field(default=False, description="逻辑删除标志")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -61,6 +71,7 @@ class TestCaseDoc(Document):
             IndexModel("reviewer_id"),
             IndexModel("priority"),
             IndexModel("is_active"),
+            IndexModel("is_deleted"),
             IndexModel([("ref_req_id", ASCENDING), ("created_at", DESCENDING)]),
             IndexModel("created_at"),
         ]
@@ -89,7 +100,7 @@ class TestCaseModel(BaseModel):
     is_destructive: bool
     pre_condition: Optional[str] = None
     post_condition: Optional[str] = None
-    steps: List[Dict[str, Any]]
+    steps: List[TestCaseStep]
     is_need_auto: bool
     is_automated: bool
     automation_type: Optional[str] = None

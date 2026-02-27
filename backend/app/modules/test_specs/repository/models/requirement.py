@@ -20,6 +20,7 @@ class TestRequirementDoc(Document):
     manual_dev_id: Optional[str] = Field(None, description="测试用例开发工程师 ID")
     auto_dev_id: Optional[str] = Field(None, description="自动化脚本开发工程师 ID")
     status: str = Field(default="待指派", description="需求状态")
+    is_deleted: bool = Field(default=False, description="逻辑删除标志")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -35,6 +36,7 @@ class TestRequirementDoc(Document):
             IndexModel("tpm_owner_id"),
             IndexModel("manual_dev_id"),
             IndexModel("auto_dev_id"),
+            IndexModel("is_deleted"),
             IndexModel("created_at"),
             IndexModel([("tpm_owner_id", ASCENDING), ("created_at", DESCENDING)]),
             IndexModel([("status", ASCENDING), ("created_at", DESCENDING)]),

@@ -20,6 +20,7 @@ from app.modules.assets.repository.models import (
     TestPlanComponentDoc,
 )
 from app.modules.test_specs.repository.models import TestRequirementDoc, TestCaseDoc
+from app.modules.auth.repository.models import UserDoc, RoleDoc, PermissionDoc
 from app.shared.api.schemas.base import APIResponse
 
 
@@ -51,6 +52,9 @@ async def lifespan(app: FastAPI):
                 TestPlanComponentDoc,
                 TestRequirementDoc,
                 TestCaseDoc,
+                UserDoc,
+                RoleDoc,
+                PermissionDoc,
             ]
         )
         log.success("Beanie ODM 初始化完成")
