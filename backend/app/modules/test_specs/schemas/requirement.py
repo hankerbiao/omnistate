@@ -17,7 +17,6 @@ class CreateRequirementRequest(BaseModel):
     tpm_owner_id: str = Field(..., description="需求创建人/项目经理 ID")
     manual_dev_id: Optional[str] = None
     auto_dev_id: Optional[str] = None
-    status: str = "待指派"
     attachments: List[Dict[str, Any]] = Field(default_factory=list)
 
 
@@ -33,7 +32,6 @@ class UpdateRequirementRequest(BaseModel):
     tpm_owner_id: Optional[str] = None
     manual_dev_id: Optional[str] = None
     auto_dev_id: Optional[str] = None
-    status: Optional[str] = None
     attachments: Optional[List[Dict[str, Any]]] = None
 
 
