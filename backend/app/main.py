@@ -22,7 +22,6 @@ from app.modules.assets.repository.models import (
 from app.modules.test_specs.repository.models import TestRequirementDoc, TestCaseDoc
 from app.modules.auth.repository.models import UserDoc, RoleDoc, PermissionDoc
 from app.modules.menu.repository.models import MenuDoc
-from app.shared.api.schemas.base import APIResponse
 
 
 @asynccontextmanager
@@ -90,12 +89,6 @@ app.add_middleware(
 setup_exception_handlers(app)
 
 app.include_router(api_router)
-
-
-@app.get("/", summary="健康检查")
-def root():
-    # 简单健康检查，用于基础存活探测
-    return APIResponse(data={"status": "ok", "message": "Workflow API 服务运行中 (MongoDB)"})
 
 
 if __name__ == "__main__":

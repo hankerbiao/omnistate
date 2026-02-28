@@ -5,5 +5,17 @@ AI 友好注释说明：
 - 后续如有多个服务，可在此统一聚合。
 """
 from .rbac_service import RbacService
+from .exceptions import (
+    RbacError,
+    UserNotFoundError,
+    RoleNotFoundError,
+    PermissionNotFoundError,
+)
 
-__all__ = ["RbacService"]
+__all__ = [
+    "RbacService",
+    "RbacError",
+    "UserNotFoundError",
+    "RoleNotFoundError",
+    "PermissionNotFoundError",
+]

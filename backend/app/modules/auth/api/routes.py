@@ -12,7 +12,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from app.shared.api.schemas.base import APIResponse
 from app.shared.auth import create_access_token, get_current_user
 from app.shared.auth import require_permission
-from app.modules.auth.service import RbacService
+from app.modules.auth.service import (
+    RbacService,
+    UserNotFoundError,
+    RoleNotFoundError,
+    PermissionNotFoundError,
+)
 from app.modules.auth.schemas import (
     CreateUserRequest,
     UpdateUserRequest,
@@ -57,7 +62,7 @@ async def create_user(
         return APIResponse(data=data)
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
-    except KeyError:
+    except RoleNotFoundError:
         raise HTTPException(status_code=404, detail="role not found")
 
 
@@ -75,7 +80,7 @@ async def login(
         user = await service.authenticate_user(request.user_id, request.password)
         token = create_access_token(user["user_id"])
         return APIResponse(data=LoginResponse(access_token=token, user=UserResponse(**user)))
-    except KeyError:
+    except UserNotFoundError:
         raise HTTPException(status_code=404, detail="user not found")
     except ValueError:
         raise HTTPException(status_code=401, detail="invalid credentials")
@@ -91,7 +96,7 @@ async def get_user(
     try:
         data = await service.get_user(user_id)
         return APIResponse(data=data)
-    except KeyError:
+    except UserNotFoundError:
         raise HTTPException(status_code=404, detail="user not found")
 
 
@@ -123,7 +128,7 @@ async def update_user(
             raise HTTPException(status_code=400, detail="no fields to update")
         data = await service.update_user(user_id, payload)
         return APIResponse(data=data)
-    except KeyError:
+    except UserNotFoundError:
         raise HTTPException(status_code=404, detail="user not found")
 
 
@@ -142,9 +147,9 @@ async def update_user_roles(
     try:
         data = await service.update_user_roles(user_id, request.role_ids)
         return APIResponse(data=data)
-    except KeyError as e:
-        if str(e) == "'role not found'":
-            raise HTTPException(status_code=404, detail="role not found")
+    except RoleNotFoundError:
+        raise HTTPException(status_code=404, detail="role not found")
+    except UserNotFoundError:
         raise HTTPException(status_code=404, detail="user not found")
 
 
@@ -163,7 +168,7 @@ async def update_user_password(
     try:
         data = await service.update_user_password(user_id, request.new_password)
         return APIResponse(data=data)
-    except KeyError:
+    except UserNotFoundError:
         raise HTTPException(status_code=404, detail="user not found")
 
 
@@ -185,7 +190,7 @@ async def change_my_password(
             request.new_password,
         )
         return APIResponse(data=data)
-    except KeyError:
+    except UserNotFoundError:
         raise HTTPException(status_code=404, detail="user not found")
     except ValueError:
         raise HTTPException(status_code=401, detail="invalid credentials")
@@ -204,7 +209,7 @@ async def get_my_permissions(
     try:
         data = await service.get_effective_permissions(current_user["user_id"])
         return APIResponse(data=MePermissionsResponse(**data))
-    except KeyError:
+    except UserNotFoundError:
         raise HTTPException(status_code=404, detail="user not found")
 
 
@@ -222,7 +227,7 @@ async def create_role(
         return APIResponse(data=data)
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
-    except KeyError:
+    except PermissionNotFoundError:
         raise HTTPException(status_code=404, detail="permission not found")
 
 
@@ -236,7 +241,7 @@ async def get_role(
     try:
         data = await service.get_role(role_id)
         return APIResponse(data=data)
-    except KeyError:
+    except RoleNotFoundError:
         raise HTTPException(status_code=404, detail="role not found")
 
 
@@ -266,7 +271,7 @@ async def update_role(
             raise HTTPException(status_code=400, detail="no fields to update")
         data = await service.update_role(role_id, payload)
         return APIResponse(data=data)
-    except KeyError:
+    except RoleNotFoundError:
         raise HTTPException(status_code=404, detail="role not found")
 
 
@@ -285,9 +290,9 @@ async def update_role_permissions(
     try:
         data = await service.update_role_permissions(role_id, request.permission_ids)
         return APIResponse(data=data)
-    except KeyError as e:
-        if str(e) == "'permission not found'":
-            raise HTTPException(status_code=404, detail="permission not found")
+    except PermissionNotFoundError:
+        raise HTTPException(status_code=404, detail="permission not found")
+    except RoleNotFoundError:
         raise HTTPException(status_code=404, detail="role not found")
 
 
@@ -326,7 +331,7 @@ async def get_permission(
     try:
         data = await service.get_permission(perm_id)
         return APIResponse(data=data)
-    except KeyError:
+    except PermissionNotFoundError:
         raise HTTPException(status_code=404, detail="permission not found")
 
 
@@ -364,5 +369,5 @@ async def update_permission(
             raise HTTPException(status_code=400, detail="no fields to update")
         data = await service.update_permission(perm_id, payload)
         return APIResponse(data=data)
-    except KeyError:
+    except PermissionNotFoundError:
         raise HTTPException(status_code=404, detail="permission not found")

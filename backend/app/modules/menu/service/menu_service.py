@@ -26,7 +26,7 @@ class MenuService(BaseService):
         return self._doc_to_dict(doc)
 
     async def get_menu(self, menu_id: str) -> Dict[str, Any]:
-        doc = await MenuDoc.find_one(MenuDoc.menu_id == menu_id, MenuDoc.is_deleted == False)
+        doc = await MenuDoc.find_one(MenuDoc.menu_id == menu_id, {"is_deleted": False})
         if not doc:
             raise KeyError("menu not found")
         return self._doc_to_dict(doc)
@@ -38,7 +38,7 @@ class MenuService(BaseService):
         limit: int = 100,
         offset: int = 0,
     ) -> List[Dict[str, Any]]:
-        query = MenuDoc.find(MenuDoc.is_deleted == False)
+        query = MenuDoc.find({"is_deleted": False})
         if is_active is not None:
             query = query.find(MenuDoc.is_active == is_active)
         if parent_menu_id is not None:
@@ -47,7 +47,7 @@ class MenuService(BaseService):
         return [self._doc_to_dict(doc) for doc in docs]
 
     async def update_menu(self, menu_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
-        doc = await MenuDoc.find_one(MenuDoc.menu_id == menu_id, MenuDoc.is_deleted == False)
+        doc = await MenuDoc.find_one(MenuDoc.menu_id == menu_id, {"is_deleted": False})
         if not doc:
             raise KeyError("menu not found")
         self._apply_updates(doc, data, self._UPDATABLE_FIELDS)
@@ -55,7 +55,7 @@ class MenuService(BaseService):
         return self._doc_to_dict(doc)
 
     async def delete_menu(self, menu_id: str) -> None:
-        doc = await MenuDoc.find_one(MenuDoc.menu_id == menu_id, MenuDoc.is_deleted == False)
+        doc = await MenuDoc.find_one(MenuDoc.menu_id == menu_id, {"is_deleted": False})
         if not doc:
             raise KeyError("menu not found")
         doc.is_deleted = True
@@ -85,8 +85,8 @@ class MenuService(BaseService):
         permission_set = set(permissions)
 
         docs = await MenuDoc.find(
-            MenuDoc.is_deleted == False,
-            MenuDoc.is_active == True,
+            {"is_deleted": False},
+            {"is_active": True},
         ).sort("order", "name").to_list()
 
         visible: List[Dict[str, Any]] = []

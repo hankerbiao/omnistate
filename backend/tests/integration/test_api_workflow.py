@@ -2,13 +2,28 @@ from fastapi.testclient import TestClient
 import pytest
 
 from app.modules.workflow.api import routes as workflow_routes
+from app.shared.auth import jwt_auth
 from tests.fakes.workflow import FakeWorkflowService
 
 
 @pytest.fixture()
-def app(app):
+def app(app, monkeypatch):
     # 用 FakeWorkflowService 覆盖真实依赖，避免访问数据库
     app.dependency_overrides[workflow_routes.get_workflow_service] = lambda: FakeWorkflowService()
+
+    # 覆盖鉴权依赖，避免测试时访问数据库
+    async def _fake_current_user():
+        return {"user_id": "test-user"}
+
+    async def _fake_get_user_permissions(_user_id: str):
+        return [
+            "work_items:read",
+            "work_items:write",
+            "work_items:transition",
+        ]
+
+    app.dependency_overrides[jwt_auth.get_current_user] = _fake_current_user
+    monkeypatch.setattr(jwt_auth, "get_user_permissions", _fake_get_user_permissions)
     return app
 
 
@@ -52,7 +67,7 @@ def test_create_item_envelope(client):
             "type_code": "REQ",
             "title": "T1",
             "content": "C1",
-            "creator_id": 1,
+            "creator_id": "u1",
             "parent_item_id": None,
         },
     )

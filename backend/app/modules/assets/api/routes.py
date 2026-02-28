@@ -1,9 +1,10 @@
 """硬件与资产管理路由"""
 from typing import List, Optional, Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.shared.api.schemas.base import APIResponse
+from app.shared.auth import require_permission
 from app.modules.assets.service.assets_service import AssetsService
 from app.modules.assets.schemas import (
     CreateComponentRequest,
@@ -33,6 +34,7 @@ AssetsServiceDep = Annotated[AssetsService, Depends(get_assets_service)]
     response_model=APIResponse[ComponentResponse],
     status_code=201,
     summary="创建部件字典项",
+    dependencies=[Depends(require_permission("assets:write"))],
 )
 async def create_component(
     request: CreateComponentRequest,
@@ -49,6 +51,7 @@ async def create_component(
     "/components/{part_number}",
     response_model=APIResponse[ComponentResponse],
     summary="获取部件详情",
+    dependencies=[Depends(require_permission("assets:read"))],
 )
 async def get_component(
     part_number: str,
@@ -65,6 +68,7 @@ async def get_component(
     "/components",
     response_model=APIResponse[List[ComponentResponse]],
     summary="查询部件列表",
+    dependencies=[Depends(require_permission("assets:read"))],
 )
 async def list_components(
     service: AssetsServiceDep,
@@ -92,6 +96,7 @@ async def list_components(
     "/components/{part_number}",
     response_model=APIResponse[ComponentResponse],
     summary="更新部件信息",
+    dependencies=[Depends(require_permission("assets:write"))],
 )
 async def update_component(
     part_number: str,
@@ -112,6 +117,7 @@ async def update_component(
     "/components/{part_number}",
     response_model=APIResponse[dict],
     summary="删除部件",
+    dependencies=[Depends(require_permission("assets:write"))],
 )
 async def delete_component(
     part_number: str,
@@ -131,6 +137,7 @@ async def delete_component(
     response_model=APIResponse[DutResponse],
     status_code=201,
     summary="创建设备资产",
+    dependencies=[Depends(require_permission("assets:write"))],
 )
 async def create_dut(
     request: CreateDutRequest,
@@ -147,6 +154,7 @@ async def create_dut(
     "/duts/{asset_id}",
     response_model=APIResponse[DutResponse],
     summary="获取设备资产详情",
+    dependencies=[Depends(require_permission("assets:read"))],
 )
 async def get_dut(
     asset_id: str,
@@ -163,6 +171,7 @@ async def get_dut(
     "/duts",
     response_model=APIResponse[List[DutResponse]],
     summary="查询设备资产列表",
+    dependencies=[Depends(require_permission("assets:read"))],
 )
 async def list_duts(
     service: AssetsServiceDep,
@@ -188,6 +197,7 @@ async def list_duts(
     "/duts/{asset_id}",
     response_model=APIResponse[DutResponse],
     summary="更新设备资产",
+    dependencies=[Depends(require_permission("assets:write"))],
 )
 async def update_dut(
     asset_id: str,
@@ -208,6 +218,7 @@ async def update_dut(
     "/duts/{asset_id}",
     response_model=APIResponse[dict],
     summary="删除设备资产",
+    dependencies=[Depends(require_permission("assets:write"))],
 )
 async def delete_dut(
     asset_id: str,
@@ -227,6 +238,7 @@ async def delete_dut(
     response_model=APIResponse[TestPlanComponentResponse],
     status_code=201,
     summary="创建测试计划关联部件",
+    dependencies=[Depends(require_permission("assets:write"))],
 )
 async def create_plan_component(
     request: CreateTestPlanComponentRequest,
@@ -243,6 +255,7 @@ async def create_plan_component(
     "/plan-components",
     response_model=APIResponse[List[TestPlanComponentResponse]],
     summary="查询测试计划关联部件",
+    dependencies=[Depends(require_permission("assets:read"))],
 )
 async def list_plan_components(
     service: AssetsServiceDep,
@@ -264,6 +277,7 @@ async def list_plan_components(
     "/plan-components",
     response_model=APIResponse[dict],
     summary="删除测试计划关联部件",
+    dependencies=[Depends(require_permission("assets:write"))],
 )
 async def delete_plan_component(
     service: AssetsServiceDep,

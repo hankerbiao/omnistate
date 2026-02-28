@@ -4,6 +4,7 @@ from typing import List, Optional, Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.shared.api.schemas.base import APIResponse
+from app.shared.auth import require_permission
 from app.modules.test_specs.service import RequirementService
 from app.modules.test_specs.schemas import (
     CreateRequirementRequest,
@@ -26,6 +27,7 @@ RequirementServiceDep = Annotated[RequirementService, Depends(get_requirement_se
     response_model=APIResponse[RequirementResponse],
     status_code=201,
     summary="创建测试需求",
+    dependencies=[Depends(require_permission("requirements:write"))],
 )
 async def create_requirement(
     request: CreateRequirementRequest,
@@ -42,6 +44,7 @@ async def create_requirement(
     "/{req_id}",
     response_model=APIResponse[RequirementResponse],
     summary="获取测试需求详情",
+    dependencies=[Depends(require_permission("requirements:read"))],
 )
 async def get_requirement(
     req_id: str,
@@ -58,6 +61,7 @@ async def get_requirement(
     "",
     response_model=APIResponse[List[RequirementResponse]],
     summary="查询测试需求列表",
+    dependencies=[Depends(require_permission("requirements:read"))],
 )
 async def list_requirements(
     service: RequirementServiceDep,
@@ -83,6 +87,7 @@ async def list_requirements(
     "/{req_id}",
     response_model=APIResponse[RequirementResponse],
     summary="更新测试需求",
+    dependencies=[Depends(require_permission("requirements:write"))],
 )
 async def update_requirement(
     req_id: str,
@@ -103,6 +108,7 @@ async def update_requirement(
     "/{req_id}",
     response_model=APIResponse[dict],
     summary="删除测试需求",
+    dependencies=[Depends(require_permission("requirements:write"))],
 )
 async def delete_requirement(
     req_id: str,

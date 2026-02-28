@@ -1,5 +1,6 @@
 from typing import Dict, Any, Optional, List
 from beanie import PydanticObjectId
+from pymongo.asynchronous.client_session import AsyncClientSession
 
 from app.modules.workflow.repository.models import (
     SysWorkflowConfigDoc,
@@ -55,11 +56,11 @@ class AsyncWorkflowService:
         构建业务事项的基础查询对象。
 
         特性：
-        - 统一过滤逻辑删除的数据（is_deleted == False）
+        - 统一过滤逻辑删除的数据（is_deleted=False）
         - 支持按事项类型、当前状态精确过滤
         - 支持将当前处理人 / 创建人条件合并为 OR 查询
         """
-        query = BusWorkItemDoc.find(BusWorkItemDoc.is_deleted == False)
+        query = BusWorkItemDoc.find({"is_deleted": False})
 
         if type_code:
             query = query.find(BusWorkItemDoc.type_code == type_code)
@@ -211,7 +212,7 @@ class AsyncWorkflowService:
 
         特性：
         - 会先校验 ObjectId 合法性（非法直接返回 None）
-        - 会过滤逻辑删除的数据（is_deleted == True 的记录不会返回）
+        - 会过滤逻辑删除的数据（is_deleted=True 的记录不会返回）
         - 所有 ObjectId 字段会被转换为字符串
         """
         try:
@@ -323,7 +324,7 @@ class AsyncWorkflowService:
         逻辑：
         1. 先确认 requirement_id 对应的事项存在且类型为 "REQUIREMENT"
         2. 查询所有 type_code == "TEST_CASE" 且 parent_item_id 指向该需求的事项
-        3. 过滤掉逻辑删除的数据（is_deleted == False）
+        3. 过滤掉逻辑删除的数据（is_deleted=False）
         4. 按创建时间倒序返回
         """
         requirement = await self.get_item_by_id(requirement_id)
@@ -331,7 +332,7 @@ class AsyncWorkflowService:
             raise WorkItemNotFoundError(requirement_id)
 
         docs = await BusWorkItemDoc.find(
-            BusWorkItemDoc.is_deleted == False,
+            {"is_deleted": False},
             BusWorkItemDoc.type_code == "TEST_CASE",
             BusWorkItemDoc.parent_item_id == PydanticObjectId(requirement_id)
         ).sort("-created_at").to_list()
@@ -362,7 +363,8 @@ class AsyncWorkflowService:
             title: str,
             content: str,
             creator_id: str,
-            parent_item_id: Optional[str] = None
+            parent_item_id: Optional[str] = None,
+            session: Optional[AsyncClientSession] = None,
     ) -> Dict:
         """
         创建新的业务事项。
@@ -372,12 +374,14 @@ class AsyncWorkflowService:
         - 当前处理人默认设置为创建人
         - 同类型 + 同标题若已存在未删除事项，则拒绝创建
         - 可选挂载到父事项（例如测试用例挂在需求下）
+        - 支持通过 session 参与上层事务
         """
         try:
             existing_item = await BusWorkItemDoc.find_one(
                 BusWorkItemDoc.type_code == type_code,
                 BusWorkItemDoc.title == title,
-                BusWorkItemDoc.is_deleted == False
+                {"is_deleted": False},
+                session=session,
             )
             if existing_item:
                 raise ValueError(f"已存在相同标题的{type_code}: {title}")
@@ -397,7 +401,7 @@ class AsyncWorkflowService:
                 current_owner_id=creator_id,
                 current_state=WorkItemState.DRAFT.value
             )
-            await new_item.insert()
+            await new_item.insert(session=session)
             logger.success(f"业务事项创建成功: ID={new_item.id}, state={new_item.current_state}")
             d = new_item.model_dump()
             d["id"] = str(new_item.id)
@@ -484,7 +488,7 @@ class AsyncWorkflowService:
             if item_doc.type_code == "REQUIREMENT":
                 requirement = await TestRequirementDoc.find_one(
                     TestRequirementDoc.workflow_item_id == str(item_doc.id),
-                    TestRequirementDoc.is_deleted == False,
+                    {"is_deleted": False},
                 )
                 if requirement:
                     requirement.status = new_state
@@ -492,7 +496,7 @@ class AsyncWorkflowService:
             elif item_doc.type_code == "TEST_CASE":
                 test_case = await TestCaseDoc.find_one(
                     TestCaseDoc.workflow_item_id == str(item_doc.id),
-                    TestCaseDoc.is_deleted == False,
+                    {"is_deleted": False},
                 )
                 if test_case:
                     test_case.status = new_state

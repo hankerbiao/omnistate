@@ -61,7 +61,8 @@ WorkflowServiceDep = Annotated[AsyncWorkflowService, Depends(get_workflow_servic
 @router.get(
     "/types",
     response_model=APIResponse[List[WorkTypeResponse]],
-    summary="获取事项类型列表"
+    summary="获取事项类型列表",
+    dependencies=[Depends(require_permission("work_items:read"))],
 )
 async def get_work_types(service: WorkflowServiceDep):
     """
@@ -78,7 +79,8 @@ async def get_work_types(service: WorkflowServiceDep):
 @router.get(
     "/states",
     response_model=APIResponse[List[WorkflowStateResponse]],
-    summary="获取流程状态列表"
+    summary="获取流程状态列表",
+    dependencies=[Depends(require_permission("work_items:read"))],
 )
 async def get_workflow_states(service: WorkflowServiceDep):
     """
@@ -96,6 +98,7 @@ async def get_workflow_states(service: WorkflowServiceDep):
     "/configs",
     response_model=APIResponse[List[WorkflowConfigResponse]],
     summary="获取指定类型的所有流转配置",
+    dependencies=[Depends(require_permission("work_items:read"))],
     responses={404: {"model": APIResponse[ErrorResponse], "description": "类型不存在"}}
 )
 async def get_workflow_configs(

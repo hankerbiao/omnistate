@@ -4,6 +4,7 @@ from typing import List, Optional, Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.shared.api.schemas.base import APIResponse
+from app.shared.auth import require_permission
 from app.modules.test_specs.service import TestCaseService
 from app.modules.test_specs.schemas import (
     CreateTestCaseRequest,
@@ -26,6 +27,7 @@ TestCaseServiceDep = Annotated[TestCaseService, Depends(get_test_case_service)]
     response_model=APIResponse[TestCaseResponse],
     status_code=201,
     summary="创建测试用例",
+    dependencies=[Depends(require_permission("test_cases:write"))],
 )
 async def create_test_case(
     request: CreateTestCaseRequest,
@@ -44,6 +46,7 @@ async def create_test_case(
     "/{case_id}",
     response_model=APIResponse[TestCaseResponse],
     summary="获取测试用例详情",
+    dependencies=[Depends(require_permission("test_cases:read"))],
 )
 async def get_test_case(
     case_id: str,
@@ -60,6 +63,7 @@ async def get_test_case(
     "",
     response_model=APIResponse[List[TestCaseResponse]],
     summary="查询测试用例列表",
+    dependencies=[Depends(require_permission("test_cases:read"))],
 )
 async def list_test_cases(
     service: TestCaseServiceDep,
@@ -89,6 +93,7 @@ async def list_test_cases(
     "/{case_id}",
     response_model=APIResponse[TestCaseResponse],
     summary="更新测试用例",
+    dependencies=[Depends(require_permission("test_cases:write"))],
 )
 async def update_test_case(
     case_id: str,
@@ -111,6 +116,7 @@ async def update_test_case(
     "/{case_id}",
     response_model=APIResponse[dict],
     summary="删除测试用例",
+    dependencies=[Depends(require_permission("test_cases:write"))],
 )
 async def delete_test_case(
     case_id: str,

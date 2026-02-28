@@ -9,6 +9,11 @@ from typing import Dict, Any, Optional, List
 from app.shared.service import BaseService
 from app.shared.auth import hash_password, verify_password
 from app.modules.auth.repository.models import UserDoc, RoleDoc, PermissionDoc
+from app.modules.auth.service.exceptions import (
+    UserNotFoundError,
+    RoleNotFoundError,
+    PermissionNotFoundError,
+)
 
 
 class RbacService(BaseService):
@@ -42,7 +47,7 @@ class RbacService(BaseService):
         """校验用户密码，返回用户信息"""
         user = await UserDoc.find_one(UserDoc.user_id == user_id)
         if not user or user.status != "ACTIVE":
-            raise KeyError("user not found")
+            raise UserNotFoundError("user not found")
         if not verify_password(password, user.password_salt, user.password_hash):
             raise ValueError("invalid credentials")
         return self._doc_to_dict(user)
@@ -51,7 +56,7 @@ class RbacService(BaseService):
         """根据 user_id 获取用户"""
         doc = await UserDoc.find_one(UserDoc.user_id == user_id)
         if not doc:
-            raise KeyError("user not found")
+            raise UserNotFoundError("user not found")
         return self._doc_to_dict(doc)
 
     async def list_users(
@@ -75,7 +80,7 @@ class RbacService(BaseService):
         """更新用户信息（白名单字段）"""
         doc = await UserDoc.find_one(UserDoc.user_id == user_id)
         if not doc:
-            raise KeyError("user not found")
+            raise UserNotFoundError("user not found")
         self._apply_updates(doc, data, self._USER_UPDATABLE_FIELDS)
         await doc.save()
         return self._doc_to_dict(doc)
@@ -84,7 +89,7 @@ class RbacService(BaseService):
         """更新用户角色列表（管理员操作）"""
         doc = await UserDoc.find_one(UserDoc.user_id == user_id)
         if not doc:
-            raise KeyError("user not found")
+            raise UserNotFoundError("user not found")
         await self._ensure_roles_exist(role_ids)
         doc.role_ids = role_ids
         await doc.save()
@@ -94,7 +99,7 @@ class RbacService(BaseService):
         """更新用户密码（管理员或本人）"""
         doc = await UserDoc.find_one(UserDoc.user_id == user_id)
         if not doc:
-            raise KeyError("user not found")
+            raise UserNotFoundError("user not found")
         salt, pwd_hash = hash_password(new_password)
         doc.password_salt = salt
         doc.password_hash = pwd_hash
@@ -105,7 +110,7 @@ class RbacService(BaseService):
         """用户自助修改密码（需要旧密码）"""
         doc = await UserDoc.find_one(UserDoc.user_id == user_id)
         if not doc:
-            raise KeyError("user not found")
+            raise UserNotFoundError("user not found")
         if not verify_password(old_password, doc.password_salt, doc.password_hash):
             raise ValueError("invalid credentials")
         salt, pwd_hash = hash_password(new_password)
@@ -118,7 +123,7 @@ class RbacService(BaseService):
         """获取用户有效权限（多角色并集）"""
         user = await UserDoc.find_one(UserDoc.user_id == user_id)
         if not user:
-            raise KeyError("user not found")
+            raise UserNotFoundError("user not found")
 
         if not user.role_ids:
             return {"user_id": user_id, "role_ids": [], "permissions": []}
@@ -151,7 +156,7 @@ class RbacService(BaseService):
         """获取角色详情"""
         doc = await RoleDoc.find_one(RoleDoc.role_id == role_id)
         if not doc:
-            raise KeyError("role not found")
+            raise RoleNotFoundError("role not found")
         return self._doc_to_dict(doc)
 
     async def list_roles(self, limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
@@ -163,7 +168,7 @@ class RbacService(BaseService):
         """更新角色信息（仅允许更新名称）"""
         doc = await RoleDoc.find_one(RoleDoc.role_id == role_id)
         if not doc:
-            raise KeyError("role not found")
+            raise RoleNotFoundError("role not found")
         self._apply_updates(doc, data, self._ROLE_UPDATABLE_FIELDS)
         await doc.save()
         return self._doc_to_dict(doc)
@@ -172,7 +177,7 @@ class RbacService(BaseService):
         """更新角色权限列表（管理员操作）"""
         doc = await RoleDoc.find_one(RoleDoc.role_id == role_id)
         if not doc:
-            raise KeyError("role not found")
+            raise RoleNotFoundError("role not found")
         await self._ensure_permissions_exist(permission_ids)
         doc.permission_ids = permission_ids
         await doc.save()
@@ -193,7 +198,7 @@ class RbacService(BaseService):
         """获取权限详情"""
         doc = await PermissionDoc.find_one(PermissionDoc.perm_id == perm_id)
         if not doc:
-            raise KeyError("permission not found")
+            raise PermissionNotFoundError("permission not found")
         return self._doc_to_dict(doc)
 
     async def list_permissions(self, limit: int = 100, offset: int = 0) -> List[Dict[str, Any]]:
@@ -205,7 +210,7 @@ class RbacService(BaseService):
         """更新权限信息"""
         doc = await PermissionDoc.find_one(PermissionDoc.perm_id == perm_id)
         if not doc:
-            raise KeyError("permission not found")
+            raise PermissionNotFoundError("permission not found")
         self._apply_updates(doc, data, self._PERMISSION_UPDATABLE_FIELDS)
         await doc.save()
         return self._doc_to_dict(doc)
@@ -218,7 +223,7 @@ class RbacService(BaseService):
             return
         count = await RoleDoc.find({"role_id": {"$in": role_ids}}).count()
         if count != len(set(role_ids)):
-            raise KeyError("role not found")
+            raise RoleNotFoundError("role not found")
 
     async def _ensure_permissions_exist(self, permission_ids: List[str]) -> None:
         """校验权限是否都存在，避免角色绑定到无效权限"""
@@ -226,4 +231,4 @@ class RbacService(BaseService):
             return
         count = await PermissionDoc.find({"perm_id": {"$in": permission_ids}}).count()
         if count != len(set(permission_ids)):
-            raise KeyError("permission not found")
+            raise PermissionNotFoundError("permission not found")

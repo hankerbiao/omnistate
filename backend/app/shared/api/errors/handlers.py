@@ -6,7 +6,7 @@
 - HTTP 协议错误：StarletteHTTPException
 - 未预料异常：统一映射为 InternalServerError，隐藏内部细节
 """
-from fastapi import Request, status
+from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -76,7 +76,7 @@ async def generic_exception_handler(request: Request, exc: Exception):
     )
 
 
-def setup_exception_handlers(app):
+def setup_exception_handlers(app: FastAPI) -> None:
     """配置全局异常处理器"""
 
     # 注册异常处理器
