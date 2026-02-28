@@ -25,6 +25,8 @@ class UserDoc(Document):
     password_salt: str = Field(..., description="密码盐")
     # 一个用户可绑定多个角色
     role_ids: List[str] = Field(default_factory=list, description="角色 ID 列表")
+    # 用户级导航可见页面覆盖（为空时按角色/权限默认）
+    allowed_nav_views: List[str] = Field(default_factory=list, description="用户允许访问的导航页面")
     status: str = Field(default="ACTIVE", description="用户状态")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -97,6 +99,7 @@ class UserModel(BaseModel):
     username: str
     email: Optional[str] = None
     role_ids: List[str]
+    allowed_nav_views: List[str] = Field(default_factory=list)
     status: str
     created_at: datetime
     updated_at: datetime

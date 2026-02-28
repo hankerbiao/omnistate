@@ -42,6 +42,10 @@ export class ApiClient {
     return this.request<T>(path, { method: 'PUT', body: JSON.stringify(body) });
   }
 
+  async delete<T>(path: string): Promise<T> {
+    return this.request<T>(path, { method: 'DELETE' });
+  }
+
   private async request<T>(path: string, init: RequestInit): Promise<T> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);

@@ -77,6 +77,27 @@ class MePermissionsResponse(BaseModel):
     permissions: List[str]
 
 
+class NavigationPageResponse(BaseModel):
+    """导航页面定义"""
+    view: str
+    label: str
+    permission: str
+    description: Optional[str] = None
+
+
+class UserNavigationResponse(BaseModel):
+    """用户导航访问响应"""
+    user_id: str
+    role_ids: List[str]
+    permissions: List[str]
+    allowed_nav_views: List[str]
+
+
+class UpdateUserNavigationRequest(BaseModel):
+    """更新用户导航访问请求"""
+    allowed_nav_views: List[str] = Field(default_factory=list)
+
+
 # ========== Role ==========
 
 class CreateRoleRequest(BaseModel):

@@ -26,6 +26,10 @@ export const ReqDetail: React.FC<ReqDetailProps> = ({
   onSelectCase,
 }) => {
   const relatedCases = testCases.filter(c => c.ref_req_id === requirement.req_id);
+  const targetComponents = Array.isArray(requirement.target_components) ? requirement.target_components : [];
+  const keyParameters = Array.isArray(requirement.key_parameters) ? requirement.key_parameters : [];
+  const attachments = Array.isArray(requirement.attachments) ? requirement.attachments : [];
+  const ownerId = requirement.tpm_owner_id || '未分配';
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-10 space-y-10">
@@ -131,7 +135,7 @@ export const ReqDetail: React.FC<ReqDetailProps> = ({
               <div>
                 <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">目标部件</label>
                 <div className="flex gap-2 flex-wrap">
-                  {requirement.target_components.map(c => (
+                  {targetComponents.map(c => (
                     <span key={c} className="px-3 py-1.5 bg-indigo-50 text-indigo-600 rounded-xl text-xs font-bold">{c}</span>
                   ))}
                 </div>
@@ -144,11 +148,11 @@ export const ReqDetail: React.FC<ReqDetailProps> = ({
                 </div>
               )}
 
-              {requirement.key_parameters && requirement.key_parameters.length > 0 && (
+              {keyParameters.length > 0 && (
                 <div>
                   <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">关键参数</label>
                   <div className="grid grid-cols-1 gap-2">
-                    {requirement.key_parameters.map((param, idx) => (
+                    {keyParameters.map((param, idx) => (
                       <div key={idx} className="flex justify-between text-sm border-b border-slate-50 pb-2">
                         <span className="text-slate-500">{param.key}</span>
                         <span className="font-bold text-slate-700 font-mono">{param.value}</span>
@@ -163,9 +167,9 @@ export const ReqDetail: React.FC<ReqDetailProps> = ({
                   <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">TPM 负责人</label>
                   <div className="flex items-center gap-2">
                     <div className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-[10px] font-bold text-slate-500">
-                      {requirement.tpm_owner_id.charAt(0).toUpperCase()}
+                      {ownerId.charAt(0).toUpperCase()}
                     </div>
-                    <p className="text-sm font-medium text-slate-900">{requirement.tpm_owner_id}</p>
+                    <p className="text-sm font-medium text-slate-900">{ownerId}</p>
                   </div>
                 </div>
                 <div className="flex justify-between items-center">
@@ -174,11 +178,11 @@ export const ReqDetail: React.FC<ReqDetailProps> = ({
                 </div>
               </div>
 
-              {requirement.attachments.length > 0 && (
+              {attachments.length > 0 && (
                 <div className="pt-6 border-t border-slate-100">
                   <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-3">相关附件</label>
                   <div className="space-y-3">
-                    {requirement.attachments.map(att => (
+                    {attachments.map(att => (
                       <div key={att.id} className="flex items-center gap-3 text-sm text-indigo-600 hover:text-indigo-700 hover:underline cursor-pointer group">
                         <div className="p-1.5 bg-indigo-50 rounded-lg group-hover:bg-indigo-100 transition-colors">
                           <Paperclip size={14} />

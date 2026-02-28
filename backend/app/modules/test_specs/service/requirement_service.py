@@ -29,10 +29,17 @@ class RequirementService(BaseService):
     _UPDATABLE_FIELDS = {
         "title",
         "description",
+        "technical_spec",
         "target_components",
+        "firmware_version",
+        "priority",
+        "key_parameters",
+        "risk_points",
         "tpm_owner_id",
         "manual_dev_id",
         "auto_dev_id",
+        "status",
+        "attachments",
     }
 
     async def create_requirement(self, data: Dict[str, Any]) -> Dict[str, Any]:
@@ -172,7 +179,7 @@ class RequirementService(BaseService):
                 )
 
                 payload["workflow_item_id"] = workflow_item["id"]
-                payload["status"] = workflow_item["current_state"]
+                payload["status"] = payload.get("status") or workflow_item.get("current_state") or "待指派"
                 doc = TestRequirementDoc(**payload)
                 await doc.insert(session=session)
                 return self._doc_to_dict(doc)
@@ -202,7 +209,7 @@ class RequirementService(BaseService):
             workflow_item_id = workflow_item["id"]
 
             payload["workflow_item_id"] = workflow_item_id
-            payload["status"] = workflow_item["current_state"]
+            payload["status"] = payload.get("status") or workflow_item.get("current_state") or "待指派"
             doc = TestRequirementDoc(**payload)
             await doc.insert()
             return self._doc_to_dict(doc)

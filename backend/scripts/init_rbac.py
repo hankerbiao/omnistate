@@ -53,6 +53,7 @@ DEFAULT_ROLES = {
     "TPM": {
         "name": "TPM",
         "permission_ids": [
+            "users:read",
             "requirements:read",
             "requirements:write",
             "test_cases:read",
@@ -63,6 +64,7 @@ DEFAULT_ROLES = {
     "TESTER": {
         "name": "TESTER",
         "permission_ids": [
+            "users:read",
             "requirements:read",
             "test_cases:read",
             "test_cases:write",
@@ -73,6 +75,7 @@ DEFAULT_ROLES = {
     "AUTOMATION": {
         "name": "AUTOMATION",
         "permission_ids": [
+            "users:read",
             "test_cases:read",
             "test_cases:write",
             "assets:read",

@@ -12,9 +12,9 @@ import {
   RequirementStatus,
   Attachment
 } from './types';
-import { INITIAL_USERS, ROLES, User } from './constants/config';
+import { ROLES, User } from './constants/config';
 import { useLocalAI } from './components/hooks/useLocalAI';
-import { isBackendEnabled, testDesignerApi } from './services/api';
+import { isBackendEnabled, testDesignerApi, setAccessToken, clearAccessToken } from './services/api';
 import { Login, ReqList, ReqForm, ReqDetail, CaseList, CaseForm, UserMgmt } from './components/views';
 import {
   FileText,
@@ -28,13 +28,302 @@ import {
 } from 'lucide-react';
 
 type View = 'login' | 'req_list' | 'req_form' | 'req_detail' | 'case_list' | 'case_form' | 'user_mgmt';
+type NavView = 'req_list' | 'case_list' | 'user_mgmt';
+
+interface NavigationOption {
+  view: NavView;
+  label: string;
+  permission: string;
+  description: string;
+}
+
+const NAVIGATION_OPTIONS: NavigationOption[] = [
+  { view: 'req_list', label: '测试需求', permission: 'nav:req_list:view', description: '允许访问测试需求列表页' },
+  { view: 'case_list', label: '测试用例', permission: 'nav:case_list:view', description: '允许访问测试用例列表页' },
+  { view: 'user_mgmt', label: '用户管理', permission: 'nav:user_mgmt:view', description: '允许访问用户与权限管理页' },
+];
+
+const NAV_VIEW_SET = new Set<NavView>(NAVIGATION_OPTIONS.map(item => item.view));
+const NAV_VIEW_PERMISSION_MAP: Record<NavView, string> = NAVIGATION_OPTIONS
+  .reduce((acc, item) => ({ ...acc, [item.view]: item.permission }), {} as Record<NavView, string>);
+const FALLBACK_NAV_VIEWS: NavView[] = ['req_list', 'case_list'];
+
+const isNavView = (value: string): value is NavView => NAV_VIEW_SET.has(value as NavView);
+const hasAdminRole = (user: User | null): boolean =>
+  Boolean(user?.role_ids.some(role => String(role).toUpperCase().includes('ADMIN')));
+
+const sanitizeNavViews = (views: unknown): NavView[] => {
+  if (!Array.isArray(views)) {
+    return [];
+  }
+  const unique = new Set<NavView>();
+  views.forEach(item => {
+    const view = String(item) as NavView;
+    if (isNavView(view)) {
+      unique.add(view);
+    }
+  });
+  return NAVIGATION_OPTIONS.map(item => item.view).filter(view => unique.has(view));
+};
+
+const normalizePermissionCodes = (input: unknown): string[] => {
+  if (Array.isArray(input)) {
+    return input.map(item => String(item));
+  }
+  const row = asObject(input);
+  if (Array.isArray(row.permissions)) {
+    return row.permissions.map(item => String(item));
+  }
+  return [];
+};
+
+const normalizeNavigationViews = (input: unknown): NavView[] => {
+  if (Array.isArray(input)) {
+    return sanitizeNavViews(input);
+  }
+  const row = asObject(input);
+  if (Array.isArray(row.allowed_nav_views)) return sanitizeNavViews(row.allowed_nav_views);
+  if (Array.isArray(row.nav_views)) return sanitizeNavViews(row.nav_views);
+  if (Array.isArray(row.views)) return sanitizeNavViews(row.views);
+  return [];
+};
+
+const deriveNavViewsFromPermissions = (permissions: string[]): NavView[] => {
+  if (permissions.includes('all')) {
+    return NAVIGATION_OPTIONS.map(item => item.view);
+  }
+  const matchedViews = NAVIGATION_OPTIONS
+    .filter(item => permissions.includes(item.permission))
+    .map(item => item.view);
+  return sanitizeNavViews(matchedViews);
+};
+
+const getDefaultNavViewsForUser = (user: User | null): NavView[] => {
+  if (!user) {
+    return FALLBACK_NAV_VIEWS;
+  }
+  if (hasAdminRole(user)) {
+    return NAVIGATION_OPTIONS.map(item => item.view);
+  }
+  return FALLBACK_NAV_VIEWS;
+};
+
+const unwrapApiData = <T,>(payload: T | { data?: T } | null | undefined): T | undefined => {
+  if (payload && typeof payload === 'object' && 'data' in payload) {
+    return (payload as { data?: T }).data;
+  }
+  return payload as T | undefined;
+};
+
+const asObject = (value: unknown): Record<string, unknown> =>
+  value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+
+const extractList = (input: unknown): unknown[] => {
+  if (Array.isArray(input)) return input;
+  const row = asObject(input);
+  if (Array.isArray(row.items)) return row.items;
+  if (Array.isArray(row.results)) return row.results;
+  if (Array.isArray(row.data)) return row.data;
+  return [];
+};
+
+const toArray = <T,>(value: unknown): T[] => (Array.isArray(value) ? (value as T[]) : []);
+
+const normalizePriority = (value: unknown): Priority => {
+  if (value === Priority.P0) return Priority.P0;
+  if (value === Priority.P1) return Priority.P1;
+  if (value === Priority.P2) return Priority.P2;
+  return Priority.P1;
+};
+
+const normalizeRequirementStatus = (value: unknown): RequirementStatus => {
+  if ((Object.values(RequirementStatus) as unknown[]).includes(value)) {
+    return value as RequirementStatus;
+  }
+  return RequirementStatus.PENDING;
+};
+
+const normalizeTestCaseStatus = (value: unknown): TestCaseStatus => {
+  if (value === TestCaseStatus.DRAFT) return TestCaseStatus.DRAFT;
+  if (value === TestCaseStatus.REVIEW) return TestCaseStatus.REVIEW;
+  if (value === TestCaseStatus.APPROVED) return TestCaseStatus.APPROVED;
+  if (value === TestCaseStatus.DEPRECATED) return TestCaseStatus.DEPRECATED;
+  return TestCaseStatus.DRAFT;
+};
+
+const normalizeTestCaseCategory = (value: unknown): TestCaseCategory => {
+  if ((Object.values(TestCaseCategory) as unknown[]).includes(value)) {
+    return value as TestCaseCategory;
+  }
+  return TestCaseCategory.FUNCTIONAL;
+};
+
+const normalizeRiskLevel = (value: unknown): RiskLevel => {
+  if (value === RiskLevel.LOW) return RiskLevel.LOW;
+  if (value === RiskLevel.MEDIUM) return RiskLevel.MEDIUM;
+  if (value === RiskLevel.HIGH) return RiskLevel.HIGH;
+  return RiskLevel.MEDIUM;
+};
+
+const normalizeVisibilityScope = (value: unknown): VisibilityScope => {
+  if (value === VisibilityScope.TEAM) return VisibilityScope.TEAM;
+  if (value === VisibilityScope.PROJECT) return VisibilityScope.PROJECT;
+  if (value === VisibilityScope.GLOBAL) return VisibilityScope.GLOBAL;
+  return VisibilityScope.PROJECT;
+};
+
+const normalizeConfidentiality = (value: unknown): Confidentiality => {
+  if (value === Confidentiality.PUBLIC) return Confidentiality.PUBLIC;
+  if (value === Confidentiality.INTERNAL) return Confidentiality.INTERNAL;
+  if (value === Confidentiality.NDA) return Confidentiality.NDA;
+  return Confidentiality.INTERNAL;
+};
+
+const normalizeAttachment = (item: unknown): Attachment => {
+  const row = asObject(item);
+  const type = String(row.type || 'other');
+  const attachmentType = ['image', 'video', 'spec', 'log', 'other'].includes(type) ? type as Attachment['type'] : 'other';
+  return {
+    id: String(row.id || ''),
+    name: String(row.name || ''),
+    type: attachmentType,
+    url: String(row.url || ''),
+    size: String(row.size || ''),
+    uploaded_at: String(row.uploaded_at || ''),
+  };
+};
+
+const normalizeStep = (item: unknown, index: number): TestStep => {
+  const row = asObject(item);
+  return {
+    step_id: String(row.step_id || `step-${index + 1}`),
+    name: String(row.name || ''),
+    action: String(row.action || ''),
+    expected: String(row.expected || ''),
+  };
+};
+
+const normalizeUser = (item: unknown): User => {
+  const row = asObject(item);
+  const statusRaw = String(row.status || 'ACTIVE').toUpperCase();
+  return {
+    user_id: String(row.user_id || ''),
+    username: String(row.username || ''),
+    email: String(row.email || ''),
+    role_ids: toArray<string>(row.role_ids),
+    status: statusRaw === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE',
+    created_at: String(row.created_at || ''),
+  };
+};
+
+const normalizeRequirement = (item: unknown): TestRequirement => {
+  const row = asObject(item);
+  const normalizedKeyParameters = toArray<Record<string, unknown>>(row.key_parameters)
+    .map(param => ({
+      key: String(param.key || ''),
+      value: String(param.value || ''),
+    }));
+
+  return {
+    req_id: String(row.req_id || ''),
+    title: String(row.title || ''),
+    description: String(row.description || ''),
+    technical_spec: String(row.technical_spec || ''),
+    target_components: toArray<string>(row.target_components),
+    firmware_version: String(row.firmware_version || ''),
+    priority: normalizePriority(row.priority),
+    key_parameters: normalizedKeyParameters,
+    risk_points: String(row.risk_points || ''),
+    tpm_owner_id: String(row.tpm_owner_id || ''),
+    manual_dev_id: String(row.manual_dev_id || ''),
+    status: normalizeRequirementStatus(row.status),
+    attachments: toArray<unknown>(row.attachments).map(normalizeAttachment),
+    created_at: String(row.created_at || ''),
+    updated_at: String(row.updated_at || ''),
+  };
+};
+
+const normalizeTestCase = (item: unknown): TestCase => {
+  const row = asObject(item);
+  const env = asObject(row.required_env);
+  const approvalHistory = toArray<Record<string, unknown>>(row.approval_history)
+    .map(record => ({
+      approver: String(record.approver || ''),
+      timestamp: String(record.timestamp || ''),
+      result: (String(record.result || 'commented').toLowerCase() as 'approved' | 'rejected' | 'commented'),
+      comment: String(record.comment || ''),
+    }));
+
+  return {
+    case_id: String(row.case_id || ''),
+    ref_req_id: String(row.ref_req_id || ''),
+    title: String(row.title || ''),
+    test_category: normalizeTestCaseCategory(row.test_category),
+    version: Number(row.version || 1),
+    is_active: Boolean(row.is_active ?? true),
+    change_log: String(row.change_log || ''),
+    status: normalizeTestCaseStatus(row.status),
+    owner_id: String(row.owner_id || ''),
+    reviewer_id: String(row.reviewer_id || ''),
+    auto_dev_id: String(row.auto_dev_id || ''),
+    priority: normalizePriority(row.priority),
+    estimated_duration_sec: Number(row.estimated_duration_sec || 0),
+    target_components: toArray<string>(row.target_components),
+    required_env: {
+      os: String(env.os || ''),
+      firmware: String(env.firmware || ''),
+      hardware: String(env.hardware || ''),
+      dependencies: toArray<string>(env.dependencies),
+      tooling: toArray<string>(env.tooling),
+    },
+    tags: toArray<string>(row.tags),
+    pre_condition: String(row.pre_condition || ''),
+    post_condition: String(row.post_condition || ''),
+    cleanup_steps: toArray<unknown>(row.cleanup_steps).map(normalizeStep),
+    steps: toArray<unknown>(row.steps).map(normalizeStep),
+    is_need_auto: Boolean(row.is_need_auto ?? false),
+    is_destructive: Boolean(row.is_destructive ?? false),
+    automation_type: String(row.automation_type || ''),
+    script_entity_id: String(row.script_entity_id || ''),
+    risk_level: normalizeRiskLevel(row.risk_level),
+    visibility_scope: normalizeVisibilityScope(row.visibility_scope),
+    confidentiality: normalizeConfidentiality(row.confidentiality),
+    attachments: toArray<unknown>(row.attachments).map(normalizeAttachment),
+    custom_fields: asObject(row.custom_fields) as Record<string, string>,
+    failure_analysis: String(row.failure_analysis || ''),
+    deprecation_reason: String(row.deprecation_reason || ''),
+    approval_history: approvalHistory,
+    created_at: String(row.created_at || ''),
+    updated_at: String(row.updated_at || ''),
+  };
+};
+
+const normalizeUsers = (input: unknown): User[] => {
+  return extractList(input).map(normalizeUser);
+};
+
+const normalizeRequirements = (input: unknown): TestRequirement[] => {
+  return extractList(input).map(normalizeRequirement);
+};
+
+const normalizeTestCases = (input: unknown): TestCase[] => {
+  return extractList(input).map(normalizeTestCase);
+};
 
 export default function App() {
   // Auth state
   const [view, setView] = useState<View>('login');
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [users, setUsers] = useState<User[]>(INITIAL_USERS);
+  const [users, setUsers] = useState<User[]>([]);
+  const [accessToken, setAccessTokenState] = useState<string | null>(null);
+  const [isAuthRestored, setIsAuthRestored] = useState(!isBackendEnabled);
+  const [myPermissionCodes, setMyPermissionCodes] = useState<string[]>([]);
+  const [availableNavViews, setAvailableNavViews] = useState<NavView[]>(FALLBACK_NAV_VIEWS);
+  const [userNavigationMap, setUserNavigationMap] = useState<Record<string, NavView[]>>({});
+  const [editingNavigationUser, setEditingNavigationUser] = useState<User | null>(null);
+  const [editingNavigationViews, setEditingNavigationViews] = useState<NavView[]>([]);
+  const [isSavingNavigation, setIsSavingNavigation] = useState(false);
 
   // Login form state
   const [loginForm, setLoginForm] = useState({ user_id: '', password: '', rememberMe: false });
@@ -50,301 +339,167 @@ export default function App() {
   const [showUserProfile, setShowUserProfile] = useState(false);
 
   // Requirements state
-  const [requirements, setRequirements] = useState<TestRequirement[]>([
-    {
-      req_id: 'TR-2026-001',
-      title: '下一代服务器 DDR5 内存验证',
-      description: '针对新一代服务器平台的 DDR5 内存进行全面的压力与兼容性验证，确保在高温高负载下的稳定性。',
-      technical_spec: '符合 JEDEC DDR5 标准，支持 5600MT/s 速率。',
-      target_components: ['Memory'],
-      firmware_version: 'BIOS v2.1.0',
-      priority: Priority.P0,
-      key_parameters: [{ key: '电压', value: '1.1V' }, { key: '频率', value: '5600MT/s' }],
-      risk_points: '重点验证高温下的 ECC 错误率。',
-      tpm_owner_id: 'alice',
-      manual_dev_id: 'zhang_san',
-      status: RequirementStatus.DEVELOPING,
-      attachments: [],
-      created_at: '2026-01-15T08:00:00Z',
-      updated_at: '2026-02-20T10:30:00Z'
-    },
-    {
-      req_id: 'TR-2026-002',
-      title: 'CPU 核心温度监控测试',
-      description: '验证服务器 CPU 在高负载运行时的温度监控传感器准确性和过热保护机制。',
-      technical_spec: '支持 Intel Xeon Scalable 3rd Gen，温度范围 25°C - 105°C，精度 ±2°C。',
-      target_components: ['CPU', 'Thermal Sensor'],
-      firmware_version: 'BMC v3.2.1',
-      priority: Priority.P1,
-      key_parameters: [{ key: '最高温度', value: '95°C' }, { key: '告警阈值', value: '85°C' }],
-      risk_points: '需注意不同 CPU 型号的温度特性差异。',
-      tpm_owner_id: 'bob',
-      manual_dev_id: 'li_si',
-      status: RequirementStatus.REVIEWING,
-      attachments: [],
-      created_at: '2026-01-20T09:00:00Z',
-      updated_at: '2026-02-18T14:00:00Z'
-    },
-    {
-      req_id: 'TR-2026-003',
-      title: 'NVMe SSD 读写性能基准测试',
-      description: '评估企业级 NVMe SSD 在不同工作负载下的顺序和随机读写性能。',
-      technical_spec: 'PCIe 4.0 x4，顺序读取 ≥7000MB/s，顺序写入 ≥5000MB/s。',
-      target_components: ['Storage', 'NVMe'],
-      firmware_version: 'BIOS v2.1.0',
-      priority: Priority.P1,
-      key_parameters: [{ key: '块大小', value: '4K' }, { key: '队列深度', value: '32' }],
-      risk_points: '长时间写入可能导致固态硬盘温度过高。',
-      tpm_owner_id: 'alice',
-      manual_dev_id: 'wang_wu',
-      status: RequirementStatus.CLOSED,
-      attachments: [],
-      created_at: '2026-01-10T10:00:00Z',
-      updated_at: '2026-02-15T16:00:00Z'
-    },
-    {
-      req_id: 'TR-2026-004',
-      title: '电源冗余 failover 测试',
-      description: '验证双电源冗余系统在单电源故障时的自动切换能力和系统稳定性。',
-      technical_spec: '支持 1+1 冗余，切换时间 <20ms，输入电压范围 100-240V AC。',
-      target_components: ['Power Supply', 'PSU'],
-      firmware_version: 'iDRAC v5.0.0',
-      priority: Priority.P0,
-      key_parameters: [{ key: '功率', value: '800W' }, { key: '效率', value: '94%' }],
-      risk_points: '测试时需确保负载均衡配置正确。',
-      tpm_owner_id: 'bob',
-      manual_dev_id: 'zhang_san',
-      status: RequirementStatus.PENDING,
-      attachments: [],
-      created_at: '2026-02-01T08:00:00Z',
-      updated_at: '2026-02-01T08:00:00Z'
-    },
-    {
-      req_id: 'TR-2026-005',
-      title: '网络接口卡兼容性测试',
-      description: '验证 100GbE 网卡在不同操作系统和驱动版本下的兼容性和性能。',
-      technical_spec: '支持 Intel E810-CQDA2，PCIe 4.0 x16，兼容 Linux/Windows。',
-      target_components: ['NIC', 'Network'],
-      firmware_version: 'BIOS v2.2.0',
-      priority: Priority.P2,
-      key_parameters: [{ key: '带宽', value: '100Gbps' }, { key: '延迟', value: '<1μs' }],
-      risk_points: '需测试多种驱动版本组合。',
-      tpm_owner_id: 'alice',
-      manual_dev_id: 'li_si',
-      status: RequirementStatus.DEVELOPING,
-      attachments: [],
-      created_at: '2026-02-10T11:00:00Z',
-      updated_at: '2026-02-22T09:00:00Z'
-    }
-  ]);
+  const [requirements, setRequirements] = useState<TestRequirement[]>([]);
   const [selectedReq, setSelectedReq] = useState<TestRequirement | null>(null);
 
   // Test cases state
-  const [testCases, setTestCases] = useState<TestCase[]>([
-    {
-      case_id: 'TC-2026-001',
-      ref_req_id: 'TR-2026-001',
-      title: 'DDR5 内存稳定性压力测试',
-      test_category: TestCaseCategory.STRESS,
-      version: 2,
-      is_active: true,
-      change_log: '增加高温测试场景，优化测试步骤。',
-      status: TestCaseStatus.APPROVED,
-      owner_id: 'zhang_san',
-      reviewer_id: 'bob',
-      priority: Priority.P0,
-      estimated_duration_sec: 28800,
-      target_components: ['Memory'],
-      required_env: { os: 'RHEL 8.6', firmware: 'BIOS v2.1.0', hardware: '2U Server' },
-      tags: ['DDR5', '压力测试', '高温'],
-      pre_condition: '服务器已完成 BIOS 配置，内存条安装完整。',
-      post_condition: '恢复默认 BIOS 设置，清理测试数据。',
-      cleanup_steps: [],
-      steps: [
-        { step_id: 'step-1', name: '系统启动', action: '开机进入 BIOS，配置内存频率为 5600MT/s', expected: '系统正常启动，无 POST 错误' },
-        { step_id: 'step-2', name: '运行 memtester', action: '执行 memtester 8G 4', expected: '无 ECC 错误报告' },
-        { step_id: 'step-3', name: '高温压力测试', action: '使用烤箱将环境温度升至 45°C，运行 memtester 24小时', expected: '错误率 < 0.01%' }
-      ],
-      is_need_auto: true,
-      is_destructive: false,
-      automation_type: 'Shell Script',
-      script_entity_id: 'auto-ddr5-stress-001',
-      risk_level: RiskLevel.MEDIUM,
-      visibility_scope: VisibilityScope.PROJECT,
-      confidentiality: Confidentiality.INTERNAL,
-      attachments: [],
-      custom_fields: {},
-      approval_history: [{ approver: 'bob', timestamp: '2026-02-15T10:00:00Z', result: 'approved', comment: '测试用例设计合理，通过审批。' }],
-      created_at: '2026-01-20T08:00:00Z',
-      updated_at: '2026-02-15T10:00:00Z'
-    },
-    {
-      case_id: 'TC-2026-002',
-      ref_req_id: 'TR-2026-001',
-      title: 'DDR5 内存兼容性测试',
-      test_category: TestCaseCategory.COMPATIBILITY,
-      version: 1,
-      is_active: true,
-      change_log: '初始版本创建。',
-      status: TestCaseStatus.REVIEW,
-      owner_id: 'zhang_san',
-      reviewer_id: 'bob',
-      priority: Priority.P1,
-      estimated_duration_sec: 14400,
-      target_components: ['Memory'],
-      required_env: { os: 'Windows Server 2022', firmware: 'BIOS v2.1.0' },
-      tags: ['DDR5', '兼容性'],
-      pre_condition: '准备不同厂商的 DDR5 内存模组。',
-      post_condition: '恢复系统配置。',
-      cleanup_steps: [],
-      steps: [
-        { step_id: 'step-1', name: '安装内存', action: '安装 Samsung DDR5 32GB x 4', expected: '系统识别到 128GB' },
-        { step_id: 'step-2', name: '更换内存', action: '更换为 Micron DDR5 32GB x 4', expected: '系统识别到 128GB' }
-      ],
-      is_need_auto: false,
-      is_destructive: false,
-      automation_type: '',
-      script_entity_id: '',
-      risk_level: RiskLevel.LOW,
-      visibility_scope: VisibilityScope.TEAM,
-      confidentiality: Confidentiality.PUBLIC,
-      attachments: [],
-      custom_fields: {},
-      approval_history: [],
-      created_at: '2026-02-01T08:00:00Z',
-      updated_at: '2026-02-01T08:00:00Z'
-    },
-    {
-      case_id: 'TC-2026-003',
-      ref_req_id: 'TR-2026-002',
-      title: 'CPU 温度传感器精度验证',
-      test_category: TestCaseCategory.FUNCTIONAL,
-      version: 1,
-      is_active: true,
-      change_log: '初始版本创建。',
-      status: TestCaseStatus.DRAFT,
-      owner_id: 'li_si',
-      reviewer_id: '',
-      priority: Priority.P1,
-      estimated_duration_sec: 7200,
-      target_components: ['CPU', 'Thermal Sensor'],
-      required_env: { os: 'Linux', firmware: 'BMC v3.2.1' },
-      tags: ['温度监控', '传感器'],
-      pre_condition: 'BMC 和 BIOS 已更新至最新固件。',
-      post_condition: '恢复 BMC 默认设置。',
-      cleanup_steps: [],
-      steps: [
-        { step_id: 'step-1', name: '读取温度', action: '通过 IPMI 读取 CPU 温度', expected: '与物理温度计误差 < 2°C' }
-      ],
-      is_need_auto: true,
-      is_destructive: false,
-      automation_type: 'IPMI Command',
-      script_entity_id: 'auto-temp-sensor-001',
-      risk_level: RiskLevel.LOW,
-      visibility_scope: VisibilityScope.PROJECT,
-      confidentiality: Confidentiality.INTERNAL,
-      attachments: [],
-      custom_fields: {},
-      approval_history: [],
-      created_at: '2026-02-10T08:00:00Z',
-      updated_at: '2026-02-10T08:00:00Z'
-    },
-    {
-      case_id: 'TC-2026-004',
-      ref_req_id: 'TR-2026-003',
-      title: 'NVMe SSD 顺序读取性能测试',
-      test_category: TestCaseCategory.PERFORMANCE,
-      version: 3,
-      is_active: true,
-      change_log: '优化测试方法，增加更多块大小测试。',
-      status: TestCaseStatus.APPROVED,
-      owner_id: 'wang_wu',
-      reviewer_id: 'alice',
-      priority: Priority.P1,
-      estimated_duration_sec: 3600,
-      target_components: ['Storage', 'NVMe'],
-      required_env: { os: 'Ubuntu 22.04', hardware: 'Dell PowerEdge R750' },
-      tags: ['NVMe', '性能', 'FIO'],
-      pre_condition: 'NVMe 硬盘已初始化，创建测试分区。',
-      post_condition: '删除测试分区，恢复原始数据。',
-      cleanup_steps: [],
-      steps: [
-        { step_id: 'step-1', name: '运行 FIO', action: 'fio --name=seq_read --ioengine=libaio --direct=1 --bs=1M --iodepth=32 --numjobs=1 --rw=read --size=10G --runtime=60 --group_reporting', expected: '顺序读取带宽 ≥ 6800 MB/s' }
-      ],
-      is_need_auto: true,
-      is_destructive: true,
-      automation_type: 'FIO Script',
-      script_entity_id: 'auto-nvme-perf-001',
-      risk_level: RiskLevel.HIGH,
-      visibility_scope: VisibilityScope.GLOBAL,
-      confidentiality: Confidentiality.NDA,
-      attachments: [],
-      custom_fields: {},
-      approval_history: [{ approver: 'alice', timestamp: '2026-02-14T14:00:00Z', result: 'approved', comment: '性能指标符合预期。' }],
-      created_at: '2026-01-25T08:00:00Z',
-      updated_at: '2026-02-14T14:00:00Z'
-    },
-    {
-      case_id: 'TC-2026-005',
-      ref_req_id: 'TR-2026-004',
-      title: '双电源故障切换测试',
-      test_category: TestCaseCategory.STABILITY,
-      version: 1,
-      is_active: false,
-      change_log: '初始版本创建。',
-      status: TestCaseStatus.DEPRECATED,
-      owner_id: 'zhang_san',
-      reviewer_id: 'bob',
-      priority: Priority.P0,
-      estimated_duration_sec: 1800,
-      target_components: ['Power Supply'],
-      required_env: { hardware: '2U Server with 2x PSU' },
-      tags: ['电源', '冗余', '故障切换'],
-      pre_condition: '服务器配置为 1+1 冗余模式，负载均衡已启用。',
-      post_condition: '恢复正常电源配置。',
-      cleanup_steps: [],
-      steps: [
-        { step_id: 'step-1', name: '切断电源', action: '关闭 PSU1 电源', expected: 'PSU2 立即接管，无业务中断' }
-      ],
-      is_need_auto: false,
-      is_destructive: true,
-      automation_type: '',
-      script_entity_id: '',
-      risk_level: RiskLevel.HIGH,
-      visibility_scope: VisibilityScope.PROJECT,
-      confidentiality: Confidentiality.INTERNAL,
-      attachments: [],
-      custom_fields: { reason: '测试方法需要重新设计' },
-      approval_history: [],
-      created_at: '2026-02-05T08:00:00Z',
-      updated_at: '2026-02-20T08:00:00Z'
-    }
-  ]);
+  const [testCases, setTestCases] = useState<TestCase[]>([]);
 
+  const getEffectiveUserNavViews = useCallback((user: User): NavView[] => {
+    const customViews = userNavigationMap[user.user_id];
+    if (customViews && customViews.length > 0) {
+      return sanitizeNavViews(customViews);
+    }
+    return getDefaultNavViewsForUser(user);
+  }, [userNavigationMap]);
+
+  const refreshMyNavigationAccess = useCallback(async (user: User) => {
+    const fallbackViews = getEffectiveUserNavViews(user);
+    const fallbackPermissions = hasAdminRole(user)
+      ? ['all']
+      : fallbackViews.map(view => NAV_VIEW_PERMISSION_MAP[view]);
+
+    setMyPermissionCodes(fallbackPermissions);
+    setAvailableNavViews(fallbackViews);
+
+    if (!isBackendEnabled || !testDesignerApi) {
+      return fallbackViews;
+    }
+
+    const [permissionsResult, navigationResult] = await Promise.allSettled([
+      testDesignerApi.getMyPermissions(),
+      testDesignerApi.getMyNavigation(),
+    ]);
+
+    let normalizedPermissions = fallbackPermissions;
+    if (permissionsResult.status === 'fulfilled') {
+      const payload = unwrapApiData(permissionsResult.value);
+      const parsed = normalizePermissionCodes(payload);
+      if (parsed.length > 0) {
+        normalizedPermissions = parsed;
+      }
+    } else {
+      console.warn('Failed to load current user permissions, fallback to role-based defaults:', permissionsResult.reason);
+    }
+
+    let resolvedViews = fallbackViews;
+    if (navigationResult.status === 'fulfilled') {
+      const payload = unwrapApiData(navigationResult.value);
+      const parsed = normalizeNavigationViews(payload);
+      if (parsed.length > 0) {
+        resolvedViews = parsed;
+      } else {
+        const derived = deriveNavViewsFromPermissions(normalizedPermissions);
+        if (derived.length > 0) {
+          resolvedViews = derived;
+        }
+      }
+    } else {
+      console.warn('Failed to load current user navigation access, fallback to permissions/defaults:', navigationResult.reason);
+      const derived = deriveNavViewsFromPermissions(normalizedPermissions);
+      if (derived.length > 0) {
+        resolvedViews = derived;
+      }
+    }
+
+    const safeViews = resolvedViews.length > 0 ? resolvedViews : FALLBACK_NAV_VIEWS;
+    if (hasAdminRole(user)) {
+      const allViews = NAVIGATION_OPTIONS.map(item => item.view);
+      setMyPermissionCodes(['all']);
+      setAvailableNavViews(allViews);
+      return allViews;
+    }
+    setMyPermissionCodes(normalizedPermissions);
+    setAvailableNavViews(safeViews);
+    return safeViews;
+  }, [getEffectiveUserNavViews]);
+
+  // 先恢复登录状态（token + user），再触发后续受保护接口请求
+  useEffect(() => {
+    if (!isBackendEnabled) {
+      setIsAuthRestored(true);
+      return;
+    }
+
+    const token = localStorage.getItem('access_token') || sessionStorage.getItem('access_token');
+    const userStr = localStorage.getItem('user_info') || sessionStorage.getItem('user_info');
+
+    if (!token || !userStr) {
+      setAccessTokenState(null);
+      clearAccessToken();
+      setMyPermissionCodes([]);
+      setAvailableNavViews(FALLBACK_NAV_VIEWS);
+      setIsAuthRestored(true);
+      return;
+    }
+
+    try {
+      const user = JSON.parse(userStr) as User;
+      setAccessTokenState(token);
+      setAccessToken(token);
+      setCurrentUser(user);
+      setIsLoggedIn(true);
+      const defaultViews = getDefaultNavViewsForUser(user);
+      setAvailableNavViews(defaultViews);
+      setMyPermissionCodes(hasAdminRole(user) ? ['all'] : defaultViews.map(item => NAV_VIEW_PERMISSION_MAP[item]));
+      setView(defaultViews[0] || 'req_list');
+    } catch (error) {
+      console.error('Failed to restore login state:', error);
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('user_info');
+      sessionStorage.removeItem('access_token');
+      sessionStorage.removeItem('user_info');
+      setAccessTokenState(null);
+      clearAccessToken();
+      setMyPermissionCodes([]);
+      setAvailableNavViews(FALLBACK_NAV_VIEWS);
+    } finally {
+      setIsAuthRestored(true);
+    }
+  }, []);
+
+  // token 就绪后再拉取受保护资源
   useEffect(() => {
     if (!isBackendEnabled || !testDesignerApi) {
+      return;
+    }
+    if (!isAuthRestored || !isLoggedIn || !accessToken || !currentUser) {
       return;
     }
 
     let isMounted = true;
 
     const loadInitialData = async () => {
-      try {
-        const [remoteUsers, remoteRequirements, remoteTestCases] = await Promise.all([
-          testDesignerApi.listUsers(),
-          testDesignerApi.listRequirements(),
-          testDesignerApi.listTestCases(),
-        ]);
+      const [usersResult, requirementsResult, testCasesResult] = await Promise.allSettled([
+        testDesignerApi.listUsers(),
+        testDesignerApi.listRequirements(),
+        testDesignerApi.listTestCases(),
+      ]);
+      await refreshMyNavigationAccess(currentUser);
 
-        if (!isMounted) {
-          return;
-        }
+      if (!isMounted) {
+        return;
+      }
 
-        setUsers(remoteUsers);
-        setRequirements(remoteRequirements);
-        setTestCases(remoteTestCases);
-      } catch (error) {
-        console.error('Failed to load data from backend, fallback to local mock data:', error);
+      if (usersResult.status === 'fulfilled') {
+        const usersPayload = unwrapApiData(usersResult.value);
+        setUsers(normalizeUsers(usersPayload));
+      } else {
+        console.warn('Failed to load users from backend (possible non-admin account):', usersResult.reason);
+      }
+
+      if (requirementsResult.status === 'fulfilled') {
+        const requirementsPayload = unwrapApiData(requirementsResult.value);
+        setRequirements(normalizeRequirements(requirementsPayload));
+      } else {
+        console.error('Failed to load requirements from backend:', requirementsResult.reason);
+      }
+
+      if (testCasesResult.status === 'fulfilled') {
+        const testCasesPayload = unwrapApiData(testCasesResult.value);
+        setTestCases(normalizeTestCases(testCasesPayload));
+      } else {
+        console.error('Failed to load test cases from backend:', testCasesResult.reason);
       }
     };
 
@@ -353,7 +508,7 @@ export default function App() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [isAuthRestored, isLoggedIn, accessToken, currentUser, refreshMyNavigationAccess]);
 
   // Form data for test case
   const [formData, setFormData] = useState<TestCase>({
@@ -420,38 +575,128 @@ export default function App() {
   // AI hook
   const { polishText: aiPolishText, generateSteps: aiGenerateSteps } = useLocalAI();
 
-  // Login handlers
-  const handleLogin = useCallback(() => {
-    if (!loginForm.user_id || !loginForm.password) {
-      setLoginError('请输入用户ID和密码');
-      return;
+  const getLandingNavView = useCallback((views: NavView[]): NavView => {
+    const safeViews = views.length > 0 ? views : FALLBACK_NAV_VIEWS;
+    if (safeViews.includes('req_list')) {
+      return 'req_list';
     }
-    const user = users.find(u => u.username === loginForm.user_id && u.status === 'ACTIVE');
-    if (user) {
-      setCurrentUser(user);
-      setIsLoggedIn(true);
-      handleViewChange('req_list');
-      setLoginError('');
-    } else {
-      setLoginError('用户ID或密码错误');
-    }
-  }, [loginForm.user_id, loginForm.password, users]);
-
-  const handleLogout = useCallback(() => {
-    setIsLoggedIn(false);
-    setCurrentUser(null);
-    setView('login');
+    return safeViews[0];
   }, []);
-
-  const handleQuickLogin = useCallback((user_id: string) => {
-    setLoginForm({ ...loginForm, user_id, password: '123456' });
-  }, [loginForm]);
 
   // Close user profile when changing views
   const handleViewChange = useCallback((viewName: View) => {
     setShowUserProfile(false);
+    if (isNavView(viewName) && !availableNavViews.includes(viewName)) {
+      const fallback = getLandingNavView(availableNavViews);
+      if (fallback !== viewName) {
+        alert('当前账号无权访问该页面');
+      }
+      setView(fallback);
+      return;
+    }
     setView(viewName);
+  }, [availableNavViews, getLandingNavView]);
+
+  // Login handlers
+  const handleLogin = useCallback(async () => {
+    if (!loginForm.user_id || !loginForm.password) {
+      setLoginError('请输入用户ID和密码');
+      return;
+    }
+
+    // 尝试使用后端登录
+    if (isBackendEnabled && testDesignerApi) {
+      try {
+        const response = await testDesignerApi.login(loginForm.user_id, loginForm.password);
+        const loginResult = unwrapApiData(response);
+
+        if (!loginResult?.access_token || !loginResult.user) {
+          throw new Error('Invalid login response');
+        }
+
+        const { access_token, user } = loginResult;
+        const defaultViews = getDefaultNavViewsForUser(user);
+
+        // 存储令牌和用户信息
+        setAccessTokenState(access_token);
+        setAccessToken(access_token);
+        setCurrentUser(user);
+        setIsLoggedIn(true);
+        setAvailableNavViews(defaultViews);
+        setMyPermissionCodes(hasAdminRole(user) ? ['all'] : defaultViews.map(view => NAV_VIEW_PERMISSION_MAP[view]));
+        setLoginError('');
+
+        // 根据 rememberMe 决定存储位置
+        if (loginForm.rememberMe) {
+          localStorage.setItem('access_token', access_token);
+          localStorage.setItem('user_info', JSON.stringify(user));
+        } else {
+          sessionStorage.setItem('access_token', access_token);
+          sessionStorage.setItem('user_info', JSON.stringify(user));
+        }
+
+        const resolvedViews = await refreshMyNavigationAccess(user);
+        setView(getLandingNavView(resolvedViews));
+        return;
+      } catch (error: any) {
+        console.error('Login failed:', error);
+        setLoginError(error?.message || '登录失败，请检查用户名和密码');
+        return;
+      }
+    }
+
+    // 降级到本地模拟数据（开发/演示模式）
+    const user = users.find(u => u.username === loginForm.user_id && u.status === 'ACTIVE');
+    if (user) {
+      setCurrentUser(user);
+      setIsLoggedIn(true);
+      setLoginError('');
+      const resolvedViews = await refreshMyNavigationAccess(user);
+      setView(getLandingNavView(resolvedViews));
+    } else {
+      setLoginError('用户ID或密码错误');
+    }
+  }, [loginForm.user_id, loginForm.password, loginForm.rememberMe, users, refreshMyNavigationAccess, getLandingNavView]);
+
+  const handleLogout = useCallback(() => {
+    setIsLoggedIn(false);
+    setCurrentUser(null);
+    setAccessTokenState(null);
+    setMyPermissionCodes([]);
+    setAvailableNavViews(FALLBACK_NAV_VIEWS);
+    setEditingNavigationUser(null);
+    setEditingNavigationViews([]);
+    setUserNavigationMap({});
+    setAccessToken(null);
+    clearAccessToken();
+
+    // 清除存储的令牌
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('user_info');
+    sessionStorage.removeItem('access_token');
+    sessionStorage.removeItem('user_info');
+
+    setShowUserProfile(false);
+    setView('login');
   }, []);
+
+  const handleQuickLogin = useCallback((user_id: string, password: string) => {
+    setLoginForm({ user_id, password, rememberMe: false });
+    setLoginError('');
+    // 延迟一点时间让表单更新，然后执行登录
+    setTimeout(async () => {
+      await handleLogin();
+    }, 50);
+  }, [handleLogin]);
+
+  useEffect(() => {
+    if (!isLoggedIn) {
+      return;
+    }
+    if (isNavView(view) && !availableNavViews.includes(view)) {
+      setView(getLandingNavView(availableNavViews));
+    }
+  }, [isLoggedIn, view, availableNavViews, getLandingNavView]);
 
   // Requirement form handlers
   const updateReqField = useCallback((field: keyof TestRequirement, value: any) => {
@@ -515,7 +760,7 @@ export default function App() {
       setRequirements(prev => [...prev, requirementToSave]);
     }
 
-    setView('req_list');
+    handleViewChange('req_list');
     // Reset form
     setReqFormData({
       req_id: `TR-${new Date().getFullYear()}-${String(requirements.length + 2).padStart(3, '0')}`,
@@ -534,7 +779,7 @@ export default function App() {
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     });
-  }, [reqFormData, requirements.length]);
+  }, [reqFormData, requirements.length, handleViewChange]);
 
   // Case form handlers
   const updateField = useCallback((path: string, value: any) => {
@@ -640,10 +885,12 @@ export default function App() {
       status: 'ACTIVE',
       created_at: new Date().toISOString().split('T')[0]
     };
+    let finalUser = userToCreate;
 
     if (isBackendEnabled && testDesignerApi) {
       try {
         const createdUser = await testDesignerApi.createUser(userToCreate);
+        finalUser = createdUser;
         setUsers(prev => [...prev, createdUser]);
       } catch (error) {
         console.error('Failed to create user in backend:', error);
@@ -653,6 +900,7 @@ export default function App() {
     } else {
       setUsers(prev => [...prev, userToCreate]);
     }
+    setUserNavigationMap(prev => ({ ...prev, [finalUser.user_id]: getDefaultNavViewsForUser(finalUser) }));
 
     setShowUserForm(false);
     setNewUser({ status: 'ACTIVE', role_ids: [] });
@@ -689,6 +937,90 @@ export default function App() {
     });
   }, []);
 
+  const startEditNavigation = useCallback(async (user: User) => {
+    if (!hasAdminRole(currentUser)) {
+      alert('仅管理员可配置导航权限');
+      return;
+    }
+
+    const fallbackViews = getEffectiveUserNavViews(user);
+    setEditingNavigationUser(user);
+    setEditingNavigationViews(fallbackViews);
+
+    if (!isBackendEnabled || !testDesignerApi) {
+      return;
+    }
+
+    try {
+      const remoteNavigation = await testDesignerApi.getUserNavigation(user.user_id);
+      const navigationPayload = unwrapApiData(remoteNavigation);
+      const parsedViews = normalizeNavigationViews(navigationPayload);
+      if (parsedViews.length > 0) {
+        setEditingNavigationViews(parsedViews);
+      }
+    } catch (error) {
+      console.warn(`Failed to load navigation access for user ${user.user_id}, fallback to defaults/local cache:`, error);
+    }
+  }, [currentUser, getEffectiveUserNavViews]);
+
+  const toggleEditingNavigationView = useCallback((targetView: string) => {
+    if (!isNavView(targetView)) {
+      return;
+    }
+    setEditingNavigationViews(prev => {
+      if (prev.includes(targetView)) {
+        return prev.filter(viewItem => viewItem !== targetView);
+      }
+      return sanitizeNavViews([...prev, targetView]);
+    });
+  }, []);
+
+  const cancelEditNavigation = useCallback(() => {
+    setEditingNavigationUser(null);
+    setEditingNavigationViews([]);
+    setIsSavingNavigation(false);
+  }, []);
+
+  const saveEditNavigation = useCallback(async () => {
+    if (!editingNavigationUser) {
+      return;
+    }
+
+    const normalizedViews = sanitizeNavViews(editingNavigationViews);
+    if (normalizedViews.length === 0) {
+      alert('至少保留一个可访问页面');
+      return;
+    }
+
+    setIsSavingNavigation(true);
+    try {
+      if (isBackendEnabled && testDesignerApi) {
+        await testDesignerApi.updateUserNavigation(editingNavigationUser.user_id, normalizedViews);
+      }
+
+      setUserNavigationMap(prev => ({ ...prev, [editingNavigationUser.user_id]: normalizedViews }));
+
+      if (currentUser?.user_id === editingNavigationUser.user_id) {
+        if (hasAdminRole(currentUser)) {
+          const allViews = NAVIGATION_OPTIONS.map(item => item.view);
+          setAvailableNavViews(allViews);
+          setMyPermissionCodes(['all']);
+        } else {
+          setAvailableNavViews(normalizedViews);
+          setMyPermissionCodes(normalizedViews.map(view => NAV_VIEW_PERMISSION_MAP[view]));
+        }
+      }
+
+      setEditingNavigationUser(null);
+      setEditingNavigationViews([]);
+    } catch (error) {
+      console.error(`Failed to save navigation access for user ${editingNavigationUser.user_id}:`, error);
+      alert('导航权限保存失败，请检查后端服务后重试。');
+    } finally {
+      setIsSavingNavigation(false);
+    }
+  }, [editingNavigationUser, editingNavigationViews, currentUser]);
+
   // Render views based on current view
   if (view === 'login' || !isLoggedIn) {
     return (
@@ -724,20 +1056,24 @@ export default function App() {
 
           {/* Navigation */}
           <nav className="flex-1 p-4 space-y-1">
-            <button
-              onClick={() => handleViewChange('req_list')}
-              className="w-full flex items-center gap-3 px-4 py-3 text-slate-500 hover:bg-slate-50 rounded-xl text-sm font-bold transition-colors"
-            >
-              <FileText size={18} />
-              测试需求
-            </button>
-            <button
-              onClick={() => handleViewChange('case_list')}
-              className="w-full flex items-center gap-3 px-4 py-3 text-slate-500 hover:bg-slate-50 rounded-xl text-sm font-bold transition-colors"
-            >
-              <PlayCircle size={18} />
-              测试用例
-            </button>
+            {availableNavViews.includes('req_list') && (
+              <button
+                onClick={() => handleViewChange('req_list')}
+                className="w-full flex items-center gap-3 px-4 py-3 text-slate-500 hover:bg-slate-50 rounded-xl text-sm font-bold transition-colors"
+              >
+                <FileText size={18} />
+                测试需求
+              </button>
+            )}
+            {availableNavViews.includes('case_list') && (
+              <button
+                onClick={() => handleViewChange('case_list')}
+                className="w-full flex items-center gap-3 px-4 py-3 text-slate-500 hover:bg-slate-50 rounded-xl text-sm font-bold transition-colors"
+              >
+                <PlayCircle size={18} />
+                测试用例
+              </button>
+            )}
             <button
               onClick={() => {}}
               className="w-full flex items-center gap-3 px-4 py-3 bg-slate-900 text-white rounded-xl text-sm font-bold shadow-lg shadow-slate-900/20"
@@ -860,7 +1196,7 @@ export default function App() {
                         <button
                           onClick={() => {
                             setShowUserProfile(false);
-                            setView('user_mgmt');
+                            handleViewChange('user_mgmt');
                           }}
                           className="flex-1 px-4 py-2.5 bg-slate-900 text-white rounded-xl text-sm font-bold hover:bg-slate-800 transition-all"
                         >
@@ -890,8 +1226,12 @@ export default function App() {
               currentUser={currentUser}
               showUserForm={showUserForm}
               editingUser={editingUser}
+              editingNavigationUser={editingNavigationUser}
+              editingNavigationViews={editingNavigationViews}
+              isSavingNavigation={isSavingNavigation}
+              navigationOptions={NAVIGATION_OPTIONS}
               newUser={newUser}
-              onBack={() => setView('req_list')}
+              onBack={() => handleViewChange(getLandingNavView(availableNavViews))}
               onShowUserForm={setShowUserForm}
               onNewUserChange={setNewUser}
               onCreateUser={handleCreateUser}
@@ -899,6 +1239,10 @@ export default function App() {
               onSaveEditUser={saveEditUser}
               onCancelEdit={cancelEditUser}
               onEditFieldChange={handleEditFieldChange}
+              onStartEditNavigation={startEditNavigation}
+              onToggleEditNavigationView={toggleEditingNavigationView}
+              onSaveEditNavigation={saveEditNavigation}
+              onCancelEditNavigation={cancelEditNavigation}
             />
           </div>
         </main>
@@ -914,7 +1258,7 @@ export default function App() {
         isPolishing={isPolishing}
         onFieldChange={updateReqField}
         onSave={saveRequirement}
-        onCancel={() => setView('req_list')}
+        onCancel={() => handleViewChange('req_list')}
         onAddAttachment={addReqAttachment}
         onRemoveAttachment={removeReqAttachment}
         onToggleComponent={toggleReqComponent}
@@ -929,7 +1273,7 @@ export default function App() {
       <ReqDetail
         requirement={selectedReq}
         testCases={testCases}
-        onBack={() => setView('req_list')}
+        onBack={() => handleViewChange('req_list')}
         onCreateCase={(refReqId) => {
           setFormData(prev => ({ ...prev, ref_req_id: refReqId }));
           handleViewChange('case_form');
@@ -967,6 +1311,7 @@ export default function App() {
       <CaseList
         testCases={testCases}
         currentUser={currentUser}
+        availableNavViews={availableNavViews}
         onSelectCase={(tc) => {
           setFormData(tc);
           handleViewChange('case_form');
@@ -1009,8 +1354,8 @@ export default function App() {
           });
           handleViewChange('case_form');
         }}
-        onNavigateToReqList={() => setView('req_list')}
-        onNavigateToUserMgmt={() => setView('user_mgmt')}
+        onNavigateToReqList={() => handleViewChange('req_list')}
+        onNavigateToUserMgmt={() => handleViewChange('user_mgmt')}
         onLogout={handleLogout}
         showUserProfile={showUserProfile}
         onToggleUserProfile={() => setShowUserProfile(!showUserProfile)}
@@ -1023,13 +1368,14 @@ export default function App() {
     <ReqList
       requirements={requirements}
       currentUser={currentUser}
+      availableNavViews={availableNavViews}
       onSelectReq={(req) => {
         setSelectedReq(req);
         handleViewChange('req_detail');
       }}
-      onCreateReq={() => setView('req_form')}
-      onNavigateToCaseList={() => setView('case_list')}
-      onNavigateToUserMgmt={() => setView('user_mgmt')}
+      onCreateReq={() => handleViewChange('req_form')}
+      onNavigateToCaseList={() => handleViewChange('case_list')}
+      onNavigateToUserMgmt={() => handleViewChange('user_mgmt')}
       onLogout={handleLogout}
       showUserProfile={showUserProfile}
       onToggleUserProfile={() => setShowUserProfile(!showUserProfile)}

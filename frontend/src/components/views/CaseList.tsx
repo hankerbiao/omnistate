@@ -23,6 +23,7 @@ import { User as UserType, ROLES } from '../../constants/config';
 interface CaseListProps {
   testCases: TestCase[];
   currentUser: UserType | null;
+  availableNavViews: string[];
   onSelectCase: (tc: TestCase) => void;
   onCreateCase: () => void;
   onNavigateToReqList: () => void;
@@ -41,6 +42,7 @@ interface FilterSection {
 export const CaseList: React.FC<CaseListProps> = ({
   testCases,
   currentUser,
+  availableNavViews,
   onSelectCase,
   onCreateCase,
   onNavigateToReqList,
@@ -49,6 +51,9 @@ export const CaseList: React.FC<CaseListProps> = ({
   showUserProfile,
   onToggleUserProfile,
 }) => {
+  const canAccessReqList = availableNavViews.includes('req_list');
+  const canAccessUserMgmt = availableNavViews.includes('user_mgmt');
+
   const [searchText, setSearchText] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
@@ -264,18 +269,22 @@ export const CaseList: React.FC<CaseListProps> = ({
           </div>
         </div>
         <nav className="flex-1 p-4 space-y-1">
-          <button onClick={onNavigateToReqList} className="w-full flex items-center gap-3 px-4 py-3 text-slate-500 hover:bg-slate-50 rounded-xl text-sm font-bold transition-colors">
-            <FileText size={18} />
-            测试需求
-          </button>
+          {canAccessReqList && (
+            <button onClick={onNavigateToReqList} className="w-full flex items-center gap-3 px-4 py-3 text-slate-500 hover:bg-slate-50 rounded-xl text-sm font-bold transition-colors">
+              <FileText size={18} />
+              测试需求
+            </button>
+          )}
           <button onClick={() => {}} className="w-full flex items-center gap-3 px-4 py-3 bg-slate-900 text-white rounded-xl text-sm font-bold shadow-lg shadow-slate-900/20">
             <PlayCircle size={18} />
             测试用例
           </button>
-          <button onClick={onNavigateToUserMgmt} className="w-full flex items-center gap-3 px-4 py-3 text-slate-500 hover:bg-slate-50 rounded-xl text-sm font-bold transition-colors">
-            <User size={18} />
-            用户管理
-          </button>
+          {canAccessUserMgmt && (
+            <button onClick={onNavigateToUserMgmt} className="w-full flex items-center gap-3 px-4 py-3 text-slate-500 hover:bg-slate-50 rounded-xl text-sm font-bold transition-colors">
+              <User size={18} />
+              用户管理
+            </button>
+          )}
         </nav>
         <div className="p-4 border-t border-slate-100">
           {currentUser && (
@@ -386,15 +395,17 @@ export const CaseList: React.FC<CaseListProps> = ({
                       >
                         关闭
                       </button>
-                      <button
-                        onClick={() => {
-                          onToggleUserProfile();
-                          onNavigateToUserMgmt();
-                        }}
-                        className="flex-1 px-4 py-2.5 bg-slate-900 text-white rounded-xl text-sm font-bold hover:bg-slate-800 transition-all"
-                      >
-                        编辑资料
-                      </button>
+                      {canAccessUserMgmt && (
+                        <button
+                          onClick={() => {
+                            onToggleUserProfile();
+                            onNavigateToUserMgmt();
+                          }}
+                          className="flex-1 px-4 py-2.5 bg-slate-900 text-white rounded-xl text-sm font-bold hover:bg-slate-800 transition-all"
+                        >
+                          编辑资料
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>

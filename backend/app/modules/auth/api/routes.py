@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.shared.api.schemas.base import APIResponse
 from app.shared.auth import create_access_token, get_current_user
-from app.shared.auth import require_permission
+from app.shared.auth import require_permission, require_any_permission
 from app.modules.auth.service import (
     RbacService,
     UserNotFoundError,
@@ -28,6 +28,9 @@ from app.modules.auth.schemas import (
     UserResponse,
     LoginResponse,
     MePermissionsResponse,
+    NavigationPageResponse,
+    UserNavigationResponse,
+    UpdateUserNavigationRequest,
     CreateRoleRequest,
     UpdateRoleRequest,
     UpdateRolePermissionsRequest,
@@ -46,6 +49,17 @@ def get_rbac_service() -> RbacService:
 
 
 RbacServiceDep = Annotated[RbacService, Depends(get_rbac_service)]
+
+
+def _is_admin_user(current_user: dict) -> bool:
+    role_ids = current_user.get("role_ids", [])
+    return any("ADMIN" in str(role_id).upper() for role_id in role_ids)
+
+
+async def require_admin_user(current_user=Depends(get_current_user)):
+    if not _is_admin_user(current_user):
+        raise HTTPException(status_code=403, detail="admin only")
+    return current_user
 
 
 # ===== Users =====
@@ -90,7 +104,7 @@ async def login(
 async def get_user(
     user_id: str,
     service: RbacServiceDep,
-    _=Depends(require_permission("users:read")),
+    _=Depends(require_any_permission(["users:read", "work_items:read"])),
 ):
     """根据 user_id 获取用户详情"""
     try:
@@ -103,7 +117,7 @@ async def get_user(
 @router.get("/users", response_model=APIResponse[List[UserResponse]], summary="查询用户列表")
 async def list_users(
     service: RbacServiceDep,
-    _=Depends(require_permission("users:read")),
+    _=Depends(require_any_permission(["users:read", "work_items:read"])),
     status: Optional[str] = Query(None),
     role_id: Optional[str] = Query(None),
     limit: int = Query(20, ge=1, le=200),
@@ -211,6 +225,73 @@ async def get_my_permissions(
         return APIResponse(data=MePermissionsResponse(**data))
     except UserNotFoundError:
         raise HTTPException(status_code=404, detail="user not found")
+
+
+@router.get(
+    "/users/me/navigation",
+    response_model=APIResponse[UserNavigationResponse],
+    summary="获取当前用户导航访问权限",
+)
+async def get_my_navigation(
+    service: RbacServiceDep,
+    current_user=Depends(get_current_user),
+):
+    """返回当前登录用户可访问的导航页面。"""
+    try:
+        data = await service.get_user_navigation(current_user["user_id"])
+        return APIResponse(data=UserNavigationResponse(**data))
+    except UserNotFoundError:
+        raise HTTPException(status_code=404, detail="user not found")
+
+
+@router.get(
+    "/admin/navigation/pages",
+    response_model=APIResponse[List[NavigationPageResponse]],
+    summary="获取系统导航页面定义（管理员）",
+)
+async def list_navigation_pages(
+    service: RbacServiceDep,
+    _=Depends(require_admin_user),
+):
+    data = await service.list_navigation_pages()
+    return APIResponse(data=[NavigationPageResponse(**item) for item in data])
+
+
+@router.get(
+    "/admin/users/{user_id}/navigation",
+    response_model=APIResponse[UserNavigationResponse],
+    summary="获取用户导航访问权限（管理员）",
+)
+async def get_user_navigation(
+    user_id: str,
+    service: RbacServiceDep,
+    _=Depends(require_admin_user),
+):
+    try:
+        data = await service.get_user_navigation(user_id)
+        return APIResponse(data=UserNavigationResponse(**data))
+    except UserNotFoundError:
+        raise HTTPException(status_code=404, detail="user not found")
+
+
+@router.put(
+    "/admin/users/{user_id}/navigation",
+    response_model=APIResponse[UserNavigationResponse],
+    summary="更新用户导航访问权限（管理员）",
+)
+async def update_user_navigation(
+    user_id: str,
+    request: UpdateUserNavigationRequest,
+    service: RbacServiceDep,
+    _=Depends(require_admin_user),
+):
+    try:
+        data = await service.update_user_navigation(user_id, request.allowed_nav_views)
+        return APIResponse(data=UserNavigationResponse(**data))
+    except UserNotFoundError:
+        raise HTTPException(status_code=404, detail="user not found")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 # ===== Roles =====

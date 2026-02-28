@@ -313,12 +313,40 @@ async def init_rbac_data():
             on_insert=PermissionDoc(perm_id=code, code=code, name=name)
         )
 
-    # 2) upsert ADMIN 角色（拥有全部权限）
+    # 2) upsert 默认角色
     all_perm_ids = [code for code, _ in default_permissions]
-    await RoleDoc.find_one(RoleDoc.role_id == "ADMIN").upsert(
-        {"$set": {"name": "ADMIN", "permission_ids": all_perm_ids, "updated_at": datetime.now(timezone.utc)}},
-        on_insert=RoleDoc(role_id="ADMIN", name="ADMIN", permission_ids=all_perm_ids)
-    )
+    default_roles = {
+        "ADMIN": all_perm_ids,
+        "TPM": [
+            "users:read",
+            "requirements:read",
+            "requirements:write",
+            "test_cases:read",
+            "work_items:read",
+            "work_items:transition",
+        ],
+        "TESTER": [
+            "users:read",
+            "requirements:read",
+            "test_cases:read",
+            "test_cases:write",
+            "work_items:read",
+            "work_items:transition",
+        ],
+        "AUTOMATION": [
+            "users:read",
+            "test_cases:read",
+            "test_cases:write",
+            "assets:read",
+            "work_items:read",
+        ],
+    }
+
+    for role_id, permission_ids in default_roles.items():
+        await RoleDoc.find_one(RoleDoc.role_id == role_id).upsert(
+            {"$set": {"name": role_id, "permission_ids": permission_ids, "updated_at": datetime.now(timezone.utc)}},
+            on_insert=RoleDoc(role_id=role_id, name=role_id, permission_ids=permission_ids)
+        )
 
     log.success("RBAC 初始化完成")
 

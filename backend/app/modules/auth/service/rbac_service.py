@@ -23,6 +23,27 @@ class RbacService(BaseService):
     _USER_UPDATABLE_FIELDS = {"username", "email", "status"}
     _ROLE_UPDATABLE_FIELDS = {"name"}
     _PERMISSION_UPDATABLE_FIELDS = {"code", "name", "description"}
+    _NAVIGATION_PAGES = [
+        {
+            "view": "req_list",
+            "label": "测试需求",
+            "permission": "nav:req_list:view",
+            "description": "允许访问测试需求列表页",
+        },
+        {
+            "view": "case_list",
+            "label": "测试用例",
+            "permission": "nav:case_list:view",
+            "description": "允许访问测试用例列表页",
+        },
+        {
+            "view": "user_mgmt",
+            "label": "用户管理",
+            "permission": "nav:user_mgmt:view",
+            "description": "允许访问用户与权限管理页",
+        },
+    ]
+    _DEFAULT_NAV_VIEWS = ["req_list", "case_list"]
 
     # ===== Users =====
 
@@ -140,6 +161,56 @@ class RbacService(BaseService):
         codes = sorted({perm.code for perm in perms})
         return {"user_id": user_id, "role_ids": user.role_ids, "permissions": codes}
 
+    async def list_navigation_pages(self) -> List[Dict[str, str]]:
+        """返回系统支持的导航页面定义。"""
+        return [dict(item) for item in self._NAVIGATION_PAGES]
+
+    async def get_user_navigation(self, user_id: str) -> Dict[str, Any]:
+        """返回用户可见导航页面（用户级覆盖 > 权限推导；管理员固定全量）。"""
+        user = await UserDoc.find_one(UserDoc.user_id == user_id)
+        if not user:
+            raise UserNotFoundError("user not found")
+
+        effective = await self.get_effective_permissions(user_id)
+        permissions = effective.get("permissions", [])
+        role_ids = user.role_ids or []
+
+        if self._is_admin_roles(role_ids):
+            allowed_nav_views = self._all_nav_views()
+            if "all" not in permissions:
+                permissions = ["all", *permissions]
+        else:
+            user_override = self._sanitize_nav_views(user.allowed_nav_views or [])
+            if user_override:
+                allowed_nav_views = user_override
+            else:
+                allowed_nav_views = self._derive_nav_views_from_permissions(permissions)
+                if not allowed_nav_views:
+                    allowed_nav_views = list(self._DEFAULT_NAV_VIEWS)
+
+        return {
+            "user_id": user_id,
+            "role_ids": role_ids,
+            "permissions": permissions,
+            "allowed_nav_views": allowed_nav_views,
+        }
+
+    async def update_user_navigation(self, user_id: str, allowed_nav_views: List[str]) -> Dict[str, Any]:
+        """更新用户导航可见页面（管理员用户固定全量，不允许锁死）。"""
+        user = await UserDoc.find_one(UserDoc.user_id == user_id)
+        if not user:
+            raise UserNotFoundError("user not found")
+
+        normalized_views = self._sanitize_nav_views(allowed_nav_views)
+        if self._is_admin_roles(user.role_ids or []):
+            normalized_views = self._all_nav_views()
+        elif not normalized_views:
+            raise ValueError("allowed_nav_views must contain at least one valid view")
+
+        user.allowed_nav_views = normalized_views
+        await user.save()
+        return await self.get_user_navigation(user_id)
+
     # ===== Roles =====
 
     async def create_role(self, data: Dict[str, Any]) -> Dict[str, Any]:
@@ -232,3 +303,30 @@ class RbacService(BaseService):
         count = await PermissionDoc.find({"perm_id": {"$in": permission_ids}}).count()
         if count != len(set(permission_ids)):
             raise PermissionNotFoundError("permission not found")
+
+    @classmethod
+    def _all_nav_views(cls) -> List[str]:
+        return [item["view"] for item in cls._NAVIGATION_PAGES]
+
+    @classmethod
+    def _sanitize_nav_views(cls, views: List[str]) -> List[str]:
+        valid_views = set(cls._all_nav_views())
+        seen = set()
+        ordered: List[str] = []
+        for view in views:
+            if view in valid_views and view not in seen:
+                seen.add(view)
+                ordered.append(view)
+        # 统一按系统定义顺序返回
+        ordered_set = set(ordered)
+        return [view for view in cls._all_nav_views() if view in ordered_set]
+
+    @staticmethod
+    def _is_admin_roles(role_ids: List[str]) -> bool:
+        return any("ADMIN" in str(role_id).upper() for role_id in role_ids)
+
+    @classmethod
+    def _derive_nav_views_from_permissions(cls, permissions: List[str]) -> List[str]:
+        permission_set = set(permissions)
+        derived = [item["view"] for item in cls._NAVIGATION_PAGES if item["permission"] in permission_set]
+        return cls._sanitize_nav_views(derived)

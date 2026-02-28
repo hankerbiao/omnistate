@@ -30,9 +30,10 @@ class TestCaseDoc(Document):
     version: int = Field(default=1, description="版本号")
     is_active: bool = Field(default=True, description="是否为当前有效版本")
     change_log: Optional[str] = Field(None, description="版本变更摘要")
-    status: str = Field(default="DRAFT", description="状态")
+    status: str = Field(default="draft", description="状态")
     owner_id: Optional[str] = Field(None, description="用例责任人")
     reviewer_id: Optional[str] = Field(None, description="评审人")
+    auto_dev_id: Optional[str] = Field(None, description="自动化开发责任人")
     priority: Optional[str] = Field(None, description="优先级")
     estimated_duration_sec: Optional[int] = Field(None, description="预估执行耗时(秒)")
     target_components: List[str] = Field(default_factory=list, description="目标部件范围")
@@ -43,6 +44,7 @@ class TestCaseDoc(Document):
     is_destructive: bool = Field(default=False, description="是否为破坏性测试")
     pre_condition: Optional[str] = Field(None, description="前置条件")
     post_condition: Optional[str] = Field(None, description="后置条件")
+    cleanup_steps: List[TestCaseStep] = Field(default_factory=list, description="清理步骤")
     steps: List[TestCaseStep] = Field(default_factory=list, description="步骤定义列表")
     is_need_auto: bool = Field(default=False, description="是否需要自动化")
     is_automated: bool = Field(default=False, description="是否已自动化")
@@ -52,7 +54,7 @@ class TestCaseDoc(Document):
     failure_analysis: Optional[str] = Field(None, description="失败分析建议")
     confidentiality: Optional[str] = Field(None, description="机密等级")
     visibility_scope: Optional[str] = Field(None, description="可见范围")
-    attachments: List[str] = Field(default_factory=list, description="附件列表")
+    attachments: List[Dict[str, Any]] = Field(default_factory=list, description="附件列表")
     custom_fields: Dict[str, Any] = Field(default_factory=dict, description="自定义字段")
     deprecation_reason: Optional[str] = Field(None, description="废弃原因")
     approval_history: List[Dict[str, Any]] = Field(default_factory=list, description="审批记录")
@@ -95,6 +97,7 @@ class TestCaseModel(BaseModel):
     status: str
     owner_id: Optional[str] = None
     reviewer_id: Optional[str] = None
+    auto_dev_id: Optional[str] = None
     priority: Optional[str] = None
     estimated_duration_sec: Optional[int] = None
     target_components: List[str]
@@ -105,6 +108,7 @@ class TestCaseModel(BaseModel):
     is_destructive: bool
     pre_condition: Optional[str] = None
     post_condition: Optional[str] = None
+    cleanup_steps: List[TestCaseStep]
     steps: List[TestCaseStep]
     is_need_auto: bool
     is_automated: bool
@@ -114,7 +118,7 @@ class TestCaseModel(BaseModel):
     failure_analysis: Optional[str] = None
     confidentiality: Optional[str] = None
     visibility_scope: Optional[str] = None
-    attachments: List[str]
+    attachments: List[Dict[str, Any]]
     custom_fields: Dict[str, Any]
     deprecation_reason: Optional[str] = None
     approval_history: List[Dict[str, Any]]

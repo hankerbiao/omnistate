@@ -148,12 +148,37 @@ async def get_user_permissions(user_id: str) -> List[str]:
     return [perm.code for perm in perms]
 
 
+def _has_admin_role(role_ids: List[str]) -> bool:
+    return any("ADMIN" in str(role_id).upper() for role_id in role_ids)
+
+
 def require_permission(permission_code: str) -> Callable:
     """权限校验依赖：要求用户拥有指定权限"""
 
     async def _checker(current_user: Dict[str, Any] = Depends(get_current_user)):
+        if _has_admin_role(current_user.get("role_ids", [])):
+            return
         perms = await get_user_permissions(current_user["user_id"])
         if permission_code not in perms:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="permission denied",
+            )
+
+    return _checker
+
+
+def require_any_permission(permission_codes: List[str]) -> Callable:
+    """权限校验依赖：要求用户至少拥有一个权限。"""
+    required = {code for code in permission_codes if code}
+    if not required:
+        raise ValueError("permission_codes must not be empty")
+
+    async def _checker(current_user: Dict[str, Any] = Depends(get_current_user)):
+        if _has_admin_role(current_user.get("role_ids", [])):
+            return
+        perms = set(await get_user_permissions(current_user["user_id"]))
+        if perms.isdisjoint(required):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="permission denied",

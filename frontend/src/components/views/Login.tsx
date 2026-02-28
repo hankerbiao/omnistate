@@ -21,7 +21,7 @@ interface LoginProps {
   onLoginFormChange: (form: { user_id: string; password: string; rememberMe: boolean }) => void;
   onShowPasswordChange: (show: boolean) => void;
   onLogin: () => boolean;
-  onQuickLogin: (user_id: string) => void;
+  onQuickLogin: (user_id: string, password: string) => void;
 }
 
 // Platform Preview Component
@@ -386,7 +386,7 @@ export const Login: React.FC<LoginProps> = ({
                 <motion.button
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
-                  onClick={() => onQuickLogin('admin')}
+                  onClick={() => onQuickLogin('admin001', 'Admin@123')}
                   className="flex items-center justify-center gap-1.5 rounded-lg border border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50 px-3 py-2.5 text-xs font-medium text-blue-700 transition-all hover:from-blue-100 hover:to-indigo-100"
                 >
                   <Cpu size={12} />
@@ -395,28 +395,31 @@ export const Login: React.FC<LoginProps> = ({
                 <motion.button
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
-                  onClick={() => onQuickLogin('alice')}
-                  className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs font-medium text-slate-700 transition-all hover:bg-slate-100"
+                  onClick={() => onQuickLogin('tpm001', 'TPM@123')}
+                  className="rounded-lg border border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50 px-3 py-2.5 text-xs font-medium text-amber-700 transition-all hover:from-amber-100 hover:to-orange-100"
                 >
-                  Alice
+                  TPM
                 </motion.button>
                 <motion.button
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
-                  onClick={() => onQuickLogin('bob')}
-                  className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs font-medium text-slate-700 transition-all hover:bg-slate-100"
+                  onClick={() => onQuickLogin('tester001', 'Test@123')}
+                  className="rounded-lg border border-emerald-200 bg-gradient-to-r from-emerald-50 to-teal-50 px-3 py-2.5 text-xs font-medium text-emerald-700 transition-all hover:from-emerald-100 hover:to-teal-100"
                 >
-                  Bob
+                  测试工程师
                 </motion.button>
                 <motion.button
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
-                  onClick={() => onQuickLogin('eng_zhang_san')}
-                  className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs font-medium text-slate-700 transition-all hover:bg-slate-100"
+                  onClick={() => onQuickLogin('auto001', 'Auto@123')}
+                  className="rounded-lg border border-purple-200 bg-gradient-to-r from-purple-50 to-pink-50 px-3 py-2.5 text-xs font-medium text-purple-700 transition-all hover:from-purple-100 hover:to-pink-100"
                 >
-                  工程师
+                  自动化工程师
                 </motion.button>
               </div>
+              <p className="mt-3 text-center text-[11px] text-slate-400">
+                点击上方按钮直接登录体验
+              </p>
             </motion.div>
 
             {/* Footer */}

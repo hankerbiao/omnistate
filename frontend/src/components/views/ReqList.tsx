@@ -23,6 +23,7 @@ import { User as UserType, ROLES } from '../../constants/config';
 interface ReqListProps {
   requirements: TestRequirement[];
   currentUser: UserType | null;
+  availableNavViews: string[];
   onSelectReq: (req: TestRequirement) => void;
   onCreateReq: () => void;
   onNavigateToCaseList: () => void;
@@ -41,6 +42,7 @@ interface FilterSection {
 export const ReqList: React.FC<ReqListProps> = ({
   requirements,
   currentUser,
+  availableNavViews,
   onSelectReq,
   onCreateReq,
   onNavigateToCaseList,
@@ -49,6 +51,12 @@ export const ReqList: React.FC<ReqListProps> = ({
   showUserProfile,
   onToggleUserProfile,
 }) => {
+  const canAccessCaseList = availableNavViews.includes('case_list');
+  const canAccessUserMgmt = availableNavViews.includes('user_mgmt');
+
+  const getTargetComponents = (req: TestRequirement) =>
+    Array.isArray(req.target_components) ? req.target_components : [];
+
   const [searchText, setSearchText] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [expandedSections, setExpandedSections] = useState<{ [key: string]: boolean }>({
@@ -86,7 +94,7 @@ export const ReqList: React.FC<ReqListProps> = ({
     // Get unique components
     const componentCounts = new Map<string, number>();
     requirements.forEach(req => {
-      req.target_components.forEach(comp => {
+      getTargetComponents(req).forEach(comp => {
         componentCounts.set(comp, (componentCounts.get(comp) || 0) + 1);
       });
     });
@@ -122,15 +130,21 @@ export const ReqList: React.FC<ReqListProps> = ({
   // Filter requirements based on search and selected filters
   const filteredRequirements = useMemo(() => {
     return requirements.filter(req => {
+      const title = req.title || '';
+      const reqId = req.req_id || '';
+      const description = req.description || '';
+      const ownerId = req.tpm_owner_id || '';
+      const components = getTargetComponents(req);
+
       // Search filter
       if (searchText) {
         const search = searchText.toLowerCase();
         const matchesSearch =
-          req.title.toLowerCase().includes(search) ||
-          req.req_id.toLowerCase().includes(search) ||
-          req.description.toLowerCase().includes(search) ||
-          req.tpm_owner_id.toLowerCase().includes(search) ||
-          req.target_components.some(comp => comp.toLowerCase().includes(search));
+          title.toLowerCase().includes(search) ||
+          reqId.toLowerCase().includes(search) ||
+          description.toLowerCase().includes(search) ||
+          ownerId.toLowerCase().includes(search) ||
+          components.some(comp => comp.toLowerCase().includes(search));
         if (!matchesSearch) return false;
       }
 
@@ -146,12 +160,12 @@ export const ReqList: React.FC<ReqListProps> = ({
 
       // Component filter
       if (selectedFilters.component.size > 0) {
-        const hasMatchingComponent = req.target_components.some(comp => selectedFilters.component.has(comp));
+        const hasMatchingComponent = components.some(comp => selectedFilters.component.has(comp));
         if (!hasMatchingComponent) return false;
       }
 
       // Owner filter
-      if (selectedFilters.owner.size > 0 && !selectedFilters.owner.has(req.tpm_owner_id)) {
+      if (selectedFilters.owner.size > 0 && !selectedFilters.owner.has(ownerId)) {
         return false;
       }
 
@@ -217,20 +231,24 @@ export const ReqList: React.FC<ReqListProps> = ({
             <FileText size={18} />
             测试需求
           </button>
-          <button
-            onClick={onNavigateToCaseList}
-            className="w-full flex items-center gap-3 px-4 py-3 text-slate-500 hover:bg-slate-50 rounded-xl text-sm font-bold transition-colors"
-          >
-            <PlayCircle size={18} />
-            测试用例
-          </button>
-          <button
-            onClick={onNavigateToUserMgmt}
-            className="w-full flex items-center gap-3 px-4 py-3 text-slate-500 hover:bg-slate-50 rounded-xl text-sm font-bold transition-colors"
-          >
-            <User size={18} />
-            用户管理
-          </button>
+          {canAccessCaseList && (
+            <button
+              onClick={onNavigateToCaseList}
+              className="w-full flex items-center gap-3 px-4 py-3 text-slate-500 hover:bg-slate-50 rounded-xl text-sm font-bold transition-colors"
+            >
+              <PlayCircle size={18} />
+              测试用例
+            </button>
+          )}
+          {canAccessUserMgmt && (
+            <button
+              onClick={onNavigateToUserMgmt}
+              className="w-full flex items-center gap-3 px-4 py-3 text-slate-500 hover:bg-slate-50 rounded-xl text-sm font-bold transition-colors"
+            >
+              <User size={18} />
+              用户管理
+            </button>
+          )}
         </nav>
 
         {/* Bottom User Info */}
@@ -343,15 +361,17 @@ export const ReqList: React.FC<ReqListProps> = ({
                       >
                         关闭
                       </button>
-                      <button
-                        onClick={() => {
-                          onToggleUserProfile();
-                          onNavigateToUserMgmt();
-                        }}
-                        className="flex-1 px-4 py-2.5 bg-slate-900 text-white rounded-xl text-sm font-bold hover:bg-slate-800 transition-all"
-                      >
-                        编辑资料
-                      </button>
+                      {canAccessUserMgmt && (
+                        <button
+                          onClick={() => {
+                            onToggleUserProfile();
+                            onNavigateToUserMgmt();
+                          }}
+                          className="flex-1 px-4 py-2.5 bg-slate-900 text-white rounded-xl text-sm font-bold hover:bg-slate-800 transition-all"
+                        >
+                          编辑资料
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -527,7 +547,7 @@ export const ReqList: React.FC<ReqListProps> = ({
                   </td>
                   <td className="px-8 py-5">
                     <div className="flex gap-1.5 flex-wrap">
-                      {req.target_components.map(c => (
+                      {getTargetComponents(req).map(c => (
                         <span key={c} className="px-2.5 py-1 bg-slate-100 text-slate-600 rounded-lg text-xs font-bold">{c}</span>
                       ))}
                     </div>
@@ -535,9 +555,9 @@ export const ReqList: React.FC<ReqListProps> = ({
                   <td className="px-8 py-5 text-sm font-medium text-slate-600">
                     <div className="flex items-center gap-2">
                       <div className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-[10px] font-bold text-slate-500">
-                        {req.tpm_owner_id.charAt(0).toUpperCase()}
+                        {(req.tpm_owner_id || '?').charAt(0).toUpperCase()}
                       </div>
-                      {req.tpm_owner_id}
+                      {req.tpm_owner_id || '未分配'}
                     </div>
                   </td>
                   <td className="px-8 py-5">
