@@ -21,6 +21,7 @@ class CreateTestCaseRequest(BaseModel):
     change_log: Optional[str] = None
     owner_id: Optional[str] = None
     reviewer_id: Optional[str] = None
+    auto_dev_id: Optional[str] = None
     priority: Optional[str] = None
     estimated_duration_sec: Optional[int] = None
     target_components: List[str] = Field(default_factory=list)
@@ -31,6 +32,7 @@ class CreateTestCaseRequest(BaseModel):
     is_destructive: bool = False
     pre_condition: Optional[str] = None
     post_condition: Optional[str] = None
+    cleanup_steps: List[TestCaseStepSchema] = Field(default_factory=list)
     steps: List[TestCaseStepSchema] = Field(default_factory=list)
     is_need_auto: bool = False
     is_automated: bool = False
@@ -40,7 +42,7 @@ class CreateTestCaseRequest(BaseModel):
     failure_analysis: Optional[str] = None
     confidentiality: Optional[str] = None
     visibility_scope: Optional[str] = None
-    attachments: List[str] = Field(default_factory=list)
+    attachments: List[Dict[str, Any]] = Field(default_factory=list)
     custom_fields: Dict[str, Any] = Field(default_factory=dict)
     deprecation_reason: Optional[str] = None
     approval_history: List[Dict[str, Any]] = Field(default_factory=list)
@@ -54,6 +56,7 @@ class UpdateTestCaseRequest(BaseModel):
     change_log: Optional[str] = None
     owner_id: Optional[str] = None
     reviewer_id: Optional[str] = None
+    auto_dev_id: Optional[str] = None
     priority: Optional[str] = None
     estimated_duration_sec: Optional[int] = None
     target_components: Optional[List[str]] = None
@@ -64,6 +67,7 @@ class UpdateTestCaseRequest(BaseModel):
     is_destructive: Optional[bool] = None
     pre_condition: Optional[str] = None
     post_condition: Optional[str] = None
+    cleanup_steps: Optional[List[TestCaseStepSchema]] = None
     steps: Optional[List[TestCaseStepSchema]] = None
     is_need_auto: Optional[bool] = None
     is_automated: Optional[bool] = None
@@ -73,7 +77,7 @@ class UpdateTestCaseRequest(BaseModel):
     failure_analysis: Optional[str] = None
     confidentiality: Optional[str] = None
     visibility_scope: Optional[str] = None
-    attachments: Optional[List[str]] = None
+    attachments: Optional[List[Dict[str, Any]]] = None
     custom_fields: Optional[Dict[str, Any]] = None
     deprecation_reason: Optional[str] = None
     approval_history: Optional[List[Dict[str, Any]]] = None
@@ -92,6 +96,7 @@ class TestCaseResponse(BaseModel):
     status: str
     owner_id: Optional[str]
     reviewer_id: Optional[str]
+    auto_dev_id: Optional[str]
     priority: Optional[str]
     estimated_duration_sec: Optional[int]
     target_components: List[str]
@@ -102,6 +107,7 @@ class TestCaseResponse(BaseModel):
     is_destructive: bool
     pre_condition: Optional[str]
     post_condition: Optional[str]
+    cleanup_steps: List[TestCaseStepSchema]
     steps: List[TestCaseStepSchema]
     is_need_auto: bool
     is_automated: bool
@@ -111,7 +117,7 @@ class TestCaseResponse(BaseModel):
     failure_analysis: Optional[str]
     confidentiality: Optional[str]
     visibility_scope: Optional[str]
-    attachments: List[str]
+    attachments: List[Dict[str, Any]]
     custom_fields: Dict[str, Any]
     deprecation_reason: Optional[str]
     approval_history: List[Dict[str, Any]]

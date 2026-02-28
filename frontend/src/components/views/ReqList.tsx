@@ -57,6 +57,20 @@ export const ReqList: React.FC<ReqListProps> = ({
   const getTargetComponents = (req: TestRequirement) =>
     Array.isArray(req.target_components) ? req.target_components : [];
 
+  const getRequirementStatusLabel = (status: RequirementStatus): string => {
+    switch (status) {
+      case RequirementStatus.DRAFT: return '草稿';
+      case RequirementStatus.PENDING_REVIEW: return '待评审';
+      case RequirementStatus.PENDING_DEVELOP: return '待开发';
+      case RequirementStatus.DEVELOPING: return '开发中';
+      case RequirementStatus.PENDING_TEST: return '待测试';
+      case RequirementStatus.PENDING_UAT: return '待验收';
+      case RequirementStatus.PENDING_RELEASE: return '待发布';
+      case RequirementStatus.RELEASED: return '已发布';
+      default: return status;
+    }
+  };
+
   const [searchText, setSearchText] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [expandedSections, setExpandedSections] = useState<{ [key: string]: boolean }>({
@@ -81,7 +95,7 @@ export const ReqList: React.FC<ReqListProps> = ({
   const filterSections = useMemo((): FilterSection[] => {
     const statusOptions = Object.values(RequirementStatus).map(status => ({
       value: status,
-      label: status,
+      label: getRequirementStatusLabel(status),
       count: requirements.filter(req => req.status === status).length,
     }));
 
@@ -562,9 +576,9 @@ export const ReqList: React.FC<ReqListProps> = ({
                   </td>
                   <td className="px-8 py-5">
                     <span className={`text-xs font-bold px-3 py-1.5 rounded-lg uppercase tracking-wider ${
-                      req.status === RequirementStatus.CLOSED ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'
+                      req.status === RequirementStatus.RELEASED ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'
                     }`}>
-                      {req.status}
+                      {getRequirementStatusLabel(req.status)}
                     </span>
                   </td>
                   <td className="px-8 py-5 text-right">

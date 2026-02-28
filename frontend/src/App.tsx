@@ -1,5 +1,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import {
+  CreateRequirementPayload,
+  CreateTestCasePayload,
   TestCase,
   TestCaseStatus,
   Priority,
@@ -136,47 +138,55 @@ const normalizePriority = (value: unknown): Priority => {
   return Priority.P1;
 };
 
+const normalizeOptionalPriority = (value: unknown): Priority | undefined => {
+  if (value === Priority.P0) return Priority.P0;
+  if (value === Priority.P1) return Priority.P1;
+  if (value === Priority.P2) return Priority.P2;
+  return undefined;
+};
+
 const normalizeRequirementStatus = (value: unknown): RequirementStatus => {
   if ((Object.values(RequirementStatus) as unknown[]).includes(value)) {
     return value as RequirementStatus;
   }
-  return RequirementStatus.PENDING;
+  return RequirementStatus.DRAFT;
 };
 
 const normalizeTestCaseStatus = (value: unknown): TestCaseStatus => {
   if (value === TestCaseStatus.DRAFT) return TestCaseStatus.DRAFT;
-  if (value === TestCaseStatus.REVIEW) return TestCaseStatus.REVIEW;
-  if (value === TestCaseStatus.APPROVED) return TestCaseStatus.APPROVED;
-  if (value === TestCaseStatus.DEPRECATED) return TestCaseStatus.DEPRECATED;
+  if (value === TestCaseStatus.ASSIGNED) return TestCaseStatus.ASSIGNED;
+  if (value === TestCaseStatus.DEVELOPING) return TestCaseStatus.DEVELOPING;
+  if (value === TestCaseStatus.PENDING_REVIEW) return TestCaseStatus.PENDING_REVIEW;
+  if (value === TestCaseStatus.DONE) return TestCaseStatus.DONE;
   return TestCaseStatus.DRAFT;
 };
 
-const normalizeTestCaseCategory = (value: unknown): TestCaseCategory => {
+const normalizeTestCaseCategory = (value: unknown): TestCaseCategory | undefined => {
   if ((Object.values(TestCaseCategory) as unknown[]).includes(value)) {
     return value as TestCaseCategory;
   }
-  return TestCaseCategory.FUNCTIONAL;
+  return undefined;
 };
 
-const normalizeRiskLevel = (value: unknown): RiskLevel => {
+const normalizeRiskLevel = (value: unknown): RiskLevel | undefined => {
   if (value === RiskLevel.LOW) return RiskLevel.LOW;
   if (value === RiskLevel.MEDIUM) return RiskLevel.MEDIUM;
   if (value === RiskLevel.HIGH) return RiskLevel.HIGH;
-  return RiskLevel.MEDIUM;
+  return undefined;
 };
 
-const normalizeVisibilityScope = (value: unknown): VisibilityScope => {
+const normalizeVisibilityScope = (value: unknown): VisibilityScope | undefined => {
   if (value === VisibilityScope.TEAM) return VisibilityScope.TEAM;
   if (value === VisibilityScope.PROJECT) return VisibilityScope.PROJECT;
   if (value === VisibilityScope.GLOBAL) return VisibilityScope.GLOBAL;
-  return VisibilityScope.PROJECT;
+  return undefined;
 };
 
-const normalizeConfidentiality = (value: unknown): Confidentiality => {
+const normalizeConfidentiality = (value: unknown): Confidentiality | undefined => {
   if (value === Confidentiality.PUBLIC) return Confidentiality.PUBLIC;
   if (value === Confidentiality.INTERNAL) return Confidentiality.INTERNAL;
   if (value === Confidentiality.NDA) return Confidentiality.NDA;
-  return Confidentiality.INTERNAL;
+  return undefined;
 };
 
 const normalizeAttachment = (item: unknown): Attachment => {
@@ -236,6 +246,7 @@ const normalizeRequirement = (item: unknown): TestRequirement => {
     risk_points: String(row.risk_points || ''),
     tpm_owner_id: String(row.tpm_owner_id || ''),
     manual_dev_id: String(row.manual_dev_id || ''),
+    auto_dev_id: String(row.auto_dev_id || ''),
     status: normalizeRequirementStatus(row.status),
     attachments: toArray<unknown>(row.attachments).map(normalizeAttachment),
     created_at: String(row.created_at || ''),
@@ -266,22 +277,25 @@ const normalizeTestCase = (item: unknown): TestCase => {
     owner_id: String(row.owner_id || ''),
     reviewer_id: String(row.reviewer_id || ''),
     auto_dev_id: String(row.auto_dev_id || ''),
-    priority: normalizePriority(row.priority),
-    estimated_duration_sec: Number(row.estimated_duration_sec || 0),
+    priority: normalizeOptionalPriority(row.priority),
+    estimated_duration_sec: row.estimated_duration_sec === undefined || row.estimated_duration_sec === null
+      ? undefined
+      : Number(row.estimated_duration_sec),
     target_components: toArray<string>(row.target_components),
     required_env: {
       os: String(env.os || ''),
       firmware: String(env.firmware || ''),
       hardware: String(env.hardware || ''),
       dependencies: toArray<string>(env.dependencies),
-      tooling: toArray<string>(env.tooling),
     },
     tags: toArray<string>(row.tags),
+    tooling_req: toArray<string>(row.tooling_req),
     pre_condition: String(row.pre_condition || ''),
     post_condition: String(row.post_condition || ''),
     cleanup_steps: toArray<unknown>(row.cleanup_steps).map(normalizeStep),
     steps: toArray<unknown>(row.steps).map(normalizeStep),
     is_need_auto: Boolean(row.is_need_auto ?? false),
+    is_automated: Boolean(row.is_automated ?? false),
     is_destructive: Boolean(row.is_destructive ?? false),
     automation_type: String(row.automation_type || ''),
     script_entity_id: String(row.script_entity_id || ''),
@@ -526,13 +540,15 @@ export default function App() {
     priority: Priority.P0,
     estimated_duration_sec: 3600,
     target_components: [],
-    required_env: { os: 'Redhat', firmware: '', hardware: '', dependencies: [], tooling: [] },
+    required_env: { os: 'Redhat', firmware: '', hardware: '', dependencies: [] },
     tags: [],
+    tooling_req: [],
     pre_condition: '',
     post_condition: '',
     cleanup_steps: [],
     steps: [],
     is_need_auto: true,
+    is_automated: false,
     is_destructive: false,
     automation_type: '',
     script_entity_id: '',
@@ -560,7 +576,8 @@ export default function App() {
     risk_points: '',
     tpm_owner_id: 'current_user',
     manual_dev_id: '',
-    status: RequirementStatus.PENDING,
+    auto_dev_id: '',
+    status: RequirementStatus.DRAFT,
     attachments: [],
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
@@ -646,7 +663,7 @@ export default function App() {
     }
 
     // 降级到本地模拟数据（开发/演示模式）
-    const user = users.find(u => u.username === loginForm.user_id && u.status === 'ACTIVE');
+    const user = users.find(u => u.user_id === loginForm.user_id && u.status === 'ACTIVE');
     if (user) {
       setCurrentUser(user);
       setIsLoggedIn(true);
@@ -745,11 +762,29 @@ export default function App() {
   }, []);
 
   const saveRequirement = useCallback(async () => {
-    const requirementToSave = { ...reqFormData, updated_at: new Date().toISOString() };
+    const createPayload: CreateRequirementPayload = {
+      req_id: reqFormData.req_id,
+      title: reqFormData.title,
+      description: reqFormData.description,
+      technical_spec: reqFormData.technical_spec,
+      target_components: reqFormData.target_components,
+      firmware_version: reqFormData.firmware_version,
+      priority: reqFormData.priority,
+      key_parameters: reqFormData.key_parameters,
+      risk_points: reqFormData.risk_points,
+      tpm_owner_id: reqFormData.tpm_owner_id,
+      manual_dev_id: reqFormData.manual_dev_id,
+      auto_dev_id: reqFormData.auto_dev_id,
+      attachments: reqFormData.attachments,
+    };
 
     if (isBackendEnabled && testDesignerApi) {
       try {
-        const savedRequirement = await testDesignerApi.createRequirement(requirementToSave);
+        const response = await testDesignerApi.createRequirement(createPayload);
+        const savedRequirement = unwrapApiData(response);
+        if (!savedRequirement) {
+          throw new Error('Invalid create requirement response');
+        }
         setRequirements(prev => [...prev, savedRequirement]);
       } catch (error) {
         console.error('Failed to save requirement to backend:', error);
@@ -757,7 +792,15 @@ export default function App() {
         return;
       }
     } else {
-      setRequirements(prev => [...prev, requirementToSave]);
+      setRequirements(prev => [
+        ...prev,
+        {
+          ...createPayload,
+          status: RequirementStatus.DRAFT,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+      ]);
     }
 
     handleViewChange('req_list');
@@ -774,7 +817,8 @@ export default function App() {
       risk_points: '',
       tpm_owner_id: 'current_user',
       manual_dev_id: '',
-      status: RequirementStatus.PENDING,
+      auto_dev_id: '',
+      status: RequirementStatus.DRAFT,
       attachments: [],
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
@@ -856,11 +900,50 @@ export default function App() {
   }, [requirements, formData.ref_req_id, aiGenerateSteps]);
 
   const saveTestCase = useCallback(async () => {
-    const newCase = { ...formData, case_id: `TC-${Date.now()}`, updated_at: new Date().toISOString() };
+    const nextCaseId = `TC-${Date.now()}`;
+    const createPayload: CreateTestCasePayload = {
+      case_id: nextCaseId,
+      ref_req_id: formData.ref_req_id,
+      title: formData.title,
+      test_category: formData.test_category,
+      version: formData.version,
+      is_active: formData.is_active,
+      change_log: formData.change_log,
+      owner_id: formData.owner_id,
+      reviewer_id: formData.reviewer_id,
+      auto_dev_id: formData.auto_dev_id,
+      priority: formData.priority,
+      estimated_duration_sec: formData.estimated_duration_sec,
+      target_components: formData.target_components,
+      required_env: formData.required_env,
+      tags: formData.tags,
+      tooling_req: formData.tooling_req,
+      pre_condition: formData.pre_condition,
+      post_condition: formData.post_condition,
+      cleanup_steps: formData.cleanup_steps,
+      steps: formData.steps,
+      is_need_auto: formData.is_need_auto,
+      is_automated: formData.is_automated,
+      is_destructive: formData.is_destructive,
+      automation_type: formData.automation_type,
+      script_entity_id: formData.script_entity_id,
+      risk_level: formData.risk_level,
+      visibility_scope: formData.visibility_scope,
+      confidentiality: formData.confidentiality,
+      attachments: formData.attachments,
+      custom_fields: formData.custom_fields,
+      failure_analysis: formData.failure_analysis,
+      deprecation_reason: formData.deprecation_reason,
+      approval_history: formData.approval_history,
+    };
 
     if (isBackendEnabled && testDesignerApi) {
       try {
-        const savedTestCase = await testDesignerApi.createTestCase(newCase);
+        const response = await testDesignerApi.createTestCase(createPayload);
+        const savedTestCase = unwrapApiData(response);
+        if (!savedTestCase) {
+          throw new Error('Invalid create test case response');
+        }
         setTestCases(prev => [...prev, savedTestCase]);
       } catch (error) {
         console.error('Failed to save test case to backend:', error);
@@ -868,11 +951,19 @@ export default function App() {
         return;
       }
     } else {
-      setTestCases(prev => [...prev, newCase]);
+      setTestCases(prev => [
+        ...prev,
+        {
+          ...createPayload,
+          status: TestCaseStatus.DRAFT,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+      ]);
     }
 
     handleViewChange('req_detail');
-  }, [formData]);
+  }, [formData, handleViewChange]);
 
   // User management handlers
   const handleCreateUser = useCallback(async () => {
@@ -1326,19 +1417,21 @@ export default function App() {
             is_active: true,
             change_log: '初始版本创建。',
             status: TestCaseStatus.DRAFT,
-            owner_id: currentUser?.username || '',
+            owner_id: currentUser?.user_id || '',
             reviewer_id: '',
             auto_dev_id: '',
             priority: Priority.P0,
             estimated_duration_sec: 3600,
             target_components: [],
-            required_env: { os: '', firmware: '', hardware: '', dependencies: [], tooling: [] },
+            required_env: { os: '', firmware: '', hardware: '', dependencies: [] },
             tags: [],
+            tooling_req: [],
             pre_condition: '',
             post_condition: '',
             cleanup_steps: [],
             steps: [],
             is_need_auto: false,
+            is_automated: false,
             is_destructive: false,
             automation_type: '',
             script_entity_id: '',

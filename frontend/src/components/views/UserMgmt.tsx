@@ -69,7 +69,7 @@ export const UserMgmt: React.FC<UserMgmtProps> = ({
   const isAdmin = Boolean(currentUser?.role_ids.some(role => String(role).toUpperCase().includes('ADMIN')));
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-8">
+    <div className="max-w-[1680px] mx-auto px-4 sm:px-6 py-8 space-y-8">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex items-center gap-4">
           <button onClick={onBack} className="p-2 hover:bg-slate-100 rounded-xl transition-colors text-slate-500">
@@ -104,19 +104,19 @@ export const UserMgmt: React.FC<UserMgmtProps> = ({
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
         {/* User List */}
-        <div className="xl:col-span-8">
+        <div className="xl:col-span-9">
           <div className="bg-white rounded-3xl border border-slate-100 shadow-xl shadow-slate-100/50 overflow-hidden">
             <div className="px-6 py-4 border-b border-slate-50 flex justify-between items-center">
               <h3 className="font-bold text-slate-900">用户列表</h3>
               <span className="text-xs font-bold px-2 py-1 bg-slate-100 text-slate-500 rounded-lg">{users.length} users</span>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[920px] text-left border-collapse table-fixed">
+              <table className="w-full min-w-[1180px] text-left border-collapse table-auto">
                 <thead>
                   <tr className="bg-slate-50/50 border-b border-slate-100">
-                    <th className="px-4 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider w-32">用户 ID</th>
-                    <th className="px-4 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider w-32">用户名</th>
-                    <th className="px-4 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider w-48">邮箱</th>
+                    <th className="px-4 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider w-44">用户 ID</th>
+                    <th className="px-4 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider w-44">用户名</th>
+                    <th className="px-4 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider w-[22rem]">邮箱</th>
                     <th className="px-4 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">角色</th>
                     <th className="px-4 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider w-24">状态</th>
                     <th className="px-4 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider w-56">操作</th>
@@ -125,9 +125,9 @@ export const UserMgmt: React.FC<UserMgmtProps> = ({
                 <tbody className="divide-y divide-slate-50">
                   {users.map(user => (
                     <tr key={user.user_id} className="hover:bg-slate-50/80 transition-colors group">
-                      <td className="px-4 py-4 text-xs font-mono text-slate-500 truncate">{user.user_id}</td>
+                      <td className="px-4 py-4 text-xs font-mono text-slate-500 whitespace-nowrap">{user.user_id}</td>
                       <td className="px-4 py-4 text-sm font-bold text-slate-900">{user.username}</td>
-                      <td className="px-4 py-4 text-sm text-slate-600 truncate">{user.email}</td>
+                      <td className="px-4 py-4 text-sm text-slate-600 break-all">{user.email}</td>
                       <td className="px-4 py-4">
                         <div className="flex flex-wrap gap-1">
                           {user.role_ids.map(rid => (
@@ -149,11 +149,11 @@ export const UserMgmt: React.FC<UserMgmtProps> = ({
                           <div className="flex items-center gap-2">
                             <button
                               onClick={() => onStartEditUser(user)}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-indigo-600 hover:text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-all whitespace-nowrap"
+                              className="inline-flex items-center justify-center p-2 text-indigo-600 hover:text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-all"
                               title="修改用户信息"
+                              aria-label="修改用户信息"
                             >
-                              <Pencil size={14} />
-                              修改用户信息
+                              <Pencil size={16} />
                             </button>
                             <button
                               onClick={() => onStartEditNavigation(user)}
@@ -179,7 +179,7 @@ export const UserMgmt: React.FC<UserMgmtProps> = ({
         </div>
 
         {/* Role Definitions */}
-        <div className="xl:col-span-4 space-y-6">
+        <div className="xl:col-span-3 space-y-6">
           <div className="bg-white rounded-3xl border border-slate-100 shadow-xl shadow-slate-100/50 p-6">
             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-6">角色定义</h3>
             <div className="space-y-4">

@@ -188,7 +188,7 @@ export const CaseForm: React.FC<CaseFormProps> = ({
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">预估耗时 (分钟)</label>
                 <input
                   type="number"
-                  value={Math.round(formData.estimated_duration_sec / 60)}
+                  value={Math.round((formData.estimated_duration_sec || 0) / 60)}
                   onChange={(e) => onFieldChange('estimated_duration_sec', parseInt(e.target.value) * 60)}
                   className="w-full px-6 py-4 rounded-2xl border border-slate-200 bg-slate-50/30 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all text-sm font-bold"
                 />
@@ -282,8 +282,8 @@ export const CaseForm: React.FC<CaseFormProps> = ({
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">外部工具 / 仪器设备</label>
                   <input
                     type="text"
-                    value={formData.required_env.tooling?.join(', ')}
-                    onChange={(e) => onFieldChange('required_env.tooling', e.target.value.split(',').map(s => s.trim()))}
+                    value={formData.tooling_req.join(', ')}
+                    onChange={(e) => onFieldChange('tooling_req', e.target.value.split(',').map(s => s.trim()))}
                     placeholder="e.g. 示波器, 恒温恒湿箱, 网络分析仪..."
                     className="w-full px-6 py-4 rounded-2xl border border-slate-200 bg-slate-50/30 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all text-sm font-bold"
                   />

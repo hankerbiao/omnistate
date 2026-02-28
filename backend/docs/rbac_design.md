@@ -1,201 +1,129 @@
-# 用户与权限管理模块设计方案（支持可编辑权限）
+# 用户与权限管理模块设计方案（RBAC）
+
+更新时间：2026-02-28
 
 ## 1. 目标
-- 支持不同用户拥有不同权限
-- ADMIN 具备编辑用户权限与角色的能力
-- 权限模型与当前系统模块（workflow / test_specs / assets）可直接对齐
-- 保持可扩展性（后续可增加项目级/资产级权限）
 
----
+- 支持按角色授予后端 API 权限。
+- 保持权限码与业务模块一一对应，便于审计与排障。
+- 支持管理员维护用户、角色、权限及导航访问能力。
 
 ## 2. 核心概念
-- **User（用户）**：系统登录主体
-- **Role（角色）**：权限集合的抽象
-- **Permission（权限）**：最小授权粒度（资源 + 动作）
 
----
+- User（用户）：登录主体，包含 `role_ids`。
+- Role（角色）：权限集合，包含 `permission_ids`。
+- Permission（权限）：最小授权单元，编码为 `资源:动作`。
 
 ## 3. 权限编码规范
-采用 `资源:动作` 形式，示例：
-- `requirements:read`
-- `requirements:write`
-- `test_cases:read`
-- `test_cases:write`
-- `assets:read`
-- `assets:write`
-- `work_items:read`
-- `work_items:transition`
 
-资源建议与现有模块对齐：
-- `requirements`
-- `test_cases`
-- `assets`
-- `work_items`
+采用 `资源:动作`：
 
-动作建议：
-- `read`（查询/详情）
-- `write`（创建/更新/删除）
-- `transition`（工作流状态流转）
+- `work_items:read` / `work_items:write` / `work_items:transition`
+- `assets:read` / `assets:write`
+- `requirements:read` / `requirements:write`
+- `test_cases:read` / `test_cases:write`
+- `menu:read` / `menu:write`
+- `users:read` / `users:write`
+- `roles:read` / `roles:write`
+- `permissions:read` / `permissions:write`
 
----
-
-## 4. 数据模型设计
+## 4. 数据模型
 
 ### 4.1 User
-- `user_id`：唯一 ID
-- `username`：用户名
-- `email`：邮箱
-- `role_ids`：关联角色列表
-- `status`：ACTIVE / DISABLED
-- `created_at`
-- `updated_at`
+
+- `user_id`: 唯一 ID
+- `username`: 用户名
+- `email`: 邮箱
+- `role_ids`: 角色 ID 列表
+- `status`: `ACTIVE` / `DISABLED`
+- `created_at`, `updated_at`
 
 ### 4.2 Role
-- `role_id`：唯一 ID
-- `name`：角色名（ADMIN / TPM / TESTER / AUTOMATION）
-- `permission_ids`：关联权限列表
-- `created_at`
-- `updated_at`
+
+- `role_id`: 唯一 ID
+- `name`: 角色名（如 `ADMIN`/`TPM`/`TESTER`/`AUTOMATION`）
+- `permission_ids`: 权限 ID 列表
+- `created_at`, `updated_at`
 
 ### 4.3 Permission
-- `perm_id`：唯一 ID
-- `code`：权限编码（如 `requirements:write`）
-- `name`：权限名称
-- `description`
 
----
+- `perm_id`: 唯一 ID
+- `code`: 权限编码（如 `requirements:write`）
+- `name`: 权限名称
+- `description`: 权限描述
 
-## 5. ADMIN 权限编辑逻辑
+## 5. 权限校验链路
 
-### 5.1 权限定义
-- ADMIN 默认拥有系统所有权限
-- 额外具备：
-  - 用户管理权限（增/改/禁用）
-  - 角色管理权限（增/改）
-  - 权限分配权限（为用户绑定/解绑角色）
+1. 登录成功后由 `/api/v1/auth/login` 返回 JWT。
+2. 请求进入路由后先做 JWT 认证（`get_current_user`）。
+3. 再由 `require_permission` 或 `require_any_permission` 校验权限。
+4. 未认证返回 `401`，权限不足返回 `403`。
 
-建议权限码：
-- `users:read`
-- `users:write`
-- `roles:read`
-- `roles:write`
-- `permissions:read`
-- `permissions:write`
+实现位置：`app/shared/auth/jwt_auth.py`
 
-### 5.2 可编辑权限场景
-1. **管理员编辑用户角色**
-   - 修改 `User.role_ids`
-2. **管理员编辑角色权限**
-   - 修改 `Role.permission_ids`
+## 6. API 能力（当前实现）
 
----
+### 6.1 用户管理（`/api/v1/auth/users`）
 
-## 6. API 设计（管理员可编辑权限）
+- `POST /users`
+- `GET /users`
+- `GET /users/{user_id}`
+- `PUT /users/{user_id}`
+- `PATCH /users/{user_id}/roles`
+- `PATCH /users/{user_id}/password`
 
-### 6.1 用户管理
-- `POST /api/v1/auth/users` 创建用户
-- `GET /api/v1/auth/users` 用户列表
-- `GET /api/v1/auth/users/{user_id}` 用户详情
-- `PUT /api/v1/auth/users/{user_id}` 更新用户信息
-- `PATCH /api/v1/auth/users/{user_id}/roles` 更新用户角色（ADMIN 专用）
-- `PATCH /api/v1/auth/users/{user_id}/status` 启用/禁用用户（ADMIN 专用）
+### 6.2 当前用户能力
 
-### 6.2 角色管理
-- `POST /api/v1/auth/roles` 创建角色
-- `GET /api/v1/auth/roles` 角色列表
-- `GET /api/v1/auth/roles/{role_id}` 角色详情
-- `PUT /api/v1/auth/roles/{role_id}` 更新角色
-- `PATCH /api/v1/auth/roles/{role_id}/permissions` 更新角色权限（ADMIN 专用）
+- `POST /users/me/password`
+- `GET /users/me/permissions`
+- `GET /users/me/navigation`
 
-### 6.3 权限管理
-- `POST /api/v1/auth/permissions` 创建权限
-- `GET /api/v1/auth/permissions` 权限列表
+### 6.3 导航访问控制（管理员）
 
----
+- `GET /admin/navigation/pages`
+- `GET /admin/users/{user_id}/navigation`
+- `PUT /admin/users/{user_id}/navigation`
 
-## 7. 权限校验流程
-1. 用户登录 → 获取 JWT
-2. 请求进入 API
-3. 从 JWT 解析 `user_id`
-4. 查询 User → 角色 → 权限集合
-5. 校验接口所需权限是否包含在集合中
-6. 不满足则返回 403
+### 6.4 角色管理（`/api/v1/auth/roles`）
 
----
+- `POST /roles`
+- `GET /roles`
+- `GET /roles/{role_id}`
+- `PUT /roles/{role_id}`
+- `PATCH /roles/{role_id}/permissions`
 
-## 8. 角色建议（适配当前系统）
+### 6.5 权限管理（`/api/v1/auth/permissions`）
 
-### ADMIN
-- 全部权限
-- 可编辑用户/角色/权限
+- `POST /permissions`
+- `GET /permissions`
+- `GET /permissions/{perm_id}`
+- `PUT /permissions/{perm_id}`
 
-### TPM / PM
-- `requirements:read/write`
-- `test_cases:read`
-- `work_items:read/transition`
+## 7. 默认角色建议
 
-### TESTER
-- `test_cases:read/write`
-- `requirements:read`
-- `work_items:read/transition`
+- `ADMIN`：全量权限，含角色与权限维护能力。
+- `TPM`：需求与流程推进相关权限。
+- `TESTER`：需求读取、用例编辑、流程执行相关权限。
+- `AUTOMATION`：用例与自动化执行相关权限。
 
-### AUTOMATION
-- `test_cases:read/write`
-- `assets:read`
-- `work_items:read`
+默认角色初始化由 `scripts/init_rbac.py` 维护。
 
----
+## 8. 代码映射
 
-## 9. 扩展能力（可选）
+- 路由层：`app/modules/auth/api/routes.py`
+- 服务层：`app/modules/auth/service/rbac_service.py`
+- 数据模型：`app/modules/auth/repository/models/rbac.py`
+- Schema：`app/modules/auth/schemas/rbac.py`
 
-### 9.1 项目级权限
-增加 `project_id` 维度，定义用户在项目内的角色与权限。
+## 9. 维护约束
 
-### 9.2 资产级权限
-增加 `asset_id` 维度，限制用户可操作的 DUT 或部件范围。
+- 新增接口时必须声明权限模式（公开 / 仅登录 / 显式权限）。
+- 新增权限码时必须同步更新初始化脚本与测试。
+- 权限矩阵以 `authorization_design.md` 第 6 章为准。
 
----
+## 10. 相关文档
 
-## 10. 落地步骤建议
-1. 先实现全局角色权限（User-Role-Permission）
-2. 将权限校验注入到已有 API（FastAPI 依赖）
-3. 增加 ADMIN 编辑角色与用户权限接口
-4. 后续按需扩展项目级/资产级权限
-
----
-
-## 11. 与代码实现的映射关系
-
-本节用于帮助开发者快速定位“设计 → 代码”的对应关系。
-
-### 11.1 模块路径
-- 用户/角色/权限模块：`app/modules/auth/`
-- 数据模型（Beanie）：`app/modules/auth/repository/models/rbac.py`
-- 服务层（业务规则）：`app/modules/auth/service/rbac_service.py`
-- API 路由层：`app/modules/auth/api/routes.py`
-- API 模型（请求/响应）：`app/modules/auth/schemas/rbac.py`
-
-### 11.2 路由与能力映射
-- 用户管理：`/api/v1/auth/users`（创建/查询/更新/角色绑定）
-- 角色管理：`/api/v1/auth/roles`（创建/查询/更新/权限绑定）
-- 权限管理：`/api/v1/auth/permissions`（创建/查询/更新）
-
-### 11.3 ADMIN 可编辑权限的落地点
-- 更新用户角色：`PATCH /api/v1/auth/users/{user_id}/roles`
-- 更新角色权限：`PATCH /api/v1/auth/roles/{role_id}/permissions`
-
-> 说明：当前接口已实现，但权限校验需在鉴权依赖中接入。
-
----
-
-## 12. 权限校验依赖示例（FastAPI - 已实现）
-
-项目已提供真实可用的 JWT 鉴权依赖，位置：\n`app/shared/auth/jwt_auth.py`\n\n核心能力：\n- `create_access_token(subject)`：生成 JWT\n- `get_current_user`：解析 JWT 并返回当前用户\n- `require_permission(code)`：权限校验依赖\n\n### 路由使用示例\n```python
-from fastapi import Depends
-from app.shared.auth import require_permission
-
-@router.patch(
-    \"/roles/{role_id}/permissions\",\n    dependencies=[Depends(require_permission(\"roles:write\"))]\n)
-async def update_role_permissions(...):
-    ...
-```
+- `authorization_design.md`
+- `permission_validation_patterns.md`
+- `../../docs/认证与登录指南.md`
+- `../../docs/项目架构规范.md`

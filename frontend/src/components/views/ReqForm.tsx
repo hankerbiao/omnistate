@@ -110,10 +110,17 @@ export const ReqForm: React.FC<ReqFormProps> = ({
               <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">当前状态</h3>
               <div className="flex items-center gap-2">
                 <div className={`w-2.5 h-2.5 rounded-full ${
-                  formData.status === RequirementStatus.CLOSED ? 'bg-emerald-500' : 'bg-amber-500'
+                  formData.status === RequirementStatus.RELEASED ? 'bg-emerald-500' : 'bg-amber-500'
                 }`} />
                 <span className="text-sm font-bold text-slate-700">
-                  {formData.status === RequirementStatus.PENDING ? '待指派' : formData.status === RequirementStatus.DEVELOPING ? '开发中' : formData.status === RequirementStatus.REVIEWING ? '评审中' : '已闭环'}
+                  {formData.status === RequirementStatus.DRAFT ? '草稿' :
+                    formData.status === RequirementStatus.PENDING_REVIEW ? '待评审' :
+                      formData.status === RequirementStatus.PENDING_DEVELOP ? '待开发' :
+                        formData.status === RequirementStatus.DEVELOPING ? '开发中' :
+                          formData.status === RequirementStatus.PENDING_TEST ? '待测试' :
+                            formData.status === RequirementStatus.PENDING_UAT ? '待验收' :
+                              formData.status === RequirementStatus.PENDING_RELEASE ? '待发布' :
+                                formData.status === RequirementStatus.RELEASED ? '已发布' : formData.status}
                 </span>
               </div>
             </div>

@@ -1,4 +1,4 @@
-import { TestCase, TestRequirement } from '../../types';
+import { CreateRequirementPayload, CreateTestCasePayload, TestCase, TestRequirement } from '../../types';
 import { User } from '../../constants/config';
 import { ApiClient } from './ApiClient';
 
@@ -84,7 +84,7 @@ export class TestDesignerApi {
     return this.client.get<TestRequirement>(`/api/v1/requirements/${reqId}`);
   }
 
-  createRequirement(payload: TestRequirement): Promise<TestRequirement> {
+  createRequirement(payload: CreateRequirementPayload): Promise<TestRequirement> {
     return this.client.post<TestRequirement>('/api/v1/requirements', payload);
   }
 
@@ -106,7 +106,7 @@ export class TestDesignerApi {
     return this.client.get<TestCase>(`/api/v1/test-cases/${caseId}`);
   }
 
-  createTestCase(payload: TestCase): Promise<TestCase> {
+  createTestCase(payload: CreateTestCasePayload): Promise<TestCase> {
     return this.client.post<TestCase>('/api/v1/test-cases', payload);
   }
 

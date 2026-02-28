@@ -19,7 +19,7 @@ export function useAuth(initialUsers: User[]) {
       setLoginError('请输入用户ID和密码');
       return false;
     }
-    const user = initialUsers.find(u => u.username === loginForm.user_id && u.status === 'ACTIVE');
+    const user = initialUsers.find(u => u.user_id === loginForm.user_id && u.status === 'ACTIVE');
     if (user) {
       setCurrentUser(user);
       setIsLoggedIn(true);

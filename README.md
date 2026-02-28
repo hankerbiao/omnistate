@@ -222,6 +222,7 @@ pytest backend/tests -q
 
 - 架构规范：`docs/项目架构规范.md`
 - 后端接口说明：`docs/后端接口说明.md`
-- 登录 API 快速指南：`docs/登录API快速使用指南.md`
-- 测试字段文档索引：`docs/测试用例文档索引.md`
+- 认证与登录指南：`docs/认证与登录指南.md`
+- 测试字段文档总览：`docs/测试字段文档总览.md`
+- 测试设计与 BOM 关联方案：`docs/测试设计与BOM关联方案.md`
 - 脚本说明：`backend/scripts/README.md`

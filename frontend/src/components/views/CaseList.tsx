@@ -88,9 +88,10 @@ export const CaseList: React.FC<CaseListProps> = ({
   const getStatusLabel = (status: TestCaseStatus): string => {
     switch (status) {
       case TestCaseStatus.DRAFT: return '草稿';
-      case TestCaseStatus.REVIEW: return '评审中';
-      case TestCaseStatus.APPROVED: return '已批准';
-      case TestCaseStatus.DEPRECATED: return '已废弃';
+      case TestCaseStatus.ASSIGNED: return '已指派';
+      case TestCaseStatus.DEVELOPING: return '编写中';
+      case TestCaseStatus.PENDING_REVIEW: return '待评审';
+      case TestCaseStatus.DONE: return '已完成';
       default: return status;
     }
   };
@@ -238,9 +239,10 @@ export const CaseList: React.FC<CaseListProps> = ({
   const getStatusClass = (status: TestCaseStatus): string => {
     switch (status) {
       case TestCaseStatus.DRAFT: return 'bg-slate-100 text-slate-600';
-      case TestCaseStatus.REVIEW: return 'bg-amber-50 text-amber-600';
-      case TestCaseStatus.APPROVED: return 'bg-emerald-50 text-emerald-600';
-      case TestCaseStatus.DEPRECATED: return 'bg-rose-50 text-rose-600';
+      case TestCaseStatus.ASSIGNED: return 'bg-blue-50 text-blue-600';
+      case TestCaseStatus.DEVELOPING: return 'bg-indigo-50 text-indigo-600';
+      case TestCaseStatus.PENDING_REVIEW: return 'bg-amber-50 text-amber-600';
+      case TestCaseStatus.DONE: return 'bg-emerald-50 text-emerald-600';
       default: return 'bg-slate-100 text-slate-600';
     }
   };

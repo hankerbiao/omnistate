@@ -68,6 +68,8 @@
 
 ## 6. 路由权限矩阵（当前生效）
 
+说明：本章节是后端接口权限矩阵的唯一维护入口。
+
 ### 6.1 Workflow（`/api/v1/work-items`）
 
 - `work_items:read`
@@ -168,6 +170,11 @@
 - 仅登录（不要求显式权限）
   - `POST /users/me/password`
   - `GET /users/me/permissions`
+  - `GET /users/me/navigation`
+- 管理员专用（`require_admin_user`）
+  - `GET /admin/navigation/pages`
+  - `GET /admin/users/{user_id}/navigation`
+  - `PUT /admin/users/{user_id}/navigation`
 
 ## 7. 默认权限与角色初始化
 
