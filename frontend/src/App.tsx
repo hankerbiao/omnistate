@@ -140,10 +140,19 @@ const isNavView = (value: string): value is NavView => NAV_VIEW_SET.has(value as
 const hasAdminRole = (user: User | null): boolean =>
   Boolean(user?.role_ids.some(role => String(role).toUpperCase().includes('ADMIN')));
 
+// ========== 导航权限处理函数 ==========
+
+/**
+ * 清理和验证导航视图列表
+ * 确保返回的视图都是有效的导航视图，并去重
+ * @param views 原始视图数据
+ * @returns NavView[] 清理后的导航视图数组
+ */
 const sanitizeNavViews = (views: unknown): NavView[] => {
   if (!Array.isArray(views)) {
     return [];
   }
+  // 使用Set去重
   const unique = new Set<NavView>();
   views.forEach(item => {
     const view = String(item) as NavView;
@@ -151,9 +160,16 @@ const sanitizeNavViews = (views: unknown): NavView[] => {
       unique.add(view);
     }
   });
+  // 返回在配置中定义的视图
   return NAVIGATION_OPTIONS.map(item => item.view).filter(view => unique.has(view));
 };
 
+/**
+ * 标准化权限代码数组
+ * 从不同格式的输入中提取权限代码列表
+ * @param input 原始输入（可能是数组或对象）
+ * @returns string[] 权限代码数组
+ */
 const normalizePermissionCodes = (input: unknown): string[] => {
   if (Array.isArray(input)) {
     return input.map(item => String(item));
@@ -165,27 +181,48 @@ const normalizePermissionCodes = (input: unknown): string[] => {
   return [];
 };
 
+/**
+ * 标准化导航视图输入
+ * 支持多种输入格式，统一转换为NavView数组
+ * @param input 原始输入（可能是数组或包含不同字段的对象）
+ * @returns NavView[] 导航视图数组
+ */
 const normalizeNavigationViews = (input: unknown): NavView[] => {
   if (Array.isArray(input)) {
     return sanitizeNavViews(input);
   }
   const row = asObject(input);
+  // 尝试从不同字段获取导航视图
   if (Array.isArray(row.allowed_nav_views)) return sanitizeNavViews(row.allowed_nav_views);
   if (Array.isArray(row.nav_views)) return sanitizeNavViews(row.nav_views);
   if (Array.isArray(row.views)) return sanitizeNavViews(row.views);
   return [];
 };
 
+/**
+ * 根据权限推导航视图
+ * 检查用户权限，自动计算可访问的导航页面
+ * @param permissions 用户的权限列表
+ * @returns NavView[] 根据权限匹配到的导航视图
+ */
 const deriveNavViewsFromPermissions = (permissions: string[]): NavView[] => {
+  // 管理员拥有所有权限
   if (permissions.includes('all')) {
     return NAVIGATION_OPTIONS.map(item => item.view);
   }
+  // 根据权限代码匹配导航视图
   const matchedViews = NAVIGATION_OPTIONS
     .filter(item => permissions.includes(item.permission))
     .map(item => item.view);
   return sanitizeNavViews(matchedViews);
 };
 
+/**
+ * 为用户获取默认导航视图
+ * 根据用户角色返回默认的导航权限
+ * @param user 用户对象
+ * @returns NavView[] 默认导航视图数组
+ */
 const getDefaultNavViewsForUser = (user: User | null): NavView[] => {
   if (!user) {
     return FALLBACK_NAV_VIEWS;
@@ -196,27 +233,64 @@ const getDefaultNavViewsForUser = (user: User | null): NavView[] => {
   return FALLBACK_NAV_VIEWS;
 };
 
+// ========== API数据处理工具函数 ==========
+
+/**
+ * 提取API响应中的数据
+ * 处理两种常见格式：直接返回数据 或 包装在data字段中
+ * @param payload API响应载荷
+ * @returns T 提取的数据或undefined
+ */
 const unwrapApiData = <T,>(payload: T | { data?: T } | null | undefined): T | undefined => {
+  // 检查是否为{data: T}格式
   if (payload && typeof payload === 'object' && 'data' in payload) {
     return (payload as { data?: T }).data;
   }
+  // 直接返回原始数据
   return payload as T | undefined;
 };
 
+/**
+ * 安全转换为对象
+ * 如果值是对象则返回，否则返回空对象
+ * @param value 任意值
+ * @returns Record<string, unknown> 对象或空对象
+ */
 const asObject = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
 
+/**
+ * 提取数组数据
+ * 支持多种API响应格式，尝试从不同字段提取数组
+ * @param input 输入数据
+ * @returns unknown[] 提取的数组
+ */
 const extractList = (input: unknown): unknown[] => {
   if (Array.isArray(input)) return input;
   const row = asObject(input);
+  // 尝试从常见字段名提取数组
   if (Array.isArray(row.items)) return row.items;
   if (Array.isArray(row.results)) return row.results;
   if (Array.isArray(row.data)) return row.data;
   return [];
 };
 
+/**
+ * 安全转换为类型化数组
+ * 确保返回值为数组，否则返回空数组
+ * @param value 输入值
+ * @returns T[] 类型化数组
+ */
 const toArray = <T,>(value: unknown): T[] => (Array.isArray(value) ? (value as T[]) : []);
 
+// ========== 枚举值标准化函数 ==========
+
+/**
+ * 标准化优先级值
+ * 确保返回有效的优先级枚举值
+ * @param value 原始值
+ * @returns Priority 优先级枚举（默认P1）
+ */
 const normalizePriority = (value: unknown): Priority => {
   if (value === Priority.P0) return Priority.P0;
   if (value === Priority.P1) return Priority.P1;
@@ -224,6 +298,12 @@ const normalizePriority = (value: unknown): Priority => {
   return Priority.P1;
 };
 
+/**
+ * 标准化可选优先级值
+ * 返回有效的优先级或undefined
+ * @param value 原始值
+ * @returns Priority | undefined 优先级或undefined
+ */
 const normalizeOptionalPriority = (value: unknown): Priority | undefined => {
   if (value === Priority.P0) return Priority.P0;
   if (value === Priority.P1) return Priority.P1;
@@ -231,6 +311,12 @@ const normalizeOptionalPriority = (value: unknown): Priority | undefined => {
   return undefined;
 };
 
+/**
+ * 标准化需求状态值
+ * 确保返回有效的需求状态枚举
+ * @param value 原始值
+ * @returns RequirementStatus 需求状态枚举（默认DRAFT）
+ */
 const normalizeRequirementStatus = (value: unknown): RequirementStatus => {
   if ((Object.values(RequirementStatus) as unknown[]).includes(value)) {
     return value as RequirementStatus;
@@ -238,6 +324,12 @@ const normalizeRequirementStatus = (value: unknown): RequirementStatus => {
   return RequirementStatus.DRAFT;
 };
 
+/**
+ * 标准化测试用例状态值
+ * 确保返回有效的用例状态枚举
+ * @param value 原始值
+ * @returns TestCaseStatus 用例状态枚举（默认DRAFT）
+ */
 const normalizeTestCaseStatus = (value: unknown): TestCaseStatus => {
   if (value === TestCaseStatus.DRAFT) return TestCaseStatus.DRAFT;
   if (value === TestCaseStatus.ASSIGNED) return TestCaseStatus.ASSIGNED;
@@ -247,6 +339,12 @@ const normalizeTestCaseStatus = (value: unknown): TestCaseStatus => {
   return TestCaseStatus.DRAFT;
 };
 
+/**
+ * 标准化测试用例分类值
+ * 返回有效的分类或undefined
+ * @param value 原始值
+ * @returns TestCaseCategory | undefined 分类或undefined
+ */
 const normalizeTestCaseCategory = (value: unknown): TestCaseCategory | undefined => {
   if ((Object.values(TestCaseCategory) as unknown[]).includes(value)) {
     return value as TestCaseCategory;
@@ -254,6 +352,12 @@ const normalizeTestCaseCategory = (value: unknown): TestCaseCategory | undefined
   return undefined;
 };
 
+/**
+ * 标准化风险等级值
+ * 返回有效的风险等级或undefined
+ * @param value 原始值
+ * @returns RiskLevel | undefined 风险等级或undefined
+ */
 const normalizeRiskLevel = (value: unknown): RiskLevel | undefined => {
   if (value === RiskLevel.LOW) return RiskLevel.LOW;
   if (value === RiskLevel.MEDIUM) return RiskLevel.MEDIUM;
@@ -261,6 +365,12 @@ const normalizeRiskLevel = (value: unknown): RiskLevel | undefined => {
   return undefined;
 };
 
+/**
+ * 标准化可见性范围值
+ * 返回有效的可见性范围或undefined
+ * @param value 原始值
+ * @returns VisibilityScope | undefined 可见性范围或undefined
+ */
 const normalizeVisibilityScope = (value: unknown): VisibilityScope | undefined => {
   if (value === VisibilityScope.TEAM) return VisibilityScope.TEAM;
   if (value === VisibilityScope.PROJECT) return VisibilityScope.PROJECT;
@@ -268,6 +378,12 @@ const normalizeVisibilityScope = (value: unknown): VisibilityScope | undefined =
   return undefined;
 };
 
+/**
+ * 标准化机密等级值
+ * 返回有效的机密等级或undefined
+ * @param value 原始值
+ * @returns Confidentiality | undefined 机密等级或undefined
+ */
 const normalizeConfidentiality = (value: unknown): Confidentiality | undefined => {
   if (value === Confidentiality.PUBLIC) return Confidentiality.PUBLIC;
   if (value === Confidentiality.INTERNAL) return Confidentiality.INTERNAL;
