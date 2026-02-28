@@ -7,6 +7,7 @@ AI 友好注释说明：
 """
 from __future__ import annotations
 
+import binascii
 import base64
 import hashlib
 import hmac
@@ -74,11 +75,28 @@ def decode_token(token: str) -> Dict[str, Any]:
     if not hmac.compare_digest(signature_b64, expected_sig):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid token")
 
-    payload = json.loads(_b64url_decode(payload_b64))
+    try:
+        payload = json.loads(_b64url_decode(payload_b64))
+    except (
+        binascii.Error,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+        TypeError,
+        ValueError,
+    ):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid token")
+
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid token")
 
     # 基本字段校验
     now_ts = int(datetime.now(timezone.utc).timestamp())
-    if payload.get("exp") is None or now_ts >= int(payload["exp"]):
+    try:
+        exp_ts = int(payload["exp"])
+    except (KeyError, TypeError, ValueError):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid token")
+
+    if now_ts >= exp_ts:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="token expired")
     if payload.get("iss") != settings.JWT_ISSUER:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid issuer")
