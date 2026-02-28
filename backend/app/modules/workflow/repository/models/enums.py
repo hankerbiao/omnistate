@@ -9,4 +9,14 @@ class OwnerStrategy(str, Enum):
 class WorkItemState(str, Enum):
     """业务事项状态"""
     DRAFT = "DRAFT"
-    # 可以根据业务需求添加更多
+    PENDING_REVIEW = "PENDING_REVIEW"
+    PENDING_DEVELOP = "PENDING_DEVELOP"
+    DEVELOPING = "DEVELOPING"
+    PENDING_TEST = "PENDING_TEST"
+    PENDING_UAT = "PENDING_UAT"
+    PENDING_RELEASE = "PENDING_RELEASE"
+    RELEASED = "RELEASED"
+    DONE = "DONE"
+    REJECTED = "REJECTED"
+    PENDING_AUDIT = "PENDING_AUDIT"
+    ASSIGNED = "ASSIGNED"

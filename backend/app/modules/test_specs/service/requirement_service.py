@@ -33,7 +33,6 @@ class RequirementService(BaseService):
         "tpm_owner_id",
         "manual_dev_id",
         "auto_dev_id",
-        "status",
     }
 
     async def create_requirement(self, data: Dict[str, Any]) -> Dict[str, Any]:

@@ -29,7 +29,7 @@ class WorkflowStateResponse(BaseModel):
 
 class WorkflowConfigResponse(BaseModel):
     """流转配置响应"""
-    id: int
+    id: str
     type_code: str
     from_state: str
     action: str

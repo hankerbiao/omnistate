@@ -1,6 +1,9 @@
+import re
 from typing import Dict, Any, Optional, List
 from beanie import PydanticObjectId
+from pymongo import AsyncMongoClient
 from pymongo.asynchronous.client_session import AsyncClientSession
+from pymongo.errors import DuplicateKeyError, OperationFailure
 
 from app.modules.workflow.repository.models import (
     SysWorkflowConfigDoc,
@@ -23,6 +26,7 @@ from app.modules.workflow.domain.rules import (
     normalize_sort,
 )
 from app.shared.core.logger import log as logger
+from app.shared.core.mongo_client import get_mongo_client
 
 
 class AsyncWorkflowService:
@@ -42,6 +46,22 @@ class AsyncWorkflowService:
         如后续需要支持多数据源或可测试性，可以在此处增加依赖注入参数。
         """
         pass
+
+    @staticmethod
+    def _get_mongo_client_or_none() -> Optional[AsyncMongoClient]:
+        try:
+            return get_mongo_client()
+        except RuntimeError:
+            return None
+
+    @staticmethod
+    def _is_transaction_not_supported(exc: Exception) -> bool:
+        message = str(exc).lower()
+        return (
+            "transaction numbers are only allowed on a replica set member" in message
+            or "this mongodb deployment does not support retryable writes" in message
+            or "sessions are not supported" in message
+        )
 
     # ========== 查询方法 ==========
 
@@ -128,7 +148,12 @@ class AsyncWorkflowService:
         docs = await SysWorkflowConfigDoc.find(
             SysWorkflowConfigDoc.type_code == type_code
         ).to_list()
-        return [doc.model_dump() for doc in docs]
+        results: List[Dict[str, Any]] = []
+        for doc in docs:
+            data = doc.model_dump()
+            data["id"] = str(doc.id)
+            results.append(data)
+        return results
 
     async def list_items(
             self,
@@ -196,14 +221,29 @@ class AsyncWorkflowService:
 
         其余过滤条件与分页逻辑复用 _base_item_query 和 list_items。
         """
-        query = self._base_item_query(type_code, state, owner_id, creator_id)
-        search_conditions = [
-            {"title": {"$regex": keyword, "$options": "i"}},
-            {"content": {"$regex": keyword, "$options": "i"}},
-        ]
-        query = query.find({"$or": search_conditions})
+        normalized_keyword = keyword.strip()
+        if len(normalized_keyword) < 2:
+            raise ValueError("keyword length must be at least 2")
 
-        docs = await query.sort("-created_at").skip(offset).limit(limit).to_list()
+        query = self._base_item_query(type_code, state, owner_id, creator_id).find(
+            {"$text": {"$search": normalized_keyword}}
+        )
+
+        try:
+            docs = await query.sort("-created_at").skip(offset).limit(limit).to_list()
+        except OperationFailure as exc:
+            # Backward compatible fallback when text index has not been created yet.
+            if "text index required" not in str(exc).lower():
+                raise
+            escaped_keyword = re.escape(normalized_keyword)
+            search_conditions = [
+                {"title": {"$regex": escaped_keyword, "$options": "i"}},
+                {"content": {"$regex": escaped_keyword, "$options": "i"}},
+            ]
+            fallback_query = self._base_item_query(type_code, state, owner_id, creator_id).find(
+                {"$or": search_conditions}
+            )
+            docs = await fallback_query.sort("-created_at").skip(offset).limit(limit).to_list()
         return self._docs_to_dicts(docs)
 
     async def get_item_by_id(self, item_id: str) -> Optional[Dict]:
@@ -266,7 +306,20 @@ class AsyncWorkflowService:
         if not item_ids:
             return {}
 
-        object_ids = [PydanticObjectId(item_id) for item_id in item_ids]
+        invalid_item_ids: List[str] = []
+        object_ids: List[PydanticObjectId] = []
+        for item_id in item_ids:
+            if not PydanticObjectId.is_valid(item_id):
+                invalid_item_ids.append(item_id)
+                continue
+            object_ids.append(PydanticObjectId(item_id))
+
+        if invalid_item_ids:
+            raise ValueError(f"invalid item_ids: {invalid_item_ids}")
+
+        if not object_ids:
+            return {item_id: [] for item_id in item_ids}
+
         all_logs = await BusFlowLogDoc.find(
             {"work_item_id": {"$in": object_ids}}
         ).sort("-created_at").to_list()
@@ -378,9 +431,11 @@ class AsyncWorkflowService:
         """
         try:
             existing_item = await BusWorkItemDoc.find_one(
-                BusWorkItemDoc.type_code == type_code,
-                BusWorkItemDoc.title == title,
-                {"is_deleted": False},
+                {
+                    "type_code": type_code,
+                    "title": title,
+                    "is_deleted": False,
+                },
                 session=session,
             )
             if existing_item:
@@ -408,6 +463,9 @@ class AsyncWorkflowService:
             if d.get("parent_item_id") is not None:
                 d["parent_item_id"] = str(d["parent_item_id"])
             return d
+        except DuplicateKeyError as e:
+            logger.warning(f"业务事项并发创建冲突(type_code={type_code}, title={title}): {e}")
+            raise ValueError(f"已存在相同标题的{type_code}: {title}")
         except Exception as e:
             logger.error(f"创建业务事项失败: {e}")
             raise
@@ -432,7 +490,36 @@ class AsyncWorkflowService:
         """
         logger.info(f"开始处理状态流转: work_item_id={work_item_id}, action={action}, operator={operator_id}")
 
-        item_doc = await BusWorkItemDoc.get(work_item_id)
+        client = self._get_mongo_client_or_none()
+        if client is None:
+            logger.error("MongoDB 客户端未初始化，无法执行原子状态流转")
+            raise RuntimeError("workflow transition requires initialized MongoDB client")
+
+        try:
+            async with client.start_session() as session:
+                async with await session.start_transaction():
+                    return await self._handle_transition_core(
+                        work_item_id=work_item_id,
+                        action=action,
+                        operator_id=operator_id,
+                        form_data=form_data,
+                        session=session,
+                    )
+        except Exception as exc:
+            if self._is_transaction_not_supported(exc):
+                logger.error("MongoDB 部署不支持事务，已拒绝执行非原子状态流转")
+                raise RuntimeError("workflow transition requires MongoDB transaction support") from exc
+            raise
+
+    async def _handle_transition_core(
+        self,
+        work_item_id: str,
+        action: str,
+        operator_id: str,
+        form_data: Dict[str, Any],
+        session: Optional[AsyncClientSession],
+    ) -> Dict[str, Any]:
+        item_doc = await self._get_work_item(work_item_id, session=session)
         if not item_doc or item_doc.is_deleted:
             logger.error(f"流转失败: 未找到业务事项 ID={work_item_id}")
             raise WorkItemNotFoundError(work_item_id)
@@ -442,25 +529,19 @@ class AsyncWorkflowService:
                 "type_code": item_doc.type_code,
                 "from_state": item_doc.current_state,
                 "action": action,
-            }
+            },
+            session=session,
         )
         if not config_doc:
             logger.error(f"流转失败: 非法操作。当前状态 {item_doc.current_state} 不支持动作 {action}")
             raise InvalidTransitionError(item_doc.current_state, action)
 
         required_fields = config_doc.required_fields
-        try:
-            ensure_required_fields(required_fields, form_data)
-        except MissingRequiredFieldError as e:
-            logger.error(f"流转失败: 缺少必填字段 {e}")
-            raise
-
+        ensure_required_fields(required_fields, form_data)
         process_payload = build_process_payload(required_fields, form_data)
 
         old_state = item_doc.current_state
         new_state = config_doc.to_state
-
-        # 根据配置中的「处理人策略」计算新的处理人
         new_owner_id = resolve_owner(
             strategy=config_doc.target_owner_strategy,
             work_item=item_doc.model_dump(),
@@ -469,7 +550,7 @@ class AsyncWorkflowService:
 
         item_doc.current_state = new_state
         item_doc.current_owner_id = new_owner_id
-        await item_doc.save()
+        await self._save_doc(item_doc, session=session)
 
         log_entry = BusFlowLogDoc(
             work_item_id=PydanticObjectId(work_item_id),
@@ -477,32 +558,34 @@ class AsyncWorkflowService:
             to_state=new_state,
             action=action,
             operator_id=operator_id,
-            payload=process_payload
+            payload=process_payload,
         )
-        await log_entry.insert()
+        await self._insert_doc(log_entry, session=session)
+
+        if item_doc.type_code == "REQUIREMENT":
+            requirement = await TestRequirementDoc.find_one(
+                {
+                    "workflow_item_id": str(item_doc.id),
+                    "is_deleted": False,
+                },
+                session=session,
+            )
+            if requirement:
+                requirement.status = new_state
+                await self._save_doc(requirement, session=session)
+        elif item_doc.type_code == "TEST_CASE":
+            test_case = await TestCaseDoc.find_one(
+                {
+                    "workflow_item_id": str(item_doc.id),
+                    "is_deleted": False,
+                },
+                session=session,
+            )
+            if test_case:
+                test_case.status = new_state
+                await self._save_doc(test_case, session=session)
 
         logger.success(f"状态流转完成: ID={work_item_id}, new_state={new_state}")
-
-        # 同步业务实体状态（需求 / 用例）
-        try:
-            if item_doc.type_code == "REQUIREMENT":
-                requirement = await TestRequirementDoc.find_one(
-                    TestRequirementDoc.workflow_item_id == str(item_doc.id),
-                    {"is_deleted": False},
-                )
-                if requirement:
-                    requirement.status = new_state
-                    await requirement.save()
-            elif item_doc.type_code == "TEST_CASE":
-                test_case = await TestCaseDoc.find_one(
-                    TestCaseDoc.workflow_item_id == str(item_doc.id),
-                    {"is_deleted": False},
-                )
-                if test_case:
-                    test_case.status = new_state
-                    await test_case.save()
-        except Exception as e:
-            logger.warning(f"同步业务状态失败: work_item_id={work_item_id}, error={e}")
 
         item_dict = item_doc.model_dump()
         item_dict["id"] = str(item_doc.id)
@@ -515,8 +598,40 @@ class AsyncWorkflowService:
             "to_state": new_state,
             "action": action,
             "new_owner_id": new_owner_id,
-            "work_item": item_dict
+            "work_item": item_dict,
         }
+
+    @staticmethod
+    async def _get_work_item(
+        work_item_id: str,
+        session: Optional[AsyncClientSession],
+    ):
+        if session is None:
+            return await BusWorkItemDoc.get(work_item_id)
+        try:
+            return await BusWorkItemDoc.get(work_item_id, session=session)
+        except TypeError:
+            return await BusWorkItemDoc.get(work_item_id)
+
+    @staticmethod
+    async def _save_doc(doc, session: Optional[AsyncClientSession]) -> None:
+        if session is None:
+            await doc.save()
+            return
+        try:
+            await doc.save(session=session)
+        except TypeError:
+            await doc.save()
+
+    @staticmethod
+    async def _insert_doc(doc, session: Optional[AsyncClientSession]) -> None:
+        if session is None:
+            await doc.insert()
+            return
+        try:
+            await doc.insert(session=session)
+        except TypeError:
+            await doc.insert()
 
     async def delete_item(self, item_id: str) -> bool:
         """

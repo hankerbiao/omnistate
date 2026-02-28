@@ -105,3 +105,9 @@ class FakeWorkflowService:
             "created_at": "2024-01-01T00:00:00",
             "updated_at": "2024-01-01T00:00:00",
         }
+
+    async def batch_get_logs(self, item_ids, limit=20):
+        invalid = [item_id for item_id in item_ids if "invalid" in item_id]
+        if invalid:
+            raise ValueError(f"invalid item_ids: {invalid}")
+        return {item_id: [] for item_id in item_ids}

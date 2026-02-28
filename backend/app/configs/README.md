@@ -22,8 +22,11 @@
 
 ### 2.2 `states` (状态定义)
 定义工作流中可能出现的所有状态。
-- **格式**: `[ ["STATE_CODE", "STATE_NAME"], ... ]`
-- **示例**: `["DRAFT", "草稿"]`
+- **格式**:
+  - `["STATE_CODE", "STATE_NAME"]`
+  - `["STATE_CODE", "STATE_NAME", true/false]`
+  - `{"code":"STATE_CODE","name":"STATE_NAME","is_end":true/false}`
+- **示例**: `{"code":"DRAFT","name":"草稿","is_end":false}`
 - **说明**: 状态是全局共享的，不同业务流程可以复用相同的状态代码。
 
 ### 2.3 `workflow_configs` (工作流迁移规则)
@@ -75,7 +78,7 @@
 ## 4. 注意事项
 
 1. **自动同步 (Upsert)**：初始化逻辑会自动更新已有配置或插入新配置。如果你修改了 JSON 中的字段，重启服务后数据库将同步更新。
-2. **数据完整性校验**：系统会自动检查 `workflow_configs` 中引用的 `type_code` 和 `state` 是否已定义。若未定义，该条配置将被跳过并记录警告。
+2. **数据完整性校验**：系统会自动检查 `workflow_configs` 中引用的 `type_code` 和 `state` 是否已定义。若未定义，初始化将直接失败并阻止脏配置落库。
 3. **JSON 格式**：修改后请确保 JSON 语法正确，否则初始化会报错。
 
 ---

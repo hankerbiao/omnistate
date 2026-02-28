@@ -12,7 +12,6 @@ class CreateRequirementRequest(BaseModel):
     tpm_owner_id: str = Field(..., description="需求创建人/项目经理 ID")
     manual_dev_id: Optional[str] = None
     auto_dev_id: Optional[str] = None
-    status: str = Field(default="待指派")
 
 
 class UpdateRequirementRequest(BaseModel):
@@ -22,7 +21,6 @@ class UpdateRequirementRequest(BaseModel):
     tpm_owner_id: Optional[str] = None
     manual_dev_id: Optional[str] = None
     auto_dev_id: Optional[str] = None
-    status: Optional[str] = None
 
 
 class RequirementResponse(BaseModel):

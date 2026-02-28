@@ -24,6 +24,40 @@ from app.modules.auth.repository.models import UserDoc, RoleDoc, PermissionDoc
 from app.modules.menu.repository.models import MenuDoc
 
 
+async def validate_workflow_consistency() -> None:
+    """启动时校验 workflow 基础配置，避免脏配置进入运行期。"""
+    work_types = await SysWorkTypeDoc.find_all().to_list()
+    states = await SysWorkflowStateDoc.find_all().to_list()
+    configs = await SysWorkflowConfigDoc.find_all().to_list()
+
+    # 对未初始化环境做兼容：仅告警，不阻断服务启动。
+    if not work_types and not states and not configs:
+        log.warning("workflow consistency check skipped: workflow configs are empty, run `python app/init_mongodb.py` to initialize")
+        return
+
+    if not work_types:
+        raise RuntimeError("workflow consistency check failed: no work types configured")
+    if not states:
+        raise RuntimeError("workflow consistency check failed: no states configured")
+
+    type_codes = {doc.code for doc in work_types}
+    state_codes = {doc.code for doc in states}
+    errors: list[str] = []
+
+    for cfg in configs:
+        if cfg.type_code not in type_codes:
+            errors.append(f"unknown type_code={cfg.type_code}")
+        if cfg.from_state not in state_codes:
+            errors.append(f"unknown from_state={cfg.from_state}")
+        if cfg.to_state not in state_codes:
+            errors.append(f"unknown to_state={cfg.to_state}")
+
+    if errors:
+        raise RuntimeError(
+            "workflow consistency check failed: " + "; ".join(sorted(set(errors)))
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # 应用生命周期钩子：统一管理 Mongo 连接和 Beanie 初始化
@@ -59,13 +93,17 @@ async def lifespan(app: FastAPI):
             ]
         )
         log.success("Beanie ODM 初始化完成")
+        await validate_workflow_consistency()
+        log.success("Workflow 配置一致性校验通过")
 
         log.success("FastAPI 服务启动完成")
         yield
     finally:
         log.info("FastAPI 服务已关闭")
         if client:
-            client.close()
+            close_result = client.close()
+            if hasattr(close_result, "__await__"):
+                await close_result
         set_mongo_client(None)
         log.info("MongoDB 连接已关闭")
 

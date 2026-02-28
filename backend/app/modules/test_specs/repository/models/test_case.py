@@ -11,6 +11,7 @@ from pymongo import IndexModel, ASCENDING, DESCENDING
 # ========== 子结构 ==========
 
 class TestCaseStep(BaseModel):
+    __test__ = False
     step_id: str = Field(..., description="步骤 ID")
     name: str = Field(..., description="步骤名称")
     action: str = Field(..., description="执行动作")
@@ -21,6 +22,7 @@ class TestCaseStep(BaseModel):
 
 class TestCaseDoc(Document):
     """测试用例 - 数据库模型"""
+    __test__ = False
     case_id: str = Field(..., description="唯一业务编号（如 TC-MEM-001）")
     ref_req_id: str = Field(..., description="关联需求 req_id")
     workflow_item_id: Optional[str] = Field(None, description="关联工作流事项 ID")
@@ -28,7 +30,7 @@ class TestCaseDoc(Document):
     version: int = Field(default=1, description="版本号")
     is_active: bool = Field(default=True, description="是否为当前有效版本")
     change_log: Optional[str] = Field(None, description="版本变更摘要")
-    status: str = Field(default="draft", description="状态")
+    status: str = Field(default="DRAFT", description="状态")
     owner_id: Optional[str] = Field(None, description="用例责任人")
     reviewer_id: Optional[str] = Field(None, description="评审人")
     priority: Optional[str] = Field(None, description="优先级")
@@ -81,6 +83,7 @@ class TestCaseDoc(Document):
 # ========== Pydantic 响应模型 (API) ==========
 
 class TestCaseModel(BaseModel):
+    __test__ = False
     id: Optional[str] = None
     case_id: str
     ref_req_id: str

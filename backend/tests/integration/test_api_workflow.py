@@ -81,7 +81,7 @@ def test_create_item_envelope(client):
 
 def test_error_envelope_on_internal_exception(app):
     # 验证内部异常被统一包装为 500 错误响应
-    client = TestClient(app)
+    client = TestClient(app, raise_server_exceptions=False)
 
     class FakeWorkflowServiceBoom(FakeWorkflowService):
         async def list_items(self, *args, **kwargs):
@@ -95,3 +95,12 @@ def test_error_envelope_on_internal_exception(app):
     assert payload["code"] == 500
     assert payload["message"] == "InternalServerError"
     assert payload["data"]["error"] == "InternalServerError"
+
+
+def test_batch_logs_invalid_item_ids_returns_400(client):
+    resp = client.get("/api/v1/work-items/logs/batch?item_ids=invalid-id,507f1f77bcf86cd799439011")
+    assert resp.status_code == 400
+    payload = resp.json()
+    assert payload["code"] == 400
+    assert payload["message"] == "HTTP Error 400"
+    assert "invalid item_ids" in payload["data"]["detail"]

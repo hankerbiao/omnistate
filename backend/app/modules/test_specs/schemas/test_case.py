@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 
 
 class TestCaseStepSchema(BaseModel):
+    __test__ = False
     step_id: str = Field(..., description="步骤 ID")
     name: str = Field(..., description="步骤名称")
     action: str = Field(..., description="执行动作")
@@ -18,7 +19,6 @@ class CreateTestCaseRequest(BaseModel):
     version: int = 1
     is_active: bool = True
     change_log: Optional[str] = None
-    status: str = "draft"
     owner_id: Optional[str] = None
     reviewer_id: Optional[str] = None
     priority: Optional[str] = None
@@ -52,7 +52,6 @@ class UpdateTestCaseRequest(BaseModel):
     version: Optional[int] = None
     is_active: Optional[bool] = None
     change_log: Optional[str] = None
-    status: Optional[str] = None
     owner_id: Optional[str] = None
     reviewer_id: Optional[str] = None
     priority: Optional[str] = None
@@ -81,6 +80,7 @@ class UpdateTestCaseRequest(BaseModel):
 
 
 class TestCaseResponse(BaseModel):
+    __test__ = False
     id: str
     case_id: str
     ref_req_id: str

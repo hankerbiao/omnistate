@@ -1,11 +1,16 @@
 {
   "states": [
-    ["DRAFT", "草稿"],
-    ["PENDING_AUDIT", "待审核"],
-    ["ASSIGNED", "已指派"],
-    ["DEVELOPING", "开发中"],
-    ["PENDING_REVIEW", "待评审"],
-    ["DONE", "已完成"],
-    ["REJECTED", "已拒绝"]
+    {"code": "DRAFT", "name": "草稿", "is_end": false},
+    {"code": "PENDING_AUDIT", "name": "待审核", "is_end": false},
+    {"code": "ASSIGNED", "name": "已指派", "is_end": false},
+    {"code": "DEVELOPING", "name": "开发中", "is_end": false},
+    {"code": "PENDING_REVIEW", "name": "待评审", "is_end": false},
+    {"code": "PENDING_DEVELOP", "name": "待开发", "is_end": false},
+    {"code": "PENDING_TEST", "name": "待测试", "is_end": false},
+    {"code": "PENDING_UAT", "name": "待验收", "is_end": false},
+    {"code": "PENDING_RELEASE", "name": "待上线", "is_end": false},
+    {"code": "RELEASED", "name": "已上线", "is_end": true},
+    {"code": "DONE", "name": "已完成", "is_end": true},
+    {"code": "REJECTED", "name": "已拒绝", "is_end": true}
   ]
 }

@@ -11,8 +11,7 @@
 """
 from typing import Dict, List, Optional, Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.modules.workflow.domain.exceptions import (
     WorkItemNotFoundError,
@@ -148,7 +147,7 @@ async def create_work_item(
             parent_item_id=str(request.parent_item_id) if request.parent_item_id else None,
         )
         return APIResponse(data=item)
-    except Exception as e:
+    except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
@@ -175,28 +174,15 @@ async def list_work_items(
       当前处理人是 owner_id OR 创建人是 creator_id
     - 这样可以保证创建者始终能看到自己创建的任务
     """
-    try:
-        data = await service.list_items(
-            type_code=type_code,
-            state=state,
-            owner_id=owner_id,
-            creator_id=creator_id,
-            limit=limit,
-            offset=offset
-        )
-        return APIResponse(data=data)
-    except Exception:
-        return JSONResponse(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content=APIResponse(
-                code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                message="InternalServerError",
-                data=ErrorResponse(
-                    error="InternalServerError",
-                    detail="An internal error occurred. Please contact the administrator."
-                )
-            ).model_dump()
-        )
+    data = await service.list_items(
+        type_code=type_code,
+        state=state,
+        owner_id=owner_id,
+        creator_id=creator_id,
+        limit=limit,
+        offset=offset
+    )
+    return APIResponse(data=data)
 
 
 @router.get(
@@ -245,7 +231,7 @@ async def list_work_items_sorted(
 )
 async def search_work_items(
     service: WorkflowServiceDep,
-    keyword: str = Query(..., min_length=1, description="关键词，模糊匹配标题和内容"),
+    keyword: str = Query(..., min_length=2, max_length=100, description="关键词，搜索标题和内容"),
     type_code: Optional[str] = Query(None, description="按类型筛选"),
     state: Optional[str] = Query(None, description="按状态筛选"),
     owner_id: Optional[str] = Query(None, description="按当前处理人筛选"),
@@ -418,8 +404,6 @@ async def transition_work_item(
         raise HTTPException(status_code=404, detail=str(e))
     except (InvalidTransitionError, MissingRequiredFieldError) as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.post(
@@ -496,8 +480,11 @@ async def batch_get_transition_logs(
     if not ids:
         return APIResponse(data={})
 
-    data = await service.batch_get_logs(ids, limit)
-    return APIResponse(data=data)
+    try:
+        data = await service.batch_get_logs(ids, limit)
+        return APIResponse(data=data)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get(

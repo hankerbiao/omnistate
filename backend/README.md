@@ -101,8 +101,8 @@ backend/
 所有 API 统一返回格式：
 ```json
 {
-  "code": 200,
-  "message": "success",
+  "code": 0,
+  "message": "ok",
   "data": {...}
 }
 ```

@@ -17,7 +17,6 @@ class TestCaseService(BaseService):
         "version",
         "is_active",
         "change_log",
-        "status",
         "owner_id",
         "reviewer_id",
         "priority",

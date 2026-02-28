@@ -25,6 +25,7 @@ import json
 import os
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any, Dict, Optional
 
 from pymongo import AsyncMongoClient
 from beanie import init_beanie
@@ -40,6 +41,28 @@ from app.modules.auth.repository.models import (
     PermissionDoc,
     RoleDoc,
 )
+
+
+def _parse_state_entry(entry: Any) -> Optional[tuple[str, str, Optional[bool]]]:
+    """兼容多种 states 配置格式并标准化。"""
+    if isinstance(entry, list):
+        if len(entry) < 2:
+            return None
+        code = str(entry[0]).strip()
+        name = str(entry[1]).strip()
+        is_end = bool(entry[2]) if len(entry) >= 3 else None
+        return code, name, is_end
+
+    if isinstance(entry, dict):
+        code = str(entry.get("code", "")).strip()
+        name = str(entry.get("name", "")).strip()
+        if not code or not name:
+            return None
+        raw_is_end = entry.get("is_end")
+        is_end = bool(raw_is_end) if raw_is_end is not None else None
+        return code, name, is_end
+
+    return None
 
 
 async def init_config_data():
@@ -61,27 +84,11 @@ async def init_config_data():
         return
 
     # --- 1. 准备内存数据结构 ---
-    
-    work_types_map = {}
-    
-    # 预定义的状态映射 (Code -> Name)
-    states_map = {
-        "DRAFT": "草稿",
-        "PENDING_REVIEW": "待评审",
-        "PENDING_DEVELOP": "待开发",
-        "DEVELOPING": "开发中",
-        "PENDING_TEST": "待测试",
-        "PENDING_UAT": "待验收",
-        "PENDING_RELEASE": "待上线",
-        "RELEASED": "已上线",
-        "DONE": "已完成",
-        "REJECTED": "已拒绝",
-        "PENDING_AUDIT": "待审核",
-        "ASSIGNED": "已指派"
-    }
-    
+    work_types_map: Dict[str, str] = {}
+    # 状态定义：code -> {"name": str, "is_end_explicit": Optional[bool], "is_end": bool}
+    states_map: Dict[str, Dict[str, Any]] = {}
     # 存储流转配置： type_code -> [config_dict, ...]
-    workflow_configs_map = {}
+    workflow_configs_map: Dict[str, list[dict]] = {}
 
     # --- 2. 加载 JSON 配置文件 ---
     for filename in os.listdir(config_dir):
@@ -96,6 +103,31 @@ async def init_config_data():
                 for item in data.get("work_types", []):
                     if isinstance(item, list) and len(item) == 2:
                         work_types_map[item[0]] = item[1]
+
+                # 解析状态定义 (states)
+                for state_entry in data.get("states", []):
+                    parsed = _parse_state_entry(state_entry)
+                    if parsed is None:
+                        raise ValueError(f"非法 states 配置项: {state_entry}")
+                    state_code, state_name, state_is_end = parsed
+
+                    existing_state = states_map.get(state_code)
+                    if existing_state is None:
+                        states_map[state_code] = {
+                            "name": state_name,
+                            "is_end_explicit": state_is_end,
+                        }
+                    else:
+                        if existing_state["name"] != state_name:
+                            raise ValueError(
+                                f"状态定义冲突: code={state_code}, "
+                                f"name='{existing_state['name']}' vs '{state_name}'"
+                            )
+                        if state_is_end is not None:
+                            explicit = existing_state.get("is_end_explicit")
+                            if explicit is not None and explicit != state_is_end:
+                                raise ValueError(f"状态 is_end 定义冲突: code={state_code}")
+                            existing_state["is_end_explicit"] = state_is_end
 
                 # 解析流转配置 (workflow_configs)
                 wf_configs = data.get("workflow_configs", [])
@@ -115,6 +147,57 @@ async def init_config_data():
                             workflow_configs_map[type_code].append(cfg)
         except Exception as e:
             log.error(f"解析配置文件 {filename} 失败: {e}")
+            raise
+
+    if not states_map:
+        raise ValueError("未加载到任何状态定义，请在配置文件中声明 states")
+
+    # --- 2.1 一致性校验（工作流配置引用） ---
+    validation_errors: list[str] = []
+    seen_transitions: set[tuple[str, str, str]] = set()
+    from_states: set[str] = set()
+
+    for type_code, configs in workflow_configs_map.items():
+        if type_code not in work_types_map:
+            validation_errors.append(f"workflow_configs 引用了未定义的 type_code: {type_code}")
+            continue
+
+        for cfg in configs:
+            from_state = cfg.get("from_state")
+            to_state = cfg.get("to_state")
+            action = cfg.get("action")
+
+            if not from_state or not to_state or not action:
+                validation_errors.append(
+                    f"{type_code} 存在缺失字段的流转配置: "
+                    f"from_state={from_state}, action={action}, to_state={to_state}"
+                )
+                continue
+
+            if from_state not in states_map:
+                validation_errors.append(
+                    f"{type_code}/{action} 引用了未定义 from_state: {from_state}"
+                )
+            if to_state not in states_map:
+                validation_errors.append(
+                    f"{type_code}/{action} 引用了未定义 to_state: {to_state}"
+                )
+
+            transition_key = (type_code, from_state, action)
+            if transition_key in seen_transitions:
+                validation_errors.append(
+                    f"重复流转配置: type={type_code}, from={from_state}, action={action}"
+                )
+            seen_transitions.add(transition_key)
+            from_states.add(from_state)
+
+    if validation_errors:
+        raise ValueError("配置一致性校验失败: " + " | ".join(validation_errors))
+
+    # 推导终态：显式配置优先，否则使用“无出边状态即终态”
+    for state_code, meta in states_map.items():
+        explicit_is_end = meta.get("is_end_explicit")
+        meta["is_end"] = explicit_is_end if explicit_is_end is not None else state_code not in from_states
 
     # --- 3. 初始化事项类型 (SysWorkTypeDoc) ---
     for code, name in work_types_map.items():
@@ -126,8 +209,9 @@ async def init_config_data():
         log.info(f"初始化事项类型: {code}")
 
     # --- 4. 初始化流程状态 (SysWorkflowStateDoc) ---
-    for code, name in states_map.items():
-        is_end = code in ["DONE", "REJECTED", "RELEASED"]
+    for code, meta in states_map.items():
+        name = meta["name"]
+        is_end = bool(meta["is_end"])
         await SysWorkflowStateDoc.find_one(SysWorkflowStateDoc.code == code).upsert(
             {"$set": {"name": name, "is_end": is_end, "updated_at": datetime.now(timezone.utc)}},
             on_insert=SysWorkflowStateDoc(code=code, name=name, is_end=is_end)

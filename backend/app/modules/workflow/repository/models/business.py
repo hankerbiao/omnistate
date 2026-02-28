@@ -42,11 +42,21 @@ class BusWorkItemDoc(Document):
             IndexModel("creator_id"),
             IndexModel("is_deleted"),
             IndexModel("created_at"),
+            IndexModel(
+                [("title", "text"), ("content", "text")],
+                name="idx_work_items_text_title_content",
+            ),
             # 复合索引优化：支持按 owner/creator 筛选并按时间倒序
             IndexModel([("current_owner_id", ASCENDING), ("created_at", DESCENDING)]),
             IndexModel([("creator_id", ASCENDING), ("created_at", DESCENDING)]),
             IndexModel("parent_item_id"),
             IndexModel([("parent_item_id", ASCENDING), ("created_at", DESCENDING)]),
+            IndexModel(
+                [("type_code", ASCENDING), ("title", ASCENDING)],
+                unique=True,
+                partialFilterExpression={"is_deleted": False},
+                name="uniq_active_type_title",
+            ),
         ]
 
 
