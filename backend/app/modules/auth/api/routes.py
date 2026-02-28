@@ -92,6 +92,7 @@ async def login(
     """登录并返回 JWT"""
     try:
         user = await service.authenticate_user(request.user_id, request.password)
+        # token 的主体使用 user_id（业务主键），与 get_current_user 解析逻辑保持一致。
         token = create_access_token(user["user_id"])
         return APIResponse(data=LoginResponse(access_token=token, user=UserResponse(**user)))
     except UserNotFoundError:

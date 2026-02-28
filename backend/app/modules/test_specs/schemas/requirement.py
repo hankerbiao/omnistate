@@ -1,10 +1,17 @@
-"""测试需求 API 模型"""
+"""测试需求 API 模型
+
+约定说明：
+- CreateRequest 仅定义前端可提交字段，不包含 status/created_at/updated_at。
+- UpdateRequest 使用全可选字段，配合 API 层 `exclude_unset=True` 做局部更新。
+- Response 为后端完整返回结构（含服务端维护字段）。
+"""
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 from pydantic import BaseModel, Field
 
 
 class CreateRequirementRequest(BaseModel):
+    """创建需求请求体（字段需与前端创建 payload 一致）"""
     req_id: str = Field(..., description="唯一业务编号")
     title: str = Field(..., description="需求简述")
     description: Optional[str] = None
@@ -21,6 +28,7 @@ class CreateRequirementRequest(BaseModel):
 
 
 class UpdateRequirementRequest(BaseModel):
+    """更新需求请求体（PATCH 语义，字段可按需提交）"""
     title: Optional[str] = None
     description: Optional[str] = None
     technical_spec: Optional[str] = None
@@ -36,6 +44,7 @@ class UpdateRequirementRequest(BaseModel):
 
 
 class RequirementResponse(BaseModel):
+    """需求响应体（包含服务端生成字段）"""
     id: str
     req_id: str
     workflow_item_id: Optional[str] = None

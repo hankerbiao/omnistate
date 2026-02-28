@@ -16,6 +16,7 @@ router = APIRouter(prefix="/test-cases", tags=["TestCases"])
 
 
 def get_test_case_service() -> TestCaseService:
+    """FastAPI 依赖：为每次请求提供服务实例。"""
     return TestCaseService()
 
 
@@ -33,6 +34,12 @@ async def create_test_case(
     request: CreateTestCaseRequest,
     service: TestCaseServiceDep,
 ):
+    """创建测试用例。
+
+    说明：
+    - 权限由路由依赖 `test_cases:write` 统一控制。
+    - 请求字段直接透传到 Service，不做字段名转换。
+    """
     try:
         data = await service.create_test_case(request.model_dump())
         return APIResponse(data=data)
@@ -52,6 +59,7 @@ async def get_test_case(
     case_id: str,
     service: TestCaseServiceDep,
 ):
+    """按业务主键 case_id 查询单条用例。"""
     try:
         data = await service.get_test_case(case_id)
         return APIResponse(data=data)
@@ -76,6 +84,7 @@ async def list_test_cases(
     limit: int = Query(20, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ):
+    """分页查询用例，支持按需求/状态/责任人等过滤。"""
     data = await service.list_test_cases(
         ref_req_id=ref_req_id,
         status=status,
@@ -100,13 +109,16 @@ async def update_test_case(
     request: UpdateTestCaseRequest,
     service: TestCaseServiceDep,
 ):
+    """更新测试用例（仅更新请求中显式提交字段）。"""
     try:
+        # 仅保留调用方显式传入字段，避免默认 None 覆盖现有值。
         payload = request.model_dump(exclude_unset=True)
         if not payload:
             raise HTTPException(status_code=400, detail="no fields to update")
         data = await service.update_test_case(case_id, payload)
         return APIResponse(data=data)
     except KeyError as e:
+        # 服务层会复用 KeyError 抛出「需求不存在」与「用例不存在」，这里做 HTTP 映射。
         if str(e) == "'requirement not found'":
             raise HTTPException(status_code=404, detail="requirement not found")
         raise HTTPException(status_code=404, detail="test case not found")
@@ -122,6 +134,7 @@ async def delete_test_case(
     case_id: str,
     service: TestCaseServiceDep,
 ):
+    """删除用例（服务层执行逻辑删除）。"""
     try:
         await service.delete_test_case(case_id)
         return APIResponse(data={"deleted": True})

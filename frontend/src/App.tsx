@@ -1,4 +1,12 @@
+/**
+ * @fileoverview 主应用组件
+ * 服务器测试用例设计器 - 单文件组件架构
+ * 集成登录、需求管理、用例管理、用户管理等功能的完整前端应用
+ */
+
 import React, { useState, useCallback, useEffect } from 'react';
+
+// ========== 类型导入 ==========
 import {
   CreateRequirementPayload,
   CreateTestCasePayload,
@@ -15,42 +23,120 @@ import {
   Attachment
 } from './types';
 import { ROLES, User } from './constants/config';
+
+// ========== Hook导入 ==========
 import { useLocalAI } from './components/hooks/useLocalAI';
+
+// ========== API服务导入 ==========
 import { isBackendEnabled, testDesignerApi, setAccessToken, clearAccessToken } from './services/api';
+
+// ========== 视图组件导入 ==========
 import { Login, ReqList, ReqForm, ReqDetail, CaseList, CaseForm, UserMgmt } from './components/views';
+
+// ========== 图标库导入 ==========
 import {
-  FileText,
-  PlayCircle,
-  User as UserIcon,
-  LogIn,
-  Mail,
-  Calendar,
-  Shield,
-  X,
+  FileText,      // 文档图标（需求列表）
+  PlayCircle,    // 播放图标（用例列表）
+  User as UserIcon, // 用户图标（用户管理）
+  LogIn,         // 登录图标
+  Mail,          // 邮件图标
+  Calendar,      // 日历图标
+  Shield,        // 盾牌图标
+  X,             // 关闭图标
 } from 'lucide-react';
 
-type View = 'login' | 'req_list' | 'req_form' | 'req_detail' | 'case_list' | 'case_form' | 'user_mgmt';
+// ========== 类型定义 ==========
+
+/**
+ * 视图类型定义
+ * 控制应用中不同页面视图的切换
+ */
+type View =
+  | 'login'        // 登录页面
+  | 'req_list'     // 需求列表
+  | 'req_form'     // 需求表单（创建/编辑）
+  | 'req_detail'   // 需求详情
+  | 'case_list'    // 用例列表
+  | 'case_form'    // 用例表单（创建/编辑）
+  | 'user_mgmt';   // 用户管理
+
+/**
+ * 导航视图类型定义
+ * 可在主导航菜单中访问的页面
+ */
 type NavView = 'req_list' | 'case_list' | 'user_mgmt';
 
+/**
+ * 导航选项接口
+ * 定义导航菜单项的配置信息
+ */
 interface NavigationOption {
-  view: NavView;
-  label: string;
-  permission: string;
-  description: string;
+  view: NavView;       // 视图名称
+  label: string;       // 显示标签
+  permission: string;  // 所需权限代码
+  description: string; // 描述信息
 }
 
+// ========== 导航配置常量 ==========
+
+/**
+ * 系统导航选项配置
+ * 定义主导航菜单中可用的页面及其权限要求
+ */
 const NAVIGATION_OPTIONS: NavigationOption[] = [
-  { view: 'req_list', label: '测试需求', permission: 'nav:req_list:view', description: '允许访问测试需求列表页' },
-  { view: 'case_list', label: '测试用例', permission: 'nav:case_list:view', description: '允许访问测试用例列表页' },
-  { view: 'user_mgmt', label: '用户管理', permission: 'nav:user_mgmt:view', description: '允许访问用户与权限管理页' },
+  {
+    view: 'req_list',
+    label: '测试需求',
+    permission: 'nav:req_list:view',
+    description: '允许访问测试需求列表页'
+  },
+  {
+    view: 'case_list',
+    label: '测试用例',
+    permission: 'nav:case_list:view',
+    description: '允许访问测试用例列表页'
+  },
+  {
+    view: 'user_mgmt',
+    label: '用户管理',
+    permission: 'nav:user_mgmt:view',
+    description: '允许访问用户与权限管理页'
+  },
 ];
 
+/**
+ * 导航视图集合
+ * 用于快速检查字符串是否为有效的导航视图
+ */
 const NAV_VIEW_SET = new Set<NavView>(NAVIGATION_OPTIONS.map(item => item.view));
+
+/**
+ * 导航视图到权限的映射表
+ * 便于根据视图快速获取对应的权限代码
+ */
 const NAV_VIEW_PERMISSION_MAP: Record<NavView, string> = NAVIGATION_OPTIONS
   .reduce((acc, item) => ({ ...acc, [item.view]: item.permission }), {} as Record<NavView, string>);
+
+/**
+ * 默认导航视图
+ * 当用户无特定权限时显示的基础导航项
+ */
 const FALLBACK_NAV_VIEWS: NavView[] = ['req_list', 'case_list'];
 
+// ========== 辅助函数 ==========
+
+/**
+ * 检查值是否为有效的导航视图
+ * @param value 要检查的值
+ * @returns boolean 是否为NavView类型
+ */
 const isNavView = (value: string): value is NavView => NAV_VIEW_SET.has(value as NavView);
+
+/**
+ * 检查用户是否具有管理员角色
+ * @param user 用户对象
+ * @returns boolean 是否为管理员
+ */
 const hasAdminRole = (user: User | null): boolean =>
   Boolean(user?.role_ids.some(role => String(role).toUpperCase().includes('ADMIN')));
 

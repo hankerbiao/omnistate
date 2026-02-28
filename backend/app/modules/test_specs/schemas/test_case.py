@@ -1,4 +1,10 @@
-"""测试用例 API 模型"""
+"""测试用例 API 模型
+
+约定说明：
+- CreateRequest 仅定义前端可提交字段，不包含 status/created_at/updated_at。
+- `tooling_req` 是顶层字段，不通过 `required_env` 做字段映射。
+- Response 为后端完整返回结构（含 workflow/status/时间戳等服务端字段）。
+"""
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 from pydantic import BaseModel, Field
@@ -13,6 +19,7 @@ class TestCaseStepSchema(BaseModel):
 
 
 class CreateTestCaseRequest(BaseModel):
+    """创建用例请求体（字段需与前端创建 payload 一致）"""
     case_id: str = Field(..., description="唯一业务编号")
     ref_req_id: str = Field(..., description="关联需求 req_id")
     title: str = Field(..., description="用例名称")
@@ -49,6 +56,7 @@ class CreateTestCaseRequest(BaseModel):
 
 
 class UpdateTestCaseRequest(BaseModel):
+    """更新用例请求体（PATCH 语义，字段可按需提交）"""
     ref_req_id: Optional[str] = None
     title: Optional[str] = None
     version: Optional[int] = None
@@ -84,6 +92,7 @@ class UpdateTestCaseRequest(BaseModel):
 
 
 class TestCaseResponse(BaseModel):
+    """用例响应体（包含服务端生成字段）"""
     __test__ = False
     id: str
     case_id: str

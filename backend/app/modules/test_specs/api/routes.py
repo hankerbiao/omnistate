@@ -16,6 +16,7 @@ router = APIRouter(prefix="/requirements", tags=["Requirements"])
 
 
 def get_requirement_service() -> RequirementService:
+    """FastAPI 依赖：为每次请求提供服务实例。"""
     return RequirementService()
 
 
@@ -33,6 +34,12 @@ async def create_requirement(
     request: CreateRequirementRequest,
     service: RequirementServiceDep,
 ):
+    """创建需求。
+
+    说明：
+    - 权限由路由依赖 `requirements:write` 统一控制。
+    - `request.model_dump()` 直接透传到 Service，避免字段重命名转换。
+    """
     try:
         data = await service.create_requirement(request.model_dump())
         return APIResponse(data=data)
@@ -50,6 +57,7 @@ async def get_requirement(
     req_id: str,
     service: RequirementServiceDep,
 ):
+    """按业务主键 req_id 查询单条需求。"""
     try:
         data = await service.get_requirement(req_id)
         return APIResponse(data=data)
@@ -72,6 +80,7 @@ async def list_requirements(
     limit: int = Query(20, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ):
+    """分页查询需求，支持按状态/负责人过滤。"""
     data = await service.list_requirements(
         status=status,
         tpm_owner_id=tpm_owner_id,
@@ -94,7 +103,9 @@ async def update_requirement(
     request: UpdateRequirementRequest,
     service: RequirementServiceDep,
 ):
+    """更新需求（仅更新请求中显式提交字段）。"""
     try:
+        # 仅保留调用方显式传入字段，避免把默认 None 覆盖到数据库。
         payload = request.model_dump(exclude_unset=True)
         if not payload:
             raise HTTPException(status_code=400, detail="no fields to update")
@@ -114,6 +125,7 @@ async def delete_requirement(
     req_id: str,
     service: RequirementServiceDep,
 ):
+    """删除需求（服务层执行逻辑删除与关联校验）。"""
     try:
         await service.delete_requirement(req_id)
         return APIResponse(data={"deleted": True})
