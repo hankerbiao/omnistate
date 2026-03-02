@@ -31,7 +31,15 @@ import { useLocalAI } from './components/hooks/useLocalAI';
 import { isBackendEnabled, testDesignerApi, setAccessToken, clearAccessToken } from './services/api';
 
 // ========== 视图组件导入 ==========
-import { Login, ReqList, ReqForm, ReqDetail, CaseList, CaseForm, UserMgmt } from './components/views';
+import {
+  Login,
+  ReqList,
+  ReqForm,
+  ReqDetail,
+  CaseList,
+  CaseForm,
+  UserMgmt
+} from './components/views';
 
 // ========== 图标库导入 ==========
 import {
@@ -391,10 +399,21 @@ const normalizeConfidentiality = (value: unknown): Confidentiality | undefined =
   return undefined;
 };
 
+// ========== 数据标准化函数 ==========
+
+/**
+ * 标准化附件对象
+ * 将原始数据转换为标准的Attachment格式
+ * @param item 原始附件数据
+ * @returns Attachment 标准化的附件对象
+ */
 const normalizeAttachment = (item: unknown): Attachment => {
   const row = asObject(item);
   const type = String(row.type || 'other');
-  const attachmentType = ['image', 'video', 'spec', 'log', 'other'].includes(type) ? type as Attachment['type'] : 'other';
+  // 验证并确定附件类型
+  const attachmentType = ['image', 'video', 'spec', 'log', 'other'].includes(type)
+    ? type as Attachment['type']
+    : 'other';
   return {
     id: String(row.id || ''),
     name: String(row.name || ''),
@@ -405,6 +424,13 @@ const normalizeAttachment = (item: unknown): Attachment => {
   };
 };
 
+/**
+ * 标准化测试步骤对象
+ * 将原始数据转换为标准的TestStep格式
+ * @param item 原始步骤数据
+ * @param index 步骤索引（用于生成默认ID）
+ * @returns TestStep 标准化的步骤对象
+ */
 const normalizeStep = (item: unknown, index: number): TestStep => {
   const row = asObject(item);
   return {
@@ -415,6 +441,12 @@ const normalizeStep = (item: unknown, index: number): TestStep => {
   };
 };
 
+/**
+ * 标准化用户对象
+ * 将原始数据转换为标准的User格式
+ * @param item 原始用户数据
+ * @returns User 标准化的用户对象
+ */
 const normalizeUser = (item: unknown): User => {
   const row = asObject(item);
   const statusRaw = String(row.status || 'ACTIVE').toUpperCase();
@@ -428,8 +460,15 @@ const normalizeUser = (item: unknown): User => {
   };
 };
 
+/**
+ * 标准化测试需求对象
+ * 将原始数据转换为标准的TestRequirement格式
+ * @param item 原始需求数据
+ * @returns TestRequirement 标准化的需求对象
+ */
 const normalizeRequirement = (item: unknown): TestRequirement => {
   const row = asObject(item);
+  // 标准化关键参数数组
   const normalizedKeyParameters = toArray<Record<string, unknown>>(row.key_parameters)
     .map(param => ({
       key: String(param.key || ''),
@@ -456,9 +495,16 @@ const normalizeRequirement = (item: unknown): TestRequirement => {
   };
 };
 
+/**
+ * 标准化测试用例对象
+ * 将原始数据转换为标准的TestCase格式
+ * @param item 原始用例数据
+ * @returns TestCase 标准化的用例对象
+ */
 const normalizeTestCase = (item: unknown): TestCase => {
   const row = asObject(item);
   const env = asObject(row.required_env);
+  // 标准化审批历史记录
   const approvalHistory = toArray<Record<string, unknown>>(row.approval_history)
     .map(record => ({
       approver: String(record.approver || ''),
@@ -480,10 +526,12 @@ const normalizeTestCase = (item: unknown): TestCase => {
     reviewer_id: String(row.reviewer_id || ''),
     auto_dev_id: String(row.auto_dev_id || ''),
     priority: normalizeOptionalPriority(row.priority),
+    // 处理可选的预估时长
     estimated_duration_sec: row.estimated_duration_sec === undefined || row.estimated_duration_sec === null
       ? undefined
       : Number(row.estimated_duration_sec),
     target_components: toArray<string>(row.target_components),
+    // 标准化测试环境要求
     required_env: {
       os: String(env.os || ''),
       firmware: String(env.firmware || ''),
@@ -514,18 +562,48 @@ const normalizeTestCase = (item: unknown): TestCase => {
   };
 };
 
+/**
+ * 标准化用户数组
+ * 将输入数据转换为用户对象数组
+ * @param input 输入数据
+ * @returns User[] 用户对象数组
+ */
 const normalizeUsers = (input: unknown): User[] => {
   return extractList(input).map(normalizeUser);
 };
 
+/**
+ * 标准化需求数组
+ * 将输入数据转换为需求对象数组
+ * @param input 输入数据
+ * @returns TestRequirement[] 需求对象数组
+ */
 const normalizeRequirements = (input: unknown): TestRequirement[] => {
   return extractList(input).map(normalizeRequirement);
 };
 
+/**
+ * 标准化用例数组
+ * 将输入数据转换为用例对象数组
+ * @param input 输入数据
+ * @returns TestCase[] 用例对象数组
+ */
 const normalizeTestCases = (input: unknown): TestCase[] => {
   return extractList(input).map(normalizeTestCase);
 };
 
+// ========== 主应用组件 ==========
+
+/**
+ * 主应用组件
+ * 单一文件架构，包含所有视图和状态管理
+ * 功能包括：
+ * - 用户认证和权限管理
+ * - 测试需求管理（列表、创建、编辑、详情）
+ * - 测试用例管理（列表、创建、编辑）
+ * - 用户管理（管理员功能）
+ * - AI辅助功能（文本润色、步骤生成）
+ */
 export default function App() {
   // Auth state
   const [view, setView] = useState<View>('login');
@@ -560,6 +638,7 @@ export default function App() {
 
   // Test cases state
   const [testCases, setTestCases] = useState<TestCase[]>([]);
+
 
   const getEffectiveUserNavViews = useCallback((user: User): NavView[] => {
     const customViews = userNavigationMap[user.user_id];
@@ -673,6 +752,7 @@ export default function App() {
       setIsAuthRestored(true);
     }
   }, []);
+
 
   // token 就绪后再拉取受保护资源
   useEffect(() => {
@@ -1367,13 +1447,15 @@ export default function App() {
                 测试用例
               </button>
             )}
-            <button
-              onClick={() => {}}
-              className="w-full flex items-center gap-3 px-4 py-3 bg-slate-900 text-white rounded-xl text-sm font-bold shadow-lg shadow-slate-900/20"
-            >
-              <UserIcon size={18} />
-              用户管理
-            </button>
+            {availableNavViews.includes('user_mgmt') && (
+              <button
+                onClick={() => handleViewChange('user_mgmt')}
+                className="w-full flex items-center gap-3 px-4 py-3 bg-slate-900 text-white rounded-xl text-sm font-bold shadow-lg shadow-slate-900/20"
+              >
+                <UserIcon size={18} />
+                用户管理
+              </button>
+            )}
           </nav>
 
           {/* Bottom User Info */}

@@ -21,7 +21,6 @@ from app.modules.assets.repository.models import (
 )
 from app.modules.test_specs.repository.models import TestRequirementDoc, TestCaseDoc
 from app.modules.auth.repository.models import UserDoc, RoleDoc, PermissionDoc
-from app.modules.menu.repository.models import MenuDoc
 
 
 async def validate_workflow_consistency() -> None:
@@ -89,7 +88,6 @@ async def lifespan(app: FastAPI):
                 UserDoc,
                 RoleDoc,
                 PermissionDoc,
-                MenuDoc,
             ]
         )
         log.success("Beanie ODM 初始化完成")

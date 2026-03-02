@@ -294,8 +294,6 @@ async def init_rbac_data():
         ("roles:write", "角色写入权限"),
         ("permissions:read", "权限读取权限"),
         ("permissions:write", "权限写入权限"),
-        ("menu:read", "菜单读取权限"),
-        ("menu:write", "菜单写入权限"),
         # assets (预留)
         ("assets:read", "资产读取权限"),
         ("assets:write", "资产写入权限"),

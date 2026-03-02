@@ -3,7 +3,14 @@
  * 封装所有后端API调用方法，按功能模块组织
  */
 
-import { CreateRequirementPayload, CreateTestCasePayload, TestCase, TestRequirement } from '../../types';
+import {
+  CreateRequirementPayload,
+  CreateTestCasePayload,
+  TestCase,
+  TestRequirement,
+  WorkItem,
+  AvailableTransitionsResponse
+} from '../../types';
 import { User } from '../../constants/config';
 import { ApiClient } from './ApiClient';
 
@@ -287,5 +294,25 @@ export class TestDesignerApi {
     return this.client.put<NavigationAccessResponse | User>(`/api/v1/auth/admin/users/${userId}/navigation`, {
       allowed_nav_views: allowedNavViews,
     });
+  }
+
+  // ========== 工作流模块 API ==========
+
+  /**
+   * 获取工作项详情
+   * @param itemId 工作项ID
+   * @returns Promise<WorkItem> 工作项详情
+   */
+  getWorkItem(itemId: string): Promise<WorkItem> {
+    return this.client.get<WorkItem>(`/api/v1/work-items/${itemId}`);
+  }
+
+  /**
+   * 获取工作项的可用流转动作
+   * @param itemId 工作项ID
+   * @returns Promise<AvailableTransitionsResponse> 可用流转信息
+   */
+  getAvailableTransitions(itemId: string): Promise<AvailableTransitionsResponse> {
+    return this.client.get<AvailableTransitionsResponse>(`/api/v1/work-items/${itemId}/transitions`);
   }
 }

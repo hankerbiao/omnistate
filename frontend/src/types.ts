@@ -206,3 +206,75 @@ export type CreateTestCasePayload = Omit<
   TestCase,
   'status' | 'created_at' | 'updated_at'
 >;
+
+// ========== 工作流相关类型定义 ==========
+
+/**
+ * 工作项类型枚举
+ */
+export enum WorkItemType {
+  REQUIREMENT = 'REQUIREMENT',  // 需求
+  TEST_CASE = 'TEST_CASE',      // 测试用例
+}
+
+/**
+ * 工作项状态枚举
+ */
+export enum WorkItemState {
+  DRAFT = 'DRAFT',                    // 草稿
+  PENDING_REVIEW = 'PENDING_REVIEW',  // 待评审
+  PENDING_DEVELOP = 'PENDING_DEVELOP', // 待开发
+  DEVELOPING = 'DEVELOPING',          // 开发中
+  PENDING_TEST = 'PENDING_TEST',      // 待测试
+  PENDING_UAT = 'PENDING_UAT',        // 待验收
+  PENDING_RELEASE = 'PENDING_RELEASE', // 待发布
+  RELEASED = 'RELEASED',             // 已发布
+  DONE = 'DONE',                     // 已完成
+}
+
+/**
+ * 工作项接口
+ * 定义工作流中业务事项的完整信息
+ */
+export interface WorkItem {
+  item_id: string;              // 工作项唯一标识符
+  type_code: WorkItemType;      // 类型代码（REQUIREMENT/TEST_CASE）
+  title: string;                // 标题
+  content?: string;             // 内容描述
+  current_state: WorkItemState; // 当前状态
+  current_owner_id: string;     // 当前负责人ID
+  creator_id: string;           // 创建人ID
+  parent_item_id?: string;      // 父事项ID（可选）
+  is_deleted: boolean;          // 是否已删除
+  form_data?: Record<string, any>; // 表单数据
+  created_at: string;           // 创建时间
+  updated_at: string;           // 更新时间
+}
+
+/**
+ * 流转动作接口
+ */
+export interface TransitionAction {
+  action: string;              // 动作代码（如SUBMIT, APPROVE等）
+  label: string;               // 动作显示名称
+  target_state: string;        // 目标状态
+  required_fields?: string[];  // 必需字段列表
+}
+
+/**
+ * 可用流转接口
+ */
+export interface AvailableTransition {
+  action: string;              // 动作代码
+  target_state: string;        // 目标状态
+  label?: string;              // 动作标签
+}
+
+/**
+ * 可用流转响应接口
+ */
+export interface AvailableTransitionsResponse {
+  item_id: string;                           // 工作项ID
+  current_state: string;                     // 当前状态
+  available_transitions: AvailableTransition[]; // 可用流转列表
+}

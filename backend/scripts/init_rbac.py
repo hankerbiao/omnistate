@@ -35,8 +35,6 @@ DEFAULT_PERMISSIONS = [
     ("roles:write", "Roles write"),
     ("permissions:read", "Permissions read"),
     ("permissions:write", "Permissions write"),
-    ("menu:read", "Menu read"),
-    ("menu:write", "Menu write"),
     ("assets:read", "Assets read"),
     ("assets:write", "Assets write"),
     ("requirements:read", "Requirements read"),
