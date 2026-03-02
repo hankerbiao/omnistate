@@ -79,10 +79,32 @@ class MePermissionsResponse(BaseModel):
 
 class NavigationPageResponse(BaseModel):
     """导航页面定义"""
+    id: Optional[str] = None
     view: str
     label: str
-    permission: str
+    permission: Optional[str] = None
     description: Optional[str] = None
+    order: int = 0
+    is_active: bool = True
+
+
+class CreateNavigationPageRequest(BaseModel):
+    """创建导航页面请求"""
+    view: str = Field(..., description="导航视图标识")
+    label: str = Field(..., description="导航名称")
+    permission: Optional[str] = Field(None, description="访问权限码")
+    description: Optional[str] = Field(None, description="导航描述")
+    order: int = Field(default=0, description="排序值，越小越靠前")
+    is_active: bool = Field(default=True, description="是否启用")
+
+
+class UpdateNavigationPageRequest(BaseModel):
+    """更新导航页面请求"""
+    label: Optional[str] = None
+    permission: Optional[str] = None
+    description: Optional[str] = None
+    order: Optional[int] = None
+    is_active: Optional[bool] = None
 
 
 class UserNavigationResponse(BaseModel):

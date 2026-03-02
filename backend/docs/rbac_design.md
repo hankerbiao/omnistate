@@ -22,7 +22,6 @@
 - `assets:read` / `assets:write`
 - `requirements:read` / `requirements:write`
 - `test_cases:read` / `test_cases:write`
-- `menu:read` / `menu:write`
 - `users:read` / `users:write`
 - `roles:read` / `roles:write`
 - `permissions:read` / `permissions:write`

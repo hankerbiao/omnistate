@@ -8,7 +8,9 @@ AI 友好注释说明：
 from typing import Dict, Any, Optional, List
 from app.shared.service import BaseService
 from app.shared.auth import hash_password, verify_password
+from app.shared.auth.jwt_auth import get_permissions_by_role_ids, is_admin_role
 from app.modules.auth.repository.models import UserDoc, RoleDoc, PermissionDoc
+from app.modules.auth.service.navigation_page_service import NavigationPageService
 from app.modules.auth.service.exceptions import (
     UserNotFoundError,
     RoleNotFoundError,
@@ -23,27 +25,11 @@ class RbacService(BaseService):
     _USER_UPDATABLE_FIELDS = {"username", "email", "status"}
     _ROLE_UPDATABLE_FIELDS = {"name"}
     _PERMISSION_UPDATABLE_FIELDS = {"code", "name", "description"}
-    _NAVIGATION_PAGES = [
-        {
-            "view": "req_list",
-            "label": "测试需求",
-            "permission": "nav:req_list:view",
-            "description": "允许访问测试需求列表页",
-        },
-        {
-            "view": "case_list",
-            "label": "测试用例",
-            "permission": "nav:case_list:view",
-            "description": "允许访问测试用例列表页",
-        },
-        {
-            "view": "user_mgmt",
-            "label": "用户管理",
-            "permission": "nav:user_mgmt:view",
-            "description": "允许访问用户与权限管理页",
-        },
-    ]
-    _DEFAULT_NAV_VIEWS = ["req_list", "case_list"]
+    _DEFAULT_NAV_VIEWS = ["req_list", "case_list", "my_tasks"]
+    _MANDATORY_NAV_VIEWS = ["my_tasks"]
+
+    def __init__(self):
+        self._navigation_service = NavigationPageService()
 
     # ===== Users =====
 
@@ -146,24 +132,29 @@ class RbacService(BaseService):
         if not user:
             raise UserNotFoundError("user not found")
 
-        if not user.role_ids:
+        role_ids = user.role_ids or []
+        if not role_ids:
             return {"user_id": user_id, "role_ids": [], "permissions": []}
 
-        roles = await RoleDoc.find({"role_id": {"$in": user.role_ids}}).to_list()
-        perm_ids: List[str] = []
-        for role in roles:
-            perm_ids.extend(role.permission_ids)
+        codes = await get_permissions_by_role_ids(role_ids)
+        return {"user_id": user_id, "role_ids": role_ids, "permissions": codes}
 
-        if not perm_ids:
-            return {"user_id": user_id, "role_ids": user.role_ids, "permissions": []}
+    async def list_navigation_pages(self, include_inactive: bool = True) -> List[Dict[str, Any]]:
+        """返回导航页面定义。"""
+        return await self._navigation_service.list_pages(include_inactive=include_inactive)
 
-        perms = await PermissionDoc.find({"perm_id": {"$in": list(set(perm_ids))}}).to_list()
-        codes = sorted({perm.code for perm in perms})
-        return {"user_id": user_id, "role_ids": user.role_ids, "permissions": codes}
+    async def get_navigation_page(self, view: str) -> Dict[str, Any]:
+        return await self._navigation_service.get_page(view)
 
-    async def list_navigation_pages(self) -> List[Dict[str, str]]:
-        """返回系统支持的导航页面定义。"""
-        return [dict(item) for item in self._NAVIGATION_PAGES]
+    async def create_navigation_page(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        return await self._navigation_service.create_page(data)
+
+    async def update_navigation_page(self, view: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        return await self._navigation_service.update_page(view, data)
+
+    async def delete_navigation_page(self, view: str) -> Dict[str, Any]:
+        await self._navigation_service.delete_page(view)
+        return {"deleted": True, "view": view}
 
     async def get_user_navigation(self, user_id: str) -> Dict[str, Any]:
         """返回用户可见导航页面（用户级覆盖 > 权限推导；管理员固定全量）。"""
@@ -174,19 +165,23 @@ class RbacService(BaseService):
         effective = await self.get_effective_permissions(user_id)
         permissions = effective.get("permissions", [])
         role_ids = user.role_ids or []
+        nav_pages = await self._navigation_service.list_active_pages()
+        all_nav_views = self._nav_views_in_order(nav_pages)
 
-        if self._is_admin_roles(role_ids):
-            allowed_nav_views = self._all_nav_views()
+        if is_admin_role(role_ids):
+            allowed_nav_views = list(all_nav_views)
             if "all" not in permissions:
                 permissions = ["all", *permissions]
         else:
-            user_override = self._sanitize_nav_views(user.allowed_nav_views or [])
+            user_override = self._sanitize_nav_views(user.allowed_nav_views or [], all_nav_views)
             if user_override:
                 allowed_nav_views = user_override
             else:
-                allowed_nav_views = self._derive_nav_views_from_permissions(permissions)
+                allowed_nav_views = self._derive_nav_views_from_permissions(permissions, nav_pages, all_nav_views)
                 if not allowed_nav_views:
-                    allowed_nav_views = list(self._DEFAULT_NAV_VIEWS)
+                    allowed_nav_views = self._sanitize_nav_views(self._DEFAULT_NAV_VIEWS, all_nav_views)
+
+        allowed_nav_views = self._ensure_mandatory_nav_views(allowed_nav_views, all_nav_views)
 
         return {
             "user_id": user_id,
@@ -201,11 +196,14 @@ class RbacService(BaseService):
         if not user:
             raise UserNotFoundError("user not found")
 
-        normalized_views = self._sanitize_nav_views(allowed_nav_views)
-        if self._is_admin_roles(user.role_ids or []):
-            normalized_views = self._all_nav_views()
+        nav_pages = await self._navigation_service.list_active_pages()
+        all_nav_views = self._nav_views_in_order(nav_pages)
+        normalized_views = self._sanitize_nav_views(allowed_nav_views, all_nav_views)
+        if is_admin_role(user.role_ids or []):
+            normalized_views = list(all_nav_views)
         elif not normalized_views:
             raise ValueError("allowed_nav_views must contain at least one valid view")
+        normalized_views = self._ensure_mandatory_nav_views(normalized_views, all_nav_views)
 
         user.allowed_nav_views = normalized_views
         await user.save()
@@ -304,29 +302,40 @@ class RbacService(BaseService):
         if count != len(set(permission_ids)):
             raise PermissionNotFoundError("permission not found")
 
-    @classmethod
-    def _all_nav_views(cls) -> List[str]:
-        return [item["view"] for item in cls._NAVIGATION_PAGES]
+    @staticmethod
+    def _nav_views_in_order(nav_pages: List[Dict[str, Any]]) -> List[str]:
+        views = [str(item.get("view", "")).strip() for item in nav_pages]
+        return [view for view in views if view]
 
-    @classmethod
-    def _sanitize_nav_views(cls, views: List[str]) -> List[str]:
-        valid_views = set(cls._all_nav_views())
+    @staticmethod
+    def _sanitize_nav_views(views: List[str], all_nav_views: List[str]) -> List[str]:
+        valid_views = set(all_nav_views)
         seen = set()
         ordered: List[str] = []
         for view in views:
             if view in valid_views and view not in seen:
                 seen.add(view)
                 ordered.append(view)
-        # 统一按系统定义顺序返回
         ordered_set = set(ordered)
-        return [view for view in cls._all_nav_views() if view in ordered_set]
-
-    @staticmethod
-    def _is_admin_roles(role_ids: List[str]) -> bool:
-        return any("ADMIN" in str(role_id).upper() for role_id in role_ids)
+        return [view for view in all_nav_views if view in ordered_set]
 
     @classmethod
-    def _derive_nav_views_from_permissions(cls, permissions: List[str]) -> List[str]:
+    def _derive_nav_views_from_permissions(
+        cls,
+        permissions: List[str],
+        nav_pages: List[Dict[str, Any]],
+        all_nav_views: List[str],
+    ) -> List[str]:
         permission_set = set(permissions)
-        derived = [item["view"] for item in cls._NAVIGATION_PAGES if item["permission"] in permission_set]
-        return cls._sanitize_nav_views(derived)
+        derived = [
+            str(item.get("view"))
+            for item in nav_pages
+            if item.get("permission") and item.get("permission") in permission_set
+        ]
+        return cls._sanitize_nav_views(derived, all_nav_views)
+
+    @classmethod
+    def _ensure_mandatory_nav_views(cls, views: List[str], all_nav_views: List[str]) -> List[str]:
+        """确保全员默认可访问导航始终可见。"""
+        mandatory = [view for view in cls._MANDATORY_NAV_VIEWS if view in set(all_nav_views)]
+        return cls._sanitize_nav_views([*views, *mandatory], all_nav_views)

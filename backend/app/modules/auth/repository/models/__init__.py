@@ -12,12 +12,15 @@ from .rbac import (
     RoleModel,
     PermissionModel,
 )
+from .navigation import NavigationPageDoc, NavigationPageModel
 
 __all__ = [
     "UserDoc",
     "RoleDoc",
     "PermissionDoc",
+    "NavigationPageDoc",
     "UserModel",
     "RoleModel",
     "PermissionModel",
+    "NavigationPageModel",
 ]

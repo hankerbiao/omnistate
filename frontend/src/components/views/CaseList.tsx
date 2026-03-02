@@ -4,6 +4,7 @@ import {
   ChevronRight,
   FileText,
   PlayCircle,
+  ListTodo,
   User,
   LogIn,
   Search,
@@ -27,6 +28,7 @@ interface CaseListProps {
   onSelectCase: (tc: TestCase) => void;
   onCreateCase: () => void;
   onNavigateToReqList: () => void;
+  onNavigateToMyTasks: () => void;
   onNavigateToUserMgmt: () => void;
   onLogout: () => void;
   showUserProfile: boolean;
@@ -46,12 +48,14 @@ export const CaseList: React.FC<CaseListProps> = ({
   onSelectCase,
   onCreateCase,
   onNavigateToReqList,
+  onNavigateToMyTasks,
   onNavigateToUserMgmt,
   onLogout,
   showUserProfile,
   onToggleUserProfile,
 }) => {
   const canAccessReqList = availableNavViews.includes('req_list');
+  const canAccessMyTasks = availableNavViews.includes('my_tasks');
   const canAccessUserMgmt = availableNavViews.includes('user_mgmt');
 
   const [searchText, setSearchText] = useState('');
@@ -281,6 +285,12 @@ export const CaseList: React.FC<CaseListProps> = ({
             <PlayCircle size={18} />
             测试用例
           </button>
+          {canAccessMyTasks && (
+            <button onClick={onNavigateToMyTasks} className="w-full flex items-center gap-3 px-4 py-3 text-slate-500 hover:bg-slate-50 rounded-xl text-sm font-bold transition-colors">
+              <ListTodo size={18} />
+              我的任务
+            </button>
+          )}
           {canAccessUserMgmt && (
             <button onClick={onNavigateToUserMgmt} className="w-full flex items-center gap-3 px-4 py-3 text-slate-500 hover:bg-slate-50 rounded-xl text-sm font-bold transition-colors">
               <User size={18} />

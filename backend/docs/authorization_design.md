@@ -15,7 +15,6 @@
   - `workflow`
   - `assets`
   - `test_specs`（`requirements`、`test_cases`）
-  - `menu`
   - `auth`（用户/角色/权限管理）
 - 非业务接口：
   - 健康检查接口（`/health`）不要求授权。
@@ -39,8 +38,6 @@
 - `requirements:write`
 - `test_cases:read`
 - `test_cases:write`
-- `menu:read`
-- `menu:write`
 - `users:read` / `users:write`
 - `roles:read` / `roles:write`
 - `permissions:read` / `permissions:write`
@@ -130,19 +127,7 @@
   - `PUT /{case_id}`
   - `DELETE /{case_id}`
 
-### 6.5 Menu（`/api/v1/menus`）
-
-- `menu:read`
-  - `GET /`
-  - `GET /{menu_id}`
-- `menu:write`
-  - `POST /`
-  - `PUT /{menu_id}`
-  - `DELETE /{menu_id}`
-- 仅登录（不要求显式权限）
-  - `GET /me`
-
-### 6.6 Auth（`/api/v1/auth`）
+### 6.5 Auth（`/api/v1/auth`）
 
 - `users:read`
   - `GET /users`

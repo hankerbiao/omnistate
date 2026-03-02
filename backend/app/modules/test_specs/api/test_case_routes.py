@@ -4,7 +4,7 @@ from typing import List, Optional, Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.shared.api.schemas.base import APIResponse
-from app.shared.auth import require_permission
+from app.shared.auth import get_current_user, require_permission
 from app.modules.test_specs.service import TestCaseService
 from app.modules.test_specs.schemas import (
     CreateTestCaseRequest,
@@ -33,6 +33,7 @@ TestCaseServiceDep = Annotated[TestCaseService, Depends(get_test_case_service)]
 async def create_test_case(
     request: CreateTestCaseRequest,
     service: TestCaseServiceDep,
+    current_user=Depends(get_current_user),
 ):
     """创建测试用例。
 
@@ -41,7 +42,11 @@ async def create_test_case(
     - 请求字段直接透传到 Service，不做字段名转换。
     """
     try:
-        data = await service.create_test_case(request.model_dump())
+        payload = request.model_dump()
+        owner_id = str(payload.get("owner_id") or "").strip()
+        if not owner_id:
+            payload["owner_id"] = current_user["user_id"]
+        data = await service.create_test_case(payload)
         return APIResponse(data=data)
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))

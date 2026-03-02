@@ -40,7 +40,9 @@ from app.modules.workflow.repository.models import (
 from app.modules.auth.repository.models import (
     PermissionDoc,
     RoleDoc,
+    NavigationPageDoc,
 )
+from app.modules.auth.service.navigation_page_service import DEFAULT_NAVIGATION_PAGES
 
 
 def _parse_state_entry(entry: Any) -> Optional[tuple[str, str, Optional[bool]]]:
@@ -349,6 +351,37 @@ async def init_rbac_data():
     log.success("RBAC 初始化完成")
 
 
+async def init_navigation_pages():
+    """初始化默认导航页面定义。"""
+    log.info("开始初始化导航页面定义...")
+
+    for item in DEFAULT_NAVIGATION_PAGES:
+        view = item["view"]
+        await NavigationPageDoc.find_one(NavigationPageDoc.view == view).upsert(
+            {
+                "$set": {
+                    "label": item["label"],
+                    "permission": item.get("permission"),
+                    "description": item.get("description"),
+                    "order": item.get("order", 0),
+                    "is_active": bool(item.get("is_active", True)),
+                    "is_deleted": False,
+                    "updated_at": datetime.now(timezone.utc),
+                }
+            },
+            on_insert=NavigationPageDoc(
+                view=view,
+                label=item["label"],
+                permission=item.get("permission"),
+                description=item.get("description"),
+                order=item.get("order", 0),
+                is_active=bool(item.get("is_active", True)),
+            ),
+        )
+
+    log.success("导航页面初始化完成")
+
+
 async def main():
     """
     主函数 (Beanie ODM 版本)
@@ -377,6 +410,7 @@ async def main():
                 SysWorkflowConfigDoc,
                 PermissionDoc,
                 RoleDoc,
+                NavigationPageDoc,
             ]
         )
         log.success("Beanie 初始化完成")
@@ -384,6 +418,7 @@ async def main():
         # 执行核心同步逻辑
         await init_config_data()
         await init_rbac_data()
+        await init_navigation_pages()
 
         log.success("MongoDB 初始化完成!")
     except Exception as e:

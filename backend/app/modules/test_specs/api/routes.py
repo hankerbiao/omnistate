@@ -4,7 +4,7 @@ from typing import List, Optional, Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.shared.api.schemas.base import APIResponse
-from app.shared.auth import require_permission
+from app.shared.auth import get_current_user, require_permission
 from app.modules.test_specs.service import RequirementService
 from app.modules.test_specs.schemas import (
     CreateRequirementRequest,
@@ -33,6 +33,7 @@ RequirementServiceDep = Annotated[RequirementService, Depends(get_requirement_se
 async def create_requirement(
     request: CreateRequirementRequest,
     service: RequirementServiceDep,
+    current_user=Depends(get_current_user),
 ):
     """创建需求。
 
@@ -41,7 +42,11 @@ async def create_requirement(
     - `request.model_dump()` 直接透传到 Service，避免字段重命名转换。
     """
     try:
-        data = await service.create_requirement(request.model_dump())
+        payload = request.model_dump()
+        owner_id = str(payload.get("tpm_owner_id") or "").strip()
+        if not owner_id:
+            payload["tpm_owner_id"] = current_user["user_id"]
+        data = await service.create_requirement(payload)
         return APIResponse(data=data)
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))

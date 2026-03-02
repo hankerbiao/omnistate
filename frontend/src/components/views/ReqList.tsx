@@ -4,6 +4,7 @@ import {
   ChevronRight,
   FileText,
   PlayCircle,
+  ListTodo,
   User,
   LogIn,
   Search,
@@ -27,6 +28,7 @@ interface ReqListProps {
   onSelectReq: (req: TestRequirement) => void;
   onCreateReq: () => void;
   onNavigateToCaseList: () => void;
+  onNavigateToMyTasks: () => void;
   onNavigateToUserMgmt: () => void;
   onLogout: () => void;
   showUserProfile: boolean;
@@ -46,12 +48,14 @@ export const ReqList: React.FC<ReqListProps> = ({
   onSelectReq,
   onCreateReq,
   onNavigateToCaseList,
+  onNavigateToMyTasks,
   onNavigateToUserMgmt,
   onLogout,
   showUserProfile,
   onToggleUserProfile,
 }) => {
   const canAccessCaseList = availableNavViews.includes('case_list');
+  const canAccessMyTasks = availableNavViews.includes('my_tasks');
   const canAccessUserMgmt = availableNavViews.includes('user_mgmt');
 
   const getTargetComponents = (req: TestRequirement) =>
@@ -120,24 +124,10 @@ export const ReqList: React.FC<ReqListProps> = ({
         count,
       }));
 
-    // Get unique owners
-    const ownerCounts = new Map<string, number>();
-    requirements.forEach(req => {
-      ownerCounts.set(req.tpm_owner_id, (ownerCounts.get(req.tpm_owner_id) || 0) + 1);
-    });
-    const ownerOptions = Array.from(ownerCounts.entries())
-      .sort((a, b) => b[1] - a[1])
-      .map(([value, count]) => ({
-        value,
-        label: value,
-        count,
-      }));
-
     return [
       { id: 'status', label: '状态', options: statusOptions },
       { id: 'priority', label: '优先级', options: priorityOptions },
       { id: 'component', label: '目标部件', options: componentOptions },
-      { id: 'owner', label: '负责人', options: ownerOptions },
     ];
   }, [requirements]);
 
@@ -147,7 +137,6 @@ export const ReqList: React.FC<ReqListProps> = ({
       const title = req.title || '';
       const reqId = req.req_id || '';
       const description = req.description || '';
-      const ownerId = req.tpm_owner_id || '';
       const components = getTargetComponents(req);
 
       // Search filter
@@ -157,7 +146,6 @@ export const ReqList: React.FC<ReqListProps> = ({
           title.toLowerCase().includes(search) ||
           reqId.toLowerCase().includes(search) ||
           description.toLowerCase().includes(search) ||
-          ownerId.toLowerCase().includes(search) ||
           components.some(comp => comp.toLowerCase().includes(search));
         if (!matchesSearch) return false;
       }
@@ -176,11 +164,6 @@ export const ReqList: React.FC<ReqListProps> = ({
       if (selectedFilters.component.size > 0) {
         const hasMatchingComponent = components.some(comp => selectedFilters.component.has(comp));
         if (!hasMatchingComponent) return false;
-      }
-
-      // Owner filter
-      if (selectedFilters.owner.size > 0 && !selectedFilters.owner.has(ownerId)) {
-        return false;
       }
 
       return true;
@@ -252,6 +235,15 @@ export const ReqList: React.FC<ReqListProps> = ({
             >
               <PlayCircle size={18} />
               测试用例
+            </button>
+          )}
+          {canAccessMyTasks && (
+            <button
+              onClick={onNavigateToMyTasks}
+              className="w-full flex items-center gap-3 px-4 py-3 text-slate-500 hover:bg-slate-50 rounded-xl text-sm font-bold transition-colors"
+            >
+              <ListTodo size={18} />
+              我的任务
             </button>
           )}
           {canAccessUserMgmt && (
@@ -541,7 +533,6 @@ export const ReqList: React.FC<ReqListProps> = ({
                 <th className="px-8 py-5 text-xs font-bold text-slate-400 uppercase tracking-wider">需求标题</th>
                 <th className="px-8 py-5 text-xs font-bold text-slate-400 uppercase tracking-wider">优先级</th>
                 <th className="px-8 py-5 text-xs font-bold text-slate-400 uppercase tracking-wider">目标部件</th>
-                <th className="px-8 py-5 text-xs font-bold text-slate-400 uppercase tracking-wider">负责人</th>
                 <th className="px-8 py-5 text-xs font-bold text-slate-400 uppercase tracking-wider">状态</th>
                 <th className="px-8 py-5 text-xs font-bold text-slate-400 uppercase tracking-wider text-right">操作</th>
               </tr>
@@ -566,14 +557,6 @@ export const ReqList: React.FC<ReqListProps> = ({
                       ))}
                     </div>
                   </td>
-                  <td className="px-8 py-5 text-sm font-medium text-slate-600">
-                    <div className="flex items-center gap-2">
-                      <div className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-[10px] font-bold text-slate-500">
-                        {(req.tpm_owner_id || '?').charAt(0).toUpperCase()}
-                      </div>
-                      {req.tpm_owner_id || '未分配'}
-                    </div>
-                  </td>
                   <td className="px-8 py-5">
                     <span className={`text-xs font-bold px-3 py-1.5 rounded-lg uppercase tracking-wider ${
                       req.status === RequirementStatus.RELEASED ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'
@@ -590,7 +573,7 @@ export const ReqList: React.FC<ReqListProps> = ({
               ))}
               {filteredRequirements.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-8 py-16 text-center">
+                  <td colSpan={6} className="px-8 py-16 text-center">
                     <div className="text-slate-400 text-sm">没有找到匹配的测试需求</div>
                     <button
                       onClick={clearFilters}

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   ChevronRight,
   Plus,
@@ -7,8 +7,12 @@ import {
   AlertCircle,
   Layers,
   Paperclip,
+  Settings,
+  CheckCircle,
+  User,
 } from 'lucide-react';
-import { TestRequirement, TestCase, Priority } from '../../types';
+import { TestRequirement, TestCase, Priority, RequirementStatus } from '../../types';
+import { INITIAL_USERS } from '../../constants/config';
 
 interface ReqDetailProps {
   requirement: TestRequirement;
@@ -16,6 +20,7 @@ interface ReqDetailProps {
   onBack: () => void;
   onCreateCase: (refReqId: string) => void;
   onSelectCase: (tc: TestCase) => void;
+  onUpdateStatus: (reqId: string, newStatus: RequirementStatus, newOwnerId?: string) => void;
 }
 
 export const ReqDetail: React.FC<ReqDetailProps> = ({
@@ -24,12 +29,74 @@ export const ReqDetail: React.FC<ReqDetailProps> = ({
   onBack,
   onCreateCase,
   onSelectCase,
+  onUpdateStatus,
 }) => {
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+  const [selectedStatus, setSelectedStatus] = useState<RequirementStatus>(requirement.status);
+  const [selectedOwnerId, setSelectedOwnerId] = useState<string>(requirement.current_owner_id || '');
   const relatedCases = testCases.filter(c => c.ref_req_id === requirement.req_id);
   const targetComponents = Array.isArray(requirement.target_components) ? requirement.target_components : [];
   const keyParameters = Array.isArray(requirement.key_parameters) ? requirement.key_parameters : [];
   const attachments = Array.isArray(requirement.attachments) ? requirement.attachments : [];
-  const ownerId = requirement.tpm_owner_id || '未分配';
+
+  const handleStatusChange = async () => {
+    if (selectedStatus === requirement.status && selectedOwnerId === requirement.current_owner_id) {
+      return;
+    }
+
+    setIsUpdatingStatus(true);
+    try {
+      await onUpdateStatus(requirement.req_id, selectedStatus, selectedOwnerId || undefined);
+    } finally {
+      setIsUpdatingStatus(false);
+    }
+  };
+
+  const getStatusColor = (status: RequirementStatus) => {
+    switch (status) {
+      case RequirementStatus.DRAFT:
+        return 'bg-slate-100 text-slate-600 border-slate-200';
+      case RequirementStatus.PENDING_REVIEW:
+        return 'bg-blue-50 text-blue-600 border-blue-100';
+      case RequirementStatus.PENDING_DEVELOP:
+        return 'bg-purple-50 text-purple-600 border-purple-100';
+      case RequirementStatus.DEVELOPING:
+        return 'bg-amber-50 text-amber-600 border-amber-100';
+      case RequirementStatus.PENDING_TEST:
+        return 'bg-orange-50 text-orange-600 border-orange-100';
+      case RequirementStatus.PENDING_UAT:
+        return 'bg-cyan-50 text-cyan-600 border-cyan-100';
+      case RequirementStatus.PENDING_RELEASE:
+        return 'bg-indigo-50 text-indigo-600 border-indigo-100';
+      case RequirementStatus.RELEASED:
+        return 'bg-emerald-50 text-emerald-600 border-emerald-100';
+      default:
+        return 'bg-slate-100 text-slate-600 border-slate-200';
+    }
+  };
+
+  const getStatusLabel = (status: RequirementStatus) => {
+    switch (status) {
+      case RequirementStatus.DRAFT:
+        return '草稿';
+      case RequirementStatus.PENDING_REVIEW:
+        return '待评审';
+      case RequirementStatus.PENDING_DEVELOP:
+        return '待开发';
+      case RequirementStatus.DEVELOPING:
+        return '开发中';
+      case RequirementStatus.PENDING_TEST:
+        return '待测试';
+      case RequirementStatus.PENDING_UAT:
+        return '待验收';
+      case RequirementStatus.PENDING_RELEASE:
+        return '待发布';
+      case RequirementStatus.RELEASED:
+        return '已发布';
+      default:
+        return status;
+    }
+  };
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-10 space-y-10">
@@ -163,15 +230,84 @@ export const ReqDetail: React.FC<ReqDetailProps> = ({
               )}
 
               <div className="pt-6 border-t border-slate-100 space-y-4">
-                <div className="flex justify-between items-center">
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">TPM 负责人</label>
-                  <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-[10px] font-bold text-slate-500">
-                      {ownerId.charAt(0).toUpperCase()}
+                <div>
+                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-3">
+                    <div className="flex items-center gap-2">
+                      <Settings size={14} />
+                      状态管理
                     </div>
-                    <p className="text-sm font-medium text-slate-900">{ownerId}</p>
+                  </label>
+                  <div className="space-y-4">
+                    <div className={`text-xs font-bold px-3 py-2 rounded-xl border ${getStatusColor(requirement.status)}`}>
+                      当前状态：{getStatusLabel(requirement.status)}
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
+                        目标状态
+                      </label>
+                      <select
+                        value={selectedStatus}
+                        onChange={(e) => setSelectedStatus(e.target.value as RequirementStatus)}
+                        disabled={isUpdatingStatus}
+                        className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all text-sm font-bold text-slate-700 appearance-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <option value={RequirementStatus.DRAFT}>草稿</option>
+                        <option value={RequirementStatus.PENDING_REVIEW}>待评审</option>
+                        <option value={RequirementStatus.PENDING_DEVELOP}>待开发</option>
+                        <option value={RequirementStatus.DEVELOPING}>开发中</option>
+                        <option value={RequirementStatus.PENDING_TEST}>待测试</option>
+                        <option value={RequirementStatus.PENDING_UAT}>待验收</option>
+                        <option value={RequirementStatus.PENDING_RELEASE}>待发布</option>
+                        <option value={RequirementStatus.RELEASED}>已发布</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
+                        <div className="flex items-center gap-1.5">
+                          <User size={12} />
+                          指派给
+                        </div>
+                      </label>
+                      <select
+                        value={selectedOwnerId}
+                        onChange={(e) => setSelectedOwnerId(e.target.value)}
+                        disabled={isUpdatingStatus}
+                        className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all text-sm font-bold text-slate-700 appearance-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <option value="">保持当前负责人</option>
+                        {INITIAL_USERS.map(user => (
+                          <option key={user.user_id} value={user.user_id}>
+                            {user.username} ({user.email})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <button
+                      onClick={handleStatusChange}
+                      disabled={
+                        isUpdatingStatus ||
+                        (selectedStatus === requirement.status && selectedOwnerId === (requirement.current_owner_id || ''))
+                      }
+                      className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-indigo-600 text-white rounded-xl text-sm font-bold hover:bg-indigo-700 transition-all shadow-lg hover:shadow-xl hover:shadow-indigo-200/50 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-indigo-600"
+                    >
+                      {isUpdatingStatus ? (
+                        <>
+                          <CheckCircle size={16} className="animate-spin" />
+                          更新中...
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle size={16} />
+                          应用更改
+                        </>
+                      )}
+                    </button>
                   </div>
                 </div>
+
                 <div className="flex justify-between items-center">
                   <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">用例开发</label>
                   <p className="text-sm font-medium text-slate-900">{requirement.manual_dev_id || '-'}</p>

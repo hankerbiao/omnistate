@@ -54,6 +54,15 @@ interface NavigationAccessResponse {
   views?: string[];            // 视图列表
 }
 
+interface ListWorkItemsParams {
+  type_code?: string;
+  state?: string;
+  owner_id?: string;
+  creator_id?: string;
+  limit?: number;
+  offset?: number;
+}
+
 /**
  * 测试设计器API服务类
  * 统一管理所有后端API接口，按功能分为认证、需求、用例、用户管理四大模块
@@ -296,7 +305,73 @@ export class TestDesignerApi {
     });
   }
 
+  /**
+   * 获取所有导航页面（包括禁用项）
+   * @param includeInactive 是否包含已禁用的页面
+   * @returns Promise<NavigationPage[]> 导航页面列表
+   */
+  getNavigationPages(includeInactive: boolean = true): Promise<NavigationPage[]> {
+    const params = includeInactive ? '?include_inactive=true' : '';
+    return this.client.get<NavigationPage[]>(`/api/v1/auth/admin/navigation/pages${params}`);
+  }
+
+  /**
+   * 获取单个导航页面详情
+   * @param view 导航页面唯一标识
+   * @returns Promise<NavigationPage> 导航页面详情
+   */
+  getNavigationPage(view: string): Promise<NavigationPage> {
+    return this.client.get<NavigationPage>(`/api/v1/auth/admin/navigation/pages/${view}`);
+  }
+
+  /**
+   * 创建新的导航页面
+   * @param payload 导航页面数据
+   * @returns Promise<NavigationPage> 创建的导航页面
+   */
+  createNavigationPage(payload: NavigationPage): Promise<NavigationPage> {
+    return this.client.post<NavigationPage>('/api/v1/auth/admin/navigation/pages', payload);
+  }
+
+  /**
+   * 更新现有导航页面
+   * @param view 导航页面唯一标识
+   * @param payload 更新数据
+   * @returns Promise<NavigationPage> 更新后的导航页面
+   */
+  updateNavigationPage(view: string, payload: NavigationPage): Promise<NavigationPage> {
+    return this.client.put<NavigationPage>(`/api/v1/auth/admin/navigation/pages/${view}`, payload);
+  }
+
+  /**
+   * 删除导航页面（逻辑删除）
+   * @param view 导航页面唯一标识
+   * @returns Promise<void>
+   */
+  deleteNavigationPage(view: string): Promise<void> {
+    return this.client.delete<void>(`/api/v1/auth/admin/navigation/pages/${view}`);
+  }
+
   // ========== 工作流模块 API ==========
+
+  /**
+   * 获取工作项列表
+   * @param params 查询参数
+   * @returns Promise<WorkItem[]> 工作项列表
+   */
+  listWorkItems(params: ListWorkItemsParams = {}): Promise<WorkItem[]> {
+    const searchParams = new URLSearchParams();
+
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') {
+        searchParams.set(key, String(value));
+      }
+    });
+
+    const query = searchParams.toString();
+    const path = query ? `/api/v1/work-items?${query}` : '/api/v1/work-items';
+    return this.client.get<WorkItem[]>(path);
+  }
 
   /**
    * 获取工作项详情

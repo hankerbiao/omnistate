@@ -21,7 +21,7 @@ class CreateRequirementRequest(BaseModel):
     priority: str = "P1"
     key_parameters: List[Dict[str, str]] = Field(default_factory=list)
     risk_points: Optional[str] = None
-    tpm_owner_id: str = Field(..., description="需求创建人/项目经理 ID")
+    tpm_owner_id: Optional[str] = Field(None, description="需求创建人/项目经理 ID（为空时默认当前登录用户）")
     manual_dev_id: Optional[str] = None
     auto_dev_id: Optional[str] = None
     attachments: List[Dict[str, Any]] = Field(default_factory=list)

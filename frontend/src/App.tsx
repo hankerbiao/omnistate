@@ -38,13 +38,17 @@ import {
   ReqDetail,
   CaseList,
   CaseForm,
-  UserMgmt
+  MyTasks,
+  UserMgmt,
+  NavMgmt,
+  type NavigationPage
 } from './components/views';
 
 // ========== 图标库导入 ==========
 import {
   FileText,      // 文档图标（需求列表）
   PlayCircle,    // 播放图标（用例列表）
+  ListTodo,      // 任务图标（我的任务）
   User as UserIcon, // 用户图标（用户管理）
   LogIn,         // 登录图标
   Mail,          // 邮件图标
@@ -66,13 +70,14 @@ type View =
   | 'req_detail'   // 需求详情
   | 'case_list'    // 用例列表
   | 'case_form'    // 用例表单（创建/编辑）
+  | 'my_tasks'     // 我的任务
   | 'user_mgmt';   // 用户管理
 
 /**
  * 导航视图类型定义
  * 可在主导航菜单中访问的页面
  */
-type NavView = 'req_list' | 'case_list' | 'user_mgmt';
+type NavView = 'req_list' | 'case_list' | 'my_tasks' | 'user_mgmt';
 
 /**
  * 导航选项接口
@@ -105,6 +110,12 @@ const NAVIGATION_OPTIONS: NavigationOption[] = [
     description: '允许访问测试用例列表页'
   },
   {
+    view: 'my_tasks',
+    label: '我的任务',
+    permission: 'nav:my_tasks:view',
+    description: '允许访问当前用户名下任务列表页'
+  },
+  {
     view: 'user_mgmt',
     label: '用户管理',
     permission: 'nav:user_mgmt:view',
@@ -129,7 +140,7 @@ const NAV_VIEW_PERMISSION_MAP: Record<NavView, string> = NAVIGATION_OPTIONS
  * 默认导航视图
  * 当用户无特定权限时显示的基础导航项
  */
-const FALLBACK_NAV_VIEWS: NavView[] = ['req_list', 'case_list'];
+const FALLBACK_NAV_VIEWS: NavView[] = ['req_list', 'case_list', 'my_tasks'];
 
 // ========== 辅助函数 ==========
 
@@ -485,7 +496,6 @@ const normalizeRequirement = (item: unknown): TestRequirement => {
     priority: normalizePriority(row.priority),
     key_parameters: normalizedKeyParameters,
     risk_points: String(row.risk_points || ''),
-    tpm_owner_id: String(row.tpm_owner_id || ''),
     manual_dev_id: String(row.manual_dev_id || ''),
     auto_dev_id: String(row.auto_dev_id || ''),
     status: normalizeRequirementStatus(row.status),
@@ -856,7 +866,6 @@ export default function App() {
     priority: Priority.P1,
     key_parameters: [],
     risk_points: '',
-    tpm_owner_id: 'current_user',
     manual_dev_id: '',
     auto_dev_id: '',
     status: RequirementStatus.DRAFT,
@@ -1054,9 +1063,9 @@ export default function App() {
       priority: reqFormData.priority,
       key_parameters: reqFormData.key_parameters,
       risk_points: reqFormData.risk_points,
-      tpm_owner_id: reqFormData.tpm_owner_id,
       manual_dev_id: reqFormData.manual_dev_id,
       auto_dev_id: reqFormData.auto_dev_id,
+      current_owner_id: reqFormData.current_owner_id,
       attachments: reqFormData.attachments,
     };
 
@@ -1070,7 +1079,44 @@ export default function App() {
         setRequirements(prev => [...prev, savedRequirement]);
       } catch (error) {
         console.error('Failed to save requirement to backend:', error);
-        alert('需求保存失败，请检查后端服务后重试。');
+
+        // 解析错误响应并显示友好提示
+        let errorMessage = '需求保存失败，请检查后端服务后重试。';
+
+        if (error && typeof error === 'object' && 'response' in error) {
+          const response = (error as any).response;
+          if (response && response.data && response.data.detail) {
+            const detail = response.data.detail;
+
+            // 检查是否是字段缺失错误
+            if (Array.isArray(detail)) {
+              const missingField = detail.find((item: any) =>
+                item.type === 'missing' && item.loc && item.loc.includes('tpm_owner_id')
+              );
+
+              if (missingField) {
+                errorMessage = '保存失败：缺少必需的 TPM 负责人字段（tpm_owner_id）。\n\n请联系系统管理员或技术支持人员补充此字段。';
+              } else {
+                // 显示其他字段缺失信息
+                const missingFields = detail
+                  .filter((item: any) => item.type === 'missing')
+                  .map((item: any) => {
+                    const fieldName = item.loc?.[item.loc.length - 1] || '未知字段';
+                    return fieldName;
+                  })
+                  .join('、');
+
+                if (missingFields) {
+                  errorMessage = `保存失败：缺少以下必需字段：${missingFields}。\n\n请检查后重试。`;
+                } else {
+                  errorMessage = `保存失败：${detail[0]?.msg || '验证错误'}。\n\n请检查输入数据后重试。`;
+                }
+              }
+            }
+          }
+        }
+
+        alert(errorMessage);
         return;
       }
     } else {
@@ -1097,15 +1143,61 @@ export default function App() {
       priority: Priority.P1,
       key_parameters: [],
       risk_points: '',
-      tpm_owner_id: 'current_user',
       manual_dev_id: '',
       auto_dev_id: '',
+      current_owner_id: currentUser?.user_id || '',
       status: RequirementStatus.DRAFT,
       attachments: [],
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     });
   }, [reqFormData, requirements.length, handleViewChange]);
+
+  // Requirement status and owner update handler
+  const handleUpdateRequirementStatus = useCallback(async (
+    reqId: string,
+    newStatus: RequirementStatus,
+    newOwnerId?: string
+  ) => {
+    // Update local state immediately for better UX
+    setRequirements(prev => prev.map(req =>
+      req.req_id === reqId
+        ? {
+            ...req,
+            status: newStatus,
+            current_owner_id: newOwnerId || req.current_owner_id,
+            updated_at: new Date().toISOString()
+          }
+        : req
+    ));
+
+    if (selectedReq && selectedReq.req_id === reqId) {
+      setSelectedReq(prev => prev ? {
+        ...prev,
+        status: newStatus,
+        current_owner_id: newOwnerId || prev.current_owner_id,
+        updated_at: new Date().toISOString()
+      } : null);
+    }
+
+    // Update backend
+    if (isBackendEnabled && testDesignerApi) {
+      try {
+        const currentReq = requirements.find(r => r.req_id === reqId);
+        if (currentReq) {
+          const updateData = {
+            ...currentReq,
+            status: newStatus,
+            current_owner_id: newOwnerId || currentReq.current_owner_id
+          };
+          await testDesignerApi.updateRequirement(reqId, updateData);
+        }
+      } catch (error) {
+        console.error('Failed to update requirement:', error);
+        alert('状态更新失败，请检查后端服务后重试。');
+      }
+    }
+  }, [selectedReq, requirements, isBackendEnabled, testDesignerApi]);
 
   // Case form handlers
   const updateField = useCallback((path: string, value: any) => {
@@ -1229,7 +1321,44 @@ export default function App() {
         setTestCases(prev => [...prev, savedTestCase]);
       } catch (error) {
         console.error('Failed to save test case to backend:', error);
-        alert('用例保存失败，请检查后端服务后重试。');
+
+        // 解析错误响应并显示友好提示
+        let errorMessage = '用例保存失败，请检查后端服务后重试。';
+
+        if (error && typeof error === 'object' && 'response' in error) {
+          const response = (error as any).response;
+          if (response && response.data && response.data.detail) {
+            const detail = response.data.detail;
+
+            // 检查是否是字段缺失错误
+            if (Array.isArray(detail)) {
+              const missingField = detail.find((item: any) =>
+                item.type === 'missing' && item.loc && item.loc.includes('tpm_owner_id')
+              );
+
+              if (missingField) {
+                errorMessage = '保存失败：缺少必需的 TPM 负责人字段（tpm_owner_id）。\n\n请联系系统管理员或技术支持人员补充此字段。';
+              } else {
+                // 显示其他字段缺失信息
+                const missingFields = detail
+                  .filter((item: any) => item.type === 'missing')
+                  .map((item: any) => {
+                    const fieldName = item.loc?.[item.loc.length - 1] || '未知字段';
+                    return fieldName;
+                  })
+                  .join('、');
+
+                if (missingFields) {
+                  errorMessage = `保存失败：缺少以下必需字段：${missingFields}。\n\n请检查后重试。`;
+                } else {
+                  errorMessage = `保存失败：${detail[0]?.msg || '验证错误'}。\n\n请检查输入数据后重试。`;
+                }
+              }
+            }
+          }
+        }
+
+        alert(errorMessage);
         return;
       }
     } else {
@@ -1267,7 +1396,33 @@ export default function App() {
         setUsers(prev => [...prev, createdUser]);
       } catch (error) {
         console.error('Failed to create user in backend:', error);
-        alert('用户创建失败，请检查后端服务后重试。');
+
+        // 解析错误响应并显示友好提示
+        let errorMessage = '用户创建失败，请检查后端服务后重试。';
+
+        if (error && typeof error === 'object' && 'response' in error) {
+          const response = (error as any).response;
+          if (response && response.data && response.data.detail) {
+            const detail = response.data.detail;
+            if (Array.isArray(detail)) {
+              const missingFields = detail
+                .filter((item: any) => item.type === 'missing')
+                .map((item: any) => {
+                  const fieldName = item.loc?.[item.loc.length - 1] || '未知字段';
+                  return fieldName;
+                })
+                .join('、');
+
+              if (missingFields) {
+                errorMessage = `用户创建失败：缺少以下必需字段：${missingFields}。\n\n请检查输入后重试。`;
+              } else {
+                errorMessage = `用户创建失败：${detail[0]?.msg || '验证错误'}。\n\n请检查输入数据后重试。`;
+              }
+            }
+          }
+        }
+
+        alert(errorMessage);
         return;
       }
     } else {
@@ -1290,7 +1445,33 @@ export default function App() {
         await testDesignerApi.updateUser(updatedUser.user_id, updatedUser);
       } catch (error) {
         console.error('Failed to update user in backend:', error);
-        alert('用户更新失败，请检查后端服务后重试。');
+
+        // 解析错误响应并显示友好提示
+        let errorMessage = '用户更新失败，请检查后端服务后重试。';
+
+        if (error && typeof error === 'object' && 'response' in error) {
+          const response = (error as any).response;
+          if (response && response.data && response.data.detail) {
+            const detail = response.data.detail;
+            if (Array.isArray(detail)) {
+              const missingFields = detail
+                .filter((item: any) => item.type === 'missing')
+                .map((item: any) => {
+                  const fieldName = item.loc?.[item.loc.length - 1] || '未知字段';
+                  return fieldName;
+                })
+                .join('、');
+
+              if (missingFields) {
+                errorMessage = `用户更新失败：缺少以下必需字段：${missingFields}。\n\n请检查输入后重试。`;
+              } else {
+                errorMessage = `用户更新失败：${detail[0]?.msg || '验证错误'}。\n\n请检查输入数据后重试。`;
+              }
+            }
+          }
+        }
+
+        alert(errorMessage);
         return;
       }
     }
@@ -1445,6 +1626,15 @@ export default function App() {
               >
                 <PlayCircle size={18} />
                 测试用例
+              </button>
+            )}
+            {availableNavViews.includes('my_tasks') && (
+              <button
+                onClick={() => handleViewChange('my_tasks')}
+                className="w-full flex items-center gap-3 px-4 py-3 text-slate-500 hover:bg-slate-50 rounded-xl text-sm font-bold transition-colors"
+              >
+                <ListTodo size={18} />
+                我的任务
               </button>
             )}
             {availableNavViews.includes('user_mgmt') && (
@@ -1657,6 +1847,7 @@ export default function App() {
           setFormData(tc);
           handleViewChange('case_form');
         }}
+        onUpdateStatus={handleUpdateRequirementStatus}
       />
     );
   }
@@ -1732,6 +1923,22 @@ export default function App() {
           handleViewChange('case_form');
         }}
         onNavigateToReqList={() => handleViewChange('req_list')}
+        onNavigateToMyTasks={() => handleViewChange('my_tasks')}
+        onNavigateToUserMgmt={() => handleViewChange('user_mgmt')}
+        onLogout={handleLogout}
+        showUserProfile={showUserProfile}
+        onToggleUserProfile={() => setShowUserProfile(!showUserProfile)}
+      />
+    );
+  }
+
+  if (view === 'my_tasks') {
+    return (
+      <MyTasks
+        currentUser={currentUser}
+        availableNavViews={availableNavViews}
+        onNavigateToReqList={() => handleViewChange('req_list')}
+        onNavigateToCaseList={() => handleViewChange('case_list')}
         onNavigateToUserMgmt={() => handleViewChange('user_mgmt')}
         onLogout={handleLogout}
         showUserProfile={showUserProfile}
@@ -1752,6 +1959,7 @@ export default function App() {
       }}
       onCreateReq={() => handleViewChange('req_form')}
       onNavigateToCaseList={() => handleViewChange('case_list')}
+      onNavigateToMyTasks={() => handleViewChange('my_tasks')}
       onNavigateToUserMgmt={() => handleViewChange('user_mgmt')}
       onLogout={handleLogout}
       showUserProfile={showUserProfile}

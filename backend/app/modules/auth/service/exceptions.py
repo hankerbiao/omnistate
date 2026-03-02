@@ -15,3 +15,7 @@ class RoleNotFoundError(RbacError):
 
 class PermissionNotFoundError(RbacError):
     """权限不存在。"""
+
+
+class NavigationPageNotFoundError(RbacError):
+    """导航页面不存在。"""

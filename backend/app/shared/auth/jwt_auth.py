@@ -138,34 +138,32 @@ async def get_user_permissions(user_id: str) -> List[str]:
     user = await UserDoc.find_one(UserDoc.user_id == user_id)
     if not user:
         return []
-    roles = await RoleDoc.find({"role_id": {"$in": user.role_ids}}).to_list()
+    return await get_permissions_by_role_ids(user.role_ids or [])
+
+
+async def get_permissions_by_role_ids(role_ids: List[str]) -> List[str]:
+    """根据角色列表解析权限码并去重排序。"""
+    if not role_ids:
+        return []
+    roles = await RoleDoc.find({"role_id": {"$in": role_ids}}).to_list()
     perm_ids: List[str] = []
     for role in roles:
         perm_ids.extend(role.permission_ids)
     if not perm_ids:
         return []
     perms = await PermissionDoc.find({"perm_id": {"$in": list(set(perm_ids))}}).to_list()
-    return [perm.code for perm in perms]
+    return sorted({perm.code for perm in perms})
 
 
-def _has_admin_role(role_ids: List[str]) -> bool:
+def is_admin_role(role_ids: List[str]) -> bool:
     return any("ADMIN" in str(role_id).upper() for role_id in role_ids)
 
 
 def require_permission(permission_code: str) -> Callable:
-    """权限校验依赖：要求用户拥有指定权限"""
-
-    async def _checker(current_user: Dict[str, Any] = Depends(get_current_user)):
-        if _has_admin_role(current_user.get("role_ids", [])):
-            return
-        perms = await get_user_permissions(current_user["user_id"])
-        if permission_code not in perms:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="permission denied",
-            )
-
-    return _checker
+    """权限校验依赖：要求用户拥有指定权限。"""
+    if not permission_code:
+        raise ValueError("permission_code must not be empty")
+    return require_any_permission([permission_code])
 
 
 def require_any_permission(permission_codes: List[str]) -> Callable:
@@ -175,7 +173,7 @@ def require_any_permission(permission_codes: List[str]) -> Callable:
         raise ValueError("permission_codes must not be empty")
 
     async def _checker(current_user: Dict[str, Any] = Depends(get_current_user)):
-        if _has_admin_role(current_user.get("role_ids", [])):
+        if is_admin_role(current_user.get("role_ids", [])):
             return
         perms = set(await get_user_permissions(current_user["user_id"]))
         if perms.isdisjoint(required):

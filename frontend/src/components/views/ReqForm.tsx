@@ -178,16 +178,6 @@ export const ReqForm: React.FC<ReqFormProps> = ({
                 </div>
               </div>
 
-              <div className="col-span-4">
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">TPM 负责人</label>
-                <input
-                  type="text"
-                  value={formData.tpm_owner_id}
-                  onChange={(e) => onFieldChange('tpm_owner_id', e.target.value)}
-                  className="w-full px-6 py-4 rounded-2xl border border-slate-200 bg-slate-50/30 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all text-sm font-bold"
-                  placeholder="例如: alice"
-                />
-              </div>
 
               <div className="col-span-12">
                 <div className="flex items-center justify-between mb-3">

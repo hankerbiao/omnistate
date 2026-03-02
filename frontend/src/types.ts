@@ -119,9 +119,9 @@ export interface TestRequirement {
   priority: Priority;               // 需求优先级
   key_parameters: { key: string; value: string }[]; // 关键参数键值对
   risk_points?: string;             // 潜在风险点描述
-  tpm_owner_id: string;             // 测试项目经理（TPM）用户ID
   manual_dev_id?: string;           // 手动测试开发人员ID
   auto_dev_id?: string;             // 自动化测试开发人员ID
+  current_owner_id?: string;        // 当前负责人ID
   status: RequirementStatus;        // 当前状态
   attachments: Attachment[];        // 附件列表
   created_at: string;               // 创建时间戳
