@@ -7,7 +7,7 @@
 """
 from typing import Optional, Dict, Any, List
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class TestCaseStepSchema(BaseModel):
@@ -18,9 +18,18 @@ class TestCaseStepSchema(BaseModel):
     expected: str = Field(..., description="预期结果")
 
 
+class AutomationCaseRefSchema(BaseModel):
+    __test__ = False
+    auto_case_id: str = Field(..., description="自动化用例库 ID")
+    version: Optional[str] = Field(None, description="自动化用例版本")
+
+
 class CreateTestCaseRequest(BaseModel):
     """创建用例请求体（字段需与前端创建 payload 一致）"""
-    case_id: str = Field(..., description="唯一业务编号")
+    case_id: Optional[str] = Field(
+        None,
+        description="唯一业务编号（可选，前端不应提供，默认由后端生成）",
+    )
     ref_req_id: str = Field(..., description="关联需求 req_id")
     title: str = Field(..., description="用例名称")
     version: int = 1
@@ -45,6 +54,7 @@ class CreateTestCaseRequest(BaseModel):
     is_automated: bool = False
     automation_type: Optional[str] = None
     script_entity_id: Optional[str] = None
+    automation_case_ref: Optional[AutomationCaseRefSchema] = None
     risk_level: Optional[str] = None
     failure_analysis: Optional[str] = None
     confidentiality: Optional[str] = None
@@ -81,6 +91,7 @@ class UpdateTestCaseRequest(BaseModel):
     is_automated: Optional[bool] = None
     automation_type: Optional[str] = None
     script_entity_id: Optional[str] = None
+    automation_case_ref: Optional[AutomationCaseRefSchema] = None
     risk_level: Optional[str] = None
     failure_analysis: Optional[str] = None
     confidentiality: Optional[str] = None
@@ -89,6 +100,8 @@ class UpdateTestCaseRequest(BaseModel):
     custom_fields: Optional[Dict[str, Any]] = None
     deprecation_reason: Optional[str] = None
     approval_history: Optional[List[Dict[str, Any]]] = None
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class TestCaseResponse(BaseModel):
@@ -122,6 +135,7 @@ class TestCaseResponse(BaseModel):
     is_automated: bool
     automation_type: Optional[str]
     script_entity_id: Optional[str]
+    automation_case_ref: Optional[AutomationCaseRefSchema]
     risk_level: Optional[str]
     failure_analysis: Optional[str]
     confidentiality: Optional[str]
@@ -132,3 +146,9 @@ class TestCaseResponse(BaseModel):
     approval_history: List[Dict[str, Any]]
     created_at: datetime
     updated_at: datetime
+
+
+class LinkAutomationCaseRequest(BaseModel):
+    """测试用例关联自动化用例请求体"""
+    auto_case_id: str = Field(..., description="自动化用例库 ID")
+    version: Optional[str] = Field(None, description="自动化用例版本（为空时默认最新版本）")

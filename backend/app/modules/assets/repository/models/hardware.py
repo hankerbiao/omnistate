@@ -62,14 +62,13 @@ class DutDoc(Document):
     status: str = Field(default="可用", description="资产状态")
     owner_team: Optional[str] = Field(None, description="归属团队/项目")
     rack_location: Optional[str] = Field(None, description="机房/机柜/机位")
-    mgmt_ip: Optional[str] = Field(None, description="管理口 IP")
-    os_ip: Optional[str] = Field(None, description="OS 网络 IP")
-    os_version: Optional[str] = Field(None, description="当前 OS 版本")
-    bios_version: Optional[str] = Field(None, description="当前 BIOS 版本")
-    last_seen_at: Optional[datetime] = Field(None, description="最近在线/心跳时间")
+    bmc_ip: Optional[str] = Field(None, description="BMC IP")
+    bmc_port: Optional[int] = Field(None, description="BMC 端口")
+    os_ip: Optional[str] = Field(None, description="OS IP")
+    os_port: Optional[int] = Field(None, description="OS 端口")
+    login_username: Optional[str] = Field(None, description="登录用户名")
+    login_password: Optional[str] = Field(None, description="登录密码")
     health_status: Optional[str] = Field(None, description="健康状态")
-    tags: List[str] = Field(default_factory=list, description="标签")
-    current_bom: List[str] = Field(default_factory=list, description="实时硬件清单 PN 列表")
     notes: Optional[str] = Field(None, description="备注")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -85,11 +84,11 @@ class DutDoc(Document):
             IndexModel("status"),
             IndexModel("owner_team"),
             IndexModel("rack_location"),
-            IndexModel("mgmt_ip"),
+            IndexModel("bmc_ip"),
             IndexModel("os_ip"),
             IndexModel("health_status"),
             IndexModel([("owner_team", ASCENDING), ("status", ASCENDING)]),
-            IndexModel([("status", ASCENDING), ("last_seen_at", DESCENDING)]),
+            IndexModel([("status", ASCENDING), ("health_status", ASCENDING)]),
             IndexModel("created_at"),
         ]
 
@@ -149,14 +148,13 @@ class DutModel(BaseModel):
     status: str
     owner_team: Optional[str] = None
     rack_location: Optional[str] = None
-    mgmt_ip: Optional[str] = None
+    bmc_ip: Optional[str] = None
+    bmc_port: Optional[int] = None
     os_ip: Optional[str] = None
-    os_version: Optional[str] = None
-    bios_version: Optional[str] = None
-    last_seen_at: Optional[datetime] = None
+    os_port: Optional[int] = None
+    login_username: Optional[str] = None
+    login_password: Optional[str] = None
     health_status: Optional[str] = None
-    tags: List[str]
-    current_bom: List[str]
     notes: Optional[str] = None
     created_at: datetime
     updated_at: datetime

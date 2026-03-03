@@ -18,6 +18,7 @@
 ## 核心模型
 - `TestRequirementDoc`：测试需求
 - `TestCaseDoc`：测试用例（包含 `ref_req_id` 字段）
+- `AutomationTestCaseDoc`：自动化测试用例库（支持 `auto_case_id + version`）
 
 ## 需求与用例关系（方案 A）
 - 一对多：一个需求对应多个用例
@@ -27,6 +28,8 @@
 ## API 概览
 - 需求：`/api/v1/requirements`
 - 用例：`/api/v1/test-cases`
+- 自动化用例库：`/api/v1/automation-test-cases`
+- 用例关联自动化：`/api/v1/test-cases/{case_id}/automation-link`
 
 ## 备注
 - 创建或更新用例时会校验 `ref_req_id` 是否存在。

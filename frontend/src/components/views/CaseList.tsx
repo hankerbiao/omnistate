@@ -17,6 +17,8 @@ import {
   Mail,
   Calendar,
   Shield,
+  LayoutDashboard,
+  Server,
 } from 'lucide-react';
 import { TestCase, TestCaseStatus, TestCaseCategory, Priority } from '../../types';
 import { User as UserType, ROLES } from '../../constants/config';
@@ -29,7 +31,10 @@ interface CaseListProps {
   onCreateCase: () => void;
   onNavigateToReqList: () => void;
   onNavigateToMyTasks: () => void;
+  onNavigateToTaskBoard: () => void;
+  onNavigateToDutMgmt: () => void;
   onNavigateToUserMgmt: () => void;
+  onNavigateToNavMgmt: () => void;
   onLogout: () => void;
   showUserProfile: boolean;
   onToggleUserProfile: () => void;
@@ -49,14 +54,20 @@ export const CaseList: React.FC<CaseListProps> = ({
   onCreateCase,
   onNavigateToReqList,
   onNavigateToMyTasks,
+  onNavigateToTaskBoard,
+  onNavigateToDutMgmt,
   onNavigateToUserMgmt,
+  onNavigateToNavMgmt,
   onLogout,
   showUserProfile,
   onToggleUserProfile,
 }) => {
   const canAccessReqList = availableNavViews.includes('req_list');
   const canAccessMyTasks = availableNavViews.includes('my_tasks');
+  const canAccessTaskBoard = availableNavViews.includes('test_task_board');
+  const canAccessDutMgmt = availableNavViews.includes('dut_mgmt');
   const canAccessUserMgmt = availableNavViews.includes('user_mgmt');
+  const canAccessNavMgmt = availableNavViews.includes('nav_mgmt');
 
   const [searchText, setSearchText] = useState('');
   const [showFilters, setShowFilters] = useState(false);
@@ -291,10 +302,28 @@ export const CaseList: React.FC<CaseListProps> = ({
               我的任务
             </button>
           )}
+          {canAccessTaskBoard && (
+            <button onClick={onNavigateToTaskBoard} className="w-full flex items-center gap-3 px-4 py-3 text-slate-500 hover:bg-slate-50 rounded-xl text-sm font-bold transition-colors">
+              <LayoutDashboard size={18} />
+              测试看板
+            </button>
+          )}
+          {canAccessDutMgmt && (
+            <button onClick={onNavigateToDutMgmt} className="w-full flex items-center gap-3 px-4 py-3 text-slate-500 hover:bg-slate-50 rounded-xl text-sm font-bold transition-colors">
+              <Server size={18} />
+              DUT 设备
+            </button>
+          )}
           {canAccessUserMgmt && (
             <button onClick={onNavigateToUserMgmt} className="w-full flex items-center gap-3 px-4 py-3 text-slate-500 hover:bg-slate-50 rounded-xl text-sm font-bold transition-colors">
               <User size={18} />
               用户管理
+            </button>
+          )}
+          {canAccessNavMgmt && (
+            <button onClick={onNavigateToNavMgmt} className="w-full flex items-center gap-3 px-4 py-3 text-slate-500 hover:bg-slate-50 rounded-xl text-sm font-bold transition-colors">
+              <Shield size={18} />
+              导航管理
             </button>
           )}
         </nav>

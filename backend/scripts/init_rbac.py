@@ -41,6 +41,8 @@ DEFAULT_PERMISSIONS = [
     ("requirements:write", "Requirements write"),
     ("test_cases:read", "Test cases read"),
     ("test_cases:write", "Test cases write"),
+    ("execution_tasks:read", "Execution tasks read"),
+    ("execution_tasks:write", "Execution tasks write"),
 ]
 
 DEFAULT_ROLES = {
@@ -57,6 +59,8 @@ DEFAULT_ROLES = {
             "test_cases:read",
             "work_items:read",
             "work_items:transition",
+            "execution_tasks:read",
+            "execution_tasks:write",
         ],
     },
     "TESTER": {
@@ -68,6 +72,7 @@ DEFAULT_ROLES = {
             "test_cases:write",
             "work_items:read",
             "work_items:transition",
+            "execution_tasks:read",
         ],
     },
     "AUTOMATION": {
@@ -78,6 +83,7 @@ DEFAULT_ROLES = {
             "test_cases:write",
             "assets:read",
             "work_items:read",
+            "execution_tasks:read",
         ],
     },
 }

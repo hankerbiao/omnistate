@@ -16,12 +16,13 @@ AI 友好注释说明：
 """
 from copy import deepcopy
 from typing import Dict, Any, Optional, List
+from datetime import datetime
 from pymongo import AsyncMongoClient
 from app.modules.test_specs.repository.models import TestRequirementDoc, TestCaseDoc
 from app.modules.workflow.service.workflow_service import AsyncWorkflowService
 from app.shared.core.logger import log as logger
 from app.shared.core.mongo_client import get_mongo_client
-from app.shared.service import BaseService
+from app.shared.service import BaseService, SequenceIdService
 
 
 class RequirementService(BaseService):
@@ -45,18 +46,26 @@ class RequirementService(BaseService):
         """创建测试需求。
 
         输入：
-        - data: 前端/上层传入的需求字段，至少包含 req_id/title/tpm_owner_id。
+        - data: 前端/上层传入的需求字段，至少包含 title/tpm_owner_id。
+                注意：req_id 不允许由前端提供，必须由后端强制生成以保证唯一性。
 
         核心流程：
         1. 深拷贝输入，避免调用方持有的字典被本方法原地修改。
-        2. 尝试获取全局 Mongo 客户端（用于启动事务）。
-        3. 若可用，优先走事务创建路径。
-        4. 若事务不被当前 Mongo 部署支持，降级为补偿创建路径。
+        2. 强制忽略前端可能传递的 req_id，重新生成一个新的。
+        3. 尝试获取全局 Mongo 客户端（用于启动事务）。
+        4. 若可用，优先走事务创建路径。
+        5. 若事务不被当前 Mongo 部署支持，降级为补偿创建路径。
 
         返回：
         - 标准化后的 requirement 字典（包含 id/workflow_item_id/status 等）。
         """
         payload = deepcopy(data)
+
+        # 强制生成新的 req_id，不接受前端提供的任何值
+        # 这是为了保证唯一性和避免冲突
+        payload["req_id"] = await self._generate_req_id()
+        logger.info(f"后端强制生成需求编号: req_id={payload['req_id']}")
+
         client = self._get_mongo_client_or_none()
 
         if client is not None:
@@ -259,3 +268,16 @@ class RequirementService(BaseService):
             logger.exception(
                 f"需求创建失败且补偿删除工作流事项失败: work_item_id={workflow_item_id}, error={rollback_error}"
             )
+
+    async def _generate_req_id(self) -> str:
+        """自动生成需求编号。
+
+        格式：TR-YYYY-XXX（例如：TR-2026-001）
+        确保在并发场景下唯一性。
+        """
+        year = datetime.now().year
+        prefix = f"TR-{year}-"
+        counter_key = f"test_requirement:{year}"
+        next_seq = await SequenceIdService().next(counter_key)
+
+        return f"{prefix}{str(next_seq).zfill(3)}"

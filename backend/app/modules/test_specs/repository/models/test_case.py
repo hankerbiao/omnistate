@@ -18,6 +18,12 @@ class TestCaseStep(BaseModel):
     expected: str = Field(..., description="预期结果")
 
 
+class AutomationCaseRef(BaseModel):
+    __test__ = False
+    auto_case_id: str = Field(..., description="自动化用例库 ID")
+    version: Optional[str] = Field(None, description="自动化用例版本")
+
+
 # ========== Beanie 文档模型 ==========
 
 class TestCaseDoc(Document):
@@ -50,6 +56,7 @@ class TestCaseDoc(Document):
     is_automated: bool = Field(default=False, description="是否已自动化")
     automation_type: Optional[str] = Field(None, description="自动化类型")
     script_entity_id: Optional[str] = Field(None, description="关联自动化脚本 ID")
+    automation_case_ref: Optional[AutomationCaseRef] = Field(None, description="关联自动化用例库引用")
     risk_level: Optional[str] = Field(None, description="风险等级")
     failure_analysis: Optional[str] = Field(None, description="失败分析建议")
     confidentiality: Optional[str] = Field(None, description="机密等级")
@@ -76,6 +83,7 @@ class TestCaseDoc(Document):
             IndexModel("reviewer_id"),
             IndexModel("priority"),
             IndexModel("is_active"),
+            IndexModel("automation_case_ref.auto_case_id"),
             IndexModel("is_deleted"),
             IndexModel([("ref_req_id", ASCENDING), ("created_at", DESCENDING)]),
             IndexModel("created_at"),
@@ -114,6 +122,7 @@ class TestCaseModel(BaseModel):
     is_automated: bool
     automation_type: Optional[str] = None
     script_entity_id: Optional[str] = None
+    automation_case_ref: Optional[AutomationCaseRef] = None
     risk_level: Optional[str] = None
     failure_analysis: Optional[str] = None
     confidentiality: Optional[str] = None

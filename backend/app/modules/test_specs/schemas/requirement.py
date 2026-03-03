@@ -7,12 +7,18 @@
 """
 from typing import Optional, List, Dict, Any
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class CreateRequirementRequest(BaseModel):
-    """创建需求请求体（字段需与前端创建 payload 一致）"""
-    req_id: str = Field(..., description="唯一业务编号")
+    """创建需求请求体（字段需与前端创建 payload 一致）
+
+    重要说明：
+    - req_id 字段不允许由前端提供，必须由后端自动生成以保证全局唯一性。
+    - 前端不应在请求中包含 req_id 字段。
+    - 后端服务层会强制忽略任何前端传递的 req_id 并重新生成。
+    """
+    req_id: Optional[str] = Field(None, description="唯一业务编号（⚠️ 前端不应提供此字段，必须由后端生成）")
     title: str = Field(..., description="需求简述")
     description: Optional[str] = None
     technical_spec: Optional[str] = None
@@ -41,6 +47,8 @@ class UpdateRequirementRequest(BaseModel):
     manual_dev_id: Optional[str] = None
     auto_dev_id: Optional[str] = None
     attachments: Optional[List[Dict[str, Any]]] = None
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class RequirementResponse(BaseModel):

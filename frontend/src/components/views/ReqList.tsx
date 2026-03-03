@@ -17,6 +17,8 @@ import {
   Mail,
   Calendar,
   Shield,
+  LayoutDashboard,
+  Server,
 } from 'lucide-react';
 import { TestRequirement, RequirementStatus, Priority } from '../../types';
 import { User as UserType, ROLES } from '../../constants/config';
@@ -29,7 +31,10 @@ interface ReqListProps {
   onCreateReq: () => void;
   onNavigateToCaseList: () => void;
   onNavigateToMyTasks: () => void;
+  onNavigateToTaskBoard: () => void;
+  onNavigateToDutMgmt: () => void;
   onNavigateToUserMgmt: () => void;
+  onNavigateToNavMgmt: () => void;
   onLogout: () => void;
   showUserProfile: boolean;
   onToggleUserProfile: () => void;
@@ -49,14 +54,20 @@ export const ReqList: React.FC<ReqListProps> = ({
   onCreateReq,
   onNavigateToCaseList,
   onNavigateToMyTasks,
+  onNavigateToTaskBoard,
+  onNavigateToDutMgmt,
   onNavigateToUserMgmt,
+  onNavigateToNavMgmt,
   onLogout,
   showUserProfile,
   onToggleUserProfile,
 }) => {
   const canAccessCaseList = availableNavViews.includes('case_list');
   const canAccessMyTasks = availableNavViews.includes('my_tasks');
+  const canAccessTaskBoard = availableNavViews.includes('test_task_board');
+  const canAccessDutMgmt = availableNavViews.includes('dut_mgmt');
   const canAccessUserMgmt = availableNavViews.includes('user_mgmt');
+  const canAccessNavMgmt = availableNavViews.includes('nav_mgmt');
 
   const getTargetComponents = (req: TestRequirement) =>
     Array.isArray(req.target_components) ? req.target_components : [];
@@ -246,6 +257,24 @@ export const ReqList: React.FC<ReqListProps> = ({
               我的任务
             </button>
           )}
+          {canAccessTaskBoard && (
+            <button
+              onClick={onNavigateToTaskBoard}
+              className="w-full flex items-center gap-3 px-4 py-3 text-slate-500 hover:bg-slate-50 rounded-xl text-sm font-bold transition-colors"
+            >
+              <LayoutDashboard size={18} />
+              测试看板
+            </button>
+          )}
+          {canAccessDutMgmt && (
+            <button
+              onClick={onNavigateToDutMgmt}
+              className="w-full flex items-center gap-3 px-4 py-3 text-slate-500 hover:bg-slate-50 rounded-xl text-sm font-bold transition-colors"
+            >
+              <Server size={18} />
+              DUT 设备
+            </button>
+          )}
           {canAccessUserMgmt && (
             <button
               onClick={onNavigateToUserMgmt}
@@ -253,6 +282,15 @@ export const ReqList: React.FC<ReqListProps> = ({
             >
               <User size={18} />
               用户管理
+            </button>
+          )}
+          {canAccessNavMgmt && (
+            <button
+              onClick={onNavigateToNavMgmt}
+              className="w-full flex items-center gap-3 px-4 py-3 text-slate-500 hover:bg-slate-50 rounded-xl text-sm font-bold transition-colors"
+            >
+              <Shield size={18} />
+              导航管理
             </button>
           )}
         </nav>

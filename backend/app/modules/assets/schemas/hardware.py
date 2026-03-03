@@ -73,18 +73,17 @@ class ComponentResponse(BaseModel):
 class CreateDutRequest(BaseModel):
     asset_id: str = Field(..., description="资产编号或 SN")
     model: str = Field(..., description="整机型号/平台")
-    status: str = Field(default="可用")
-    owner_team: Optional[str] = None
-    rack_location: Optional[str] = None
-    mgmt_ip: Optional[str] = None
-    os_ip: Optional[str] = None
-    os_version: Optional[str] = None
-    bios_version: Optional[str] = None
-    last_seen_at: Optional[datetime] = None
-    health_status: Optional[str] = None
-    tags: List[str] = Field(default_factory=list)
-    current_bom: List[str] = Field(default_factory=list)
-    notes: Optional[str] = None
+    status: str = Field(default="可用", description="设备状态")
+    owner_team: Optional[str] = Field(None, description="归属团队")
+    rack_location: Optional[str] = Field(None, description="机房/机柜/机位")
+    bmc_ip: Optional[str] = Field(None, description="BMC IP")
+    bmc_port: Optional[int] = Field(None, description="BMC 端口")
+    os_ip: Optional[str] = Field(None, description="OS IP")
+    os_port: Optional[int] = Field(None, description="OS 端口")
+    login_username: Optional[str] = Field(None, description="登录用户名")
+    login_password: Optional[str] = Field(None, description="登录密码")
+    health_status: Optional[str] = Field(None, description="健康状态")
+    notes: Optional[str] = Field(None, description="备注")
 
 
 class UpdateDutRequest(BaseModel):
@@ -92,14 +91,13 @@ class UpdateDutRequest(BaseModel):
     status: Optional[str] = None
     owner_team: Optional[str] = None
     rack_location: Optional[str] = None
-    mgmt_ip: Optional[str] = None
+    bmc_ip: Optional[str] = None
+    bmc_port: Optional[int] = None
     os_ip: Optional[str] = None
-    os_version: Optional[str] = None
-    bios_version: Optional[str] = None
-    last_seen_at: Optional[datetime] = None
+    os_port: Optional[int] = None
+    login_username: Optional[str] = None
+    login_password: Optional[str] = None
     health_status: Optional[str] = None
-    tags: Optional[List[str]] = None
-    current_bom: Optional[List[str]] = None
     notes: Optional[str] = None
 
 
@@ -110,14 +108,13 @@ class DutResponse(BaseModel):
     status: str
     owner_team: Optional[str]
     rack_location: Optional[str]
-    mgmt_ip: Optional[str]
+    bmc_ip: Optional[str]
+    bmc_port: Optional[int]
     os_ip: Optional[str]
-    os_version: Optional[str]
-    bios_version: Optional[str]
-    last_seen_at: Optional[datetime]
+    os_port: Optional[int]
+    login_username: Optional[str]
+    login_password: Optional[str]
     health_status: Optional[str]
-    tags: List[str]
-    current_bom: List[str]
     notes: Optional[str]
     created_at: datetime
     updated_at: datetime

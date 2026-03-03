@@ -191,11 +191,14 @@ export interface TestCase {
 
 /**
  * 创建测试需求的负载类型
- * 创建时不需要传入status、created_at、updated_at字段
+ * ⚠️ 重要说明：
+ * - 不包含 status、created_at、updated_at 字段（由系统自动生成）
+ * - ⚠️ 不包含 req_id 字段！前端绝对不能传递此字段，必须由后端自动生成以保证全局唯一性
+ * - 即使尝试传递 req_id，后端也会忽略并重新生成
  */
 export type CreateRequirementPayload = Omit<
   TestRequirement,
-  'status' | 'created_at' | 'updated_at'
+  'status' | 'created_at' | 'updated_at' | 'req_id'
 >;
 
 /**
@@ -206,6 +209,24 @@ export type CreateTestCasePayload = Omit<
   TestCase,
   'status' | 'created_at' | 'updated_at'
 >;
+
+/**
+ * 测试用例详情页-快速创建用例负载
+ * 用于“创建测试用例”弹窗提交基础信息并关联任务流
+ */
+export interface QuickCreateCasePayload {
+  title: string;                        // 用例标题
+  ref_req_id: string;                   // 关联需求ID
+  owner_id: string;                     // 指派开发人
+  reviewer_id?: string;                 // 评审人
+  is_need_auto: boolean;                // 是否需要自动化
+  auto_dev_id?: string;                 // 自动化负责人
+  workflow_note?: string;               // 任务流备注
+  planned_due_date?: string;            // 计划完成时间（YYYY-MM-DD）
+  automation_case_id?: string;          // 自动化用例库ID（关联）
+  automation_case_version?: string;     // 自动化用例版本
+  source_case_id?: string;              // 来源测试用例ID（从详情页创建时回填）
+}
 
 // ========== 工作流相关类型定义 ==========
 
@@ -277,4 +298,71 @@ export interface AvailableTransitionsResponse {
   item_id: string;                           // 工作项ID
   current_state: string;                     // 当前状态
   available_transitions: AvailableTransition[]; // 可用流转列表
+}
+
+/**
+ * 导航页面接口
+ * 定义导航页面的完整数据结构
+ */
+export interface NavigationPage {
+  view: string;              // 导航唯一标识（唯一索引）
+  label: string;             // 导航展示名称
+  permission?: string;       // 访问该导航所需权限码（可为空）
+  description?: string;      // 导航说明
+  order?: number;            // 排序（越小越靠前）
+  is_active: boolean;        // 是否启用
+  is_deleted: boolean;       // 逻辑删除标记
+  created_at?: string;       // 创建时间
+  updated_at?: string;       // 更新时间
+}
+
+/**
+ * 资产部件字典接口（用于 DUT 设备录入时选择/维护部件）
+ * 对应后端：CreateComponentRequest / ComponentResponse
+ */
+export interface AssetComponent {
+  id?: string;                           // 文档ID（响应字段）
+  part_number: string;                   // 唯一物料编号（PN）
+  category: string;                      // 大类（必填）
+  subcategory?: string;                  // 子类
+  vendor?: string;                       // 厂商
+  model?: string;                        // 型号
+  revision?: string;                     // 修订版本
+  form_factor?: string;                  // 外形规格
+  interface_type?: string;               // 接口类型（如 PCIe）
+  interface_gen?: string;                // 接口代际（如 Gen5）
+  protocol?: string;                     // 协议（如 NVMe）
+  attributes: Record<string, unknown>;   // 动态属性
+  power_watt?: number;                   // 功耗（W）
+  firmware_baseline?: string;            // 固件基线版本
+  spec: Record<string, unknown>;         // 规格参数
+  datasheet_url?: string;                // 数据手册地址
+  lifecycle_status?: string;             // 生命周期状态
+  aliases: string[];                     // 别名列表
+  created_at?: string;                   // 创建时间（响应字段）
+  updated_at?: string;                   // 更新时间（响应字段）
+}
+
+/**
+ * DUT 服务器资产接口（用于 DUT 录入中心）
+ * 对应后端：CreateDutRequest / DutResponse
+ */
+export interface DutAsset {
+  id?: string;               // 文档ID（响应字段）
+  asset_id: string;          // 资产编号或 SN（唯一）
+  model: string;             // 服务器型号
+  status: string;            // 设备状态
+  owner_team?: string;       // 归属团队
+  owner?: string;            // 机器负责人/使用者
+  rack_location?: string;    // 机房/机柜/机位
+  bmc_ip?: string;           // BMC IP
+  bmc_port?: number;         // BMC 端口
+  os_ip?: string;            // OS IP
+  os_port?: number;          // OS 端口
+  login_username?: string;   // 登录用户名
+  login_password?: string;   // 登录密码
+  health_status?: string;    // 健康状态
+  notes?: string;            // 备注
+  created_at?: string;       // 创建时间（响应字段）
+  updated_at?: string;       // 更新时间（响应字段）
 }

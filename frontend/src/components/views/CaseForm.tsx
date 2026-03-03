@@ -1,9 +1,8 @@
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   ChevronRight,
   Save,
-  Layout,
   Cpu,
   PlayCircle,
   Paperclip,
@@ -18,13 +17,15 @@ import {
   CheckCircle2,
   AlertCircle,
 } from 'lucide-react';
-import { TestCase, TestCaseStatus, Priority, TestCaseCategory, Confidentiality, TestStep } from '../../types';
+import { TestCase, TestCaseCategory, Confidentiality, TestStep, QuickCreateCasePayload } from '../../types';
+import { User } from '../../constants/config';
 import { Layout as LayoutIcon, Settings } from 'lucide-react';
 
 interface CaseFormProps {
   formData: TestCase;
   activeSection: string;
   isGeneratingSteps: boolean;
+  assignableUsers: User[];
   onFieldChange: (path: string, value: any) => void;
   onAddStep: () => void;
   onRemoveStep: (id: string) => void;
@@ -32,6 +33,7 @@ interface CaseFormProps {
   onAddAttachment: () => void;
   onRemoveAttachment: (id: string) => void;
   onSave: () => void;
+  onQuickCreateCase: (payload: QuickCreateCasePayload) => Promise<void>;
   onCancel: () => void;
   onGenerateSteps: () => void;
   onSectionChange: (section: string) => void;
@@ -41,6 +43,7 @@ export const CaseForm: React.FC<CaseFormProps> = ({
   formData,
   activeSection,
   isGeneratingSteps,
+  assignableUsers,
   onFieldChange,
   onAddStep,
   onRemoveStep,
@@ -48,17 +51,125 @@ export const CaseForm: React.FC<CaseFormProps> = ({
   onAddAttachment,
   onRemoveAttachment,
   onSave,
+  onQuickCreateCase,
   onCancel,
   onGenerateSteps,
   onSectionChange,
 }) => {
+  const activeUsers = useMemo(
+    () => assignableUsers.filter(user => user.status === 'ACTIVE'),
+    [assignableUsers]
+  );
+  const [showQuickCreateModal, setShowQuickCreateModal] = useState(false);
+  const [quickCreating, setQuickCreating] = useState(false);
+  const [quickCreateError, setQuickCreateError] = useState('');
+  const [quickCreateData, setQuickCreateData] = useState<QuickCreateCasePayload>({
+    title: '',
+    ref_req_id: '',
+    owner_id: '',
+    reviewer_id: '',
+    is_need_auto: false,
+    auto_dev_id: '',
+    workflow_note: '',
+    planned_due_date: '',
+    automation_case_id: '',
+    automation_case_version: '',
+    source_case_id: '',
+  });
+
+  const supportsAutomation = formData.is_need_auto
+    || formData.is_automated
+    || Boolean(formData.auto_dev_id?.trim())
+    || Boolean(formData.automation_type?.trim())
+    || Boolean(formData.script_entity_id?.trim());
+
   const sections = [
     { id: 'basic', label: '基础', icon: LayoutIcon },
     { id: 'env', label: '环境', icon: Cpu },
+    ...(supportsAutomation ? [{ id: 'automation', label: '自动化', icon: Settings }] : []),
     { id: 'steps', label: '步骤', icon: PlayCircle },
     { id: 'attachments', label: '附件', icon: Paperclip },
     { id: 'history', label: '历史', icon: History },
   ];
+
+  useEffect(() => {
+    if (!supportsAutomation && activeSection === 'automation') {
+      onSectionChange('basic');
+    }
+  }, [supportsAutomation, activeSection, onSectionChange]);
+
+  const automationChecklist = [
+    { label: '自动化负责人', ready: Boolean(formData.auto_dev_id?.trim()) },
+    { label: '自动化类型', ready: Boolean(formData.automation_type?.trim()) },
+    { label: '脚本实体 ID', ready: Boolean(formData.script_entity_id?.trim()) },
+    { label: '执行环境（OS）', ready: Boolean(formData.required_env.os?.trim()) },
+    { label: '测试步骤 >= 1', ready: formData.steps.length > 0 },
+  ];
+  const automationReadyCount = automationChecklist.filter(item => item.ready).length;
+  const automationReadyRate = Math.round((automationReadyCount / automationChecklist.length) * 100);
+
+  const openQuickCreateModal = () => {
+    const defaultOwner = formData.owner_id || activeUsers[0]?.user_id || '';
+    setQuickCreateData({
+      title: '',
+      ref_req_id: formData.ref_req_id || '',
+      owner_id: defaultOwner,
+      reviewer_id: formData.reviewer_id || '',
+      is_need_auto: formData.is_need_auto,
+      auto_dev_id: formData.auto_dev_id || '',
+      workflow_note: '',
+      planned_due_date: '',
+      automation_case_id: String(formData.custom_fields.automation_case_id || ''),
+      automation_case_version: String(formData.custom_fields.automation_case_version || ''),
+      source_case_id: formData.case_id,
+    });
+    setQuickCreateError('');
+    setShowQuickCreateModal(true);
+  };
+
+  const updateQuickCreateField = (field: keyof QuickCreateCasePayload, value: string | boolean) => {
+    setQuickCreateData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const submitQuickCreate = async () => {
+    if (!quickCreateData.title?.trim()) {
+      setQuickCreateError('请填写用例标题');
+      return;
+    }
+    if (!quickCreateData.ref_req_id?.trim()) {
+      setQuickCreateError('请填写关联需求 ID');
+      return;
+    }
+    if (!quickCreateData.owner_id?.trim()) {
+      setQuickCreateError('请指定开发负责人');
+      return;
+    }
+    if (quickCreateData.is_need_auto && !quickCreateData.auto_dev_id?.trim()) {
+      setQuickCreateError('该用例需要自动化，请填写自动化负责人');
+      return;
+    }
+
+    setQuickCreateError('');
+    setQuickCreating(true);
+    try {
+      await onQuickCreateCase({
+        ...quickCreateData,
+        title: quickCreateData.title.trim(),
+        ref_req_id: quickCreateData.ref_req_id.trim(),
+        owner_id: quickCreateData.owner_id.trim(),
+        reviewer_id: quickCreateData.reviewer_id?.trim(),
+        auto_dev_id: quickCreateData.auto_dev_id?.trim(),
+        workflow_note: quickCreateData.workflow_note?.trim(),
+        automation_case_id: quickCreateData.automation_case_id?.trim(),
+        automation_case_version: quickCreateData.automation_case_version?.trim(),
+      });
+      setShowQuickCreateModal(false);
+    } catch (error: any) {
+      setQuickCreateError(error?.message || '创建失败，请稍后重试');
+    } finally {
+      setQuickCreating(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-[#F8F9FA] selection:bg-indigo-100 text-[#1A1A1A]">
@@ -80,6 +191,13 @@ export const CaseForm: React.FC<CaseFormProps> = ({
           </div>
         </div>
         <div className="flex items-center gap-4">
+          <button
+            onClick={openQuickCreateModal}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold border border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 transition-all active:scale-95"
+          >
+            <Plus size={16} />
+            创建自动化测试用例
+          </button>
           <button onClick={onCancel} className="px-5 py-2.5 text-sm font-bold text-slate-500 hover:bg-slate-100 hover:text-slate-700 rounded-xl transition-all">
             取消
           </button>
@@ -210,6 +328,38 @@ export const CaseForm: React.FC<CaseFormProps> = ({
                   </button>
                 </div>
               </div>
+              <div className="col-span-12">
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">执行属性</label>
+                <div className="grid grid-cols-3 gap-4">
+                  <label className="group flex items-center justify-between p-4 rounded-2xl border border-slate-200 bg-slate-50/40 hover:border-indigo-300 transition-colors cursor-pointer">
+                    <span className="text-sm font-bold text-slate-700">支持自动化</span>
+                    <input
+                      type="checkbox"
+                      checked={formData.is_need_auto}
+                      onChange={(e) => onFieldChange('is_need_auto', e.target.checked)}
+                      className="h-4 w-4 accent-indigo-600"
+                    />
+                  </label>
+                  <label className="group flex items-center justify-between p-4 rounded-2xl border border-slate-200 bg-slate-50/40 hover:border-indigo-300 transition-colors cursor-pointer">
+                    <span className="text-sm font-bold text-slate-700">已自动化</span>
+                    <input
+                      type="checkbox"
+                      checked={formData.is_automated}
+                      onChange={(e) => onFieldChange('is_automated', e.target.checked)}
+                      className="h-4 w-4 accent-indigo-600"
+                    />
+                  </label>
+                  <label className="group flex items-center justify-between p-4 rounded-2xl border border-slate-200 bg-slate-50/40 hover:border-indigo-300 transition-colors cursor-pointer">
+                    <span className="text-sm font-bold text-slate-700">破坏性测试</span>
+                    <input
+                      type="checkbox"
+                      checked={formData.is_destructive}
+                      onChange={(e) => onFieldChange('is_destructive', e.target.checked)}
+                      className="h-4 w-4 accent-indigo-600"
+                    />
+                  </label>
+                </div>
+              </div>
             </div>
           </section>
 
@@ -317,6 +467,187 @@ export const CaseForm: React.FC<CaseFormProps> = ({
               </div>
             </div>
           </section>
+
+          {/* Section: Automation */}
+          {supportsAutomation && (
+            <section id="automation" className="bg-white rounded-[2.5rem] border border-slate-100 shadow-2xl shadow-slate-100/50 overflow-hidden">
+              <div className="px-10 py-8 border-b border-slate-50 bg-slate-50/30 flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="p-3 bg-white text-slate-900 rounded-2xl shadow-sm border border-slate-100">
+                    <Settings size={20} />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-bold text-slate-900">自动化信息</h2>
+                    <p className="text-xs text-slate-400 font-medium mt-0.5">自动化脚本元数据、执行入口与就绪度检查</p>
+                  </div>
+                </div>
+                <span className={`px-3 py-1 rounded-full text-xs font-bold border ${
+                  formData.is_automated
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                    : 'bg-amber-50 text-amber-700 border-amber-200'
+                }`}>
+                  {formData.is_automated ? '已自动化' : '待自动化'}
+                </span>
+              </div>
+
+              <div className="p-10 grid grid-cols-12 gap-8">
+                <div className="col-span-4">
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">自动化负责人</label>
+                  <input
+                    type="text"
+                    value={formData.auto_dev_id || ''}
+                    onChange={(e) => onFieldChange('auto_dev_id', e.target.value)}
+                    placeholder="例如: qa_auto_zhangsan"
+                    className="w-full px-6 py-4 rounded-2xl border border-slate-200 bg-slate-50/30 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all text-sm font-bold"
+                  />
+                </div>
+                <div className="col-span-4">
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">自动化类型</label>
+                  <div className="relative">
+                    <select
+                      value={formData.automation_type || ''}
+                      onChange={(e) => onFieldChange('automation_type', e.target.value)}
+                      className="w-full px-6 py-4 rounded-2xl border border-slate-200 bg-slate-50/30 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all text-sm font-bold text-slate-700 appearance-none cursor-pointer"
+                    >
+                      <option value="">请选择</option>
+                      <option value="api">API</option>
+                      <option value="ui">UI</option>
+                      <option value="hardware">Hardware</option>
+                      <option value="stress">Stress</option>
+                      <option value="hybrid">Hybrid</option>
+                    </select>
+                    <ChevronRight className="absolute right-6 top-1/2 -translate-y-1/2 rotate-90 text-slate-400 pointer-events-none" size={16} />
+                  </div>
+                </div>
+                <div className="col-span-4">
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">脚本实体 ID</label>
+                  <input
+                    type="text"
+                    value={formData.script_entity_id || ''}
+                    onChange={(e) => onFieldChange('script_entity_id', e.target.value)}
+                    placeholder="例如: script_power_cycle_v3"
+                    className="w-full px-6 py-4 rounded-2xl border border-slate-200 bg-slate-50/30 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all text-sm font-mono"
+                  />
+                </div>
+                <div className="col-span-4">
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">执行框架</label>
+                  <input
+                    type="text"
+                    value={formData.custom_fields.automation_framework || ''}
+                    onChange={(e) => onFieldChange('custom_fields.automation_framework', e.target.value)}
+                    placeholder="例如: pytest / robot / playwright"
+                    className="w-full px-6 py-4 rounded-2xl border border-slate-200 bg-slate-50/30 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all text-sm font-bold"
+                  />
+                </div>
+                <div className="col-span-4">
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">脚本仓库</label>
+                  <input
+                    type="text"
+                    value={formData.custom_fields.automation_repo || ''}
+                    onChange={(e) => onFieldChange('custom_fields.automation_repo', e.target.value)}
+                    placeholder="例如: git@repo:test/automation.git"
+                    className="w-full px-6 py-4 rounded-2xl border border-slate-200 bg-slate-50/30 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all text-sm font-mono"
+                  />
+                </div>
+                <div className="col-span-4">
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">默认分支</label>
+                  <input
+                    type="text"
+                    value={formData.custom_fields.automation_branch || ''}
+                    onChange={(e) => onFieldChange('custom_fields.automation_branch', e.target.value)}
+                    placeholder="例如: main / release/v1.3"
+                    className="w-full px-6 py-4 rounded-2xl border border-slate-200 bg-slate-50/30 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all text-sm font-mono"
+                  />
+                </div>
+                <div className="col-span-6">
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">关联自动化用例库 ID</label>
+                  <input
+                    type="text"
+                    value={String(formData.custom_fields.automation_case_id || '')}
+                    onChange={(e) => onFieldChange('custom_fields.automation_case_id', e.target.value)}
+                    placeholder="例如: AUTO-CASE-10023"
+                    className="w-full px-6 py-4 rounded-2xl border border-slate-200 bg-slate-50/30 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all text-sm font-mono"
+                  />
+                </div>
+                <div className="col-span-6">
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">自动化用例版本</label>
+                  <input
+                    type="text"
+                    value={String(formData.custom_fields.automation_case_version || '')}
+                    onChange={(e) => onFieldChange('custom_fields.automation_case_version', e.target.value)}
+                    placeholder="例如: v1.3.2"
+                    className="w-full px-6 py-4 rounded-2xl border border-slate-200 bg-slate-50/30 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all text-sm font-mono"
+                  />
+                </div>
+                <div className="col-span-6">
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">运行依赖</label>
+                  <input
+                    type="text"
+                    value={formData.required_env.dependencies?.join(', ') || ''}
+                    onChange={(e) => onFieldChange('required_env.dependencies', e.target.value.split(',').map(s => s.trim()).filter(Boolean))}
+                    placeholder="例如: python3.11, ipmitool, redfish-client"
+                    className="w-full px-6 py-4 rounded-2xl border border-slate-200 bg-slate-50/30 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all text-sm font-bold"
+                  />
+                </div>
+                <div className="col-span-6">
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">自动化标签</label>
+                  <input
+                    type="text"
+                    value={formData.custom_fields.automation_labels || ''}
+                    onChange={(e) => onFieldChange('custom_fields.automation_labels', e.target.value)}
+                    placeholder="例如: smoke, nightly, bmc"
+                    className="w-full px-6 py-4 rounded-2xl border border-slate-200 bg-slate-50/30 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all text-sm font-bold"
+                  />
+                </div>
+                <div className="col-span-12">
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">执行命令 / 触发入口</label>
+                  <textarea
+                    value={formData.custom_fields.automation_command || ''}
+                    onChange={(e) => onFieldChange('custom_fields.automation_command', e.target.value)}
+                    rows={3}
+                    placeholder="例如: pytest tests/power_cycle/test_smoke.py -m smoke"
+                    className="w-full px-6 py-4 rounded-2xl border border-slate-200 bg-slate-50/50 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all text-sm font-mono leading-relaxed placeholder:text-slate-400 resize-none"
+                  />
+                </div>
+              </div>
+
+              <div className="px-10 pb-10">
+                <div className="rounded-3xl border border-slate-200 bg-slate-50/50 p-6 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-bold text-slate-800">自动化必要字段检查</h3>
+                    <span className={`px-3 py-1 rounded-full text-xs font-bold border ${
+                      automationReadyRate === 100
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : 'bg-amber-50 text-amber-700 border-amber-200'
+                    }`}>
+                      就绪度 {automationReadyRate}%
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-5 gap-3">
+                    {automationChecklist.map((item) => (
+                      <div
+                        key={item.label}
+                        className={`flex items-center gap-2 rounded-xl px-3 py-2 border text-xs font-bold ${
+                          item.ready
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            : 'bg-rose-50 text-rose-700 border-rose-200'
+                        }`}
+                      >
+                        {item.ready ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />}
+                        <span>{item.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                  {automationReadyRate < 100 && (
+                    <p className="text-xs text-slate-500">
+                      缺失字段：
+                      {automationChecklist.filter(item => !item.ready).map(item => item.label).join('、')}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </section>
+          )}
 
           {/* Section: Test Steps */}
           <section id="steps" className="bg-white rounded-[2.5rem] border border-slate-100 shadow-2xl shadow-slate-100/50 overflow-hidden">
@@ -559,6 +890,219 @@ export const CaseForm: React.FC<CaseFormProps> = ({
           </div>
         </main>
       </div>
+
+      <AnimatePresence>
+        {showQuickCreateModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[80] bg-slate-900/40 backdrop-blur-sm flex items-start justify-center p-6 overflow-y-auto"
+            style={{ scrollBehavior: 'smooth' }}
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 12, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 8, scale: 0.98 }}
+              transition={{ duration: 0.2 }}
+              className="w-full max-w-4xl bg-white rounded-[2rem] border border-slate-100 shadow-2xl shadow-slate-900/20 overflow-hidden my-8"
+            >
+              <div className="px-8 py-6 border-b border-slate-100 bg-slate-50/40 flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">创建自动化测试用例</h3>
+                  <p className="text-xs text-slate-500 mt-1">填写基础信息后创建并指派开发人，进入任务流</p>
+                </div>
+                <button
+                  onClick={() => setShowQuickCreateModal(false)}
+                  className="p-2 rounded-xl text-slate-500 hover:bg-slate-100 transition-colors"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="p-8 grid grid-cols-12 gap-6">
+                <div className="col-span-8">
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">用例标题 *</label>
+                  <input
+                    type="text"
+                    value={quickCreateData.title}
+                    onChange={(e) => updateQuickCreateField('title', e.target.value)}
+                    placeholder="例如：BMC 冷启动后传感器数据一致性校验"
+                    className="w-full px-5 py-3 rounded-xl border border-slate-200 bg-slate-50/40 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all text-sm font-semibold"
+                  />
+                </div>
+                <div className="col-span-4">
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">关联需求 ID *</label>
+                  <input
+                    type="text"
+                    value={quickCreateData.ref_req_id}
+                    onChange={(e) => updateQuickCreateField('ref_req_id', e.target.value)}
+                    placeholder="TR-2026-001"
+                    className="w-full px-5 py-3 rounded-xl border border-slate-200 bg-slate-50/40 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all text-sm font-mono"
+                  />
+                </div>
+                <div className="col-span-4">
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">开发负责人 *</label>
+                  {activeUsers.length > 0 ? (
+                    <select
+                      value={quickCreateData.owner_id || ''}
+                      onChange={(e) => updateQuickCreateField('owner_id', e.target.value)}
+                      className="w-full px-5 py-3 rounded-xl border border-slate-200 bg-slate-50/40 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all text-sm font-semibold"
+                    >
+                      <option value="">请选择开发负责人</option>
+                      {activeUsers.map(user => (
+                        <option key={user.user_id} value={user.user_id}>
+                          {user.username} ({user.user_id})
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      value={quickCreateData.owner_id || ''}
+                      onChange={(e) => updateQuickCreateField('owner_id', e.target.value)}
+                      placeholder="输入用户 ID"
+                      className="w-full px-5 py-3 rounded-xl border border-slate-200 bg-slate-50/40 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all text-sm font-mono"
+                    />
+                  )}
+                </div>
+                <div className="col-span-4">
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">评审人</label>
+                  {activeUsers.length > 0 ? (
+                    <select
+                      value={quickCreateData.reviewer_id || ''}
+                      onChange={(e) => updateQuickCreateField('reviewer_id', e.target.value)}
+                      className="w-full px-5 py-3 rounded-xl border border-slate-200 bg-slate-50/40 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all text-sm font-semibold"
+                    >
+                      <option value="">请选择评审人</option>
+                      {activeUsers.map(user => (
+                        <option key={user.user_id} value={user.user_id}>
+                          {user.username} ({user.user_id})
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      value={quickCreateData.reviewer_id || ''}
+                      onChange={(e) => updateQuickCreateField('reviewer_id', e.target.value)}
+                      placeholder="输入用户 ID"
+                      className="w-full px-5 py-3 rounded-xl border border-slate-200 bg-slate-50/40 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all text-sm font-mono"
+                    />
+                  )}
+                </div>
+                <div className="col-span-4">
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">计划完成日期</label>
+                  <input
+                    type="date"
+                    value={quickCreateData.planned_due_date || ''}
+                    onChange={(e) => updateQuickCreateField('planned_due_date', e.target.value)}
+                    className="w-full px-5 py-3 rounded-xl border border-slate-200 bg-slate-50/40 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all text-sm font-semibold"
+                  />
+                </div>
+                <div className="col-span-12">
+                  <div className="flex items-center justify-between p-4 rounded-xl border border-slate-200 bg-slate-50/40">
+                    <span className="text-sm font-bold text-slate-700">该用例需要自动化开发</span>
+                    <input
+                      type="checkbox"
+                      checked={quickCreateData.is_need_auto}
+                      onChange={(e) => updateQuickCreateField('is_need_auto', e.target.checked)}
+                      className="h-4 w-4 accent-indigo-600"
+                    />
+                  </div>
+                </div>
+                {quickCreateData.is_need_auto && (
+                  <div className="col-span-6">
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">自动化负责人 *</label>
+                    {activeUsers.length > 0 ? (
+                      <select
+                        value={quickCreateData.auto_dev_id || ''}
+                        onChange={(e) => updateQuickCreateField('auto_dev_id', e.target.value)}
+                        className="w-full px-5 py-3 rounded-xl border border-slate-200 bg-slate-50/40 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all text-sm font-semibold"
+                      >
+                        <option value="">请选择自动化负责人</option>
+                        {activeUsers.map(user => (
+                          <option key={user.user_id} value={user.user_id}>
+                            {user.username} ({user.user_id})
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        type="text"
+                        value={quickCreateData.auto_dev_id || ''}
+                        onChange={(e) => updateQuickCreateField('auto_dev_id', e.target.value)}
+                        placeholder="输入用户 ID"
+                        className="w-full px-5 py-3 rounded-xl border border-slate-200 bg-slate-50/40 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all text-sm font-mono"
+                      />
+                    )}
+                  </div>
+                )}
+                <div className="col-span-6">
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">自动化用例库 ID</label>
+                  <input
+                    type="text"
+                    value={quickCreateData.automation_case_id || ''}
+                    onChange={(e) => updateQuickCreateField('automation_case_id', e.target.value)}
+                    placeholder="AUTO-CASE-10023"
+                    className="w-full px-5 py-3 rounded-xl border border-slate-200 bg-slate-50/40 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all text-sm font-mono"
+                  />
+                </div>
+                <div className="col-span-6">
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">自动化用例版本</label>
+                  <input
+                    type="text"
+                    value={quickCreateData.automation_case_version || ''}
+                    onChange={(e) => updateQuickCreateField('automation_case_version', e.target.value)}
+                    placeholder="v1.0.0"
+                    className="w-full px-5 py-3 rounded-xl border border-slate-200 bg-slate-50/40 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all text-sm font-mono"
+                  />
+                </div>
+                <div className="col-span-12">
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">任务说明</label>
+                  <textarea
+                    value={quickCreateData.workflow_note || ''}
+                    onChange={(e) => updateQuickCreateField('workflow_note', e.target.value)}
+                    rows={3}
+                    placeholder="描述开发目标、关键验收点或注意事项"
+                    className="w-full px-5 py-3 rounded-xl border border-slate-200 bg-slate-50/40 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all text-sm resize-none"
+                  />
+                </div>
+              </div>
+
+              <div className="px-8 pb-6">
+                <div className="rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-3 text-xs text-slate-600">
+                  创建后将自动生成任务流事项并指派给负责人，开发完成后可在该详情页补充步骤、脚本与自动化字段后保存。
+                </div>
+              </div>
+
+              <div className="px-8 py-5 border-t border-slate-100 flex items-center justify-between">
+                {quickCreateError ? (
+                  <span className="text-xs font-bold text-rose-600">{quickCreateError}</span>
+                ) : (
+                  <span className="text-xs text-slate-500">* 为必填字段</span>
+                )}
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => setShowQuickCreateModal(false)}
+                    className="px-5 py-2.5 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-100 transition-colors"
+                    disabled={quickCreating}
+                  >
+                    取消
+                  </button>
+                  <button
+                    onClick={submitQuickCreate}
+                    disabled={quickCreating}
+                    className="px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-slate-900 hover:bg-slate-800 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    {quickCreating ? '创建中...' : '创建并进入详情'}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

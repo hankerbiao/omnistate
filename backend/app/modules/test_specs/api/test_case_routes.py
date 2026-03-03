@@ -10,6 +10,7 @@ from app.modules.test_specs.schemas import (
     CreateTestCaseRequest,
     UpdateTestCaseRequest,
     TestCaseResponse,
+    LinkAutomationCaseRequest,
 )
 
 router = APIRouter(prefix="/test-cases", tags=["TestCases"])
@@ -143,5 +144,46 @@ async def delete_test_case(
     try:
         await service.delete_test_case(case_id)
         return APIResponse(data={"deleted": True})
+    except KeyError:
+        raise HTTPException(status_code=404, detail="test case not found")
+
+
+@router.post(
+    "/{case_id}/automation-link",
+    response_model=APIResponse[TestCaseResponse],
+    summary="关联自动化测试用例",
+    dependencies=[Depends(require_permission("test_cases:write"))],
+)
+async def link_automation_case(
+    case_id: str,
+    request: LinkAutomationCaseRequest,
+    service: TestCaseServiceDep,
+):
+    try:
+        data = await service.link_automation_case(
+            case_id=case_id,
+            auto_case_id=request.auto_case_id,
+            version=request.version,
+        )
+        return APIResponse(data=data)
+    except KeyError as e:
+        if str(e) == "'automation test case not found'":
+            raise HTTPException(status_code=404, detail="automation test case not found")
+        raise HTTPException(status_code=404, detail="test case not found")
+
+
+@router.delete(
+    "/{case_id}/automation-link",
+    response_model=APIResponse[TestCaseResponse],
+    summary="解绑自动化测试用例",
+    dependencies=[Depends(require_permission("test_cases:write"))],
+)
+async def unlink_automation_case(
+    case_id: str,
+    service: TestCaseServiceDep,
+):
+    try:
+        data = await service.unlink_automation_case(case_id=case_id)
+        return APIResponse(data=data)
     except KeyError:
         raise HTTPException(status_code=404, detail="test case not found")

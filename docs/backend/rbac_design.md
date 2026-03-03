@@ -124,5 +124,5 @@
 
 - `authorization_design.md`
 - `permission_validation_patterns.md`
-- `../../docs/认证与登录指南.md`
-- `../../docs/项目架构规范.md`
+- `../认证与登录指南.md`
+- `../项目架构规范.md`

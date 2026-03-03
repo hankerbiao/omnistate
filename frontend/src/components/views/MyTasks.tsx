@@ -8,6 +8,8 @@ import {
   PlayCircle,
   Search,
   Shield,
+  LayoutDashboard,
+  Server,
   User,
   X,
 } from 'lucide-react';
@@ -20,7 +22,10 @@ interface MyTasksProps {
   availableNavViews: string[];
   onNavigateToReqList: () => void;
   onNavigateToCaseList: () => void;
+  onNavigateToTaskBoard: () => void;
+  onNavigateToDutMgmt: () => void;
   onNavigateToUserMgmt: () => void;
+  onNavigateToNavMgmt: () => void;
   onLogout: () => void;
   showUserProfile: boolean;
   onToggleUserProfile: () => void;
@@ -96,14 +101,20 @@ export const MyTasks: React.FC<MyTasksProps> = ({
   availableNavViews,
   onNavigateToReqList,
   onNavigateToCaseList,
+  onNavigateToTaskBoard,
+  onNavigateToDutMgmt,
   onNavigateToUserMgmt,
+  onNavigateToNavMgmt,
   onLogout,
   showUserProfile,
   onToggleUserProfile,
 }) => {
   const canAccessReqList = availableNavViews.includes('req_list');
   const canAccessCaseList = availableNavViews.includes('case_list');
+  const canAccessTaskBoard = availableNavViews.includes('test_task_board');
+  const canAccessDutMgmt = availableNavViews.includes('dut_mgmt');
   const canAccessUserMgmt = availableNavViews.includes('user_mgmt');
+  const canAccessNavMgmt = availableNavViews.includes('nav_mgmt');
 
   const [tasks, setTasks] = useState<WorkItem[]>([]);
   const [searchText, setSearchText] = useState('');
@@ -223,6 +234,24 @@ export const MyTasks: React.FC<MyTasksProps> = ({
             <ListTodo size={18} />
             我的任务
           </button>
+          {canAccessTaskBoard && (
+            <button
+              onClick={onNavigateToTaskBoard}
+              className="w-full flex items-center gap-3 px-4 py-3 text-slate-500 hover:bg-slate-50 rounded-xl text-sm font-bold transition-colors"
+            >
+              <LayoutDashboard size={18} />
+              测试看板
+            </button>
+          )}
+          {canAccessDutMgmt && (
+            <button
+              onClick={onNavigateToDutMgmt}
+              className="w-full flex items-center gap-3 px-4 py-3 text-slate-500 hover:bg-slate-50 rounded-xl text-sm font-bold transition-colors"
+            >
+              <Server size={18} />
+              DUT 设备
+            </button>
+          )}
           {canAccessUserMgmt && (
             <button
               onClick={onNavigateToUserMgmt}
@@ -230,6 +259,15 @@ export const MyTasks: React.FC<MyTasksProps> = ({
             >
               <User size={18} />
               用户管理
+            </button>
+          )}
+          {canAccessNavMgmt && (
+            <button
+              onClick={onNavigateToNavMgmt}
+              className="w-full flex items-center gap-3 px-4 py-3 text-slate-500 hover:bg-slate-50 rounded-xl text-sm font-bold transition-colors"
+            >
+              <Shield size={18} />
+              导航管理
             </button>
           )}
         </nav>

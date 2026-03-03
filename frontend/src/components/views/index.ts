@@ -6,4 +6,6 @@ export { CaseList } from './CaseList';
 export { CaseForm } from './CaseForm';
 export { MyTasks } from './MyTasks';
 export { UserMgmt } from './UserMgmt';
-export { NavMgmt, type NavigationPage } from './NavMgmt';
+export { NavMgmt } from './NavMgmt';
+export { TestTaskBoard } from './TestTaskBoard';
+export { DutComponentMgmt } from './DutComponentMgmt';

@@ -145,7 +145,20 @@ async def get_permissions_by_role_ids(role_ids: List[str]) -> List[str]:
     """根据角色列表解析权限码并去重排序。"""
     if not role_ids:
         return []
-    roles = await RoleDoc.find({"role_id": {"$in": role_ids}}).to_list()
+
+    # 兼容 ROLE_ 前缀差异（如 ROLE_TPM / TPM），避免因命名不一致导致权限丢失
+    normalized_role_ids = set()
+    for role_id in role_ids:
+        rid = str(role_id).strip()
+        if not rid:
+            continue
+        normalized_role_ids.add(rid)
+        if rid.startswith("ROLE_"):
+            normalized_role_ids.add(rid[5:])
+        else:
+            normalized_role_ids.add(f"ROLE_{rid}")
+
+    roles = await RoleDoc.find({"role_id": {"$in": list(normalized_role_ids)}}).to_list()
     perm_ids: List[str] = []
     for role in roles:
         perm_ids.extend(role.permission_ids)

@@ -10,6 +10,7 @@ import React, { useState, useCallback, useEffect } from 'react';
 import {
   CreateRequirementPayload,
   CreateTestCasePayload,
+  QuickCreateCasePayload,
   TestCase,
   TestCaseStatus,
   Priority,
@@ -20,7 +21,8 @@ import {
   Confidentiality,
   TestRequirement,
   RequirementStatus,
-  Attachment
+  Attachment,
+  NavigationPage
 } from './types';
 import { ROLES, User } from './constants/config';
 
@@ -39,9 +41,10 @@ import {
   CaseList,
   CaseForm,
   MyTasks,
+  TestTaskBoard,
+  DutComponentMgmt,
   UserMgmt,
-  NavMgmt,
-  type NavigationPage
+  NavMgmt
 } from './components/views';
 
 // ========== 图标库导入 ==========
@@ -49,6 +52,8 @@ import {
   FileText,      // 文档图标（需求列表）
   PlayCircle,    // 播放图标（用例列表）
   ListTodo,      // 任务图标（我的任务）
+  LayoutDashboard, // 看板图标（测试看板）
+  Server,        // 设备图标（DUT 设备）
   User as UserIcon, // 用户图标（用户管理）
   LogIn,         // 登录图标
   Mail,          // 邮件图标
@@ -71,13 +76,16 @@ type View =
   | 'case_list'    // 用例列表
   | 'case_form'    // 用例表单（创建/编辑）
   | 'my_tasks'     // 我的任务
-  | 'user_mgmt';   // 用户管理
+  | 'test_task_board' // 测试看板
+  | 'dut_mgmt'     // DUT 设备管理
+  | 'user_mgmt'    // 用户管理
+  | 'nav_mgmt';    // 导航管理
 
 /**
  * 导航视图类型定义
  * 可在主导航菜单中访问的页面
  */
-type NavView = 'req_list' | 'case_list' | 'my_tasks' | 'user_mgmt';
+type NavView = 'req_list' | 'case_list' | 'my_tasks' | 'test_task_board' | 'dut_mgmt' | 'user_mgmt' | 'nav_mgmt';
 
 /**
  * 导航选项接口
@@ -116,10 +124,28 @@ const NAVIGATION_OPTIONS: NavigationOption[] = [
     description: '允许访问当前用户名下任务列表页'
   },
   {
+    view: 'test_task_board',
+    label: '测试看板',
+    permission: 'nav:test_task_board:view',
+    description: '允许访问测试任务看板页'
+  },
+  {
+    view: 'dut_mgmt',
+    label: 'DUT 设备',
+    permission: 'assets:read',
+    description: '允许访问 DUT 服务器录入页'
+  },
+  {
     view: 'user_mgmt',
     label: '用户管理',
     permission: 'nav:user_mgmt:view',
     description: '允许访问用户与权限管理页'
+  },
+  {
+    view: 'nav_mgmt',
+    label: '导航管理',
+    permission: 'nav:nav_mgmt:view',
+    description: '允许访问导航页面管理页'
   },
 ];
 
@@ -140,7 +166,7 @@ const NAV_VIEW_PERMISSION_MAP: Record<NavView, string> = NAVIGATION_OPTIONS
  * 默认导航视图
  * 当用户无特定权限时显示的基础导航项
  */
-const FALLBACK_NAV_VIEWS: NavView[] = ['req_list', 'case_list', 'my_tasks'];
+const FALLBACK_NAV_VIEWS: NavView[] = ['req_list', 'case_list', 'my_tasks', 'test_task_board', 'dut_mgmt', 'user_mgmt', 'nav_mgmt'];
 
 // ========== 辅助函数 ==========
 
@@ -636,6 +662,15 @@ export default function App() {
 
   // User management state
   const [showUserForm, setShowUserForm] = useState(false);
+
+  // Navigation management state
+  const [navigationPages, setNavigationPages] = useState<NavigationPage[]>([]);
+  const [showNavForm, setShowNavForm] = useState(false);
+  const [editingNavPage, setEditingNavPage] = useState<NavigationPage | null>(null);
+  const [newNavPage, setNewNavPage] = useState<Partial<NavigationPage>>({
+    is_active: true,
+    order: 0
+  });
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [newUser, setNewUser] = useState<Partial<User>>({ status: 'ACTIVE', role_ids: [] });
 
@@ -710,10 +745,12 @@ export default function App() {
     const safeViews = resolvedViews.length > 0 ? resolvedViews : FALLBACK_NAV_VIEWS;
     if (hasAdminRole(user)) {
       const allViews = NAVIGATION_OPTIONS.map(item => item.view);
+      console.log('[DEBUG] User is admin, available views:', allViews);
       setMyPermissionCodes(['all']);
       setAvailableNavViews(allViews);
       return allViews;
     }
+    console.log('[DEBUG] User is not admin, available views:', safeViews, 'permissions:', normalizedPermissions);
     setMyPermissionCodes(normalizedPermissions);
     setAvailableNavViews(safeViews);
     return safeViews;
@@ -857,7 +894,7 @@ export default function App() {
 
   // Form data for requirement
   const [reqFormData, setReqFormData] = useState<TestRequirement>({
-    req_id: `TR-${new Date().getFullYear()}-${String(requirements.length + 1).padStart(3, '0')}`,
+    req_id: `TR-${new Date().getFullYear()}-${String(requirements.length + 1).padStart(3, '0')}`, // 显示用，实际保存时由后端生成
     title: '',
     description: '',
     technical_spec: '',
@@ -1053,8 +1090,10 @@ export default function App() {
   }, []);
 
   const saveRequirement = useCallback(async () => {
+    // ⚠️ 重要：不包含 req_id 字段
+    // req_id 必须由后端自动生成以保证全局唯一性
+    // 即使 reqFormData 中有 req_id 字段用于显示，也不应发送到后端
     const createPayload: CreateRequirementPayload = {
-      req_id: reqFormData.req_id,
       title: reqFormData.title,
       description: reqFormData.description,
       technical_spec: reqFormData.technical_spec,
@@ -1134,7 +1173,7 @@ export default function App() {
     handleViewChange('req_list');
     // Reset form
     setReqFormData({
-      req_id: `TR-${new Date().getFullYear()}-${String(requirements.length + 2).padStart(3, '0')}`,
+      req_id: `TR-${new Date().getFullYear()}-${String(requirements.length + 2).padStart(3, '0')}`, // 显示用，实际保存时由后端生成
       title: '',
       description: '',
       technical_spec: '',
@@ -1272,6 +1311,81 @@ export default function App() {
       setIsGeneratingSteps(false);
     }
   }, [requirements, formData.ref_req_id, aiGenerateSteps]);
+
+  const quickCreateTestCase = useCallback(async (quickPayload: QuickCreateCasePayload) => {
+    const nextCaseId = `TC-${Date.now()}`;
+    const now = new Date().toISOString();
+    const ownerId = quickPayload.owner_id || currentUser?.user_id || '';
+    const reviewerId = quickPayload.reviewer_id || '';
+    const autoDevId = quickPayload.auto_dev_id || '';
+
+    const createPayload: CreateTestCasePayload = {
+      case_id: nextCaseId,
+      ref_req_id: quickPayload.ref_req_id,
+      title: quickPayload.title,
+      test_category: TestCaseCategory.FUNCTIONAL,
+      version: 1,
+      is_active: true,
+      change_log: '通过测试用例详情页快速创建',
+      owner_id: ownerId,
+      reviewer_id: reviewerId,
+      auto_dev_id: autoDevId,
+      priority: Priority.P1,
+      estimated_duration_sec: 1800,
+      target_components: [],
+      required_env: { os: '', firmware: '', hardware: '', dependencies: [] },
+      tags: ['quick-created'],
+      tooling_req: [],
+      pre_condition: '',
+      post_condition: '',
+      cleanup_steps: [],
+      steps: [],
+      is_need_auto: quickPayload.is_need_auto,
+      is_automated: false,
+      is_destructive: false,
+      automation_type: '',
+      script_entity_id: '',
+      risk_level: RiskLevel.MEDIUM,
+      visibility_scope: VisibilityScope.PROJECT,
+      confidentiality: Confidentiality.INTERNAL,
+      attachments: [],
+      custom_fields: {
+        workflow_stage: 'ASSIGNED',
+        workflow_assigned_to: ownerId,
+        workflow_assigned_at: now,
+        workflow_note: quickPayload.workflow_note || '',
+        planned_due_date: quickPayload.planned_due_date || '',
+        automation_case_id: quickPayload.automation_case_id || '',
+        automation_case_version: quickPayload.automation_case_version || '',
+        source_case_id: quickPayload.source_case_id || '',
+      },
+      failure_analysis: '',
+      deprecation_reason: '',
+      approval_history: [],
+    };
+
+    if (isBackendEnabled && testDesignerApi) {
+      const response = await testDesignerApi.createTestCase(createPayload);
+      const saved = unwrapApiData(response);
+      if (!saved) {
+        throw new Error('Invalid quick create response');
+      }
+      setTestCases(prev => [...prev, saved]);
+      setFormData(saved);
+      setActiveSection('basic');
+      return;
+    }
+
+    const localCreated: TestCase = {
+      ...createPayload,
+      status: TestCaseStatus.ASSIGNED,
+      created_at: now,
+      updated_at: now,
+    };
+    setTestCases(prev => [...prev, localCreated]);
+    setFormData(localCreated);
+    setActiveSection('basic');
+  }, [currentUser?.user_id]);
 
   const saveTestCase = useCallback(async () => {
     const nextCaseId = `TC-${Date.now()}`;
@@ -1575,6 +1689,192 @@ export default function App() {
     }
   }, [editingNavigationUser, editingNavigationViews, currentUser]);
 
+  // Navigation management handlers
+  const loadNavigationPages = useCallback(async () => {
+    if (!currentUser || !hasAdminRole(currentUser)) {
+      return;
+    }
+
+    if (!isBackendEnabled || !testDesignerApi) {
+      // Fallback to hardcoded navigation pages
+      const fallbackPages: NavigationPage[] = [
+        {
+          view: 'req_list',
+          label: '测试需求',
+          permission: 'req:read',
+          description: '管理测试需求列表',
+          order: 1,
+          is_active: true,
+          is_deleted: false
+        },
+        {
+          view: 'case_list',
+          label: '测试用例',
+          permission: 'case:read',
+          description: '管理测试用例列表',
+          order: 2,
+          is_active: true,
+          is_deleted: false
+        },
+        {
+          view: 'my_tasks',
+          label: '我的任务',
+          permission: undefined,
+          description: '查看指派给当前用户的任务',
+          order: 3,
+          is_active: true,
+          is_deleted: false
+        },
+        {
+          view: 'test_task_board',
+          label: '测试看板',
+          permission: 'nav:test_task_board:view',
+          description: '创建和追踪测试任务的执行看板',
+          order: 4,
+          is_active: true,
+          is_deleted: false
+        },
+        {
+          view: 'dut_mgmt',
+          label: 'DUT 设备',
+          permission: 'assets:read',
+          description: '管理 DUT 服务器资产与状态信息',
+          order: 5,
+          is_active: true,
+          is_deleted: false
+        },
+        {
+          view: 'user_mgmt',
+          label: '用户管理',
+          permission: 'admin:write',
+          description: '管理系统用户和权限',
+          order: 6,
+          is_active: true,
+          is_deleted: false
+        },
+        {
+          view: 'nav_mgmt',
+          label: '导航管理',
+          permission: 'admin:write',
+          description: '管理系统导航页面配置',
+          order: 7,
+          is_active: true,
+          is_deleted: false
+        }
+      ];
+      setNavigationPages(fallbackPages);
+      return;
+    }
+
+    try {
+      const pages = await testDesignerApi.getNavigationPages(true);
+      // 确保返回的是数组格式
+      const pagesArray = Array.isArray(pages) ? pages : ((pages as any)?.pages || []);
+      console.log('[DEBUG] Loaded navigation pages:', pagesArray);
+      setNavigationPages(pagesArray);
+    } catch (error: any) {
+      if (error?.response?.status === 403) {
+        console.warn('Skip loading navigation pages: admin permission required.');
+        return;
+      }
+      console.error('Failed to load navigation pages:', error);
+      alert('加载导航页面失败，请检查后端服务后重试。');
+    }
+  }, [isBackendEnabled, testDesignerApi, currentUser]);
+
+  const handleCreateNavPage = useCallback(async () => {
+    if (!newNavPage.view || !newNavPage.label) {
+      alert('请填写必填字段：View Code 和 导航名称');
+      return;
+    }
+
+    if (isBackendEnabled && testDesignerApi) {
+      try {
+        const created = await testDesignerApi.createNavigationPage(newNavPage as NavigationPage);
+        setNavigationPages(prev => [...prev, created]);
+        setShowNavForm(false);
+        setNewNavPage({ is_active: true, order: 0 });
+      } catch (error) {
+        console.error('Failed to create navigation page:', error);
+        alert('创建导航页面失败，请检查后端服务后重试。');
+      }
+    } else {
+      setNavigationPages(prev => [...prev, { ...newNavPage, is_deleted: false } as NavigationPage]);
+      setShowNavForm(false);
+      setNewNavPage({ is_active: true, order: 0 });
+    }
+  }, [newNavPage, isBackendEnabled, testDesignerApi]);
+
+  const handleStartEditNavPage = useCallback((page: NavigationPage) => {
+    setEditingNavPage({ ...page });
+  }, []);
+
+  const handleSaveEditNavPage = useCallback(async (updatedPage: NavigationPage) => {
+    if (isBackendEnabled && testDesignerApi) {
+      try {
+        const saved = await testDesignerApi.updateNavigationPage(updatedPage.view, updatedPage);
+        setNavigationPages(prev => prev.map(p => p.view === updatedPage.view ? saved : p));
+        setEditingNavPage(null);
+      } catch (error) {
+        console.error('Failed to update navigation page:', error);
+        alert('更新导航页面失败，请检查后端服务后重试。');
+      }
+    } else {
+      setNavigationPages(prev => prev.map(p => p.view === updatedPage.view ? updatedPage : p));
+      setEditingNavPage(null);
+    }
+  }, [isBackendEnabled, testDesignerApi]);
+
+  const handleToggleNavPageActive = useCallback(async (view: string, isActive: boolean) => {
+    if (editingNavPage?.view === view) {
+      setEditingNavPage(prev => prev ? { ...prev, is_active: isActive } : null);
+    }
+
+    if (isBackendEnabled && testDesignerApi) {
+      try {
+        const page = navigationPages.find(p => p.view === view);
+        if (page) {
+          const updated = await testDesignerApi.updateNavigationPage(view, { ...page, is_active: isActive });
+          setNavigationPages(prev => prev.map(p => p.view === view ? updated : p));
+        }
+      } catch (error) {
+        console.error('Failed to toggle navigation page active:', error);
+        alert('更新导航页面状态失败，请检查后端服务后重试。');
+      }
+    } else {
+      setNavigationPages(prev => prev.map(p => p.view === view ? { ...p, is_active: isActive } : p));
+    }
+  }, [editingNavPage, isBackendEnabled, testDesignerApi, navigationPages]);
+
+  const handleDeleteNavPage = useCallback(async (view: string) => {
+    if (isBackendEnabled && testDesignerApi) {
+      try {
+        await testDesignerApi.deleteNavigationPage(view);
+        setNavigationPages(prev => prev.map(p => p.view === view ? { ...p, is_deleted: true, is_active: false } : p));
+      } catch (error) {
+        console.error('Failed to delete navigation page:', error);
+        alert('删除导航页面失败，请检查后端服务后重试。');
+      }
+    } else {
+      setNavigationPages(prev => prev.map(p => p.view === view ? { ...p, is_deleted: true, is_active: false } : p));
+    }
+  }, [isBackendEnabled, testDesignerApi]);
+
+  const handleEditNavFieldChange = useCallback((field: string, value: any) => {
+    setEditingNavPage(prev => {
+      if (!prev) return null;
+      return { ...prev, [field]: value };
+    });
+  }, []);
+
+  // Only load navigation pages when admin enters navigation management view.
+  useEffect(() => {
+    if (!isLoggedIn || view !== 'nav_mgmt' || !currentUser || !hasAdminRole(currentUser)) {
+      return;
+    }
+    void loadNavigationPages();
+  }, [isLoggedIn, view, currentUser, loadNavigationPages]);
+
   // Render views based on current view
   if (view === 'login' || !isLoggedIn) {
     return (
@@ -1637,6 +1937,24 @@ export default function App() {
                 我的任务
               </button>
             )}
+            {availableNavViews.includes('test_task_board') && (
+              <button
+                onClick={() => handleViewChange('test_task_board')}
+                className="w-full flex items-center gap-3 px-4 py-3 text-slate-500 hover:bg-slate-50 rounded-xl text-sm font-bold transition-colors"
+              >
+                <LayoutDashboard size={18} />
+                测试看板
+              </button>
+            )}
+            {availableNavViews.includes('dut_mgmt') && (
+              <button
+                onClick={() => handleViewChange('dut_mgmt')}
+                className="w-full flex items-center gap-3 px-4 py-3 text-slate-500 hover:bg-slate-50 rounded-xl text-sm font-bold transition-colors"
+              >
+                <Server size={18} />
+                DUT 设备
+              </button>
+            )}
             {availableNavViews.includes('user_mgmt') && (
               <button
                 onClick={() => handleViewChange('user_mgmt')}
@@ -1644,6 +1962,15 @@ export default function App() {
               >
                 <UserIcon size={18} />
                 用户管理
+              </button>
+            )}
+            {availableNavViews.includes('nav_mgmt') && (
+              <button
+                onClick={() => handleViewChange('nav_mgmt')}
+                className="w-full flex items-center gap-3 px-4 py-3 text-slate-500 hover:bg-slate-50 rounded-xl text-sm font-bold transition-colors"
+              >
+                <Shield size={18} />
+                导航管理
               </button>
             )}
           </nav>
@@ -1815,6 +2142,174 @@ export default function App() {
     );
   }
 
+  if (view === 'nav_mgmt') {
+    return (
+      <div className="min-h-screen bg-[#F8F9FA] flex">
+        {/* Left Sidebar - Navigation */}
+        <aside className="w-64 bg-white border-r border-slate-200 flex flex-col">
+          {/* Logo */}
+          <div className="p-6 border-b border-slate-100">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-slate-900 rounded-xl flex items-center justify-center shadow-lg shadow-slate-900/20">
+                <FileText size={22} className="text-white" />
+              </div>
+              <div>
+                <h1 className="text-sm font-bold text-slate-900">Test Designer</h1>
+                <p className="text-[10px] text-slate-400">服务器测试平台</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Navigation */}
+          <nav className="flex-1 p-4 space-y-1">
+            {availableNavViews.includes('req_list') && (
+              <button
+                onClick={() => handleViewChange('req_list')}
+                className="w-full flex items-center gap-3 px-4 py-3 text-slate-500 hover:bg-slate-50 rounded-xl text-sm font-bold transition-colors"
+              >
+                <FileText size={18} />
+                测试需求
+              </button>
+            )}
+            {availableNavViews.includes('case_list') && (
+              <button
+                onClick={() => handleViewChange('case_list')}
+                className="w-full flex items-center gap-3 px-4 py-3 text-slate-500 hover:bg-slate-50 rounded-xl text-sm font-bold transition-colors"
+              >
+                <PlayCircle size={18} />
+                测试用例
+              </button>
+            )}
+            {availableNavViews.includes('my_tasks') && (
+              <button
+                onClick={() => handleViewChange('my_tasks')}
+                className="w-full flex items-center gap-3 px-4 py-3 text-slate-500 hover:bg-slate-50 rounded-xl text-sm font-bold transition-colors"
+              >
+                <ListTodo size={18} />
+                我的任务
+              </button>
+            )}
+            {availableNavViews.includes('test_task_board') && (
+              <button
+                onClick={() => handleViewChange('test_task_board')}
+                className="w-full flex items-center gap-3 px-4 py-3 text-slate-500 hover:bg-slate-50 rounded-xl text-sm font-bold transition-colors"
+              >
+                <LayoutDashboard size={18} />
+                测试看板
+              </button>
+            )}
+            {availableNavViews.includes('dut_mgmt') && (
+              <button
+                onClick={() => handleViewChange('dut_mgmt')}
+                className="w-full flex items-center gap-3 px-4 py-3 text-slate-500 hover:bg-slate-50 rounded-xl text-sm font-bold transition-colors"
+              >
+                <Server size={18} />
+                DUT 设备
+              </button>
+            )}
+            {availableNavViews.includes('user_mgmt') && (
+              <button
+                onClick={() => handleViewChange('user_mgmt')}
+                className="w-full flex items-center gap-3 px-4 py-3 text-slate-500 hover:bg-slate-50 rounded-xl text-sm font-bold transition-colors"
+              >
+                <UserIcon size={18} />
+                用户管理
+              </button>
+            )}
+            {availableNavViews.includes('nav_mgmt') && (
+              <button
+                onClick={() => handleViewChange('nav_mgmt')}
+                className="w-full flex items-center gap-3 px-4 py-3 bg-slate-900 text-white rounded-xl text-sm font-bold shadow-lg shadow-slate-900/20"
+              >
+                <Shield size={18} />
+                导航管理
+              </button>
+            )}
+          </nav>
+
+          {/* Bottom User Info */}
+          <div className="p-4 border-t border-slate-100">
+            {currentUser && (
+              <>
+                <button
+                  onClick={() => setShowUserProfile(true)}
+                  className="w-full flex items-center gap-3 p-3 bg-slate-50 rounded-xl mb-3 hover:bg-slate-100 transition-colors cursor-pointer group"
+                >
+                  <div className="w-9 h-9 bg-indigo-100 rounded-lg flex items-center justify-center group-hover:bg-indigo-200 transition-colors">
+                    <UserIcon size={16} className="text-indigo-600" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-bold text-slate-700 truncate">{currentUser.username}</div>
+                    <div className="text-[10px] text-slate-400 truncate">
+                      {currentUser.role_ids.map(roleId => ROLES.find(r => r.id === roleId)?.name || roleId).join(', ')}
+                    </div>
+                  </div>
+                </button>
+
+                {/* User Profile Panel */}
+                {showUserProfile && (
+                  <div className="absolute bottom-16 left-4 right-4 bg-white rounded-2xl shadow-2xl border border-slate-100 p-6 z-50">
+                    <h3 className="font-bold text-slate-900 mb-4">用户信息</h3>
+
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-3 text-sm">
+                        <Calendar size={16} className="text-slate-400" />
+                        <div>
+                          <div className="text-xs text-slate-400">创建时间</div>
+                          <div className="font-medium text-slate-700">{currentUser.created_at}</div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-3 text-sm">
+                        <div className="w-4 h-4 flex items-center justify-center">
+                          <div className="w-2 h-2 bg-slate-400 rounded-full" />
+                        </div>
+                        <div>
+                          <div className="text-xs text-slate-400">用户 ID</div>
+                          <div className="font-mono text-xs text-slate-600">{currentUser.user_id}</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+            <button
+              onClick={handleLogout}
+              className="w-full flex items-center gap-3 px-4 py-2.5 text-slate-500 hover:bg-rose-50 hover:text-rose-600 rounded-xl text-sm font-bold transition-colors"
+            >
+              <LogIn size={16} className="rotate-180" />
+              退出登录
+            </button>
+          </div>
+        </aside>
+
+        {/* Main Content */}
+        <main className="flex-1 overflow-auto">
+          <div className="max-w-full h-full">
+            <NavMgmt
+              navigationPages={navigationPages}
+              currentUser={currentUser}
+              showForm={showNavForm}
+              editingPage={editingNavPage}
+              newPage={newNavPage}
+              onBack={() => handleViewChange(getLandingNavView(availableNavViews))}
+              onShowForm={setShowNavForm}
+              onNewPageChange={setNewNavPage}
+              onCreatePage={handleCreateNavPage}
+              onStartEditPage={handleStartEditNavPage}
+              onSaveEditPage={handleSaveEditNavPage}
+              onCancelEdit={() => setEditingNavPage(null)}
+              onEditFieldChange={handleEditNavFieldChange}
+              onToggleActive={handleToggleNavPageActive}
+              onDeletePage={handleDeleteNavPage}
+            />
+          </div>
+        </main>
+      </div>
+    );
+  }
+
   if (view === 'req_form') {
     return (
       <ReqForm
@@ -1858,6 +2353,7 @@ export default function App() {
         formData={formData}
         activeSection={activeSection}
         isGeneratingSteps={isGeneratingSteps}
+        assignableUsers={users}
         onFieldChange={updateField}
         onAddStep={addStep}
         onRemoveStep={removeStep}
@@ -1865,6 +2361,7 @@ export default function App() {
         onAddAttachment={addAttachment}
         onRemoveAttachment={removeAttachment}
         onSave={saveTestCase}
+        onQuickCreateCase={quickCreateTestCase}
         onCancel={() => setView('req_detail')}
         onGenerateSteps={generateStepsWithAI}
         onSectionChange={setActiveSection}
@@ -1924,7 +2421,10 @@ export default function App() {
         }}
         onNavigateToReqList={() => handleViewChange('req_list')}
         onNavigateToMyTasks={() => handleViewChange('my_tasks')}
+        onNavigateToTaskBoard={() => handleViewChange('test_task_board')}
+        onNavigateToDutMgmt={() => handleViewChange('dut_mgmt')}
         onNavigateToUserMgmt={() => handleViewChange('user_mgmt')}
+        onNavigateToNavMgmt={() => handleViewChange('nav_mgmt')}
         onLogout={handleLogout}
         showUserProfile={showUserProfile}
         onToggleUserProfile={() => setShowUserProfile(!showUserProfile)}
@@ -1939,7 +2439,48 @@ export default function App() {
         availableNavViews={availableNavViews}
         onNavigateToReqList={() => handleViewChange('req_list')}
         onNavigateToCaseList={() => handleViewChange('case_list')}
+        onNavigateToTaskBoard={() => handleViewChange('test_task_board')}
+        onNavigateToDutMgmt={() => handleViewChange('dut_mgmt')}
         onNavigateToUserMgmt={() => handleViewChange('user_mgmt')}
+        onNavigateToNavMgmt={() => handleViewChange('nav_mgmt')}
+        onLogout={handleLogout}
+        showUserProfile={showUserProfile}
+        onToggleUserProfile={() => setShowUserProfile(!showUserProfile)}
+      />
+    );
+  }
+
+  if (view === 'test_task_board') {
+    return (
+      <TestTaskBoard
+        currentUser={currentUser}
+        users={users}
+        testCases={testCases}
+        availableNavViews={availableNavViews}
+        onNavigateToReqList={() => handleViewChange('req_list')}
+        onNavigateToCaseList={() => handleViewChange('case_list')}
+        onNavigateToMyTasks={() => handleViewChange('my_tasks')}
+        onNavigateToDutMgmt={() => handleViewChange('dut_mgmt')}
+        onNavigateToUserMgmt={() => handleViewChange('user_mgmt')}
+        onNavigateToNavMgmt={() => handleViewChange('nav_mgmt')}
+        onLogout={handleLogout}
+        showUserProfile={showUserProfile}
+        onToggleUserProfile={() => setShowUserProfile(!showUserProfile)}
+      />
+    );
+  }
+
+  if (view === 'dut_mgmt') {
+    return (
+      <DutComponentMgmt
+        currentUser={currentUser}
+        availableNavViews={availableNavViews}
+        onNavigateToReqList={() => handleViewChange('req_list')}
+        onNavigateToCaseList={() => handleViewChange('case_list')}
+        onNavigateToMyTasks={() => handleViewChange('my_tasks')}
+        onNavigateToTaskBoard={() => handleViewChange('test_task_board')}
+        onNavigateToUserMgmt={() => handleViewChange('user_mgmt')}
+        onNavigateToNavMgmt={() => handleViewChange('nav_mgmt')}
         onLogout={handleLogout}
         showUserProfile={showUserProfile}
         onToggleUserProfile={() => setShowUserProfile(!showUserProfile)}
@@ -1960,7 +2501,10 @@ export default function App() {
       onCreateReq={() => handleViewChange('req_form')}
       onNavigateToCaseList={() => handleViewChange('case_list')}
       onNavigateToMyTasks={() => handleViewChange('my_tasks')}
+      onNavigateToTaskBoard={() => handleViewChange('test_task_board')}
+      onNavigateToDutMgmt={() => handleViewChange('dut_mgmt')}
       onNavigateToUserMgmt={() => handleViewChange('user_mgmt')}
+      onNavigateToNavMgmt={() => handleViewChange('nav_mgmt')}
       onLogout={handleLogout}
       showUserProfile={showUserProfile}
       onToggleUserProfile={() => setShowUserProfile(!showUserProfile)}

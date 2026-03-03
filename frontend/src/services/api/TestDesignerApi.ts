@@ -9,7 +9,10 @@ import {
   TestCase,
   TestRequirement,
   WorkItem,
-  AvailableTransitionsResponse
+  AvailableTransitionsResponse,
+  NavigationPage,
+  AssetComponent,
+  DutAsset
 } from '../../types';
 import { User } from '../../constants/config';
 import { ApiClient } from './ApiClient';
@@ -35,16 +38,6 @@ interface MePermissionsResponse {
 }
 
 /**
- * 导航页面配置接口
- */
-interface NavigationPage {
-  view: string;           // 视图名称
-  label: string;          // 显示标签
-  permission: string;     // 所需权限
-  description?: string;   // 页面描述
-}
-
-/**
  * 导航访问权限响应接口
  */
 interface NavigationAccessResponse {
@@ -59,6 +52,25 @@ interface ListWorkItemsParams {
   state?: string;
   owner_id?: string;
   creator_id?: string;
+  limit?: number;
+  offset?: number;
+}
+
+interface ListAssetComponentsParams {
+  category?: string;
+  subcategory?: string;
+  vendor?: string;
+  model?: string;
+  lifecycle_status?: string;
+  limit?: number;
+  offset?: number;
+}
+
+interface ListDutsParams {
+  status?: string;
+  owner_team?: string;
+  rack_location?: string;
+  health_status?: string;
   limit?: number;
   offset?: number;
 }
@@ -274,15 +286,6 @@ export class TestDesignerApi {
   // ========== 管理员专用 API ==========
 
   /**
-   * 获取系统导航页面定义
-   * 返回系统中所有可配置的导航页面
-   * @returns Promise<NavigationPage[] | { pages?: NavigationPage[] }> 导航页面配置
-   */
-  getNavigationPages(): Promise<NavigationPage[] | { pages?: NavigationPage[] }> {
-    return this.client.get<NavigationPage[] | { pages?: NavigationPage[] }>('/api/v1/auth/admin/navigation/pages');
-  }
-
-  /**
    * 获取指定用户的导航权限
    * 管理员可查看任意用户的导航页面访问权限
    * @param userId 用户ID
@@ -389,5 +392,103 @@ export class TestDesignerApi {
    */
   getAvailableTransitions(itemId: string): Promise<AvailableTransitionsResponse> {
     return this.client.get<AvailableTransitionsResponse>(`/api/v1/work-items/${itemId}/transitions`);
+  }
+
+  // ========== DUT 服务器资产管理 API ==========
+
+  /**
+   * 查询 DUT 服务器资产列表
+   * @param params 筛选参数
+   * @returns Promise<DutAsset[]> 服务器资产列表
+   */
+  listDuts(params: ListDutsParams = {}): Promise<DutAsset[]> {
+    const searchParams = new URLSearchParams();
+
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') {
+        searchParams.set(key, String(value));
+      }
+    });
+
+    const query = searchParams.toString();
+    const path = query ? `/api/v1/assets/duts?${query}` : '/api/v1/assets/duts';
+    return this.client.get<DutAsset[]>(path);
+  }
+
+  /**
+   * 创建 DUT 服务器资产
+   * @param payload 服务器资产数据
+   * @returns Promise<DutAsset> 创建后的资产
+   */
+  createDut(payload: DutAsset): Promise<DutAsset> {
+    return this.client.post<DutAsset>('/api/v1/assets/duts', payload);
+  }
+
+  /**
+   * 更新 DUT 服务器资产
+   * @param assetId 资产编号或 SN
+   * @param payload 待更新字段
+   * @returns Promise<DutAsset> 更新后的资产
+   */
+  updateDut(assetId: string, payload: Partial<DutAsset>): Promise<DutAsset> {
+    return this.client.put<DutAsset>(`/api/v1/assets/duts/${assetId}`, payload);
+  }
+
+  /**
+   * 删除 DUT 服务器资产
+   * @param assetId 资产编号或 SN
+   * @returns Promise<void>
+   */
+  deleteDut(assetId: string): Promise<void> {
+    return this.client.delete<void>(`/api/v1/assets/duts/${assetId}`);
+  }
+
+  // ========== 资产部件管理模块 API ==========
+
+  /**
+   * 查询部件字典列表
+   * @param params 筛选参数
+   * @returns Promise<AssetComponent[]> 部件列表
+   */
+  listAssetComponents(params: ListAssetComponentsParams = {}): Promise<AssetComponent[]> {
+    const searchParams = new URLSearchParams();
+
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') {
+        searchParams.set(key, String(value));
+      }
+    });
+
+    const query = searchParams.toString();
+    const path = query ? `/api/v1/assets/components?${query}` : '/api/v1/assets/components';
+    return this.client.get<AssetComponent[]>(path);
+  }
+
+  /**
+   * 创建部件字典项
+   * @param payload 部件数据
+   * @returns Promise<AssetComponent> 创建后的部件
+   */
+  createAssetComponent(payload: AssetComponent): Promise<AssetComponent> {
+    return this.client.post<AssetComponent>('/api/v1/assets/components', payload);
+  }
+
+  /**
+   * 更新部件字典项
+   * @param partNumber 物料编号（PN）
+   * @param payload 待更新字段
+   * @returns Promise<AssetComponent> 更新后的部件
+   */
+  updateAssetComponent(partNumber: string, payload: Partial<AssetComponent>): Promise<AssetComponent> {
+    return this.client.put<AssetComponent>(`/api/v1/assets/components/${partNumber}`, payload);
+  }
+
+  /**
+   * 删除部件字典项
+   * @param partNumber 物料编号（PN）
+   * @returns Promise<void>
+   */
+  deleteAssetComponent(partNumber: string): Promise<void> {
+    return this.client.delete<void>(`/api/v1/assets/components/${partNumber}`);
   }
 }

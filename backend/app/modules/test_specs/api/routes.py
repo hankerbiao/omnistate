@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from app.shared.api.schemas.base import APIResponse
 from app.shared.auth import get_current_user, require_permission
 from app.modules.test_specs.service import RequirementService
+from app.shared.core.logger import log as logger
 from app.modules.test_specs.schemas import (
     CreateRequirementRequest,
     UpdateRequirementRequest,
@@ -37,12 +38,21 @@ async def create_requirement(
 ):
     """创建需求。
 
-    说明：
+    重要说明：
     - 权限由路由依赖 `requirements:write` 统一控制。
+    - req_id 字段必须由后端自动生成，前端不应提供此字段。
+    - 即使前端传递了 req_id，服务层也会忽略并重新生成。
     - `request.model_dump()` 直接透传到 Service，避免字段重命名转换。
     """
     try:
         payload = request.model_dump()
+
+        # ⚠️ 安全检查：确保前端没有尝试提供 req_id
+        if payload.get("req_id"):
+            logger.warning(
+                f"前端尝试传递 req_id={payload['req_id']}，将忽略并重新生成"
+            )
+
         owner_id = str(payload.get("tpm_owner_id") or "").strip()
         if not owner_id:
             payload["tpm_owner_id"] = current_user["user_id"]

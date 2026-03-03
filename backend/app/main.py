@@ -19,7 +19,16 @@ from app.modules.assets.repository.models import (
     DutDoc,
     TestPlanComponentDoc,
 )
-from app.modules.test_specs.repository.models import TestRequirementDoc, TestCaseDoc
+from app.modules.test_specs.repository.models import (
+    TestRequirementDoc,
+    TestCaseDoc,
+    AutomationTestCaseDoc,
+)
+from app.modules.execution.repository.models import (
+    ExecutionTaskDoc,
+    ExecutionTaskCaseDoc,
+    ExecutionEventDoc,
+)
 from app.modules.auth.repository.models import UserDoc, RoleDoc, PermissionDoc, NavigationPageDoc
 
 
@@ -85,6 +94,10 @@ async def lifespan(app: FastAPI):
                 TestPlanComponentDoc,
                 TestRequirementDoc,
                 TestCaseDoc,
+                AutomationTestCaseDoc,
+                ExecutionTaskDoc,
+                ExecutionTaskCaseDoc,
+                ExecutionEventDoc,
                 UserDoc,
                 RoleDoc,
                 PermissionDoc,

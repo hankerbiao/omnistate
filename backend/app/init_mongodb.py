@@ -304,6 +304,8 @@ async def init_rbac_data():
         ("requirements:write", "需求写入权限"),
         ("test_cases:read", "用例读取权限"),
         ("test_cases:write", "用例写入权限"),
+        ("execution_tasks:read", "执行任务读取权限"),
+        ("execution_tasks:write", "执行任务写入权限"),
     ]
 
     # 1) upsert 权限
@@ -322,16 +324,23 @@ async def init_rbac_data():
             "requirements:read",
             "requirements:write",
             "test_cases:read",
+            "assets:read",
+            "assets:write",
             "work_items:read",
             "work_items:transition",
+            "execution_tasks:read",
+            "execution_tasks:write",
         ],
         "TESTER": [
             "users:read",
             "requirements:read",
             "test_cases:read",
             "test_cases:write",
+            "assets:read",
+            "assets:write",
             "work_items:read",
             "work_items:transition",
+            "execution_tasks:read",
         ],
         "AUTOMATION": [
             "users:read",
@@ -339,6 +348,7 @@ async def init_rbac_data():
             "test_cases:write",
             "assets:read",
             "work_items:read",
+            "execution_tasks:read",
         ],
     }
 

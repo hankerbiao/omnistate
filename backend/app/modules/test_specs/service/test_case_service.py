@@ -1,12 +1,17 @@
 """测试用例服务"""
 from copy import deepcopy
 from typing import Dict, Any, Optional, List
+from datetime import datetime
 from pymongo import AsyncMongoClient
-from app.modules.test_specs.repository.models import TestCaseDoc, TestRequirementDoc
+from app.modules.test_specs.repository.models import (
+    TestCaseDoc,
+    TestRequirementDoc,
+    AutomationTestCaseDoc,
+)
 from app.modules.workflow.service.workflow_service import AsyncWorkflowService
 from app.shared.core.logger import log as logger
 from app.shared.core.mongo_client import get_mongo_client
-from app.shared.service import BaseService
+from app.shared.service import BaseService, SequenceIdService
 
 
 class TestCaseService(BaseService):
@@ -19,6 +24,7 @@ class TestCaseService(BaseService):
         "change_log",
         "owner_id",
         "reviewer_id",
+        "auto_dev_id",
         "priority",
         "estimated_duration_sec",
         "target_components",
@@ -29,11 +35,13 @@ class TestCaseService(BaseService):
         "is_destructive",
         "pre_condition",
         "post_condition",
+        "cleanup_steps",
         "steps",
         "is_need_auto",
         "is_automated",
         "automation_type",
         "script_entity_id",
+        "automation_case_ref",
         "risk_level",
         "failure_analysis",
         "confidentiality",
@@ -46,6 +54,7 @@ class TestCaseService(BaseService):
 
     async def create_test_case(self, data: Dict[str, Any]) -> Dict[str, Any]:
         payload = deepcopy(data)
+        payload["case_id"] = await self._generate_case_id()
         client = self._get_mongo_client_or_none()
 
         if client is not None:
@@ -118,6 +127,63 @@ class TestCaseService(BaseService):
             raise KeyError("test case not found")
         doc.is_deleted = True
         await doc.save()
+
+    async def link_automation_case(
+        self,
+        case_id: str,
+        auto_case_id: str,
+        version: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        case_doc = await TestCaseDoc.find_one(
+            TestCaseDoc.case_id == case_id,
+            {"is_deleted": False},
+        )
+        if not case_doc:
+            raise KeyError("test case not found")
+
+        auto_query = AutomationTestCaseDoc.find(
+            AutomationTestCaseDoc.auto_case_id == auto_case_id,
+            {"is_deleted": False},
+        )
+        if version:
+            auto_query = auto_query.find(AutomationTestCaseDoc.version == version)
+        auto_doc = await auto_query.sort("-updated_at").first_or_none()
+        if not auto_doc:
+            raise KeyError("automation test case not found")
+
+        case_doc.automation_case_ref = {
+            "auto_case_id": auto_doc.auto_case_id,
+            "version": auto_doc.version,
+        }
+        case_doc.is_need_auto = True
+        case_doc.is_automated = True
+        case_doc.automation_type = auto_doc.automation_type or case_doc.automation_type
+        case_doc.script_entity_id = auto_doc.script_entity_id or case_doc.script_entity_id
+
+        if not case_doc.custom_fields:
+            case_doc.custom_fields = {}
+        case_doc.custom_fields["automation_case_id"] = auto_doc.auto_case_id
+        case_doc.custom_fields["automation_case_version"] = auto_doc.version
+
+        await case_doc.save()
+        return self._doc_to_dict(case_doc)
+
+    async def unlink_automation_case(self, case_id: str) -> Dict[str, Any]:
+        case_doc = await TestCaseDoc.find_one(
+            TestCaseDoc.case_id == case_id,
+            {"is_deleted": False},
+        )
+        if not case_doc:
+            raise KeyError("test case not found")
+
+        case_doc.automation_case_ref = None
+        case_doc.is_automated = False
+        if case_doc.custom_fields:
+            case_doc.custom_fields.pop("automation_case_id", None)
+            case_doc.custom_fields.pop("automation_case_version", None)
+
+        await case_doc.save()
+        return self._doc_to_dict(case_doc)
 
     async def _create_test_case_with_transaction(
         self,
@@ -216,3 +282,15 @@ class TestCaseService(BaseService):
         if not existing:
             raise KeyError("requirement not found")
         return existing
+
+    async def _generate_case_id(self) -> str:
+        """自动生成用例编号。
+
+        格式：TC-YYYY-XXX（例如：TC-2026-001）
+        """
+        year = datetime.now().year
+        prefix = f"TC-{year}-"
+        counter_key = f"test_case:{year}"
+        next_seq = await SequenceIdService().next(counter_key)
+
+        return f"{prefix}{str(next_seq).zfill(3)}"

@@ -8,6 +8,12 @@ from .test_case import (
     CreateTestCaseRequest,
     UpdateTestCaseRequest,
     TestCaseResponse,
+    LinkAutomationCaseRequest,
+)
+from .automation_test_case import (
+    CreateAutomationTestCaseRequest,
+    UpdateAutomationTestCaseRequest,
+    AutomationTestCaseResponse,
 )
 
 __all__ = [
@@ -17,4 +23,8 @@ __all__ = [
     "CreateTestCaseRequest",
     "UpdateTestCaseRequest",
     "TestCaseResponse",
+    "LinkAutomationCaseRequest",
+    "CreateAutomationTestCaseRequest",
+    "UpdateAutomationTestCaseRequest",
+    "AutomationTestCaseResponse",
 ]
