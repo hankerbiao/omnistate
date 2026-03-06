@@ -26,6 +26,7 @@ from app.shared.db.config import settings
 from app.modules.auth.repository.models import PermissionDoc, RoleDoc
 
 DEFAULT_PERMISSIONS = [
+    ("nav:public", "Public navigation (all logged-in users)"),  # 公共页面权限
     ("work_items:read", "Workflow read"),
     ("work_items:write", "Workflow write"),
     ("work_items:transition", "Workflow transition"),
@@ -43,6 +44,8 @@ DEFAULT_PERMISSIONS = [
     ("test_cases:write", "Test cases write"),
     ("execution_tasks:read", "Execution tasks read"),
     ("execution_tasks:write", "Execution tasks write"),
+    ("navigation:read", "Navigation read"),
+    ("navigation:write", "Navigation write"),
 ]
 
 DEFAULT_ROLES = {
@@ -58,9 +61,12 @@ DEFAULT_ROLES = {
             "requirements:write",
             "test_cases:read",
             "work_items:read",
+            "work_items:write",
             "work_items:transition",
             "execution_tasks:read",
             "execution_tasks:write",
+            "navigation:read",
+            "navigation:write",
         ],
     },
     "TESTER": {
@@ -71,8 +77,11 @@ DEFAULT_ROLES = {
             "test_cases:read",
             "test_cases:write",
             "work_items:read",
+            "work_items:write",
             "work_items:transition",
             "execution_tasks:read",
+            "navigation:read",
+            "navigation:write",
         ],
     },
     "AUTOMATION": {
@@ -83,7 +92,10 @@ DEFAULT_ROLES = {
             "test_cases:write",
             "assets:read",
             "work_items:read",
+            "work_items:write",
             "execution_tasks:read",
+            "navigation:read",
+            "navigation:write",
         ],
     },
 }
@@ -91,18 +103,38 @@ DEFAULT_ROLES = {
 
 async def init_permissions() -> None:
     for code, name in DEFAULT_PERMISSIONS:
-        await PermissionDoc.find_one(PermissionDoc.perm_id == code).upsert(
-            {"$set": {"code": code, "name": name}},
-            on_insert=PermissionDoc(perm_id=code, code=code, name=name),
-        )
+        existing = await PermissionDoc.find_one(PermissionDoc.perm_id == code)
+        if existing:
+            # 如果权限已存在，更新名称
+            existing.name = name
+            await existing.save()
+        else:
+            # 如果权限不存在，创建新的权限
+            new_permission = PermissionDoc(
+                perm_id=code,
+                code=code,
+                name=name,
+                description=None
+            )
+            await new_permission.insert()
 
 
 async def init_roles() -> None:
     for role_id, cfg in DEFAULT_ROLES.items():
-        await RoleDoc.find_one(RoleDoc.role_id == role_id).upsert(
-            {"$set": {"name": cfg["name"], "permission_ids": cfg["permission_ids"]}},
-            on_insert=RoleDoc(role_id=role_id, name=cfg["name"], permission_ids=cfg["permission_ids"]),
-        )
+        existing = await RoleDoc.find_one(RoleDoc.role_id == role_id)
+        if existing:
+            # 如果角色已存在，更新名称和权限
+            existing.name = cfg["name"]
+            existing.permission_ids = cfg["permission_ids"]
+            await existing.save()
+        else:
+            # 如果角色不存在，创建新的角色
+            new_role = RoleDoc(
+                role_id=role_id,
+                name=cfg["name"],
+                permission_ids=cfg["permission_ids"]
+            )
+            await new_role.insert()
 
 
 async def main() -> None:

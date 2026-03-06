@@ -1,10 +1,4 @@
-"""JWT 鉴权依赖（可直接用于 FastAPI）
-
-AI 友好注释说明：
-- 本文件提供可用的 JWT 编解码与权限校验依赖。
-- 使用 HS256（对称密钥）实现，无需额外第三方库。
-- 如需更复杂的授权策略，可在此基础上扩展。
-"""
+"""JWT 鉴权依赖"""
 from __future__ import annotations
 
 import binascii
@@ -22,7 +16,6 @@ from app.shared.db.config import settings
 from app.modules.auth.repository.models import UserDoc, RoleDoc, PermissionDoc
 
 
-# ===== JWT 基础工具 =====
 
 def _b64url_encode(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode("utf-8")

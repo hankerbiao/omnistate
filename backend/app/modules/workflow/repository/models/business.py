@@ -87,7 +87,7 @@ class BusFlowLogDoc(Document):
 # ========== Pydantic 响应模型 (API) ==========
 
 class BusWorkItemModel(BaseModel):
-    id: Optional[str] = None
+    item_id: Optional[str] = None  # 修改字段名与前端保持一致
     type_code: str
     title: str
     content: str

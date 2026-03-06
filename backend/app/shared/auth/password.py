@@ -1,8 +1,4 @@
 """密码哈希与校验工具
-
-AI 友好注释说明：
-- 使用标准库 pbkdf2_hmac 生成安全哈希，无需额外依赖。
-- 存储方式：salt + hash（base64 编码），避免明文。
 """
 from __future__ import annotations
 

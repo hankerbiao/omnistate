@@ -28,8 +28,8 @@ class UserDoc(Document):
     # 用户级导航可见页面覆盖（为空时按角色/权限默认）
     allowed_nav_views: List[str] = Field(default_factory=list, description="用户允许访问的导航页面")
     status: str = Field(default="ACTIVE", description="用户状态")
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="创建时间")
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="更新时间")
 
     @before_event([Save, Insert])
     def update_updated_at(self):
@@ -52,8 +52,8 @@ class RoleDoc(Document):
     name: str = Field(..., description="角色名称")
     # 角色绑定权限集合
     permission_ids: List[str] = Field(default_factory=list, description="权限 ID 列表")
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="创建时间")
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="更新时间")
 
     @before_event([Save, Insert])
     def update_updated_at(self):
@@ -74,8 +74,8 @@ class PermissionDoc(Document):
     code: str = Field(..., description="权限编码")
     name: str = Field(..., description="权限名称")
     description: Optional[str] = Field(None, description="权限描述")
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="创建时间")
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="更新时间")
 
     @before_event([Save, Insert])
     def update_updated_at(self):
@@ -94,39 +94,39 @@ class PermissionDoc(Document):
 
 class UserModel(BaseModel):
     """API 返回用用户模型（不含敏感字段）"""
-    id: Optional[str] = None
-    user_id: str
-    username: str
-    email: Optional[str] = None
-    role_ids: List[str]
-    allowed_nav_views: List[str] = Field(default_factory=list)
-    status: str
-    created_at: datetime
-    updated_at: datetime
+    id: Optional[str] = Field(None, description="文档唯一标识 ID")
+    user_id: str = Field(..., description="用户唯一 ID")
+    username: str = Field(..., description="用户名")
+    email: Optional[str] = Field(None, description="邮箱")
+    role_ids: List[str] = Field(..., description="角色 ID 列表")
+    allowed_nav_views: List[str] = Field(default_factory=list, description="用户允许访问的导航页面")
+    status: str = Field(..., description="用户状态")
+    created_at: datetime = Field(..., description="创建时间")
+    updated_at: datetime = Field(..., description="更新时间")
 
     model_config = ConfigDict(from_attributes=True)
 
 
 class RoleModel(BaseModel):
     """API 返回用角色模型"""
-    id: Optional[str] = None
-    role_id: str
-    name: str
-    permission_ids: List[str]
-    created_at: datetime
-    updated_at: datetime
+    id: Optional[str] = Field(None, description="文档唯一标识 ID")
+    role_id: str = Field(..., description="角色唯一 ID")
+    name: str = Field(..., description="角色名称")
+    permission_ids: List[str] = Field(..., description="权限 ID 列表")
+    created_at: datetime = Field(..., description="创建时间")
+    updated_at: datetime = Field(..., description="更新时间")
 
     model_config = ConfigDict(from_attributes=True)
 
 
 class PermissionModel(BaseModel):
     """API 返回用权限模型"""
-    id: Optional[str] = None
-    perm_id: str
-    code: str
-    name: str
-    description: Optional[str] = None
-    created_at: datetime
-    updated_at: datetime
+    id: Optional[str] = Field(None, description="文档唯一标识 ID")
+    perm_id: str = Field(..., description="权限唯一 ID")
+    code: str = Field(..., description="权限编码")
+    name: str = Field(..., description="权限名称")
+    description: Optional[str] = Field(None, description="权限描述")
+    created_at: datetime = Field(..., description="创建时间")
+    updated_at: datetime = Field(..., description="更新时间")
 
     model_config = ConfigDict(from_attributes=True)

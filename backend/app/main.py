@@ -29,6 +29,7 @@ from app.modules.execution.repository.models import (
     ExecutionTaskCaseDoc,
     ExecutionEventDoc,
 )
+from app.modules.execution.service.execution_service import ExecutionService
 from app.modules.auth.repository.models import UserDoc, RoleDoc, PermissionDoc, NavigationPageDoc
 
 
@@ -108,10 +109,27 @@ async def lifespan(app: FastAPI):
         await validate_workflow_consistency()
         log.success("Workflow 配置一致性校验通过")
 
+        # 启动Kafka执行任务监听器
+        try:
+            execution_service = ExecutionService()
+            await execution_service.start_kafka_listener()
+            log.success("Kafka 执行任务监听器启动成功")
+        except Exception as e:
+            log.error(f"Failed to start Kafka listener: {e}")
+
         log.success("FastAPI 服务启动完成")
         yield
     finally:
         log.info("FastAPI 服务已关闭")
+
+        # 关闭Kafka连接
+        try:
+            if 'execution_service' in locals():
+                execution_service.kafka_manager.stop()
+                log.info("Kafka manager stopped")
+        except Exception as e:
+            log.error(f"Error stopping Kafka manager: {e}")
+
         if client:
             close_result = client.close()
             if hasattr(close_result, "__await__"):
@@ -142,6 +160,45 @@ app.include_router(api_router)
 
 
 if __name__ == "__main__":
+    import asyncio
+    import sys
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    try:
+        # 首先尝试原始方式
+        uvicorn.run(app, host="0.0.0.0", port=8000)
+    except TypeError as e:
+        if "loop_factory" in str(e):
+            print(f"⚠️  检测到Python 3.13兼容性问题，使用修复模式启动...")
+            print(f"🔧 错误详情: {e}")
+
+            # Python 3.13兼容方式：手动创建服务器并启动
+            config = uvicorn.Config(
+                app,
+                host="0.0.0.0",
+                port=8000,
+                log_level="info",
+                access_log=True
+            )
+            server = uvicorn.Server(config)
+
+            # 在Python 3.13中使用兼容的启动方式
+            if sys.version_info >= (3, 13):
+                # 直接调用serve方法而不是通过asyncio.run
+                import asyncio
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    loop.run_until_complete(server.serve())
+                finally:
+                    loop.close()
+            else:
+                # 旧版本Python
+                asyncio.run(server.serve())
+
+        else:
+            # 其他TypeError，重新抛出
+            raise
+    except Exception as e:
+        print(f"❌ 启动失败: {e}")
+        raise

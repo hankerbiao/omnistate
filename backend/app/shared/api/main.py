@@ -8,7 +8,7 @@ from fastapi import APIRouter
 from app.modules.workflow.api import router as workflow_router
 from app.modules.assets.api import router as assets_router
 from app.modules.test_specs.api import requirement_router, test_case_router
-from app.modules.execution.api import router as execution_router
+from app.modules.execution.api import execution_router
 from app.modules.auth.api import router as auth_router
 from app.shared.api.routes import health_router
 

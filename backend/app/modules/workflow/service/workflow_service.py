@@ -103,13 +103,13 @@ class AsyncWorkflowService:
         将 Beanie 文档列表转换为适合 API 返回的字典列表。
 
         处理要点：
-        - 将 ObjectId 转换为字符串形式的 id
+        - 将 ObjectId 转换为字符串形式的 item_id（与前端保持一致）
         - 对 parent_item_id 做同样的字符串转换，便于前端直接使用
         """
         results: List[Dict] = []
         for doc in docs:
             d = doc.model_dump()
-            d["id"] = str(doc.id)
+            d["item_id"] = str(doc.id)  # 修改字段名为 item_id
             if d.get("parent_item_id") is not None:
                 d["parent_item_id"] = str(d["parent_item_id"])
             results.append(d)

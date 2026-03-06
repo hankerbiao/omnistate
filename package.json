@@ -1,0 +1,31 @@
+{
+  "name": "dmlv4",
+  "version": "1.0.0",
+  "description": "前后端分离的测试管理系统，覆盖测试需求、测试用例、配置驱动工作流、RBAC 鉴权、菜单权限和资产管理。",
+  "type": "module",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hankerbiao/omnistate.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/hankerbiao/omnistate/issues"
+  },
+  "homepage": "https://github.com/hankerbiao/omnistate#readme",
+  "dependencies": {
+    "vitepress": "^1.6.4",
+    "vue": "^3.5.29"
+  }
+}

@@ -26,7 +26,6 @@ class RbacService(BaseService):
     _ROLE_UPDATABLE_FIELDS = {"name"}
     _PERMISSION_UPDATABLE_FIELDS = {"code", "name", "description"}
     _DEFAULT_NAV_VIEWS = ["req_list", "case_list", "my_tasks"]
-    _MANDATORY_NAV_VIEWS = ["my_tasks"]
 
     def __init__(self):
         self._navigation_service = NavigationPageService()
@@ -326,16 +325,52 @@ class RbacService(BaseService):
         nav_pages: List[Dict[str, Any]],
         all_nav_views: List[str],
     ) -> List[str]:
+        """根据用户权限和导航页面配置推导可访问的导航视图。
+
+        权限匹配逻辑：
+        1. nav:public: 所有登录用户默认可访问
+        2. nav:xxx:view: 需要用户具有对应权限码
+        3. None: 兼容旧数据，转换为公共权限处理
+
+        Args:
+            permissions: 用户拥有的权限码列表
+            nav_pages: 所有导航页面配置列表
+            all_nav_views: 所有导航页面视图标识列表
+
+        Returns:
+            用户可访问的导航视图列表
+        """
         permission_set = set(permissions)
-        derived = [
-            str(item.get("view"))
-            for item in nav_pages
-            if item.get("permission") and item.get("permission") in permission_set
-        ]
+
+        derived = []
+        for item in nav_pages:
+            view = item.get("view")
+            permission = item.get("permission")
+
+            if not view:
+                continue
+
+            # 权限匹配逻辑
+            if permission == "nav:public":
+                # 公共页面，所有登录用户可见
+                derived.append(view)
+            elif permission and permission in permission_set:
+                # 用户拥有对应权限
+                derived.append(view)
+            elif permission is None:
+                # 兼容旧数据：None 权限也作为公共页面处理
+                derived.append(view)
+
         return cls._sanitize_nav_views(derived, all_nav_views)
 
     @classmethod
     def _ensure_mandatory_nav_views(cls, views: List[str], all_nav_views: List[str]) -> List[str]:
-        """确保全员默认可访问导航始终可见。"""
-        mandatory = [view for view in cls._MANDATORY_NAV_VIEWS if view in set(all_nav_views)]
-        return cls._sanitize_nav_views([*views, *mandatory], all_nav_views)
+        """确保全员默认可访问导航始终可见。
+
+        注意：该方法现在已经不太需要，因为公共页面权限（nav:public）
+        已经通过 _derive_nav_views_from_permissions 方法统一处理。
+        保留此方法以兼容现有调用。
+        """
+        # 由于现在使用 nav:public 权限统一处理公共页面，
+        # 这个方法主要是向后兼容，实际上可以简化
+        return cls._sanitize_nav_views(views, all_nav_views)

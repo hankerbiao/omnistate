@@ -181,6 +181,288 @@ class ExecutionReporter:
 - `AsyncExecutionReporter`，基于 `httpx.AsyncClient`
 - 方法签名与同步版一致，返回 `await`
 
+## 6.4 详细接口文档
+
+### ReporterConfig 配置类
+
+```python
+@dataclass
+class ReporterConfig:
+    base_url: str                           # 必需：DMLV4 API基础地址
+    framework_id: str                       # 必需：框架唯一标识
+    secret: str                            # 必需：签名密钥
+    timeout_sec: float = 3.0               # 可选：HTTP超时(秒)
+    max_retries: int = 5                   # 可选：最大重试次数
+    backoff_base_sec: float = 0.3          # 可选：重试退避基准(秒)
+    backoff_max_sec: float = 10.0          # 可选：最大退避时间(秒)
+    enable_disk_spool: bool = True         # 可选：是否启用落盘缓存
+    spool_dir: str = "/tmp/dml-reporter-spool"  # 可选：缓存目录
+    worker_threads: int = 2                # 可选：工作线程数
+    queue_maxsize: int = 5000              # 可选：队列最大容量
+```
+
+### 任务管理接口
+
+#### `get_task(task_id: str) -> ExecutionTask`
+
+**功能**：获取任务详细信息
+
+**参数：**
+- `task_id` (str): 任务ID，格式：`ET-YYYY-NNNNNN`
+
+**返回值：**
+```python
+@dataclass
+class ExecutionTask:
+    task_id: str                           # 任务ID
+    external_task_id: Optional[str]        # 外部任务ID
+    framework: str                        # 框架标识
+    overall_status: str                   # 总体状态
+    case_count: int                       # 用例总数
+    reported_case_count: int              # 已上报用例数
+    created_at: datetime                  # 创建时间
+    stats: TaskStats                      # 统计信息
+```
+
+**异常：**
+- `TaskNotFoundError`: 任务不存在
+- `NetworkError`: 网络请求失败
+
+---
+
+#### `list_tasks(...) -> List[ExecutionTask]`
+
+**功能**：查询任务列表
+
+**参数：**
+- `framework` (Optional[str]): 按框架筛选
+- `overall_status` (Optional[str]): 按状态筛选
+- `limit` (int): 返回数量限制，默认20，最大200
+- `offset` (int): 偏移量，默认0
+
+**返回值：** `List[ExecutionTask]`
+
+---
+
+#### `get_task_cases(...) -> List[TaskCase]`
+
+**功能**：获取任务包含的用例列表
+
+**参数：**
+- `task_id` (str): 任务ID
+- `status` (Optional[str]): 按状态筛选
+- `limit` (int): 返回数量限制，默认50，最大500
+- `offset` (int): 偏移量
+
+**返回值：**
+```python
+@dataclass
+class TaskCase:
+    case_id: str                          # 用例ID
+    status: str                          # 用例状态
+    progress_percent: Optional[float]     # 进度百分比(0-100)
+    step_total: int                      # 步骤总数
+    step_passed: int                     # 通过步骤数
+    step_failed: int                     # 失败步骤数
+    step_skipped: int                    # 跳过步骤数
+    started_at: Optional[datetime]       # 开始时间
+    finished_at: Optional[datetime]      # 完成时间
+```
+
+### 进度上报接口
+
+#### `report_task_status(...) -> None`
+
+**功能**：上报任务级别的执行状态
+
+**参数：**
+- `task_id` (str): 任务ID，必需
+- `external_task_id` (Optional[str]): 外部任务ID，可选
+- `status` (str): 任务状态，必需，值域：`QUEUED|RUNNING|PASSED|FAILED|PARTIAL_FAILED|CANCELLED|TIMEOUT`
+- `seq` (int): 事件序列号，必需，同一任务内单调递增
+- `detail` (Optional[Dict]): 详细信息，可选
+- `event_id` (Optional[str]): 事件ID，可选，为None时自动生成
+
+**异常：**
+- `InvalidStatusError`: 无效的状态值
+- `ReporterDeliveryError`: 消息投递失败
+
+**示例：**
+```python
+reporter.report_task_status(
+    task_id="ET-2026-000001",
+    external_task_id="FW-123",
+    status="RUNNING",
+    seq=1,
+    detail={"started_at": "2026-03-03T10:00:00Z"}
+)
+```
+
+---
+
+#### `report_case_status(...) -> None`
+
+**功能**：上报单个测试用例的执行状态
+
+**参数：**
+- `task_id` (str): 任务ID，必需
+- `case_id` (str): 用例ID，必需
+- `status` (str): 用例状态，必需，值域：`QUEUED|RUNNING|PASSED|FAILED|SKIPPED|BLOCKED|ERROR`
+- `seq` (int): 事件序列号，必需
+- `progress_percent` (Optional[float]): 进度百分比，可选，0-100之间
+- `step_total` (Optional[int]): 总步骤数，可选，≥0
+- `step_passed` (Optional[int]): 通过步骤数，可选，≥0
+- `step_failed` (Optional[int]): 失败步骤数，可选，≥0
+- `step_skipped` (Optional[int]): 跳过步骤数，可选，≥0
+- `event_id` (Optional[str]): 事件ID，可选
+- `event_time` (Optional[datetime]): 事件时间，可选
+
+**异常：**
+- `InvalidStatusError`: 无效的状态值
+- `ReporterDeliveryError`: 消息投递失败
+
+**示例：**
+```python
+reporter.report_case_status(
+    task_id="ET-2026-000001",
+    case_id="TC-2026-001",
+    status="RUNNING",
+    seq=2,
+    progress_percent=60.0,
+    step_total=10,
+    step_passed=6,
+    step_failed=0,
+    step_skipped=0
+)
+```
+
+---
+
+#### `report_step_result(...) -> None`
+
+**功能**：上报单个测试步骤的执行结果
+
+**参数：**
+- `task_id` (str): 任务ID，必需
+- `case_id` (str): 用例ID，必需
+- `step_id` (str): 步骤ID，必需
+- `status` (str): 步骤状态，必需，值域：`RUNNING|PASSED|FAILED|SKIPPED|ERROR`
+- `seq` (int): 事件序列号，必需
+- `started_at` (Optional[datetime]): 步骤开始时间，可选
+- `finished_at` (Optional[datetime]): 步骤结束时间，可选
+- `message` (Optional[str]): 步骤执行消息，可选
+- `artifacts` (Optional[List[Dict]]): 附件信息，可选
+
+**附件格式：**
+```python
+artifacts = [
+    {
+        "type": "log",                     # 附件类型：log/screenshot/file
+        "path": "/path/to/file",           # 文件路径或URL
+        "description": "描述信息"           # 可选描述
+    }
+]
+```
+
+**异常：**
+- `InvalidStatusError`: 无效的状态值
+- `ReporterDeliveryError`: 消息投递失败
+
+**示例：**
+```python
+reporter.report_step_result(
+    task_id="ET-2026-000001",
+    case_id="TC-2026-001",
+    step_id="step_01",
+    status="PASSED",
+    seq=3,
+    message="电压检查通过",
+    artifacts=[
+        {"type": "log", "path": "/logs/step_01.log"},
+        {"type": "screenshot", "path": "/screenshots/step_01.png"}
+    ]
+)
+```
+
+#### `heartbeat(task_id: str, seq: int, event_id: Optional[str] = None) -> None`
+
+**功能**：发送心跳信号，表示任务仍在执行
+
+**参数：**
+- `task_id` (str): 任务ID，必需
+- `seq` (int): 事件序列号，必需
+- `event_id` (Optional[str]): 事件ID，可选
+
+**示例：**
+```python
+reporter.heartbeat(task_id="ET-2026-000001", seq=50)
+```
+
+#### `summary(task_id: str, overall_status: str, seq: int, totals: Dict, event_id: Optional[str] = None) -> None`
+
+**功能**：发送任务执行汇总信息
+
+**参数：**
+- `task_id` (str): 任务ID，必需
+- `overall_status` (str): 总体状态，必需
+- `seq` (int): 事件序列号，必需
+- `totals` (Dict): 汇总数据，必需
+- `event_id` (Optional[str]): 事件ID，可选
+
+**汇总数据格式：**
+```python
+totals = {
+    "total_cases": 10,                    # 总用例数
+    "passed": 8,                         # 通过用例数
+    "failed": 2,                         # 失败用例数
+    "skipped": 0,                        # 跳过用例数
+    "execution_time": "00:05:30",        # 执行时间
+    "coverage": 95.5                     # 自定义指标
+}
+```
+
+**示例：**
+```python
+reporter.summary(
+    task_id="ET-2026-000001",
+    overall_status="PASSED",
+    seq=100,
+    totals={
+        "total_cases": 5,
+        "passed": 4,
+        "failed": 1,
+        "execution_time": "00:15:30"
+    }
+)
+```
+
+### 便捷方法
+
+#### `start_case(task_id, case_id, seq, event_id=None) -> None`
+
+标记用例开始执行，是 `report_case_status` 的便捷包装。
+
+#### `complete_case(task_id, case_id, status, seq, message=None, event_id=None) -> None`
+
+标记用例执行完成。
+
+#### `update_case_progress(task_id, case_id, progress_percent, seq, event_id=None) -> None`
+
+更新用例进度百分比。
+
+### 生命周期管理
+
+#### `flush(timeout_sec=None) -> None`
+
+等待所有待处理的请求发送完成。
+
+**参数：**
+- `timeout_sec` (Optional[float]): 超时时间，为None时使用配置的超时时间
+
+#### `close() -> None`
+
+关闭客户端，释放资源。
+
 ---
 
 ## 7. 事件模型（SDK 内部）

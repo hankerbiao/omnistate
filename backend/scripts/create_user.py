@@ -50,6 +50,8 @@ DEFAULT_PERMISSIONS = [
     ("requirements:write", "Requirements write"),
     ("test_cases:read", "Test cases read"),
     ("test_cases:write", "Test cases write"),
+    ("navigation:read", "Navigation read"),
+    ("navigation:write", "Navigation write"),
 ]
 
 

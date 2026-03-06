@@ -855,7 +855,6 @@ export default function App() {
 
   // Form data for test case
   const [formData, setFormData] = useState<TestCase>({
-    case_id: 'TC-SRV-2024-001',
     ref_req_id: '',
     title: '',
     test_category: TestCaseCategory.STRESS,
@@ -863,8 +862,8 @@ export default function App() {
     is_active: true,
     change_log: '初始版本创建。',
     status: TestCaseStatus.DRAFT,
-    owner_id: 'eng_zhang_san',
-    reviewer_id: 'lead_li_si',
+    owner_id: '',
+    reviewer_id: '',
     auto_dev_id: '',
     priority: Priority.P0,
     estimated_duration_sec: 3600,

@@ -1,9 +1,4 @@
 """RBAC API 路由
-
-AI 友好注释说明：
-- 这里只处理 HTTP 参数解析与错误映射。
-- 业务规则放在 Service 层。
-- ADMIN 权限控制建议以依赖注入的方式加入（此处先保留接口）。
 """
 from typing import List, Optional, Annotated
 
@@ -239,6 +234,7 @@ async def get_my_permissions(
 async def get_my_navigation(
     service: RbacServiceDep,
     current_user=Depends(get_current_user),
+    _=Depends(require_permission("navigation:read")),
 ):
     """返回当前登录用户可访问的导航页面。"""
     try:
@@ -255,7 +251,7 @@ async def get_my_navigation(
 )
 async def list_navigation_pages(
     service: RbacServiceDep,
-    _=Depends(require_admin_user),
+    _=Depends(require_permission("navigation:write")),
     include_inactive: bool = Query(True, description="是否包含未启用页面"),
 ):
     data = await service.list_navigation_pages(include_inactive=include_inactive)
@@ -270,7 +266,7 @@ async def list_navigation_pages(
 async def get_navigation_page(
     view: str,
     service: RbacServiceDep,
-    _=Depends(require_admin_user),
+    _=Depends(require_permission("navigation:write")),
 ):
     try:
         data = await service.get_navigation_page(view)
@@ -288,7 +284,7 @@ async def get_navigation_page(
 async def create_navigation_page(
     request: CreateNavigationPageRequest,
     service: RbacServiceDep,
-    _=Depends(require_admin_user),
+    _=Depends(require_permission("navigation:write")),
 ):
     try:
         data = await service.create_navigation_page(request.model_dump())
@@ -306,7 +302,7 @@ async def update_navigation_page(
     view: str,
     request: UpdateNavigationPageRequest,
     service: RbacServiceDep,
-    _=Depends(require_admin_user),
+    _=Depends(require_permission("navigation:write")),
 ):
     payload = request.model_dump(exclude_unset=True)
     if not payload:
@@ -326,7 +322,7 @@ async def update_navigation_page(
 async def delete_navigation_page(
     view: str,
     service: RbacServiceDep,
-    _=Depends(require_admin_user),
+    _=Depends(require_permission("navigation:write")),
 ):
     try:
         data = await service.delete_navigation_page(view)
@@ -343,7 +339,7 @@ async def delete_navigation_page(
 async def get_user_navigation(
     user_id: str,
     service: RbacServiceDep,
-    _=Depends(require_admin_user),
+    _=Depends(require_permission("navigation:write")),
 ):
     try:
         data = await service.get_user_navigation(user_id)
@@ -361,7 +357,7 @@ async def update_user_navigation(
     user_id: str,
     request: UpdateUserNavigationRequest,
     service: RbacServiceDep,
-    _=Depends(require_admin_user),
+    _=Depends(require_permission("navigation:write")),
 ):
     try:
         data = await service.update_user_navigation(user_id, request.allowed_nav_views)

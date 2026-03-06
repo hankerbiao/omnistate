@@ -33,7 +33,7 @@ class TransitionRequest(BaseModel):
 
 class WorkItemResponse(BaseModel):
     """业务事项响应"""
-    id: str
+    item_id: str  # 修改字段名与前端保持一致
     type_code: str
     title: str
     content: str

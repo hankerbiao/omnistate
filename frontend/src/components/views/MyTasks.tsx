@@ -66,7 +66,7 @@ const normalizeWorkItemState = (value: unknown): WorkItemState => {
 const normalizeWorkItem = (item: unknown): WorkItem => {
   const row = asObject(item);
   return {
-    item_id: String(row.item_id || ''),
+    item_id: String(row.item_id || ''),  // 后端已直接返回 item_id 字段
     type_code: normalizeWorkItemType(row.type_code),
     title: String(row.title || ''),
     content: String(row.content || ''),
