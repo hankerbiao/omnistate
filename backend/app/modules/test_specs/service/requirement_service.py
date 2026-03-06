@@ -1,18 +1,14 @@
 """测试需求服务（RequirementService）
 
-AI 友好注释说明：
-- 本服务负责「测试需求」的 CRUD，以及与工作流事项（work_item）的联动。
+- 负责「测试需求」的 CRUD，以及与工作流事项（work_item）的联动。
 - 需求创建是跨集合写入：先创建 workflow 事项，再写入 requirement 文档。
-- 为避免脏数据，优先使用 MongoDB 事务；若部署环境不支持事务，则降级为补偿模式。
+- 使用 MongoDB 事务确保原子性：在一个事务中完成 workflow + requirement 的创建。
 
 一致性策略：
-1. 事务模式（首选）：
+- 事务模式（唯一模式）：
    - 在同一个 session/transaction 中完成 workflow + requirement 的创建。
    - 任一步失败，事务整体回滚，不产生孤儿数据。
-2. 补偿模式（降级）：
-   - 若事务不可用，先创建 workflow，再写 requirement。
-   - 若写 requirement 失败，尝试补偿删除 workflow 事项。
-   - 若补偿也失败，记录异常日志，便于后续人工修复。
+   - 要求：MongoDB 必须支持事务（Replica Set 或 Sharded Cluster）
 """
 from copy import deepcopy
 from typing import Dict, Any, Optional, List
@@ -42,19 +38,19 @@ class RequirementService(BaseService):
         "attachments",
     }
 
+    def __init__(self):
+        super().__init__()
+
     async def create_requirement(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """创建测试需求。
+        """创建测试需求（仅事务模式）。
+
+        要求：
+        - 环境必须支持MongoDB事务
+        - 事务内完成workflow + requirement的原子写入
 
         输入：
         - data: 前端/上层传入的需求字段，至少包含 title/tpm_owner_id。
                 注意：req_id 不允许由前端提供，必须由后端强制生成以保证唯一性。
-
-        核心流程：
-        1. 深拷贝输入，避免调用方持有的字典被本方法原地修改。
-        2. 强制忽略前端可能传递的 req_id，重新生成一个新的。
-        3. 尝试获取全局 Mongo 客户端（用于启动事务）。
-        4. 若可用，优先走事务创建路径。
-        5. 若事务不被当前 Mongo 部署支持，降级为补偿创建路径。
 
         返回：
         - 标准化后的 requirement 字典（包含 id/workflow_item_id/status 等）。
@@ -64,21 +60,14 @@ class RequirementService(BaseService):
         # 强制生成新的 req_id，不接受前端提供的任何值
         # 这是为了保证唯一性和避免冲突
         payload["req_id"] = await self._generate_req_id()
-        logger.info(f"后端强制生成需求编号: req_id={payload['req_id']}")
+        logger.info(f"后端生成需求编号: req_id={payload['req_id']}")
 
         client = self._get_mongo_client_or_none()
+        if client is None:
+            raise RuntimeError("MongoDB客户端未初始化，无法创建需求")
 
-        if client is not None:
-            try:
-                # 优先使用事务，确保 workflow 与 requirement 原子写入。
-                return await self._create_requirement_with_transaction(client, payload)
-            except Exception as exc:
-                if self._is_transaction_not_supported(exc):
-                    logger.warning("MongoDB 不支持事务，降级为补偿写入模式: create_requirement")
-                else:
-                    raise
-
-        return await self._create_requirement_with_compensation(payload)
+        # 仅使用事务模式，确保workflow与requirement原子写入
+        return await self._create_requirement_with_transaction(client, payload)
 
     async def get_requirement(self, req_id: str) -> Dict[str, Any]:
         """按 req_id 查询单条需求（仅返回未逻辑删除数据）。"""
@@ -168,7 +157,7 @@ class RequirementService(BaseService):
         workflow_service = AsyncWorkflowService()
 
         async with client.start_session() as session:
-            async with await session.start_transaction():
+            async with  session.start_transaction():
                 existing = await TestRequirementDoc.find_one(
                     TestRequirementDoc.req_id == payload["req_id"],
                     session=session,
@@ -192,41 +181,6 @@ class RequirementService(BaseService):
                 await doc.insert(session=session)
                 return self._doc_to_dict(doc)
 
-    async def _create_requirement_with_compensation(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        """补偿模式创建需求（事务不可用时的降级路径）。
-
-        一致性保障思路：
-        - 先创建 workflow 事项。
-        - 若 requirement 插入失败，则尝试补偿删除 workflow 事项，避免孤儿数据。
-        """
-        existing = await TestRequirementDoc.find_one(TestRequirementDoc.req_id == payload["req_id"])
-        if existing:
-            raise ValueError("req_id already exists")
-
-        workflow_service = AsyncWorkflowService()
-        workflow_item_id: Optional[str] = None
-
-        try:
-            workflow_item = await workflow_service.create_item(
-                type_code="REQUIREMENT",
-                title=payload["title"],
-                content=payload.get("description") or payload["title"],
-                creator_id=payload["tpm_owner_id"],
-                parent_item_id=None,
-            )
-            workflow_item_id = workflow_item["id"]
-
-            payload["workflow_item_id"] = workflow_item_id
-            payload["status"] = payload.get("status") or workflow_item.get("current_state") or "待指派"
-            doc = TestRequirementDoc(**payload)
-            await doc.insert()
-            return self._doc_to_dict(doc)
-        except Exception:
-            # requirement 写入失败时，回滚前一步创建的 workflow 事项。
-            if workflow_item_id:
-                await self._compensate_delete_workflow_item(workflow_item_id)
-            raise
-
     @staticmethod
     def _get_mongo_client_or_none() -> Optional[AsyncMongoClient]:
         """获取全局 Mongo 客户端。
@@ -238,41 +192,10 @@ class RequirementService(BaseService):
         except RuntimeError:
             return None
 
-    @staticmethod
-    def _is_transaction_not_supported(exc: Exception) -> bool:
-        """判断异常是否属于「部署不支持事务」。
-
-        注意：
-        - 这里采用关键字匹配是为了兼容不同 Mongo 版本/驱动的报错文本。
-        - 仅在确认是能力缺失时降级；其它异常继续抛出。
-        """
-        message = str(exc).lower()
-        return (
-            "transaction numbers are only allowed on a replica set member" in message
-            or "this mongodb deployment does not support retryable writes" in message
-            or "sessions are not supported" in message
-        )
-
-    @staticmethod
-    async def _compensate_delete_workflow_item(workflow_item_id: str) -> None:
-        """执行补偿删除 workflow 事项。
-
-        设计原则：
-        - 补偿失败不吞掉，写异常日志（包含 work_item_id）用于审计与修复。
-        - 此方法不抛业务异常，避免覆盖原始失败原因。
-        """
-        try:
-            await AsyncWorkflowService().delete_item(workflow_item_id)
-            logger.warning(f"需求创建失败，已补偿删除工作流事项: {workflow_item_id}")
-        except Exception as rollback_error:
-            logger.exception(
-                f"需求创建失败且补偿删除工作流事项失败: work_item_id={workflow_item_id}, error={rollback_error}"
-            )
-
     async def _generate_req_id(self) -> str:
         """自动生成需求编号。
 
-        格式：TR-YYYY-XXX（例如：TR-2026-001）
+        格式：TR-YYYY-XXXXX（例如：TR-2026-00001）
         确保在并发场景下唯一性。
         """
         year = datetime.now().year
@@ -280,4 +203,4 @@ class RequirementService(BaseService):
         counter_key = f"test_requirement:{year}"
         next_seq = await SequenceIdService().next(counter_key)
 
-        return f"{prefix}{str(next_seq).zfill(3)}"
+        return f"{prefix}{str(next_seq).zfill(5)}"

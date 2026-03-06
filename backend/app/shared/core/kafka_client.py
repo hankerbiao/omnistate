@@ -12,7 +12,7 @@ class KafkaTaskHandler:
     - 消费者方法运行在循环中持续接收消息。如需单次消息消费可根据需求进行修改。
     """
 
-    def __init__(self, bootstrap_servers='localhost:9092'):
+    def __init__(self, bootstrap_servers='10.17.154.252:9092'):
         """
         初始化Kafka生产者与消费者。
 

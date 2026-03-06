@@ -21,7 +21,7 @@ class TestCaseStep(BaseModel):
 class AutomationCaseRef(BaseModel):
     __test__ = False
     auto_case_id: str = Field(..., description="自动化用例库 ID")
-    version: Optional[str] = Field(None, description="自动化用例版本")
+    version: Optional[str] = Field(..., description="自动化用例版本")
 
 
 # ========== Beanie 文档模型 ==========
@@ -56,7 +56,7 @@ class TestCaseDoc(Document):
     is_automated: bool = Field(default=False, description="是否已自动化")
     automation_type: Optional[str] = Field(None, description="自动化类型")
     script_entity_id: Optional[str] = Field(None, description="关联自动化脚本 ID")
-    automation_case_ref: Optional[AutomationCaseRef] = Field(None, description="关联自动化用例库引用")
+    automation_case_ref: Optional[AutomationCaseRef] = Field(description="关联自动化用例库引用")
     risk_level: Optional[str] = Field(None, description="风险等级")
     failure_analysis: Optional[str] = Field(None, description="失败分析建议")
     confidentiality: Optional[str] = Field(None, description="机密等级")

@@ -103,7 +103,7 @@ class KafkaMessageManager:
             bootstrap_servers: Kafka 集群地址列表
             client_id: 客户端 ID
         """
-        self.bootstrap_servers = bootstrap_servers or ["localhost:9092"]
+        self.bootstrap_servers = bootstrap_servers or ["10.17.154.252:9092"]
         self.client_id = client_id
         self.logger = logging.getLogger(__name__)
 

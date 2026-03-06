@@ -108,10 +108,11 @@ async def lifespan(app: FastAPI):
         log.success("Beanie ODM 初始化完成")
         await validate_workflow_consistency()
         log.success("Workflow 配置一致性校验通过")
-
+        #
         # 启动Kafka执行任务监听器
         try:
             execution_service = ExecutionService()
+            log.success("Kafka 准备启动")
             await execution_service.start_kafka_listener()
             log.success("Kafka 执行任务监听器启动成功")
         except Exception as e:
