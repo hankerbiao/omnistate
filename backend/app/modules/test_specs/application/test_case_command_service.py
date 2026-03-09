@@ -14,6 +14,12 @@ from app.modules.workflow.domain.exceptions import PermissionDeniedError
 
 
 class TestCaseCommandService:
+    """
+    测试用例命令服务类，负责处理测试用例的各种命令操作。
+
+    该服务类封装了测试用例的创建、更新、删除以及与自动化测试用例的关联操作，
+    并与工作流服务集成，确保操作符合权限策略和业务规则。
+    """
     __test__ = False
 
     def __init__(
@@ -21,6 +27,13 @@ class TestCaseCommandService:
         test_case_service: TestCaseService,
         workflow_command_service: WorkflowCommandService,
     ):
+        """
+        初始化测试用例命令服务。
+
+        Args:
+            test_case_service: 测试用例服务实例，用于执行测试用例相关的数据库操作
+            workflow_command_service: 工作流命令服务实例，用于处理工作流相关的操作
+        """
         self._test_case_service = test_case_service
         self._workflow_command_service = workflow_command_service
 
@@ -29,6 +42,22 @@ class TestCaseCommandService:
         context: OperationContext,
         command: CreateTestCaseCommand,
     ) -> dict:
+        """
+        创建新的测试用例。
+
+        如果请求中没有指定owner_id，则默认将当前操作者设置为负责人。
+        这确保每个测试用例都有一个明确的负责人。
+
+        Args:
+            context: 操作上下文，包含执行操作的用户信息
+            command: 创建测试用例命令，包含测试用例的基本信息
+
+        Returns:
+            创建成功的测试用例数据字典
+
+        Raises:
+            相关异常可能由底层服务抛出
+        """
         payload = deepcopy(command.payload)
         owner_id = str(payload.get("owner_id") or "").strip()
         if not owner_id:
@@ -40,6 +69,28 @@ class TestCaseCommandService:
         context: OperationContext,
         command: UpdateTestCaseCommand,
     ) -> dict:
+        """
+        更新现有测试用例。
+
+        执行以下步骤：
+        1. 验证更新字段不为空
+        2. 获取测试用例信息并验证存在性
+        3. 获取关联的工作流项（如果有）
+        4. 检查更新权限
+        5. 执行更新操作
+
+        Args:
+            context: 操作上下文，包含执行操作的用户信息
+            command: 更新测试用例命令，包含测试用例ID和更新字段
+
+        Returns:
+            更新后的测试用例数据字典
+
+        Raises:
+            ValueError: 更新字段为空时抛出
+            TestCaseNotFoundError: 测试用例不存在时抛出
+            PermissionDeniedError: 没有更新权限时抛出
+        """
         if not command.payload:
             raise ValueError("no fields to update")
 
@@ -53,7 +104,7 @@ class TestCaseCommandService:
         if workflow_item_id:
             from app.modules.workflow.service.workflow_service import AsyncWorkflowService
             workflow_service = AsyncWorkflowService()
-            work_item = await workflow_service.get_item(workflow_item_id)
+            work_item = await workflow_service.get_item_by_id(workflow_item_id)
 
         actor = {"actor_id": context.actor_id, "role_ids": context.role_ids}
         if not can_update_test_case(actor, test_case, work_item):
@@ -66,6 +117,24 @@ class TestCaseCommandService:
         context: OperationContext,
         command: DeleteTestCaseCommand,
     ) -> None:
+        """
+        删除测试用例。
+
+        执行以下步骤：
+        1. 获取测试用例信息并验证存在性
+        2. 获取关联的工作流项（如果有）
+        3. 检查删除权限
+        4. 如果有关联工作流项，先删除工作流项
+        5. 否则直接删除测试用例
+
+        Args:
+            context: 操作上下文，包含执行操作的用户信息
+            command: 删除测试用例命令，包含要删除的测试用例ID
+
+        Raises:
+            TestCaseNotFoundError: 测试用例不存在时抛出
+            PermissionDeniedError: 没有删除权限时抛出
+        """
         test_case = await self._test_case_service.get_test_case(command.case_id)
         if not test_case:
             from app.modules.test_specs.domain.exceptions import TestCaseNotFoundError
@@ -76,7 +145,7 @@ class TestCaseCommandService:
         if workflow_item_id:
             from app.modules.workflow.service.workflow_service import AsyncWorkflowService
             workflow_service = AsyncWorkflowService()
-            work_item = await workflow_service.get_item(workflow_item_id)
+            work_item = await workflow_service.get_item_by_id(workflow_item_id)
 
         actor = {"actor_id": context.actor_id, "role_ids": context.role_ids}
         if not can_delete_test_case(actor, test_case, work_item):
@@ -95,6 +164,22 @@ class TestCaseCommandService:
         context: OperationContext,
         command: LinkAutomationCaseCommand,
     ) -> dict:
+        """
+        将测试用例与自动化测试用例进行关联。
+
+        此操作用于建立测试用例与自动化测试用例之间的关联关系，
+        支持版本控制。操作不需要权限检查，所有用户都可以执行。
+
+        Args:
+            context: 操作上下文（此方法中未使用）
+            command: 关联命令，包含测试用例ID、自动化测试用例ID和版本信息
+
+        Returns:
+            关联操作的结果数据字典
+
+        Raises:
+            相关异常可能由底层服务抛出
+        """
         del context
         return await self._test_case_service.link_automation_case(
             case_id=command.case_id,
@@ -107,5 +192,21 @@ class TestCaseCommandService:
         context: OperationContext,
         command: UnlinkAutomationCaseCommand,
     ) -> dict:
+        """
+        取消测试用例与自动化测试用例的关联。
+
+        此操作用于移除测试用例与自动化测试用例之间的关联关系。
+        操作不需要权限检查，所有用户都可以执行。
+
+        Args:
+            context: 操作上下文（此方法中未使用）
+            command: 取消关联命令，包含要取消关联的测试用例ID
+
+        Returns:
+            取消关联操作的结果数据字典
+
+        Raises:
+            相关异常可能由底层服务抛出
+        """
         del context
         return await self._test_case_service.unlink_automation_case(case_id=command.case_id)

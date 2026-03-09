@@ -77,11 +77,11 @@ def test_delete_requirement_command_service_routes_linked_delete_to_workflow():
 
     asyncio.run(
         service.delete_requirement(
-            OperationContext(actor_id="user-1"),
+            OperationContext(actor_id="admin", role_ids=["ROLE_ADMIN"]),
             DeleteRequirementCommand(req_id="REQ-1"),
         )
     )
 
     assert captured["req_id"] == "REQ-1"
-    assert captured["actor_id"] == "user-1"
+    assert captured["actor_id"] == "admin"
     assert captured["work_item_id"] == "workflow-1"

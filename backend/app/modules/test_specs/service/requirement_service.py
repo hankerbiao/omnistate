@@ -108,7 +108,18 @@ class RequirementService(BaseService):
         return [self._doc_to_dict(doc) for doc in docs]
 
     async def update_requirement(self, req_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
-        """更新需求可编辑字段（白名单控制）。"""
+        """更新需求可编辑字段（白名单控制）。
+
+        注意：status字段是工作流状态的投影，不能通过此方法直接修改。
+        状态变更必须通过工作流转换进行。
+        """
+        # 明确禁止修改status字段（投影字段）
+        if "status" in data:
+            raise ValueError(
+                "status is a workflow state projection and cannot be updated directly. "
+                "Use workflow transition to change state."
+            )
+
         doc = await TestRequirementDoc.find_one(
             TestRequirementDoc.req_id == req_id,
             {"is_deleted": False},

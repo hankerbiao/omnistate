@@ -126,7 +126,18 @@ class TestCaseService(BaseService):
         return [self._doc_to_dict(doc) for doc in docs]
 
     async def update_test_case(self, case_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
-        """更新测试用例信息"""
+        """更新测试用例信息
+
+        注意：status字段是工作流状态的投影，不能通过此方法直接修改。
+        状态变更必须通过工作流转换进行。
+        """
+        # 明确禁止修改status字段（投影字段）
+        if "status" in data:
+            raise ValueError(
+                "status is a workflow state projection and cannot be updated directly. "
+                "Use workflow transition to change state."
+            )
+
         doc = await TestCaseDoc.find_one(
             TestCaseDoc.case_id == case_id,
             {"is_deleted": False},

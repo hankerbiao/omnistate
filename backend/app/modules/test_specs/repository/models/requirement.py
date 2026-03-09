@@ -11,7 +11,12 @@ from pymongo import IndexModel, ASCENDING, DESCENDING
 # ========== Beanie 文档模型 ==========
 
 class TestRequirementDoc(Document):
-    """测试需求 - 数据库模型"""
+    """测试需求 - 数据库模型
+
+    注意：status字段是工作流状态的投影，只读。
+    实际状态来源是关联的BusWorkItemDoc.current_state。
+    状态转换通过工作流系统自动同步到此字段。
+    """
     __test__ = False
     req_id: str = Field(..., description="唯一业务编号（如 TR-2026-001）")
     workflow_item_id: Optional[str] = Field(None, description="关联工作流事项 ID")
@@ -26,7 +31,7 @@ class TestRequirementDoc(Document):
     tpm_owner_id: str = Field(..., description="需求创建人/项目经理 ID")
     manual_dev_id: Optional[str] = Field(None, description="测试用例开发工程师 ID")
     auto_dev_id: Optional[str] = Field(None, description="自动化脚本开发工程师 ID")
-    status: str = Field(default="待指派", description="需求状态")
+    status: str = Field(default="待指派", description="需求状态（工作流状态的投影，只读）")
     attachments: List[Dict[str, Any]] = Field(default_factory=list, description="附件列表")
     is_deleted: bool = Field(default=False, description="逻辑删除标志")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

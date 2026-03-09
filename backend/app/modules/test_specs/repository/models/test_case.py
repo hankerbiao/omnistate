@@ -27,7 +27,12 @@ class AutomationCaseRef(BaseModel):
 # ========== Beanie 文档模型 ==========
 
 class TestCaseDoc(Document):
-    """测试用例 - 数据库模型"""
+    """测试用例 - 数据库模型
+
+    注意：status字段是工作流状态的投影，只读。
+    实际状态来源是关联的BusWorkItemDoc.current_state。
+    状态转换通过工作流系统自动同步到此字段。
+    """
     __test__ = False
     case_id: str = Field(..., description="唯一业务编号（如 TC-MEM-001）")
     ref_req_id: str = Field(..., description="关联需求 req_id")
@@ -36,7 +41,7 @@ class TestCaseDoc(Document):
     version: int = Field(default=1, description="版本号")
     is_active: bool = Field(default=True, description="是否为当前有效版本")
     change_log: Optional[str] = Field(None, description="版本变更摘要")
-    status: str = Field(default="draft", description="状态")
+    status: str = Field(default="draft", description="状态（工作流状态的投影，只读）")
     owner_id: Optional[str] = Field(None, description="用例责任人")
     reviewer_id: Optional[str] = Field(None, description="评审人")
     auto_dev_id: Optional[str] = Field(None, description="自动化开发责任人")

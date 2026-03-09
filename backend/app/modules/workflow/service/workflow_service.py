@@ -533,7 +533,6 @@ class AsyncWorkflowService:
         if not item_doc or item_doc.is_deleted:
             logger.error(f"流转失败: 未找到业务事项 ID={work_item_id}")
             raise WorkItemNotFoundError(work_item_id)
-        self._ensure_can_transition(item_doc, operator_id, actor_role_ids)
 
         config_doc = await SysWorkflowConfigDoc.find_one(
             {
