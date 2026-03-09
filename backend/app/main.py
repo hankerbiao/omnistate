@@ -29,7 +29,6 @@ from app.modules.execution.repository.models import (
     ExecutionTaskCaseDoc,
     ExecutionEventDoc,
 )
-from app.modules.execution.service.execution_service import ExecutionService
 from app.modules.auth.repository.models import UserDoc, RoleDoc, PermissionDoc, NavigationPageDoc
 
 
@@ -108,28 +107,11 @@ async def lifespan(app: FastAPI):
         log.success("Beanie ODM 初始化完成")
         await validate_workflow_consistency()
         log.success("Workflow 配置一致性校验通过")
-        #
-        # 启动Kafka执行任务监听器
-        try:
-            execution_service = ExecutionService()
-            log.success("Kafka 准备启动")
-            await execution_service.start_kafka_listener()
-            log.success("Kafka 执行任务监听器启动成功")
-        except Exception as e:
-            log.error(f"Failed to start Kafka listener: {e}")
 
         log.success("FastAPI 服务启动完成")
         yield
     finally:
         log.info("FastAPI 服务已关闭")
-
-        # 关闭Kafka连接
-        try:
-            if 'execution_service' in locals():
-                execution_service.kafka_manager.stop()
-                log.info("Kafka manager stopped")
-        except Exception as e:
-            log.error(f"Error stopping Kafka manager: {e}")
 
         if client:
             close_result = client.close()

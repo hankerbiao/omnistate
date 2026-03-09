@@ -22,7 +22,12 @@ def test_test_case_request_schemas_do_not_expose_status_field():
 
 def test_requirement_service_update_whitelist_excludes_status():
     assert "status" not in RequirementService._UPDATABLE_FIELDS
+    assert "workflow_item_id" not in RequirementService._UPDATABLE_FIELDS
+    assert "req_id" not in RequirementService._UPDATABLE_FIELDS
 
 
 def test_test_case_service_update_whitelist_excludes_status():
     assert "status" not in TestCaseService._UPDATABLE_FIELDS
+    assert "workflow_item_id" not in TestCaseService._UPDATABLE_FIELDS
+    assert "case_id" not in TestCaseService._UPDATABLE_FIELDS
+    assert "ref_req_id" not in TestCaseService._UPDATABLE_FIELDS

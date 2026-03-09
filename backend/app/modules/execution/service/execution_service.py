@@ -28,7 +28,6 @@ class ExecutionService(BaseService):
         """初始化执行服务。"""
         super().__init__()
         self.kafka_manager = KafkaMessageManager()
-        self.kafka_manager.start()
 
     async def dispatch_task(self, payload: Dict[str, Any], created_by: str) -> Dict[str, Any]:
         """

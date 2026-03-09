@@ -17,6 +17,15 @@ from app.modules.workflow.domain.exceptions import (
     WorkItemNotFoundError,
     InvalidTransitionError,
     MissingRequiredFieldError,
+    PermissionDeniedError,
+)
+from app.modules.workflow.application import (
+    CreateWorkItemCommand,
+    DeleteWorkItemCommand,
+    OperationContext,
+    ReassignWorkItemCommand,
+    TransitionWorkItemCommand,
+    WorkflowCommandService,
 )
 from app.modules.workflow.schemas.work_item import (
     CreateWorkItemRequest,
@@ -34,7 +43,7 @@ from app.modules.workflow.schemas.workflow import (
     WorkflowConfigResponse,
 )
 from app.shared.api.schemas.base import APIResponse
-from app.shared.auth import require_permission
+from app.shared.auth import get_current_user, require_permission
 from app.shared.api.schemas.error import ErrorResponse
 from app.modules.workflow.service.workflow_service import AsyncWorkflowService
 
@@ -53,6 +62,22 @@ def get_workflow_service() -> AsyncWorkflowService:
 
 
 WorkflowServiceDep = Annotated[AsyncWorkflowService, Depends(get_workflow_service)]
+
+
+def get_workflow_command_service(
+    service: WorkflowServiceDep,
+) -> WorkflowCommandService:
+    return WorkflowCommandService(service)
+
+
+WorkflowCommandServiceDep = Annotated[WorkflowCommandService, Depends(get_workflow_command_service)]
+
+
+def build_operation_context(current_user: Dict[str, object]) -> OperationContext:
+    return OperationContext(
+        actor_id=str(current_user["user_id"]),
+        role_ids=[str(role_id) for role_id in current_user.get("role_ids", [])],
+    )
 
 
 # ==================== 事项类型和状态管理 ====================
@@ -128,7 +153,8 @@ async def get_workflow_configs(
 )
 async def create_work_item(
     request: CreateWorkItemRequest,
-    service: WorkflowServiceDep,
+    command_service: WorkflowCommandServiceDep,
+    current_user=Depends(get_current_user),
 ):
     """
     创建一个新的业务事项。
@@ -139,12 +165,14 @@ async def create_work_item(
     - 可选挂载到父事项（例如测试用例挂在需求下）
     """
     try:
-        item = await service.create_item(
-            type_code=request.type_code,
-            title=request.title,
-            content=request.content,
-            creator_id=request.creator_id,
-            parent_item_id=str(request.parent_item_id) if request.parent_item_id else None,
+        item = await command_service.create_work_item(
+            build_operation_context(current_user),
+            CreateWorkItemCommand(
+                type_code=request.type_code,
+                title=request.title,
+                content=request.content,
+                parent_item_id=str(request.parent_item_id) if request.parent_item_id else None,
+            ),
         )
         return APIResponse(data=item)
     except ValueError as e:
@@ -351,7 +379,8 @@ async def get_requirement_for_test_case(
 )
 async def delete_work_item(
     item_id: str,
-    service: WorkflowServiceDep,
+    command_service: WorkflowCommandServiceDep,
+    current_user=Depends(get_current_user),
 ):
     """
     删除业务事项（逻辑删除）。
@@ -362,10 +391,15 @@ async def delete_work_item(
     - 历史流转日志本身不会被删除
     """
     try:
-        await service.delete_item(item_id)
+        await command_service.delete_work_item(
+            build_operation_context(current_user),
+            DeleteWorkItemCommand(work_item_id=item_id),
+        )
         return APIResponse(message="deleted", data=DeleteWorkItemData(item_id=item_id))
     except WorkItemNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
+    except PermissionDeniedError as e:
+        raise HTTPException(status_code=403, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"删除失败: {str(e)}")
 
@@ -385,23 +419,28 @@ async def delete_work_item(
 async def transition_work_item(
     item_id: str,
     request: TransitionRequest,
-    service: WorkflowServiceDep,
+    command_service: WorkflowCommandServiceDep,
+    current_user=Depends(get_current_user),
 ):
     """
     执行单条事项的状态流转。
     """
     try:
         # 调用 Service 执行流转（Service 内部负责事务提交）
-        result = await service.handle_transition(
-            work_item_id=item_id,
-            action=request.action,
-            operator_id=request.operator_id,
-            form_data=request.form_data
+        result = await command_service.transition_work_item(
+            build_operation_context(current_user),
+            TransitionWorkItemCommand(
+                work_item_id=item_id,
+                action=request.action,
+                form_data=request.form_data,
+            ),
         )
 
         return APIResponse(data=result)
     except WorkItemNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
+    except PermissionDeniedError as e:
+        raise HTTPException(status_code=403, detail=str(e))
     except (InvalidTransitionError, MissingRequiredFieldError) as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -418,19 +457,28 @@ async def transition_work_item(
 )
 async def reassign_work_item(
     item_id: str,
-    service: WorkflowServiceDep,
-    operator_id: str = Query(..., description="操作人ID"),
+    command_service: WorkflowCommandServiceDep,
     target_owner_id: str = Query(..., description="目标处理人ID"),
     remark: Optional[str] = Query(None, description="备注信息（非必填）"),
+    current_user=Depends(get_current_user),
 ):
     """
     改派任务给其他处理人（不改变状态）。
     """
     try:
-        data = await service.reassign_item(item_id, operator_id, target_owner_id, remark)
+        data = await command_service.reassign_work_item(
+            build_operation_context(current_user),
+            ReassignWorkItemCommand(
+                work_item_id=item_id,
+                target_owner_id=target_owner_id,
+                remark=remark,
+            ),
+        )
         return APIResponse(data=data)
     except WorkItemNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
+    except PermissionDeniedError as e:
+        raise HTTPException(status_code=403, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"改派失败: {str(e)}")
 

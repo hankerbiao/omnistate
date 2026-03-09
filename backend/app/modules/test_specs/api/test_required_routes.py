@@ -3,10 +3,17 @@ from typing import List, Optional, Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from app.modules.test_specs.application import (
+    CreateRequirementCommand,
+    DeleteRequirementCommand,
+    RequirementCommandService,
+    UpdateRequirementCommand,
+)
+from app.modules.workflow.application import OperationContext, WorkflowCommandService
+from app.modules.workflow.service.workflow_service import AsyncWorkflowService
 from app.shared.api.schemas.base import APIResponse
 from app.shared.auth import get_current_user, require_permission
 from app.modules.test_specs.service import RequirementService
-from app.shared.core.logger import log as logger
 from app.modules.test_specs.schemas import (
     CreateRequirementRequest,
     UpdateRequirementRequest,
@@ -24,6 +31,32 @@ def get_requirement_service() -> RequirementService:
 RequirementServiceDep = Annotated[RequirementService, Depends(get_requirement_service)]
 
 
+def get_workflow_command_service() -> WorkflowCommandService:
+    return WorkflowCommandService(AsyncWorkflowService())
+
+
+WorkflowCommandServiceDep = Annotated[WorkflowCommandService, Depends(get_workflow_command_service)]
+
+
+def get_requirement_command_service(
+    requirement_service: RequirementServiceDep,
+    workflow_command_service: WorkflowCommandServiceDep,
+) -> RequirementCommandService:
+    return RequirementCommandService(requirement_service, workflow_command_service)
+
+
+RequirementCommandServiceDep = Annotated[
+    RequirementCommandService, Depends(get_requirement_command_service)
+]
+
+
+def build_operation_context(current_user: dict) -> OperationContext:
+    return OperationContext(
+        actor_id=str(current_user["user_id"]),
+        role_ids=[str(role_id) for role_id in current_user.get("role_ids", [])],
+    )
+
+
 @router.post(
     "",
     response_model=APIResponse[RequirementResponse],
@@ -33,7 +66,7 @@ RequirementServiceDep = Annotated[RequirementService, Depends(get_requirement_se
 )
 async def create_requirement(
     request: CreateRequirementRequest,
-    service: RequirementServiceDep,
+    command_service: RequirementCommandServiceDep,
     current_user=Depends(get_current_user),
 ):
     """创建需求。
@@ -45,18 +78,10 @@ async def create_requirement(
     - `request.model_dump()` 直接透传到 Service，避免字段重命名转换。
     """
     try:
-        payload = request.model_dump()
-
-        # ⚠️ 安全检查：确保前端没有尝试提供 req_id
-        if payload.get("req_id"):
-            logger.warning(
-                f"前端尝试传递 req_id={payload['req_id']}，将忽略并重新生成"
-            )
-
-        owner_id = str(payload.get("tpm_owner_id") or "").strip()
-        if not owner_id:
-            payload["tpm_owner_id"] = current_user["user_id"]
-        data = await service.create_requirement(payload)
+        data = await command_service.create_requirement(
+            build_operation_context(current_user),
+            CreateRequirementCommand(payload=request.model_dump()),
+        )
         return APIResponse(data=data)
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
@@ -116,16 +141,23 @@ async def list_requirements(
 async def update_requirement(
     req_id: str,
     request: UpdateRequirementRequest,
-    service: RequirementServiceDep,
+    command_service: RequirementCommandServiceDep,
+    current_user=Depends(get_current_user),
 ):
     """更新需求（仅更新请求中显式提交字段）。"""
     try:
-        # 仅保留调用方显式传入字段，避免把默认 None 覆盖到数据库。
-        payload = request.model_dump(exclude_unset=True)
-        if not payload:
-            raise HTTPException(status_code=400, detail="no fields to update")
-        data = await service.update_requirement(req_id, payload)
+        data = await command_service.update_requirement(
+            build_operation_context(current_user),
+            UpdateRequirementCommand(
+                req_id=req_id,
+                payload=request.model_dump(exclude_unset=True),
+            ),
+        )
         return APIResponse(data=data)
+    except ValueError as e:
+        if str(e) == "no fields to update":
+            raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=409, detail=str(e))
     except KeyError:
         raise HTTPException(status_code=404, detail="requirement not found")
 
@@ -138,11 +170,15 @@ async def update_requirement(
 )
 async def delete_requirement(
     req_id: str,
-    service: RequirementServiceDep,
+    command_service: RequirementCommandServiceDep,
+    current_user=Depends(get_current_user),
 ):
     """删除需求（服务层执行逻辑删除与关联校验）。"""
     try:
-        await service.delete_requirement(req_id)
+        await command_service.delete_requirement(
+            build_operation_context(current_user),
+            DeleteRequirementCommand(req_id=req_id),
+        )
         return APIResponse(data={"deleted": True})
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))

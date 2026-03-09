@@ -16,17 +16,19 @@ class CreateWorkItemRequest(BaseModel):
     type_code: str = Field(..., description="事项类型，如 REQUIREMENT, TEST_CASE")
     title: str = Field(..., min_length=1, max_length=200, description="事项标题")
     content: str = Field(..., description="事项内容")
-    creator_id: str = Field(..., description="创建者用户ID")
     parent_item_id: Optional[PydanticObjectId] = Field(
         default=None, description="父事项ID（例如测试用例所属的需求ID）"
     )
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class TransitionRequest(BaseModel):
     """状态流转请求"""
     action: str = Field(..., description="触发的动作，如 SUBMIT, APPROVE, REJECT, ASSIGN 等")
-    operator_id: str = Field(..., description="执行操作的用户ID")
     form_data: Dict[str, Any] = Field(default_factory=dict, description="表单数据，如 target_owner_id, comment 等")
+
+    model_config = ConfigDict(extra="forbid")
 
 
 # ==================== Response Models ====================

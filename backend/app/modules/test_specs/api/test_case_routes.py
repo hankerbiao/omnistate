@@ -3,6 +3,16 @@ from typing import List, Optional, Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from app.modules.test_specs.application import (
+    CreateTestCaseCommand,
+    DeleteTestCaseCommand,
+    LinkAutomationCaseCommand,
+    TestCaseCommandService,
+    UnlinkAutomationCaseCommand,
+    UpdateTestCaseCommand,
+)
+from app.modules.workflow.application import OperationContext, WorkflowCommandService
+from app.modules.workflow.service.workflow_service import AsyncWorkflowService
 from app.shared.api.schemas.base import APIResponse
 from app.shared.auth import get_current_user, require_permission
 from app.modules.test_specs.service import TestCaseService
@@ -24,6 +34,30 @@ def get_test_case_service() -> TestCaseService:
 TestCaseServiceDep = Annotated[TestCaseService, Depends(get_test_case_service)]
 
 
+def get_workflow_command_service() -> WorkflowCommandService:
+    return WorkflowCommandService(AsyncWorkflowService())
+
+
+WorkflowCommandServiceDep = Annotated[WorkflowCommandService, Depends(get_workflow_command_service)]
+
+
+def get_test_case_command_service(
+    test_case_service: TestCaseServiceDep,
+    workflow_command_service: WorkflowCommandServiceDep,
+) -> TestCaseCommandService:
+    return TestCaseCommandService(test_case_service, workflow_command_service)
+
+
+TestCaseCommandServiceDep = Annotated[TestCaseCommandService, Depends(get_test_case_command_service)]
+
+
+def build_operation_context(current_user: dict) -> OperationContext:
+    return OperationContext(
+        actor_id=str(current_user["user_id"]),
+        role_ids=[str(role_id) for role_id in current_user.get("role_ids", [])],
+    )
+
+
 @router.post(
     "",
     response_model=APIResponse[TestCaseResponse],
@@ -33,7 +67,7 @@ TestCaseServiceDep = Annotated[TestCaseService, Depends(get_test_case_service)]
 )
 async def create_test_case(
     request: CreateTestCaseRequest,
-    service: TestCaseServiceDep,
+    command_service: TestCaseCommandServiceDep,
     current_user=Depends(get_current_user),
 ):
     """创建测试用例。
@@ -43,11 +77,10 @@ async def create_test_case(
     - 请求字段直接透传到 Service，不做字段名转换。
     """
     try:
-        payload = request.model_dump()
-        owner_id = str(payload.get("owner_id") or "").strip()
-        if not owner_id:
-            payload["owner_id"] = current_user["user_id"]
-        data = await service.create_test_case(payload)
+        data = await command_service.create_test_case(
+            build_operation_context(current_user),
+            CreateTestCaseCommand(payload=request.model_dump()),
+        )
         return APIResponse(data=data)
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
@@ -113,16 +146,23 @@ async def list_test_cases(
 async def update_test_case(
     case_id: str,
     request: UpdateTestCaseRequest,
-    service: TestCaseServiceDep,
+    command_service: TestCaseCommandServiceDep,
+    current_user=Depends(get_current_user),
 ):
     """更新测试用例（仅更新请求中显式提交字段）。"""
     try:
-        # 仅保留调用方显式传入字段，避免默认 None 覆盖现有值。
-        payload = request.model_dump(exclude_unset=True)
-        if not payload:
-            raise HTTPException(status_code=400, detail="no fields to update")
-        data = await service.update_test_case(case_id, payload)
+        data = await command_service.update_test_case(
+            build_operation_context(current_user),
+            UpdateTestCaseCommand(
+                case_id=case_id,
+                payload=request.model_dump(exclude_unset=True),
+            ),
+        )
         return APIResponse(data=data)
+    except ValueError as e:
+        if str(e) == "no fields to update":
+            raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=409, detail=str(e))
     except KeyError as e:
         # 服务层会复用 KeyError 抛出「需求不存在」与「用例不存在」，这里做 HTTP 映射。
         if str(e) == "'requirement not found'":
@@ -138,12 +178,18 @@ async def update_test_case(
 )
 async def delete_test_case(
     case_id: str,
-    service: TestCaseServiceDep,
+    command_service: TestCaseCommandServiceDep,
+    current_user=Depends(get_current_user),
 ):
     """删除用例（服务层执行逻辑删除）。"""
     try:
-        await service.delete_test_case(case_id)
+        await command_service.delete_test_case(
+            build_operation_context(current_user),
+            DeleteTestCaseCommand(case_id=case_id),
+        )
         return APIResponse(data={"deleted": True})
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
     except KeyError:
         raise HTTPException(status_code=404, detail="test case not found")
 
@@ -157,13 +203,17 @@ async def delete_test_case(
 async def link_automation_case(
     case_id: str,
     request: LinkAutomationCaseRequest,
-    service: TestCaseServiceDep,
+    command_service: TestCaseCommandServiceDep,
+    current_user=Depends(get_current_user),
 ):
     try:
-        data = await service.link_automation_case(
-            case_id=case_id,
-            auto_case_id=request.auto_case_id,
-            version=request.version,
+        data = await command_service.link_automation_case(
+            build_operation_context(current_user),
+            LinkAutomationCaseCommand(
+                case_id=case_id,
+                auto_case_id=request.auto_case_id,
+                version=request.version,
+            ),
         )
         return APIResponse(data=data)
     except KeyError as e:
@@ -180,10 +230,14 @@ async def link_automation_case(
 )
 async def unlink_automation_case(
     case_id: str,
-    service: TestCaseServiceDep,
+    command_service: TestCaseCommandServiceDep,
+    current_user=Depends(get_current_user),
 ):
     try:
-        data = await service.unlink_automation_case(case_id=case_id)
+        data = await command_service.unlink_automation_case(
+            build_operation_context(current_user),
+            UnlinkAutomationCaseCommand(case_id=case_id),
+        )
         return APIResponse(data=data)
     except KeyError:
         raise HTTPException(status_code=404, detail="test case not found")

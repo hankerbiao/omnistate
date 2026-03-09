@@ -124,6 +124,7 @@ class RequirementService(BaseService):
 
         业务约束：
         - 若需求下存在未删除的测试用例，不允许删除该需求。
+        - 若需求已绑定 workflow 事项，当前阶段必须走 workflow-aware 删除路径。
         """
         doc = await TestRequirementDoc.find_one(
             TestRequirementDoc.req_id == req_id,
@@ -131,6 +132,8 @@ class RequirementService(BaseService):
         )
         if not doc:
             raise KeyError("requirement not found")
+        if doc.workflow_item_id:
+            raise ValueError("delete requirement through workflow-aware path only")
         # 若存在关联用例（未删除），则不允许删除需求
         related_cases = await TestCaseDoc.find(
             TestCaseDoc.ref_req_id == req_id,

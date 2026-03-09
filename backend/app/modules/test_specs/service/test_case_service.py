@@ -34,6 +34,40 @@ from app.shared.service import BaseService, SequenceIdService
 
 class TestCaseService(BaseService):
     """测试用例 CRUD 服务（异步）"""
+    _UPDATABLE_FIELDS = {
+        "title",
+        "version",
+        "is_active",
+        "change_log",
+        "owner_id",
+        "reviewer_id",
+        "auto_dev_id",
+        "priority",
+        "estimated_duration_sec",
+        "target_components",
+        "required_env",
+        "tags",
+        "test_category",
+        "tooling_req",
+        "is_destructive",
+        "pre_condition",
+        "post_condition",
+        "cleanup_steps",
+        "steps",
+        "is_need_auto",
+        "is_automated",
+        "automation_type",
+        "script_entity_id",
+        "automation_case_ref",
+        "risk_level",
+        "failure_analysis",
+        "confidentiality",
+        "visibility_scope",
+        "attachments",
+        "custom_fields",
+        "deprecation_reason",
+        "approval_history",
+    }
 
     async def create_test_case(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """创建测试用例（仅事务模式）
@@ -99,24 +133,24 @@ class TestCaseService(BaseService):
         )
         if not doc:
             raise KeyError("test case not found")
-        # 验证关联的需求是否存在
-        if "ref_req_id" in data:
-            await self._ensure_requirement_exists(data["ref_req_id"])
-        # 暂时移除字段限制，允许更新所有字段
-        for key, value in data.items():
-            if hasattr(doc, key) and not key.startswith('_'):
-                setattr(doc, key, value)
+        self._apply_updates(doc, data, self._UPDATABLE_FIELDS)
         await doc.save()
         return self._doc_to_dict(doc)
 
     async def delete_test_case(self, case_id: str) -> None:
-        """逻辑删除测试用例"""
+        """逻辑删除测试用例。
+
+        当前阶段要求已绑定 workflow 的用例必须走 workflow-aware 删除路径，
+        避免业务文档与工作项出现分裂删除状态。
+        """
         doc = await TestCaseDoc.find_one(
             TestCaseDoc.case_id == case_id,
             {"is_deleted": False},
         )
         if not doc:
             raise KeyError("test case not found")
+        if doc.workflow_item_id:
+            raise ValueError("delete test case through workflow-aware path only")
         doc.is_deleted = True
         await doc.save()
 

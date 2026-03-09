@@ -67,7 +67,6 @@ def test_create_item_envelope(client):
             "type_code": "REQ",
             "title": "T1",
             "content": "C1",
-            "creator_id": "u1",
             "parent_item_id": None,
         },
     )
@@ -77,6 +76,73 @@ def test_create_item_envelope(client):
     assert payload["message"] == "ok"
     assert payload["data"]["type_code"] == "REQ"
     assert payload["data"]["current_state"] == "DRAFT"
+    assert payload["data"]["creator_id"] == "test-user"
+    assert payload["data"]["current_owner_id"] == "test-user"
+
+
+def test_create_item_rejects_client_controlled_creator_id(client):
+    resp = client.post(
+        "/api/v1/work-items",
+        json={
+            "type_code": "REQ",
+            "title": "T1",
+            "content": "C1",
+            "creator_id": "forged-user",
+        },
+    )
+
+    assert resp.status_code == 422
+
+
+def test_transition_rejects_client_controlled_operator_id(client):
+    resp = client.post(
+        "/api/v1/work-items/507f1f77bcf86cd799439011/transition",
+        json={
+            "action": "SUBMIT",
+            "operator_id": "forged-user",
+            "form_data": {"comment": "ok"},
+        },
+    )
+
+    assert resp.status_code == 422
+
+
+def test_reassign_uses_authenticated_actor(app):
+    client = TestClient(app)
+
+    class FakeWorkflowServiceReassign(FakeWorkflowService):
+        async def reassign_item(
+            self,
+            item_id,
+            operator_id,
+            target_owner_id,
+            remark=None,
+            actor_role_ids=None,
+        ):
+            return {
+                "id": item_id,
+                "item_id": item_id,
+                "type_code": "REQ",
+                "title": "T1",
+                "content": "C1",
+                "parent_item_id": None,
+                "current_state": "DRAFT",
+                "current_owner_id": target_owner_id,
+                "creator_id": operator_id,
+                "created_at": "2024-01-01T00:00:00",
+                "updated_at": "2024-01-01T00:00:00",
+            }
+
+    app.dependency_overrides[workflow_routes.get_workflow_service] = lambda: FakeWorkflowServiceReassign()
+
+    resp = client.post(
+        "/api/v1/work-items/507f1f77bcf86cd799439011/reassign?target_owner_id=owner-2"
+    )
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["data"]["creator_id"] == "test-user"
+    assert payload["data"]["current_owner_id"] == "owner-2"
 
 
 def test_error_envelope_on_internal_exception(app):

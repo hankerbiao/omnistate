@@ -95,6 +95,7 @@ class FakeWorkflowService:
         # 返回固定结构，模拟创建成功后的业务对象
         return {
             "id": "507f1f77bcf86cd799439011",
+            "item_id": "507f1f77bcf86cd799439011",
             "type_code": type_code,
             "title": title,
             "content": content,

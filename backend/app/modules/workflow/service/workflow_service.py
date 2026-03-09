@@ -18,12 +18,18 @@ from app.modules.workflow.domain.exceptions import (
     WorkItemNotFoundError,
     InvalidTransitionError,
     MissingRequiredFieldError,
+    PermissionDeniedError,
 )
 from app.modules.workflow.domain.rules import (
     ensure_required_fields,
     build_process_payload,
     resolve_owner,
     normalize_sort,
+)
+from app.modules.workflow.domain.policies import (
+    can_delete_work_item,
+    can_reassign,
+    can_transition,
 )
 from app.shared.core.logger import log as logger
 from app.shared.core.mongo_client import get_mongo_client
@@ -114,6 +120,15 @@ class AsyncWorkflowService:
                 d["parent_item_id"] = str(d["parent_item_id"])
             results.append(d)
         return results
+
+    @staticmethod
+    def _serialize_work_item(doc: BusWorkItemDoc) -> Dict[str, Any]:
+        data = doc.model_dump()
+        data["id"] = str(doc.id)
+        data["item_id"] = str(doc.id)
+        if data.get("parent_item_id") is not None:
+            data["parent_item_id"] = str(data["parent_item_id"])
+        return data
 
     async def get_work_types(self) -> List[Dict]:
         """
@@ -260,11 +275,7 @@ class AsyncWorkflowService:
                 return None
             doc = await BusWorkItemDoc.get(item_id)
             if doc and not doc.is_deleted:
-                d = doc.model_dump()
-                d["id"] = str(doc.id)
-                if d.get("parent_item_id") is not None:
-                    d["parent_item_id"] = str(d["parent_item_id"])
-                return d
+                return self._serialize_work_item(doc)
         except Exception as e:
             # 避免非法 ID 或数据库异常直接导致接口 500
             logger.warning(f"获取事项 {item_id} 时发生错误: {e}")
@@ -458,11 +469,7 @@ class AsyncWorkflowService:
             )
             await new_item.insert(session=session)
             logger.success(f"业务事项创建成功: ID={new_item.id}, state={new_item.current_state}")
-            d = new_item.model_dump()
-            d["id"] = str(new_item.id)
-            if d.get("parent_item_id") is not None:
-                d["parent_item_id"] = str(d["parent_item_id"])
-            return d
+            return self._serialize_work_item(new_item)
         except DuplicateKeyError as e:
             logger.warning(f"业务事项并发创建冲突(type_code={type_code}, title={title}): {e}")
             raise ValueError(f"已存在相同标题的{type_code}: {title}")
@@ -475,7 +482,8 @@ class AsyncWorkflowService:
             work_item_id: str,
             action: str,
             operator_id: str,
-            form_data: Dict[str, Any]
+            form_data: Dict[str, Any],
+            actor_role_ids: Optional[List[str]] = None,
     ) -> Dict:
         """
         对单条事项执行状态流转。
@@ -503,6 +511,7 @@ class AsyncWorkflowService:
                         action=action,
                         operator_id=operator_id,
                         form_data=form_data,
+                        actor_role_ids=actor_role_ids,
                         session=session,
                     )
         except Exception as exc:
@@ -517,12 +526,14 @@ class AsyncWorkflowService:
         action: str,
         operator_id: str,
         form_data: Dict[str, Any],
+        actor_role_ids: Optional[List[str]],
         session: Optional[AsyncClientSession],
     ) -> Dict[str, Any]:
         item_doc = await self._get_work_item(work_item_id, session=session)
         if not item_doc or item_doc.is_deleted:
             logger.error(f"流转失败: 未找到业务事项 ID={work_item_id}")
             raise WorkItemNotFoundError(work_item_id)
+        self._ensure_can_transition(item_doc, operator_id, actor_role_ids)
 
         config_doc = await SysWorkflowConfigDoc.find_one(
             {
@@ -535,6 +546,9 @@ class AsyncWorkflowService:
         if not config_doc:
             logger.error(f"流转失败: 非法操作。当前状态 {item_doc.current_state} 不支持动作 {action}")
             raise InvalidTransitionError(item_doc.current_state, action)
+        actor = {"actor_id": operator_id, "role_ids": actor_role_ids or []}
+        if not can_transition(actor, item_doc, config_doc):
+            raise PermissionDeniedError(operator_id, "transition")
 
         required_fields = config_doc.required_fields
         ensure_required_fields(required_fields, form_data)
@@ -587,10 +601,7 @@ class AsyncWorkflowService:
 
         logger.success(f"状态流转完成: ID={work_item_id}, new_state={new_state}")
 
-        item_dict = item_doc.model_dump()
-        item_dict["id"] = str(item_doc.id)
-        if item_dict.get("parent_item_id") is not None:
-            item_dict["parent_item_id"] = str(item_dict["parent_item_id"])
+        item_dict = self._serialize_work_item(item_doc)
 
         return {
             "work_item_id": str(item_doc.id),
@@ -633,7 +644,12 @@ class AsyncWorkflowService:
         except TypeError:
             await doc.insert()
 
-    async def delete_item(self, item_id: str) -> bool:
+    async def delete_item(
+        self,
+        item_id: str,
+        operator_id: str,
+        actor_role_ids: Optional[List[str]] = None,
+    ) -> bool:
         """
         逻辑删除业务事项。
 
@@ -641,26 +657,97 @@ class AsyncWorkflowService:
         - 将 is_deleted 标记为 True
         - 写入一条 action 为 "DELETE" 的流转日志，状态不变
         """
-        item_doc = await BusWorkItemDoc.get(item_id)
+        client = self._get_mongo_client_or_none()
+        if client is None:
+            logger.error("MongoDB 客户端未初始化，无法执行原子删除")
+            raise RuntimeError("workflow delete requires initialized MongoDB client")
+
+        try:
+            async with client.start_session() as session:
+                async with await session.start_transaction():
+                    return await self._delete_item_core(
+                        item_id=item_id,
+                        operator_id=operator_id,
+                        actor_role_ids=actor_role_ids,
+                        session=session,
+                    )
+        except Exception as exc:
+            if self._is_transaction_not_supported(exc):
+                logger.error("MongoDB 部署不支持事务，已拒绝执行非原子删除")
+                raise RuntimeError("workflow delete requires MongoDB transaction support") from exc
+            raise
+
+    async def _delete_item_core(
+        self,
+        item_id: str,
+        operator_id: str,
+        actor_role_ids: Optional[List[str]],
+        session: Optional[AsyncClientSession],
+    ) -> bool:
+        item_doc = await self._get_work_item(item_id, session=session)
         if not item_doc or item_doc.is_deleted:
             raise WorkItemNotFoundError(item_id)
+        actor = {"actor_id": operator_id, "role_ids": actor_role_ids or []}
+        if not can_delete_work_item(actor, item_doc):
+            raise PermissionDeniedError(operator_id, "delete")
+
+        if item_doc.type_code == "REQUIREMENT":
+            requirement = await TestRequirementDoc.find_one(
+                {
+                    "workflow_item_id": str(item_doc.id),
+                    "is_deleted": False,
+                },
+                session=session,
+            )
+            if requirement is None:
+                raise ValueError("linked requirement not found")
+
+            related_cases = await TestCaseDoc.find(
+                TestCaseDoc.ref_req_id == requirement.req_id,
+                {"is_deleted": False},
+                session=session,
+            ).count()
+            if related_cases > 0:
+                raise ValueError("requirement has related test cases")
+
+            requirement.is_deleted = True
+            await self._save_doc(requirement, session=session)
+        elif item_doc.type_code == "TEST_CASE":
+            test_case = await TestCaseDoc.find_one(
+                {
+                    "workflow_item_id": str(item_doc.id),
+                    "is_deleted": False,
+                },
+                session=session,
+            )
+            if test_case is None:
+                raise ValueError("linked test case not found")
+            test_case.is_deleted = True
+            await self._save_doc(test_case, session=session)
 
         log_entry = BusFlowLogDoc(
             work_item_id=PydanticObjectId(item_id),
             from_state=item_doc.current_state,
             to_state=item_doc.current_state,
             action="DELETE",
-            operator_id=item_doc.creator_id,
-            payload={"info": "Soft deleted"}
+            operator_id=operator_id,
+            payload={"info": "Soft deleted"},
         )
-        await log_entry.insert()
+        await self._insert_doc(log_entry, session=session)
 
         item_doc.is_deleted = True
-        await item_doc.save()
+        await self._save_doc(item_doc, session=session)
         logger.success(f"事项 ID={item_id} 已逻辑删除")
         return True
 
-    async def reassign_item(self, item_id: str, operator_id: str, target_owner_id: str, remark: Optional[str] = None) -> Dict:
+    async def reassign_item(
+        self,
+        item_id: str,
+        operator_id: str,
+        target_owner_id: str,
+        remark: Optional[str] = None,
+        actor_role_ids: Optional[List[str]] = None,
+    ) -> Dict:
         """
         改派当前事项的处理人（不改变状态）。
 
@@ -671,6 +758,9 @@ class AsyncWorkflowService:
         item_doc = await BusWorkItemDoc.get(item_id)
         if not item_doc or item_doc.is_deleted:
             raise WorkItemNotFoundError(item_id)
+        actor = {"actor_id": operator_id, "role_ids": actor_role_ids or []}
+        if not can_reassign(actor, item_doc):
+            raise PermissionDeniedError(operator_id, "reassign")
 
         payload: Dict[str, Any] = {"target_owner_id": target_owner_id}
         if remark is not None:
@@ -689,8 +779,4 @@ class AsyncWorkflowService:
         item_doc.current_owner_id = target_owner_id
         await item_doc.save()
 
-        d = item_doc.model_dump()
-        d["id"] = str(item_doc.id)
-        if d.get("parent_item_id") is not None:
-            d["parent_item_id"] = str(d["parent_item_id"])
-        return d
+        return self._serialize_work_item(item_doc)

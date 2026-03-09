@@ -8,6 +8,7 @@ from app.modules.workflow.service.workflow_service import AsyncWorkflowService
 from app.modules.workflow.domain.exceptions import (
     MissingRequiredFieldError,
     InvalidTransitionError,
+    PermissionDeniedError,
     WorkItemNotFoundError,
 )
 from tests.fakes.workflow import (
@@ -128,7 +129,7 @@ def test_handle_transition_success(monkeypatch, service):
         service.handle_transition(
             work_item_id=work_item_id,
             action="SUBMIT",
-            operator_id=99,
+            operator_id=10,
             form_data={"comment": "ok"},
         )
     )
@@ -203,7 +204,7 @@ def test_handle_transition_sync_business_status_failure_raises(monkeypatch, serv
             service.handle_transition(
                 work_item_id=work_item_id,
                 action="SUBMIT",
-                operator_id=99,
+                operator_id=10,
                 form_data={"comment": "ok"},
             )
         )
@@ -251,7 +252,7 @@ def test_handle_transition_missing_required_field(monkeypatch, service):
             service.handle_transition(
                 work_item_id=work_item_id,
                 action="SUBMIT",
-                operator_id=99,
+                operator_id=10,
                 form_data={},
             )
         )
@@ -291,7 +292,7 @@ def test_handle_transition_invalid_config(monkeypatch, service):
             service.handle_transition(
                 work_item_id=work_item_id,
                 action="SUBMIT",
-                operator_id=99,
+                operator_id=10,
                 form_data={"comment": "ok"},
             )
         )
@@ -313,6 +314,38 @@ def test_handle_transition_item_not_found(monkeypatch, service):
                 work_item_id="507f1f77bcf86cd799439011",
                 action="SUBMIT",
                 operator_id=99,
+                form_data={"comment": "ok"},
+            )
+        )
+
+
+def test_handle_transition_permission_denied(monkeypatch, service):
+    work_item_id = "507f1f77bcf86cd799439011"
+    item_doc = FakeWorkItemDoc(
+        id=work_item_id,
+        type_code="REQUIREMENT",
+        title="t",
+        content="c",
+        parent_item_id=None,
+        current_state="DRAFT",
+        current_owner_id="owner-1",
+        creator_id="creator-1",
+        is_deleted=False,
+    )
+
+    async def fake_get(item_id):
+        return item_doc
+
+    monkeypatch.setattr(
+        "app.modules.workflow.service.workflow_service.BusWorkItemDoc.get", fake_get
+    )
+
+    with pytest.raises(PermissionDeniedError, match="无权执行动作 'transition'"):
+        asyncio.run(
+            service.handle_transition(
+                work_item_id=work_item_id,
+                action="SUBMIT",
+                operator_id="intruder",
                 form_data={"comment": "ok"},
             )
         )
