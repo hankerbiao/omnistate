@@ -13,6 +13,8 @@ from app.modules.execution.repository.models import (
     ExecutionTaskDoc,
 )
 from app.modules.test_specs.repository.models import TestCaseDoc
+from app.modules.workflow.service.workflow_service import AsyncWorkflowService
+from app.modules.workflow.repository.models.business import BusWorkItemDoc
 from app.shared.kafka import KafkaMessageManager, TaskMessage
 from app.shared.service import BaseService, SequenceIdService
 
@@ -28,6 +30,29 @@ class ExecutionService(BaseService):
         """初始化执行服务。"""
         super().__init__()
         self.kafka_manager = KafkaMessageManager()
+        self.workflow_service = AsyncWorkflowService()
+
+    async def _get_workflow_state_for_test_case(self, case_id: str) -> str:
+        """从工作流获取测试用例的真实状态（单一真实来源）。
+
+        这是Phase 3B的关键实现：确保快照中的状态从工作流源读取。
+        """
+        # 先获取测试用例文档的workflow_item_id
+        test_case = await TestCaseDoc.find_one({
+            "case_id": case_id,
+            "is_deleted": False
+        })
+        if not test_case or not test_case.workflow_item_id:
+            # 如果没有工作项，返回默认值（向后兼容）
+            return "待执行"
+
+        # 根据workflow_item_id查找对应的工作项状态
+        try:
+            work_item = await BusWorkItemDoc.get(test_case.workflow_item_id)
+            return work_item.current_state if work_item and not work_item.is_deleted else "待执行"
+        except Exception:
+            # 如果查找工作项失败，返回默认值（向后兼容）
+            return "待执行"
 
     async def dispatch_task(self, payload: Dict[str, Any], created_by: str) -> Dict[str, Any]:
         """
@@ -179,17 +204,20 @@ class ExecutionService(BaseService):
             raise ValueError("Failed to dispatch task to Kafka")
 
         # ========== 步骤7: 为每个用例创建任务用例记录 ==========
+        # Phase 3B重构：快照中的状态从工作流源获取，确保单一真实来源
         # 为什么要创建快照？因为用例可能在测试过程中被修改
         # 保存快照可以确保后续状态变更不影响历史记录的准确性
         for cid in case_ids:
             case_doc = doc_map[cid]  # 从映射中获取用例文档
+            # Phase 3B: 从工作流获取真实状态，而不是业务文档投影
+            workflow_state = await self._get_workflow_state_for_test_case(cid)
             # 保存用例的关键信息快照（标题、版本、优先级等）
             snapshot = {
                 "case_id": case_doc.case_id,     # 用例ID
                 "title": case_doc.title,         # 用例标题
                 "version": case_doc.version,     # 版本号
                 "priority": case_doc.priority,   # 优先级
-                "status": case_doc.status,       # 当前状态
+                "status": workflow_state,        # Phase 3B: 使用工作流状态作为真实来源
             }
             # 创建任务用例文档，记录该用例在此任务中的执行状态
             await ExecutionTaskCaseDoc(

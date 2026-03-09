@@ -16,6 +16,7 @@ from datetime import datetime
 from pymongo import AsyncMongoClient
 from app.modules.test_specs.repository.models import TestRequirementDoc, TestCaseDoc
 from app.modules.workflow.service.workflow_service import AsyncWorkflowService
+from app.modules.workflow.repository.models.business import BusWorkItemDoc
 from app.shared.core.logger import log as logger
 from app.shared.core.mongo_client import get_mongo_client
 from app.shared.service import BaseService, SequenceIdService
@@ -40,6 +41,58 @@ class RequirementService(BaseService):
 
     def __init__(self):
         super().__init__()
+        self.workflow_service = AsyncWorkflowService()
+
+    async def _get_workflow_state_for_requirement(self, req_id: str) -> Optional[str]:
+        """从工作流获取需求的真实状态（单一真实来源）。
+
+        这是Phase 3B的关键实现：确保状态从工作流源读取，而不是业务文档投影字段。
+        """
+        # 先获取需求文档的workflow_item_id
+        requirement = await TestRequirementDoc.find_one({
+            "req_id": req_id,
+            "is_deleted": False
+        })
+        if not requirement or not requirement.workflow_item_id:
+            return None
+
+        # 根据workflow_item_id查找对应的工作项状态
+        work_item = await BusWorkItemDoc.get(requirement.workflow_item_id)
+        return work_item.current_state if work_item and not work_item.is_deleted else None
+
+    async def _get_workflow_states_for_requirements(self, req_ids: List[str]) -> Dict[str, str]:
+        """批量获取需求的工作流状态。
+
+        使用这个方法比逐个查询更高效。
+        """
+        if not req_ids:
+            return {}
+
+        # 先获取需求文档和对应的workflow_item_id
+        requirements = await TestRequirementDoc.find({
+            "req_id": {"$in": req_ids},
+            "is_deleted": False
+        }).to_list()
+
+        workflow_id_map = {req.req_id: req.workflow_item_id for req in requirements if req.workflow_item_id}
+        if not workflow_id_map:
+            return {}
+
+        # 批量获取工作项状态
+        workflow_ids = list(workflow_id_map.values())
+        work_items = await BusWorkItemDoc.find({
+            "id": {"$in": workflow_ids},
+            "is_deleted": False
+        }).to_list()
+
+        # 构建映射：req_id -> current_state
+        state_map = {}
+        for req_id, workflow_id in workflow_id_map.items():
+            work_item = next((item for item in work_items if str(item.id) == workflow_id), None)
+            if work_item:
+                state_map[req_id] = work_item.current_state
+
+        return state_map
 
     async def create_requirement(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """创建测试需求（仅事务模式）。
@@ -90,13 +143,15 @@ class RequirementService(BaseService):
     ) -> List[Dict[str, Any]]:
         """分页查询需求列表，支持按状态/角色负责人过滤。
 
+        Phase 3B重构：状态过滤从工作流源查询，确保单一真实来源。
+
         说明：
         - 默认只查询未逻辑删除数据（is_deleted=False）。
         - 各过滤条件采用 AND 关系叠加。
+        - 状态过滤通过工作流查询实现，其他条件在业务文档上过滤。
         """
+        # Phase 3B: 先从业务文档查询非状态条件
         query = TestRequirementDoc.find({"is_deleted": False})
-        if status:
-            query = query.find(TestRequirementDoc.status == status)
         if tpm_owner_id:
             query = query.find(TestRequirementDoc.tpm_owner_id == tpm_owner_id)
         if manual_dev_id:
@@ -104,8 +159,47 @@ class RequirementService(BaseService):
         if auto_dev_id:
             query = query.find(TestRequirementDoc.auto_dev_id == auto_dev_id)
 
-        docs = await query.sort("-created_at").skip(offset).limit(limit).to_list()
-        return [self._doc_to_dict(doc) for doc in docs]
+        # 获取候选文档（如果需要状态过滤，先获取更大的集合）
+        if status:
+            # Phase 3B: 状态过滤需要从工作流查询
+            docs = await query.sort("-created_at").skip(offset).limit(limit * 2).to_list()  # 多获取一些，因为还要过滤状态
+            if not docs:
+                return []
+
+            # 批量获取工作流状态进行过滤
+            req_ids = [doc.req_id for doc in docs]
+            workflow_states = await self._get_workflow_states_for_requirements(req_ids)
+
+            # 按工作流状态过滤
+            filtered_docs = []
+            for doc in docs:
+                workflow_state = workflow_states.get(doc.req_id)
+                if workflow_state == status:
+                    filtered_docs.append(doc)
+                elif workflow_state is None and status == "未开始":
+                    # 处理没有工作项的情况（向后兼容）
+                    filtered_docs.append(doc)
+
+            # 应用分页
+            docs = filtered_docs[offset:offset + limit]
+        else:
+            docs = await query.sort("-created_at").skip(offset).limit(limit).to_list()
+
+        # Phase 3B: 转换时确保使用工作流状态作为真实来源
+        result = []
+        if docs:
+            req_ids = [doc.req_id for doc in docs]
+            workflow_states = await self._get_workflow_states_for_requirements(req_ids)
+
+            for doc in docs:
+                doc_dict = self._doc_to_dict(doc)
+                # 关键：使用工作流状态覆盖业务文档中的投影状态
+                workflow_state = workflow_states.get(doc.req_id)
+                if workflow_state:
+                    doc_dict["status"] = workflow_state
+                result.append(doc_dict)
+
+        return result
 
     async def update_requirement(self, req_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
         """更新需求可编辑字段（白名单控制）。
@@ -171,7 +265,7 @@ class RequirementService(BaseService):
         workflow_service = AsyncWorkflowService()
 
         async with client.start_session() as session:
-            async with  session.start_transaction():
+            async with session.start_transaction():
                 existing = await TestRequirementDoc.find_one(
                     TestRequirementDoc.req_id == payload["req_id"],
                     session=session,

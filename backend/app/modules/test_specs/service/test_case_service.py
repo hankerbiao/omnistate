@@ -27,6 +27,7 @@ from app.modules.test_specs.repository.models import (
     AutomationCaseRef,
 )
 from app.modules.workflow.service.workflow_service import AsyncWorkflowService
+from app.modules.workflow.repository.models.business import BusWorkItemDoc
 from app.shared.core.logger import log as logger
 from app.shared.core.mongo_client import get_mongo_client
 from app.shared.service import BaseService, SequenceIdService
@@ -69,6 +70,61 @@ class TestCaseService(BaseService):
         "approval_history",
     }
 
+    def __init__(self):
+        super().__init__()
+        self.workflow_service = AsyncWorkflowService()
+
+    async def _get_workflow_state_for_test_case(self, case_id: str) -> Optional[str]:
+        """从工作流获取测试用例的真实状态（单一真实来源）。
+
+        这是Phase 3B的关键实现：确保状态从工作流源读取，而不是业务文档投影字段。
+        """
+        # 先获取测试用例文档的workflow_item_id
+        test_case = await TestCaseDoc.find_one({
+            "case_id": case_id,
+            "is_deleted": False
+        })
+        if not test_case or not test_case.workflow_item_id:
+            return None
+
+        # 根据workflow_item_id查找对应的工作项状态
+        work_item = await BusWorkItemDoc.get(test_case.workflow_item_id)
+        return work_item.current_state if work_item and not work_item.is_deleted else None
+
+    async def _get_workflow_states_for_test_cases(self, case_ids: List[str]) -> Dict[str, str]:
+        """批量获取测试用例的工作流状态。
+
+        使用这个方法比逐个查询更高效。
+        """
+        if not case_ids:
+            return {}
+
+        # 先获取测试用例文档和对应的workflow_item_id
+        test_cases = await TestCaseDoc.find({
+            "case_id": {"$in": case_ids},
+            "is_deleted": False
+        }).to_list()
+
+        workflow_id_map = {tc.case_id: tc.workflow_item_id for tc in test_cases if tc.workflow_item_id}
+        if not workflow_id_map:
+            return {}
+
+        # 批量获取工作项状态
+        workflow_ids = list(workflow_id_map.values())
+        work_items = await BusWorkItemDoc.find({
+            "id": {"$in": workflow_ids},
+            "is_deleted": False
+        }).to_list()
+
+        # 构建映射：case_id -> current_state
+        state_map = {}
+        for case_id, workflow_id in workflow_id_map.items():
+            work_item = next((item for item in work_items if str(item.id) == workflow_id), None)
+            if work_item:
+                state_map[case_id] = work_item.current_state
+
+        return state_map
+
     async def create_test_case(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """创建测试用例（仅事务模式）
 
@@ -97,22 +153,24 @@ class TestCaseService(BaseService):
         return self._doc_to_dict(doc)
 
     async def list_test_cases(
-            self,
-            ref_req_id: Optional[str] = None,
-            status: Optional[str] = None,
-            owner_id: Optional[str] = None,
-            reviewer_id: Optional[str] = None,
-            priority: Optional[str] = None,
-            is_active: Optional[bool] = None,
-            limit: int = 20,
-            offset: int = 0,
+        self,
+        ref_req_id: Optional[str] = None,
+        status: Optional[str] = None,
+        owner_id: Optional[str] = None,
+        reviewer_id: Optional[str] = None,
+        priority: Optional[str] = None,
+        is_active: Optional[bool] = None,
+        limit: int = 20,
+        offset: int = 0,
     ) -> List[Dict[str, Any]]:
-        """分页查询测试用例列表，支持多种过滤条件"""
+        """分页查询测试用例列表，支持多种过滤条件。
+
+        Phase 3B重构：状态过滤从工作流源查询，确保单一真实来源。
+        """
+        # Phase 3B: 先从业务文档查询非状态条件
         query = TestCaseDoc.find({"is_deleted": False})
         if ref_req_id:
             query = query.find(TestCaseDoc.ref_req_id == ref_req_id)
-        if status:
-            query = query.find(TestCaseDoc.status == status)
         if owner_id:
             query = query.find(TestCaseDoc.owner_id == owner_id)
         if reviewer_id:
@@ -122,8 +180,47 @@ class TestCaseService(BaseService):
         if is_active is not None:
             query = query.find(TestCaseDoc.is_active == is_active)
 
-        docs = await query.sort("-created_at").skip(offset).limit(limit).to_list()
-        return [self._doc_to_dict(doc) for doc in docs]
+        # 获取候选文档（如果需要状态过滤，先获取更大的集合）
+        if status:
+            # Phase 3B: 状态过滤需要从工作流查询
+            docs = await query.sort("-created_at").skip(offset).limit(limit * 2).to_list()  # 多获取一些，因为还要过滤状态
+            if not docs:
+                return []
+
+            # 批量获取工作流状态进行过滤
+            case_ids = [doc.case_id for doc in docs]
+            workflow_states = await self._get_workflow_states_for_test_cases(case_ids)
+
+            # 按工作流状态过滤
+            filtered_docs = []
+            for doc in docs:
+                workflow_state = workflow_states.get(doc.case_id)
+                if workflow_state == status:
+                    filtered_docs.append(doc)
+                elif workflow_state is None and status == "未开始":
+                    # 处理没有工作项的情况（向后兼容）
+                    filtered_docs.append(doc)
+
+            # 应用分页
+            docs = filtered_docs[offset:offset + limit]
+        else:
+            docs = await query.sort("-created_at").skip(offset).limit(limit).to_list()
+
+        # Phase 3B: 转换时确保使用工作流状态作为真实来源
+        result = []
+        if docs:
+            case_ids = [doc.case_id for doc in docs]
+            workflow_states = await self._get_workflow_states_for_test_cases(case_ids)
+
+            for doc in docs:
+                doc_dict = self._doc_to_dict(doc)
+                # 关键：使用工作流状态覆盖业务文档中的投影状态
+                workflow_state = workflow_states.get(doc.case_id)
+                if workflow_state:
+                    doc_dict["status"] = workflow_state
+                result.append(doc_dict)
+
+        return result
 
     async def update_test_case(self, case_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
         """更新测试用例信息
