@@ -1,4 +1,4 @@
-"""发件箱服务 - Phase 5
+"""发件箱服务
 
 发件箱服务负责管理outbox事件的生命周期，包括创建、更新和查询outbox事件。
 这是实现可靠事件发布的核心组件，支持重试机制和错误处理。
@@ -8,6 +8,7 @@ import uuid
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone
 from pymongo import AsyncMongoClient
+from pymongo.asynchronous.client_session import AsyncClientSession
 
 from app.shared.core.logger import log as logger
 from app.shared.core.mongo_client import get_mongo_client
@@ -29,7 +30,8 @@ class OutboxService:
         task_id: str,
         external_task_id: str,
         kafka_task_data: Dict[str, Any],
-        created_by: str
+        created_by: str,
+        session: Optional[AsyncClientSession] = None
     ) -> OutboxEventDoc:
         """创建执行任务分发事件
 
@@ -38,11 +40,11 @@ class OutboxService:
             external_task_id: 外部任务ID
             kafka_task_data: Kafka任务数据
             created_by: 创建者ID
+            session: 可选的MongoDB会话（用于事务）
 
         Returns:
             创建的outbox事件文档
         """
-        # 创建outbox事件
         event_doc = OutboxEventDoc(
             event_id=str(uuid.uuid4()),
             aggregate_type="ExecutionTask",
@@ -57,7 +59,7 @@ class OutboxService:
             }
         )
 
-        await event_doc.insert()
+        await event_doc.insert(session=session)
         logger.info(f"Created outbox event for task {task_id}: {event_doc.event_id}")
         return event_doc
 

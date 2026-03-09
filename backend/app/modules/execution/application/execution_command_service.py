@@ -4,8 +4,8 @@
 确保本地数据库事务与外部Kafka发布的可靠解耦。
 """
 
-from typing import Any, Dict, List
-from datetime import datetime, timezone
+from typing import Any, Dict, Optional
+from pymongo import AsyncMongoClient
 
 from app.modules.execution.application.commands import DispatchExecutionTaskCommand
 from app.modules.execution.repository.models import (
@@ -15,6 +15,7 @@ from app.modules.execution.repository.models import (
 from app.modules.test_specs.repository.models import TestCaseDoc
 from app.shared.integration.outbox_service import OutboxService
 from app.shared.core.logger import log as logger
+from app.shared.core.mongo_client import get_mongo_client
 
 
 class ExecutionCommandService:
@@ -77,69 +78,74 @@ class ExecutionCommandService:
             raise KeyError(f"Test cases not found: {missing}")
 
         # ========== 步骤3: 在单个事务中创建任务和outbox事件 ==========
-        # 这里应该使用MongoDB事务，但由于Beanie的限制，我们分步执行
-        # 在生产环境中应该包装在事务中
+        client: Optional[AsyncMongoClient] = get_mongo_client()
+        if not client:
+            raise RuntimeError("MongoDB client not available")
+
+        def _is_transaction_not_supported(exc: Exception) -> bool:
+            if hasattr(exc, 'message'):
+                message = exc.message if isinstance(exc.message, str) else str(exc.message)
+                return "transaction numbers are only allowed on a replica set member" in message
+            return False
 
         try:
-            # 创建ExecutionTaskDoc
-            task_doc = ExecutionTaskDoc(
-                task_id=command.task_id,
-                external_task_id=command.external_task_id,
-                framework=command.framework,
-                dispatch_status="DISPATCHING",  # 初始状态：正在下发
-                overall_status="QUEUED",        # 整体状态：等待执行
-                request_payload=command.kafka_task_data,
-                dispatch_response=None,         # 稍后由outbox工作器更新
-                dispatch_error=None,            # 稍后由outbox工作器更新
-                created_by=command.created_by,
-                case_count=len(case_ids),
-                reported_case_count=0,
-            )
-            await task_doc.insert()
+            async with client.start_session() as session:
+                async with await session.start_transaction():
+                    task_doc = ExecutionTaskDoc(
+                        task_id=command.task_id,
+                        external_task_id=command.external_task_id,
+                        framework=command.framework,
+                        dispatch_status="DISPATCHING",
+                        overall_status="QUEUED",
+                        request_payload=command.kafka_task_data,
+                        dispatch_response=None,
+                        dispatch_error=None,
+                        created_by=command.created_by,
+                        case_count=len(case_ids),
+                        reported_case_count=0,
+                    )
+                    await task_doc.insert(session=session)
 
-            # 创建outbox事件
-            outbox_event = await self.outbox_service.create_execution_task_event(
-                task_id=command.task_id,
-                external_task_id=command.external_task_id,
-                kafka_task_data=command.kafka_task_data,
-                created_by=command.created_by
-            )
+                    outbox_event = await self.outbox_service.create_execution_task_event(
+                        task_id=command.task_id,
+                        external_task_id=command.external_task_id,
+                        kafka_task_data=command.kafka_task_data,
+                        created_by=command.created_by,
+                        session=session,
+                    )
 
-            # 为每个用例创建快照记录
-            # 注意：这里的状态应该从工作流获取（Phase 3B的实现）
-            # 但为了简化，我们暂时使用业务文档状态
-            # 实际实现中应该调用workflow service获取真实状态
-            for cid in case_ids:
-                case_doc = doc_map[cid]
-                # 使用业务文档状态作为快照（后续可以改进为从工作流获取）
-                snapshot = {
-                    "case_id": case_doc.case_id,
-                    "title": case_doc.title,
-                    "version": case_doc.version,
-                    "priority": case_doc.priority,
-                    "status": getattr(case_doc, 'status', '待执行'),  # 备用状态
-                }
+                    for cid in case_ids:
+                        case_doc = doc_map[cid]
+                        snapshot = {
+                            "case_id": case_doc.case_id,
+                            "title": case_doc.title,
+                            "version": case_doc.version,
+                            "priority": case_doc.priority,
+                            "status": getattr(case_doc, 'status', '待执行'),
+                        }
 
-                await ExecutionTaskCaseDoc(
-                    task_id=command.task_id,
-                    case_id=cid,
-                    case_snapshot=snapshot,
-                    status="QUEUED",
-                    last_seq=0,
-                ).insert()
+                        await ExecutionTaskCaseDoc(
+                            task_id=command.task_id,
+                            case_id=cid,
+                            case_snapshot=snapshot,
+                            status="QUEUED",
+                            last_seq=0,
+                        ).insert(session=session)
 
-            logger.info(f"Successfully created task {command.task_id} with outbox event {outbox_event.event_id}")
+                    task_doc.dispatch_status = "CREATED"
+                    task_doc.dispatch_response = {
+                        "accepted": True,
+                        "message": "Task created successfully, pending Kafka dispatch",
+                        "outbox_event_id": outbox_event.event_id,
+                    }
+                    await task_doc.save(session=session)
 
-            # 更新任务状态为"已创建"（等待Kafka发布）
-            task_doc.dispatch_status = "CREATED"
-            task_doc.dispatch_response = {
-                "accepted": True,
-                "message": "Task created successfully, pending Kafka dispatch",
-                "outbox_event_id": outbox_event.event_id,
-            }
-            await task_doc.save()
+                    logger.info(f"Successfully created task {command.task_id} with outbox event {outbox_event.event_id}")
 
         except Exception as e:
+            if _is_transaction_not_supported(e):
+                logger.error("MongoDB 部署不支持事务，已拒绝执行任务分发")
+                raise RuntimeError("execution task dispatch requires MongoDB transaction support") from e
             logger.exception(f"Failed to create task {command.task_id}: {str(e)}")
             raise
 
