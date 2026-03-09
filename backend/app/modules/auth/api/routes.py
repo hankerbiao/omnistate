@@ -154,7 +154,7 @@ async def update_user_roles(
     user_id: str,
     request: UpdateUserRolesRequest,
     service: RbacServiceDep,
-    _=Depends(require_permission("users:write")),
+    _=Depends(require_admin_user),
 ):
     """更新用户角色（管理员操作）"""
     try:
@@ -175,7 +175,7 @@ async def update_user_password(
     user_id: str,
     request: UpdateUserPasswordRequest,
     service: RbacServiceDep,
-    _=Depends(require_permission("users:write")),
+    _=Depends(require_admin_user),
 ):
     """重置用户密码（管理员操作）"""
     try:
@@ -251,7 +251,7 @@ async def get_my_navigation(
 )
 async def list_navigation_pages(
     service: RbacServiceDep,
-    _=Depends(require_permission("navigation:write")),
+    _=Depends(require_admin_user),
     include_inactive: bool = Query(True, description="是否包含未启用页面"),
 ):
     data = await service.list_navigation_pages(include_inactive=include_inactive)
@@ -266,7 +266,7 @@ async def list_navigation_pages(
 async def get_navigation_page(
     view: str,
     service: RbacServiceDep,
-    _=Depends(require_permission("navigation:write")),
+    _=Depends(require_admin_user),
 ):
     try:
         data = await service.get_navigation_page(view)
@@ -284,7 +284,7 @@ async def get_navigation_page(
 async def create_navigation_page(
     request: CreateNavigationPageRequest,
     service: RbacServiceDep,
-    _=Depends(require_permission("navigation:write")),
+    _=Depends(require_admin_user),
 ):
     try:
         data = await service.create_navigation_page(request.model_dump())
@@ -302,7 +302,7 @@ async def update_navigation_page(
     view: str,
     request: UpdateNavigationPageRequest,
     service: RbacServiceDep,
-    _=Depends(require_permission("navigation:write")),
+    _=Depends(require_admin_user),
 ):
     payload = request.model_dump(exclude_unset=True)
     if not payload:
@@ -322,7 +322,7 @@ async def update_navigation_page(
 async def delete_navigation_page(
     view: str,
     service: RbacServiceDep,
-    _=Depends(require_permission("navigation:write")),
+    _=Depends(require_admin_user),
 ):
     try:
         data = await service.delete_navigation_page(view)
@@ -339,7 +339,7 @@ async def delete_navigation_page(
 async def get_user_navigation(
     user_id: str,
     service: RbacServiceDep,
-    _=Depends(require_permission("navigation:write")),
+    _=Depends(require_admin_user),
 ):
     try:
         data = await service.get_user_navigation(user_id)
@@ -357,7 +357,7 @@ async def update_user_navigation(
     user_id: str,
     request: UpdateUserNavigationRequest,
     service: RbacServiceDep,
-    _=Depends(require_permission("navigation:write")),
+    _=Depends(require_admin_user),
 ):
     try:
         data = await service.update_user_navigation(user_id, request.allowed_nav_views)
@@ -419,7 +419,7 @@ async def update_role(
     service: RbacServiceDep,
     _=Depends(require_permission("roles:write")),
 ):
-    """更新角色信息（不包含权限）"""
+    """更新角色信息"""
     try:
         payload = request.model_dump(exclude_unset=True)
         if not payload:
@@ -439,9 +439,9 @@ async def update_role_permissions(
     role_id: str,
     request: UpdateRolePermissionsRequest,
     service: RbacServiceDep,
-    _=Depends(require_permission("roles:write")),
+    _=Depends(require_admin_user),
 ):
-    """更新角色权限（管理员操作）"""
+    """更新角色权限（管理员）"""
     try:
         data = await service.update_role_permissions(role_id, request.permission_ids)
         return APIResponse(data=data)
