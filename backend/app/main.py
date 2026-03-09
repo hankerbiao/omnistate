@@ -31,6 +31,7 @@ from app.modules.execution.repository.models import (
     ExecutionEventDoc,
 )
 from app.modules.auth.repository.models import UserDoc, RoleDoc, PermissionDoc, NavigationPageDoc
+from app.shared.integration.outbox_models import OutboxEventDoc
 
 
 async def validate_workflow_consistency() -> None:
@@ -99,6 +100,7 @@ async def lifespan(app: FastAPI):
                 ExecutionTaskDoc,
                 ExecutionTaskCaseDoc,
                 ExecutionEventDoc,
+                OutboxEventDoc,
                 UserDoc,
                 RoleDoc,
                 PermissionDoc,

@@ -30,6 +30,7 @@ class OutboxEventDoc(Document):
     - next_retry_at: 下次重试时间
     - last_error: 最后一次错误信息
     """
+    model_config = ConfigDict(from_attributes=True)
     __test__ = False
 
     # 事件标识
