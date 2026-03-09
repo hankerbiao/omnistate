@@ -1,9 +1,11 @@
 from copy import deepcopy
 
 from app.modules.test_specs.application.commands import (
+    AssignRequirementOwnersCommand,
+    UpdateRequirementContentCommand,
     CreateRequirementCommand,
-    DeleteRequirementCommand,
     UpdateRequirementCommand,
+    DeleteRequirementCommand,
 )
 from app.modules.test_specs.domain.policies import can_delete_requirement, can_update_requirement
 from app.modules.test_specs.service import RequirementService
@@ -155,3 +157,47 @@ class RequirementCommandService:
             )
             return
         await self._requirement_service.delete_requirement(command.req_id)
+
+    async def assign_owners(
+        self,
+        context: OperationContext,
+        command: AssignRequirementOwnersCommand,
+    ) -> dict:
+        """
+        分配需求负责人（Phase 4显式命令）。
+
+        这是Phase 4的核心实现：负责人分配必须通过显式命令，不能通过通用更新。
+
+        Args:
+            context: 操作上下文
+            command: 分配需求负责人命令
+
+        Returns:
+            更新后的需求数据字典
+
+        Raises:
+            RequirementNotFoundError: 需求不存在时抛出
+            PermissionDeniedError: 没有更新权限时抛出
+        """
+        requirement = await self._requirement_service.get_requirement(command.req_id)
+        if not requirement:
+            from app.modules.test_specs.domain.exceptions import RequirementNotFoundError
+            raise RequirementNotFoundError(command.req_id)
+
+        workflow_item_id = str(requirement.get("workflow_item_id") or "").strip()
+        work_item = None
+        if workflow_item_id:
+            from app.modules.workflow.service.workflow_service import AsyncWorkflowService
+            workflow_service = AsyncWorkflowService()
+            work_item = await workflow_service.get_item_by_id(workflow_item_id)
+
+        actor = {"actor_id": context.actor_id, "role_ids": context.role_ids}
+        if not can_update_requirement(actor, requirement, work_item):
+            raise PermissionDeniedError(context.actor_id, "assign requirement owners")
+
+        return await self._requirement_service.assign_owners(
+            req_id=command.req_id,
+            tpm_owner_id=command.tpm_owner_id,
+            manual_dev_id=command.manual_dev_id,
+            auto_dev_id=command.auto_dev_id,
+        )

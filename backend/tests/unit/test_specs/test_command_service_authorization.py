@@ -153,7 +153,7 @@ class TestTestCaseCommandServiceAuthorization:
             "workflow_item_id": "wi-1",
         }
 
-        service = TestCaseCommandService(test_case_service, workflow_command_service)
+        service = TestCaseCommandService(test_case_service, AsyncMock(), workflow_command_service)
 
         actor_context = OperationContext(actor_id="user-2", role_ids=["ROLE_USER"])
         command = UpdateTestCaseCommand(case_id="case-1", payload={"title": "New Title"})
@@ -174,7 +174,7 @@ class TestTestCaseCommandServiceAuthorization:
         }
         test_case_service.update_test_case.return_value = {"case_id": "case-1"}
 
-        service = TestCaseCommandService(test_case_service, workflow_command_service)
+        service = TestCaseCommandService(test_case_service, AsyncMock(), workflow_command_service)
 
         actor_context = OperationContext(actor_id="user-1", role_ids=["ROLE_USER"])
         command = UpdateTestCaseCommand(case_id="case-1", payload={"title": "New Title"})
@@ -194,7 +194,7 @@ class TestTestCaseCommandServiceAuthorization:
             "workflow_item_id": "wi-1",
         }
 
-        service = TestCaseCommandService(test_case_service, workflow_command_service)
+        service = TestCaseCommandService(test_case_service, AsyncMock(), workflow_command_service)
 
         actor_context = OperationContext(actor_id="user-2", role_ids=["ROLE_USER"])
         command = DeleteTestCaseCommand(case_id="case-1")
@@ -216,7 +216,7 @@ class TestTestCaseCommandServiceAuthorization:
 
         workflow_command_service.delete_work_item = AsyncMock()
 
-        service = TestCaseCommandService(test_case_service, workflow_command_service)
+        service = TestCaseCommandService(test_case_service, AsyncMock(), workflow_command_service)
 
         actor_context = OperationContext(actor_id="admin", role_ids=["ROLE_ADMIN"])
         command = DeleteTestCaseCommand(case_id="case-1")
@@ -232,7 +232,7 @@ class TestTestCaseCommandServiceAuthorization:
 
         test_case_service.get_test_case.return_value = None
 
-        service = TestCaseCommandService(test_case_service, workflow_command_service)
+        service = TestCaseCommandService(test_case_service, AsyncMock(), workflow_command_service)
 
         actor_context = OperationContext(actor_id="user-1", role_ids=["ROLE_USER"])
         command = UpdateTestCaseCommand(case_id="case-999", payload={"title": "New Title"})

@@ -58,8 +58,8 @@ class TestWorkflowStateConvergence:
             with pytest.raises(ValueError) as exc_info:
                 await service.update_requirement("TR-2026-001", {"status": "PENDING_REVIEW"})
 
-            assert "status is a workflow state projection" in str(exc_info.value)
-            assert "cannot be updated directly" in str(exc_info.value)
+            assert "cannot update high-risk fields through generic update" in str(exc_info.value)
+            assert "status" in str(exc_info.value)
 
     @pytest.mark.asyncio
     async def test_test_case_status_is_workflow_projection(self):
@@ -87,8 +87,8 @@ class TestWorkflowStateConvergence:
             with pytest.raises(ValueError) as exc_info:
                 await service.update_test_case("TC-2026-001", {"status": "PENDING_REVIEW"})
 
-            assert "status is a workflow state projection" in str(exc_info.value)
-            assert "cannot be updated directly" in str(exc_info.value)
+            assert "cannot update high-risk fields through generic update" in str(exc_info.value)
+            assert "status" in str(exc_info.value)
 
     @pytest.mark.asyncio
     async def test_status_sync_on_workflow_transition(self):

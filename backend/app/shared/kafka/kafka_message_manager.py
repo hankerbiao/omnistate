@@ -514,6 +514,65 @@ class KafkaMessageManager:
 
         return lag_info
 
+    def is_available(self) -> bool:
+        """检查Kafka消息管理器是否可用
+
+        Returns:
+            Kafka管理器是否可用
+        """
+        return self.is_running and self.producer is not None
+
+    def health_check(self) -> Dict[str, Any]:
+        """执行Kafka消息管理器的健康检查
+
+        Returns:
+            健康检查结果字典
+        """
+        health_status = {
+            "component": "kafka_message_manager",
+            "timestamp": datetime.now(UTC).isoformat(),
+            "status": "UNKNOWN"
+        }
+
+        try:
+            if not self.is_running:
+                health_status["status"] = "STOPPED"
+                health_status["message"] = "Kafka message manager is not running"
+                return health_status
+
+            if not self.producer:
+                health_status["status"] = "DEGRADED"
+                health_status["message"] = "Kafka producer is not available"
+                return health_status
+
+            # 检查生产者是否响应（简化检查）
+            if hasattr(self.producer, '_closed') and self.producer._closed:
+                health_status["status"] = "DEGRADED"
+                health_status["message"] = "Kafka producer appears to be closed"
+                return health_status
+
+            health_status["status"] = "HEALTHY"
+            health_status["message"] = "Kafka message manager is operating normally"
+            health_status["details"] = {
+                "is_running": self.is_running,
+                "bootstrap_servers": self.bootstrap_servers,
+                "client_id": self.client_id,
+                "producer_available": self.producer is not None,
+                "consumer_count": len(self.consumers),
+                "topics": {
+                    "task_topic": self.task_topic,
+                    "result_topic": self.result_topic,
+                    "dead_letter_topic": self.dead_letter_topic
+                }
+            }
+
+        except Exception as e:
+            health_status["status"] = "ERROR"
+            health_status["message"] = f"Health check failed: {str(e)}"
+            self.logger.exception(f"Kafka health check error: {str(e)}")
+
+        return health_status
+
     def __enter__(self):
         """上下文管理器入口"""
         self.start()

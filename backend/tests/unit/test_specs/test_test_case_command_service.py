@@ -19,11 +19,14 @@ def test_create_test_case_command_service_defaults_owner_to_actor():
             captured["payload"] = payload
             return payload
 
+    class FakeRequirementService:
+        pass
+
     class FakeWorkflowCommandService:
         async def delete_work_item(self, context, command):
             raise AssertionError("delete path should not be used")
 
-    service = TestCaseCommandService(FakeTestCaseService(), FakeWorkflowCommandService())
+    service = TestCaseCommandService(FakeTestCaseService(), FakeRequirementService(), FakeWorkflowCommandService())
 
     result = asyncio.run(
         service.create_test_case(
@@ -41,11 +44,14 @@ def test_update_test_case_command_service_rejects_empty_payload():
         async def update_test_case(self, case_id, payload):
             raise AssertionError("update should not run")
 
+    class FakeRequirementService:
+        pass
+
     class FakeWorkflowCommandService:
         async def delete_work_item(self, context, command):
             raise AssertionError("delete path should not be used")
 
-    service = TestCaseCommandService(FakeTestCaseService(), FakeWorkflowCommandService())
+    service = TestCaseCommandService(FakeTestCaseService(), FakeRequirementService(), FakeWorkflowCommandService())
 
     with pytest.raises(ValueError, match="no fields to update"):
         asyncio.run(
@@ -67,13 +73,16 @@ def test_delete_test_case_command_service_routes_linked_delete_to_workflow():
         async def delete_test_case(self, case_id):
             raise AssertionError("direct delete should not be used for linked records")
 
+    class FakeRequirementService:
+        pass
+
     class FakeWorkflowCommandService:
         async def delete_work_item(self, context, command):
             captured["actor_id"] = context.actor_id
             captured["work_item_id"] = command.work_item_id
             return True
 
-    service = TestCaseCommandService(FakeTestCaseService(), FakeWorkflowCommandService())
+    service = TestCaseCommandService(FakeTestCaseService(), FakeRequirementService(), FakeWorkflowCommandService())
 
     asyncio.run(
         service.delete_test_case(

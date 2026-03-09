@@ -33,10 +33,11 @@ class RequirementService(BaseService):
         "priority",
         "key_parameters",
         "risk_points",
-        "tpm_owner_id",
-        "manual_dev_id",
-        "auto_dev_id",
         "attachments",
+        # Phase 4: 高风险字段已移至显式命令，不允许通过通用更新修改
+        # - 负责人字段：通过 assign_owners 命令修改
+        # - 工作流字段：通过工作流命令修改
+        # - 业务ID和关联：通过显式命令修改
     }
 
     def __init__(self):
@@ -202,11 +203,37 @@ class RequirementService(BaseService):
         return result
 
     async def update_requirement(self, req_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
-        """更新需求可编辑字段（白名单控制）。
+        """更新需求内容字段（仅限安全的内容更新）。
 
-        注意：status字段是工作流状态的投影，不能通过此方法直接修改。
-        状态变更必须通过工作流转换进行。
+        Phase 4: 高风险操作必须通过显式命令进行，不允许通过此通用更新方法。
+        - 负责人修改：使用 assign_owners 命令
+        - 工作流状态：使用工作流转换
+        - 业务ID和关联：使用显式命令
+
+        Args:
+            req_id: 需求ID
+            data: 内容更新数据（仅限内容字段）
+
+        Returns:
+            更新后的需求文档
+
+        Raises:
+            KeyError: 需求不存在时抛出
+            ValueError: 尝试更新高风险字段时抛出
         """
+        # Phase 4: 强化验证 - 检查是否尝试更新高风险字段
+        high_risk_fields = {
+            'req_id', 'workflow_item_id', 'status', 'is_deleted',
+            'tpm_owner_id', 'manual_dev_id', 'auto_dev_id',
+            'created_at', 'updated_at'
+        }
+        conflicts = set(data.keys()) & high_risk_fields
+        if conflicts:
+            raise ValueError(
+                f"cannot update high-risk fields through generic update: {conflicts}. "
+                f"Use explicit commands instead. Allowed fields: {self._UPDATABLE_FIELDS}"
+            )
+
         # 明确禁止修改status字段（投影字段）
         if "status" in data:
             raise ValueError(
@@ -221,6 +248,45 @@ class RequirementService(BaseService):
         if not doc:
             raise KeyError("requirement not found")
         self._apply_updates(doc, data, self._UPDATABLE_FIELDS)
+        await doc.save()
+        return self._doc_to_dict(doc)
+
+    async def assign_owners(self, req_id: str, tpm_owner_id: str | None = None, manual_dev_id: str | None = None, auto_dev_id: str | None = None) -> Dict[str, Any]:
+        """分配需求负责人（Phase 4显式命令）。
+
+        这是Phase 4的核心实现：负责人分配必须通过显式命令，不能通过通用更新。
+
+        Args:
+            req_id: 需求ID
+            tpm_owner_id: 项目经理/产品经理ID
+            manual_dev_id: 手工测试开发工程师ID
+            auto_dev_id: 自动化开发工程师ID
+
+        Returns:
+            更新后的需求文档
+
+        Raises:
+            KeyError: 需求不存在时抛出
+            ValueError: 没有任何负责人被指定时抛出
+        """
+        if not any([tpm_owner_id, manual_dev_id, auto_dev_id]):
+            raise ValueError("at least one owner must be specified")
+
+        doc = await TestRequirementDoc.find_one(
+            TestRequirementDoc.req_id == req_id,
+            {"is_deleted": False},
+        )
+        if not doc:
+            raise KeyError("requirement not found")
+
+        # 更新负责人字段（明确指定每个字段的更新）
+        if tpm_owner_id is not None:
+            doc.tpm_owner_id = tpm_owner_id
+        if manual_dev_id is not None:
+            doc.manual_dev_id = manual_dev_id
+        if auto_dev_id is not None:
+            doc.auto_dev_id = auto_dev_id
+
         await doc.save()
         return self._doc_to_dict(doc)
 

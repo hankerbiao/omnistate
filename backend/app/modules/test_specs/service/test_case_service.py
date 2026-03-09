@@ -40,9 +40,6 @@ class TestCaseService(BaseService):
         "version",
         "is_active",
         "change_log",
-        "owner_id",
-        "reviewer_id",
-        "auto_dev_id",
         "priority",
         "estimated_duration_sec",
         "target_components",
@@ -68,6 +65,11 @@ class TestCaseService(BaseService):
         "custom_fields",
         "deprecation_reason",
         "approval_history",
+        # Phase 4: 高风险字段已移至显式命令，不允许通过通用更新修改
+        # - ref_req_id：通过 move_to_requirement 命令修改
+        # - 负责人字段：通过 assign_owners 命令修改
+        # - 工作流字段：通过工作流命令修改
+        # - 业务ID和关联：通过显式命令修改
     }
 
     def __init__(self):
@@ -223,11 +225,38 @@ class TestCaseService(BaseService):
         return result
 
     async def update_test_case(self, case_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
-        """更新测试用例信息
+        """更新测试用例内容字段（仅限安全的内容更新）。
 
-        注意：status字段是工作流状态的投影，不能通过此方法直接修改。
-        状态变更必须通过工作流转换进行。
+        Phase 4: 高风险操作必须通过显式命令进行，不允许通过此通用更新方法。
+        - 需求关联修改：使用 move_to_requirement 命令
+        - 负责人修改：使用 assign_owners 命令
+        - 工作流状态：使用工作流转换
+        - 业务ID和关联：使用显式命令
+
+        Args:
+            case_id: 测试用例ID
+            data: 内容更新数据（仅限内容字段）
+
+        Returns:
+            更新后的测试用例文档
+
+        Raises:
+            KeyError: 测试用例不存在时抛出
+            ValueError: 尝试更新高风险字段时抛出
         """
+        # Phase 4: 强化验证 - 检查是否尝试更新高风险字段
+        high_risk_fields = {
+            'case_id', 'ref_req_id', 'workflow_item_id', 'status', 'is_deleted',
+            'owner_id', 'reviewer_id', 'auto_dev_id',
+            'created_at', 'updated_at'
+        }
+        conflicts = set(data.keys()) & high_risk_fields
+        if conflicts:
+            raise ValueError(
+                f"cannot update high-risk fields through generic update: {conflicts}. "
+                f"Use explicit commands instead. Allowed fields: {self._UPDATABLE_FIELDS}"
+            )
+
         # 明确禁止修改status字段（投影字段）
         if "status" in data:
             raise ValueError(
@@ -303,6 +332,86 @@ class TestCaseService(BaseService):
         case_doc.custom_fields["automation_case_version"] = auto_doc.version
 
         await case_doc.save()
+        return self._doc_to_dict(case_doc)
+
+    async def assign_owners(self, case_id: str, owner_id: str | None = None, reviewer_id: str | None = None, auto_dev_id: str | None = None) -> Dict[str, Any]:
+        """分配测试用例负责人（Phase 4显式命令）。
+
+        这是Phase 4的核心实现：负责人分配必须通过显式命令，不能通过通用更新。
+
+        Args:
+            case_id: 测试用例ID
+            owner_id: 负责人ID
+            reviewer_id: 审核人ID
+            auto_dev_id: 自动化开发工程师ID
+
+        Returns:
+            更新后的测试用例文档
+
+        Raises:
+            KeyError: 测试用例不存在时抛出
+            ValueError: 没有任何负责人被指定时抛出
+        """
+        if not any([owner_id, reviewer_id, auto_dev_id]):
+            raise ValueError("at least one owner must be specified")
+
+        doc = await TestCaseDoc.find_one(
+            TestCaseDoc.case_id == case_id,
+            {"is_deleted": False},
+        )
+        if not doc:
+            raise KeyError("test case not found")
+
+        # 更新负责人字段（明确指定每个字段的更新）
+        if owner_id is not None:
+            doc.owner_id = owner_id
+        if reviewer_id is not None:
+            doc.reviewer_id = reviewer_id
+        if auto_dev_id is not None:
+            doc.auto_dev_id = auto_dev_id
+
+        await doc.save()
+        return self._doc_to_dict(doc)
+
+    async def move_to_requirement(self, case_id: str, target_req_id: str) -> Dict[str, Any]:
+        """将测试用例移动到不同需求（Phase 4显式命令）。
+
+        这是Phase 4的核心实现：用例迁移必须通过显式命令，不能通过通用更新。
+
+        Args:
+            case_id: 测试用例ID
+            target_req_id: 目标需求ID
+
+        Returns:
+            更新后的测试用例文档
+
+        Raises:
+            KeyError: 测试用例或目标需求不存在时抛出
+            ValueError: 目标需求ID与当前相同时抛出
+        """
+        if case_id == target_req_id:
+            raise ValueError("case_id and target_req_id cannot be the same")
+
+        # 验证测试用例存在
+        case_doc = await TestCaseDoc.find_one(
+            TestCaseDoc.case_id == case_id,
+            {"is_deleted": False},
+        )
+        if not case_doc:
+            raise KeyError("test case not found")
+
+        # 验证目标需求存在
+        target_req = await TestRequirementDoc.find_one(
+            TestRequirementDoc.req_id == target_req_id,
+            {"is_deleted": False},
+        )
+        if not target_req:
+            raise KeyError("target requirement not found")
+
+        # 更新ref_req_id
+        case_doc.ref_req_id = target_req_id
+        await case_doc.save()
+
         return self._doc_to_dict(case_doc)
 
     async def unlink_automation_case(self, case_id: str) -> Dict[str, Any]:

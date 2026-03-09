@@ -9,6 +9,7 @@ from app.shared.api.main import api_router
 from app.shared.db.config import settings
 from app.shared.core.logger import log
 from app.shared.core.mongo_client import set_mongo_client
+from app.shared.infrastructure import initialize_infrastructure, shutdown_infrastructure
 
 from app.modules.workflow.repository.models import (
     SysWorkTypeDoc, SysWorkflowStateDoc, SysWorkflowConfigDoc,
@@ -109,9 +110,20 @@ async def lifespan(app: FastAPI):
         log.success("Workflow 配置一致性校验通过")
 
         log.success("FastAPI 服务启动完成")
+
+        # Phase 6: 初始化应用级基础设施
+        log.info("正在初始化应用级基础设施...")
+        await initialize_infrastructure()
+        log.success("应用级基础设施初始化完成")
+
         yield
     finally:
         log.info("FastAPI 服务已关闭")
+
+        # Phase 6: 关闭应用级基础设施
+        log.info("正在关闭应用级基础设施...")
+        await shutdown_infrastructure()
+        log.info("应用级基础设施已关闭")
 
         if client:
             close_result = client.close()
