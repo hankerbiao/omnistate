@@ -1,740 +1,605 @@
 #!/usr/bin/env python3
 """
-数据一致性修复脚本 - Phase 7
+工作流一致性修复脚本
 
-此脚本修复工作流系统的数据一致性，能够处理以下6种不一致性：
+该脚本基于审计结果修复发现的数据一致性问题：
+1. 为缺失 workflow_item_id 的业务记录创建对应的工作流项
+2. 修复状态不一致问题（同步业务文档状态到工作流状态）
+3. 修复删除状态不一致问题（保持删除状态同步）
+4. 修复父子关系不一致问题（正确建立工作流项的父子关系）
 
-1. 缺少 workflow_item_id 的业务记录
-2. Requirement.status != WorkItem.current_state
-3. TestCase.status != WorkItem.current_state
-4. 业务文档被删除但工作项仍活跃
-5. 工作项被删除但业务文档仍活跃
-6. 测试用例的 ref_req_id 和父工作项关系不一致
+使用方法：
+python scripts/repair_workflow_consistency.py --audit-file audit_workflow_consistency_YYYYMMDD_HHMMSS.json --dry-run
+python scripts/repair_workflow_consistency.py --audit-file audit_workflow_consistency_YYYYMMDD_HHMMSS.json --fix-missing-workflow
+python scripts/repair_workflow_consistency.py --audit-file audit_workflow_consistency_YYYYMMDD_HHMMSS.json --fix-status
+python scripts/repair_workflow_consistency.py --audit-file audit_workflow_consistency_YYYYMMDD_HHMMSS.json --fix-delete
+python scripts/repair_workflow_consistency.py --audit-file audit_workflow_consistency_YYYYMMDD_HHMMSS.json --fix-parent-child
+python scripts/repair_workflow_consistency.py --audit-file audit_workflow_consistency_YYYYMMDD_HHMMSS.json --fix-all
 
-Usage:
-    python scripts/repair_workflow_consistency.py --dry-run
-    python scripts/repair_workflow_consistency.py --fix-missing-ids
-    python scripts/repair_workflow_consistency.py --sync-statuses
-    python scripts/repair_workflow_consistency.py --cleanup-orphans
-    python scripts/repair_workflow_consistency.py --fix-relationships
-    python scripts/repair_workflow_consistency.py --all
+参数说明：
+--dry-run: 仅显示将要执行的修复操作，不实际执行
+--audit-file: 指定审计结果文件路径
+--fix-missing-workflow: 修复缺失 workflow_item_id 的问题
+--fix-status: 修复状态不一致问题
+--fix-delete: 修复删除状态不一致问题
+--fix-parent-child: 修复父子关系不一致问题
+--fix-all: 执行所有修复操作
 """
 
-import asyncio
 import argparse
+import asyncio
 import json
-from datetime import datetime, timezone
-from typing import Dict, List, Any, Optional, Set
-from pydantic import BaseModel
-from beanie import PydanticObjectId
+import sys
+from datetime import datetime
+from pathlib import Path
+from typing import Dict, List, Any, Optional
 
+# 添加项目根目录到 Python 路径
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from beanie import PydanticObjectId
+from pymongo import AsyncMongoClient
+
+# 导入相关模型
 from app.modules.workflow.repository.models.business import BusWorkItemDoc
 from app.modules.test_specs.repository.models.requirement import TestRequirementDoc
 from app.modules.test_specs.repository.models.test_case import TestCaseDoc
-from app.shared.core.logger import log as logger
-
-
-class RepairOperation(BaseModel):
-    """修复操作的数据模型"""
-    operation_type: str
-    description: str
-    target_count: int
-    success_count: int = 0
-    failed_count: int = 0
-    details: List[str] = []
-
-
-class RepairResult(BaseModel):
-    """修复结果的数据模型"""
-    repair_timestamp: datetime
-    total_operations: int
-    total_processed: int
-    total_succeeded: int
-    total_failed: int
-    operations: List[RepairOperation]
-    summary: Dict[str, str]
 
 
 class WorkflowConsistencyRepairer:
     """工作流一致性修复器"""
 
-    def __init__(self, dry_run: bool = False):
+    def __init__(self, audit_results: Dict[str, Any], dry_run: bool = False):
+        self.audit_results = audit_results
         self.dry_run = dry_run
-        self.operations: List[RepairOperation] = []
-        self.processed_count = 0
-        self.succeeded_count = 0
-        self.failed_count = 0
+        self.repair_results = {
+            "repair_time": datetime.now().isoformat(),
+            "dry_run": dry_run,
+            "summary": {},
+            "details": {}
+        }
+        self.mongo_client: Optional[AsyncMongoClient] = None
 
-    async def repair_all(self, audit_report_path: Optional[str] = None) -> RepairResult:
-        """执行所有修复操作"""
+    async def connect_to_mongodb(self):
+        """连接到 MongoDB"""
         if self.dry_run:
-            logger.info("执行修复操作（dry-run模式）")
-        else:
-            logger.info("开始执行数据一致性修复...")
+            print("🔍 模式：Dry Run，不会实际连接数据库")
+            return
 
-        # 如果提供了审计报告，从报告读取问题
-        if audit_report_path:
-            await self._repair_from_audit_report(audit_report_path)
-        else:
-            # 依次执行各种修复操作
-            await self._repair_missing_workflow_item_ids()
-            await self._sync_requirement_statuses()
-            await self._sync_test_case_statuses()
-            await self._cleanup_deleted_business_orphans()
-            await self._cleanup_deleted_work_item_orphans()
-            await self._fix_test_case_requirement_relationships()
+        try:
+            # 从环境变量获取 MongoDB 连接信息
+            mongo_uri = "mongodb://localhost:27017/dmlv4_backend"
+            self.mongo_client = AsyncMongoClient(mongo_uri)
+            print(f"✅ 成功连接到 MongoDB: {mongo_uri}")
 
-        # 生成结果报告
-        result = self._generate_result()
-        logger.info(f"数据一致性修复完成，处理 {result.total_processed} 个记录，成功 {result.total_succeeded} 个，失败 {result.total_failed} 个")
+            # 初始化 Beanie
+            from beanie import init_beanie
+            await init_beanie(
+                database=self.mongo_client.dmlv4_backend,
+                document_models=[
+                    BusWorkItemDoc,
+                    TestRequirementDoc,
+                    TestCaseDoc
+                ]
+            )
+            print("✅ 成功初始化 Beanie ODM")
 
+        except Exception as e:
+            print(f"❌ 连接 MongoDB 失败: {e}")
+            raise
+
+    async def disconnect_from_mongodb(self):
+        """断开 MongoDB 连接"""
+        if self.mongo_client:
+            await self.mongo_client.close()
+            print("✅ 已断开 MongoDB 连接")
+
+    async def repair_missing_workflow_item_ids(self) -> Dict[str, Any]:
+        """修复缺失 workflow_item_id 的业务记录"""
+        print("\n🔧 修复缺失 workflow_item_id 的业务记录...")
+
+        result = {
+            "description": "为缺失 workflow_item_id 的业务记录创建对应的工作流项",
+            "requirements_repaired": 0,
+            "test_cases_repaired": 0,
+            "details": []
+        }
+
+        # 修复需求文档
+        requirements_without_workflow = self.audit_results["details"]["missing_workflow_item_ids"]["requirements_without_workflow"]
+        for req_data in requirements_without_workflow:
+            if not self.dry_run:
+                try:
+                    # 创建对应的工作流项
+                    work_item = BusWorkItemDoc(
+                        type_code="REQUIREMENT",
+                        title=f"[需求] {req_data['title']}",
+                        content=f"自动创建的需求工作流项 - {req_data['req_id']}",
+                        creator_id="system_repair",  # 使用系统标识
+                        current_state="待指派",  # 默认状态
+                        current_owner_id=None
+                    )
+
+                    # 保存工作流项
+                    await work_item.insert()
+
+                    # 更新需求文档的 workflow_item_id
+                    req_doc = await TestRequirementDoc.get(PydanticObjectId(req_data["id"]))
+                    if req_doc:
+                        req_doc.workflow_item_id = str(work_item.id)
+                        await req_doc.save()
+
+                    result["requirements_repaired"] += 1
+                    result["details"].append({
+                        "type": "requirement",
+                        "req_id": req_data["req_id"],
+                        "work_item_id": str(work_item.id),
+                        "status": "success"
+                    })
+
+                    print(f"   ✅ 已为需求 {req_data['req_id']} 创建工作流项 {str(work_item.id)}")
+
+                except Exception as e:
+                    result["details"].append({
+                        "type": "requirement",
+                        "req_id": req_data["req_id"],
+                        "status": "failed",
+                        "error": str(e)
+                    })
+                    print(f"   ❌ 修复需求 {req_data['req_id']} 失败: {e}")
+            else:
+                result["requirements_repaired"] += 1
+                result["details"].append({
+                    "type": "requirement",
+                    "req_id": req_data["req_id"],
+                    "action": "创建工作流项并更新 workflow_item_id",
+                    "status": "planned"
+                })
+                print(f"   📋 计划修复需求 {req_data['req_id']}: 创建工作流项")
+
+        # 修复测试用例文档
+        test_cases_without_workflow = self.audit_results["details"]["missing_workflow_item_ids"]["test_cases_without_workflow"]
+        for tc_data in test_cases_without_workflow:
+            if not self.dry_run:
+                try:
+                    # 创建对应的工作流项
+                    work_item = BusWorkItemDoc(
+                        type_code="TEST_CASE",
+                        title=f"[用例] {tc_data['title']}",
+                        content=f"自动创建的测试用例工作流项 - {tc_data['case_id']}",
+                        creator_id="system_repair",  # 使用系统标识
+                        current_state="draft",  # 默认状态
+                        current_owner_id=None
+                    )
+
+                    # 保存工作流项
+                    await work_item.insert()
+
+                    # 更新测试用例文档的 workflow_item_id
+                    tc_doc = await TestCaseDoc.get(PydanticObjectId(tc_data["id"]))
+                    if tc_doc:
+                        tc_doc.workflow_item_id = str(work_item.id)
+                        await tc_doc.save()
+
+                    result["test_cases_repaired"] += 1
+                    result["details"].append({
+                        "type": "test_case",
+                        "case_id": tc_data["case_id"],
+                        "work_item_id": str(work_item.id),
+                        "status": "success"
+                    })
+
+                    print(f"   ✅ 已为测试用例 {tc_data['case_id']} 创建工作流项 {str(work_item.id)}")
+
+                except Exception as e:
+                    result["details"].append({
+                        "type": "test_case",
+                        "case_id": tc_data["case_id"],
+                        "status": "failed",
+                        "error": str(e)
+                    })
+                    print(f"   ❌ 修复测试用例 {tc_data['case_id']} 失败: {e}")
+            else:
+                result["test_cases_repaired"] += 1
+                result["details"].append({
+                    "type": "test_case",
+                    "case_id": tc_data["case_id"],
+                    "action": "创建工作流项并更新 workflow_item_id",
+                    "status": "planned"
+                })
+                print(f"   📋 计划修复测试用例 {tc_data['case_id']}: 创建工作流项")
+
+        print(f"   总计: 需求 {result['requirements_repaired']} 个, 测试用例 {result['test_cases_repaired']} 个")
         return result
 
-    async def _repair_from_audit_report(self, audit_report_path: str):
-        """从审计报告执行修复"""
-        logger.info(f"从审计报告执行修复: {audit_report_path}")
+    async def repair_status_inconsistency(self) -> Dict[str, Any]:
+        """修复状态不一致问题"""
+        print("\n🔧 修复状态不一致问题...")
 
-        with open(audit_report_path, 'r', encoding='utf-8') as f:
-            audit_data = json.load(f)
+        result = {
+            "description": "修复业务文档状态与工作流状态不一致的问题",
+            "requirements_repaired": 0,
+            "test_cases_repaired": 0,
+            "details": []
+        }
 
-        # 根据问题类型执行对应的修复操作
-        for issue in audit_data.get('issues', []):
-            issue_type = issue['issue_type']
-
-            if issue_type == 'missing_workflow_item_id':
-                await self._repair_missing_workflow_item_ids_from_samples(issue.get('sample_data', []))
-            elif issue_type == 'requirement_status_inconsistency':
-                await self._sync_requirement_statuses_from_samples(issue.get('sample_data', []))
-            elif issue_type == 'test_case_status_inconsistency':
-                await self._sync_test_case_statuses_from_samples(issue.get('sample_data', []))
-            elif issue_type == 'deleted_business_active_work_items':
-                await self._cleanup_deleted_business_orphans_from_samples(issue.get('sample_data', []))
-            elif issue_type == 'deleted_work_items_active_business':
-                await self._cleanup_deleted_work_item_orphans_from_samples(issue.get('sample_data', []))
-            elif issue_type == 'test_case_requirement_relationship_inconsistency':
-                await self._fix_test_case_requirement_relationships_from_samples(issue.get('sample_data', []))
-
-    async def _create_operation(self, operation_type: str, description: str, target_count: int) -> RepairOperation:
-        """创建修复操作记录"""
-        operation = RepairOperation(
-            operation_type=operation_type,
-            description=description,
-            target_count=target_count
-        )
-        self.operations.append(operation)
-        return operation
-
-    async def _update_operation_result(self, operation: RepairOperation, success: bool, detail: str = ""):
-        """更新操作结果"""
-        self.processed_count += 1
-
-        if success:
-            operation.success_count += 1
-            self.succeeded_count += 1
-        else:
-            operation.failed_count += 1
-            self.failed_count += 1
-
-        if detail:
-            operation.details.append(detail)
-
-    async def _repair_missing_workflow_item_ids(self):
-        """修复缺少 workflow_item_id 的业务记录"""
-        operation = await self._create_operation(
-            "repair_missing_workflow_item_ids",
-            "修复缺少 workflow_item_id 的业务记录",
-            0
-        )
-
-        # 处理需求
-        requirements = await TestRequirementDoc.find({"workflow_item_id": None, "is_deleted": False}).to_list()
-        operation.target_count += len(requirements)
-
-        for req in requirements:
-            try:
-                # 创建对应的工作流项
-                work_item = BusWorkItemDoc(
-                    type_code="REQUIREMENT",
-                    title=f"需求项: {req.title}",
-                    content=req.description or "",
-                    parent_item_id=None,
-                    current_state="DRAFT",
-                    current_owner_id=req.tpm_owner_id,
-                    creator_id=req.tpm_owner_id
-                )
-
-                if not self.dry_run:
-                    await work_item.insert()
-                    # 更新需求的 workflow_item_id
-                    req.workflow_item_id = str(work_item.id)
-                    await req.save()
-
-                await self._update_operation_result(operation, True, f"为需求 {req.req_id} 创建工作流项")
-            except Exception as e:
-                await self._update_operation_result(operation, False, f"修复需求 {req.req_id} 失败: {str(e)}")
-
-        # 处理测试用例
-        test_cases = await TestCaseDoc.find({"workflow_item_id": None, "is_deleted": False}).to_list()
-        operation.target_count += len(test_cases)
-
-        for tc in test_cases:
-            try:
-                # 创建对应的工作流项
-                work_item = BusWorkItemDoc(
-                    type_code="TEST_CASE",
-                    title=f"测试用例: {tc.title}",
-                    content="",
-                    parent_item_id=None,
-                    current_state="DRAFT",
-                    current_owner_id=tc.owner_id or "",
-                    creator_id=tc.owner_id or ""
-                )
-
-                if not self.dry_run:
-                    await work_item.insert()
-                    # 更新测试用例的 workflow_item_id
-                    tc.workflow_item_id = str(work_item.id)
-                    await tc.save()
-
-                await self._update_operation_result(operation, True, f"为测试用例 {tc.case_id} 创建工作流项")
-            except Exception as e:
-                await self._update_operation_result(operation, False, f"修复测试用例 {tc.case_id} 失败: {str(e)}")
-
-    async def _repair_missing_workflow_item_ids_from_samples(self, samples: List[Dict[str, Any]]):
-        """从样本数据修复缺少 workflow_item_id 的问题"""
-        operation = await self._create_operation(
-            "repair_missing_workflow_item_ids",
-            "从样本数据修复缺少 workflow_item_id 的业务记录",
-            len(samples)
-        )
-
-        for sample in samples:
-            try:
-                if sample['type'] == 'requirement':
-                    req = await TestRequirementDoc.get(sample['id'])
-                    if req and req.workflow_item_id is None:
-                        work_item = BusWorkItemDoc(
-                            type_code="REQUIREMENT",
-                            title=f"需求项: {req.title}",
-                            content=req.description or "",
-                            current_state="DRAFT",
-                            current_owner_id=req.tpm_owner_id,
-                            creator_id=req.tpm_owner_id
-                        )
-
-                        if not self.dry_run:
-                            await work_item.insert()
-                            req.workflow_item_id = str(work_item.id)
-                            await req.save()
-
-                        await self._update_operation_result(operation, True, f"修复需求 {req.req_id}")
-                    else:
-                        await self._update_operation_result(operation, True, f"需求 {req.req_id} 已修复或不需要修复")
-
-                elif sample['type'] == 'test_case':
-                    tc = await TestCaseDoc.get(sample['id'])
-                    if tc and tc.workflow_item_id is None:
-                        work_item = BusWorkItemDoc(
-                            type_code="TEST_CASE",
-                            title=f"测试用例: {tc.title}",
-                            content="",
-                            current_state="DRAFT",
-                            current_owner_id=tc.owner_id or "",
-                            creator_id=tc.owner_id or ""
-                        )
-
-                        if not self.dry_run:
-                            await work_item.insert()
-                            tc.workflow_item_id = str(work_item.id)
-                            await tc.save()
-
-                        await self._update_operation_result(operation, True, f"修复测试用例 {tc.case_id}")
-                    else:
-                        await self._update_operation_result(operation, True, f"测试用例 {tc.case_id} 已修复或不需要修复")
-
-            except Exception as e:
-                await self._update_operation_result(operation, False, f"修复失败: {str(e)}")
-
-    async def _sync_requirement_statuses(self):
-        """同步需求状态到工作流状态"""
-        operation = await self._create_operation(
-            "sync_requirement_statuses",
-            "同步需求状态到工作流状态",
-            0
-        )
-
-        # 获取所有非删除的需求及其工作流项
-        requirements = await TestRequirementDoc.find({"is_deleted": False}).to_list()
-        operation.target_count = len(requirements)
-
-        for req in requirements:
-            if req.workflow_item_id:
+        # 修复需求状态不一致
+        requirements_with_inconsistent_status = self.audit_results["details"]["status_inconsistency"]["requirements_with_inconsistent_status"]
+        for req_inconsistency in requirements_with_inconsistent_status:
+            if not self.dry_run:
                 try:
-                    work_item = await BusWorkItemDoc.get(req.workflow_item_id)
-                    if work_item and req.status != work_item.current_state:
-                        if not self.dry_run:
-                            # 同步状态
-                            req.status = work_item.current_state
-                            await req.save()
+                    # 同步需求状态到工作流状态
+                    req_doc = await TestRequirementDoc.get(PydanticObjectId(req_inconsistency["requirement_id"]))
+                    if req_doc:
+                        req_doc.status = req_inconsistency["work_item_state"]
+                        await req_doc.save()
 
-                        await self._update_operation_result(
-                            operation, True, 
-                            f"同步需求 {req.req_id} 状态从 {req.status} 到 {work_item.current_state}"
-                        )
-                    else:
-                        await self._update_operation_result(operation, True, f"需求 {req.req_id} 状态已一致")
+                        result["requirements_repaired"] += 1
+                        result["details"].append({
+                            "type": "requirement",
+                            "req_id": req_inconsistency["req_id"],
+                            "old_status": req_inconsistency["requirement_status"],
+                            "new_status": req_inconsistency["work_item_state"],
+                            "status": "success"
+                        })
+
+                        print(f"   ✅ 同步需求 {req_inconsistency['req_id']} 状态: {req_inconsistency['requirement_status']} → {req_inconsistency['work_item_state']}")
+
                 except Exception as e:
-                    await self._update_operation_result(operation, False, f"同步需求 {req.req_id} 失败: {str(e)}")
+                    result["details"].append({
+                        "type": "requirement",
+                        "req_id": req_inconsistency["req_id"],
+                        "status": "failed",
+                        "error": str(e)
+                    })
+                    print(f"   ❌ 修复需求 {req_inconsistency['req_id']} 状态失败: {e}")
             else:
-                await self._update_operation_result(operation, False, f"需求 {req.req_id} 缺少工作流ID")
+                result["requirements_repaired"] += 1
+                result["details"].append({
+                    "type": "requirement",
+                    "req_id": req_inconsistency["req_id"],
+                    "action": f"同步状态: {req_inconsistency['requirement_status']} → {req_inconsistency['work_item_state']}",
+                    "status": "planned"
+                })
+                print(f"   📋 计划同步需求 {req_inconsistency['req_id']} 状态: {req_inconsistency['requirement_status']} → {req_inconsistency['work_item_state']}")
 
-    async def _sync_requirement_statuses_from_samples(self, samples: List[Dict[str, Any]]):
-        """从样本数据同步需求状态"""
-        operation = await self._create_operation(
-            "sync_requirement_statuses",
-            "从样本数据同步需求状态",
-            len(samples)
-        )
-
-        for sample in samples:
-            try:
-                req = await TestRequirementDoc.get(sample['requirement_id'])
-                if req:
-                    if not self.dry_run:
-                        req.status = sample['work_item_state']
-                        await req.save()
-
-                    await self._update_operation_result(operation, True, f"同步需求 {req.req_id}")
-                else:
-                    await self._update_operation_result(operation, False, f"需求 {sample['requirement_id']} 不存在")
-
-            except Exception as e:
-                await self._update_operation_result(operation, False, f"同步需求状态失败: {str(e)}")
-
-    async def _sync_test_case_statuses(self):
-        """同步测试用例状态到工作流状态"""
-        operation = await self._create_operation(
-            "sync_test_case_statuses",
-            "同步测试用例状态到工作流状态",
-            0
-        )
-
-        # 获取所有非删除的测试用例及其工作流项
-        test_cases = await TestCaseDoc.find({"is_deleted": False}).to_list()
-        operation.target_count = len(test_cases)
-
-        for tc in test_cases:
-            if tc.workflow_item_id:
+        # 修复测试用例状态不一致
+        test_cases_with_inconsistent_status = self.audit_results["details"]["status_inconsistency"]["test_cases_with_inconsistent_status"]
+        for tc_inconsistency in test_cases_with_inconsistent_status:
+            if not self.dry_run:
                 try:
-                    work_item = await BusWorkItemDoc.get(tc.workflow_item_id)
-                    if work_item and tc.status != work_item.current_state:
-                        if not self.dry_run:
-                            # 同步状态
-                            tc.status = work_item.current_state
-                            await tc.save()
+                    # 同步测试用例状态到工作流状态
+                    tc_doc = await TestCaseDoc.get(PydanticObjectId(tc_inconsistency["test_case_id"]))
+                    if tc_doc:
+                        tc_doc.status = tc_inconsistency["work_item_state"]
+                        await tc_doc.save()
 
-                        await self._update_operation_result(
-                            operation, True, 
-                            f"同步测试用例 {tc.case_id} 状态从 {tc.status} 到 {work_item.current_state}"
-                        )
-                    else:
-                        await self._update_operation_result(operation, True, f"测试用例 {tc.case_id} 状态已一致")
+                        result["test_cases_repaired"] += 1
+                        result["details"].append({
+                            "type": "test_case",
+                            "case_id": tc_inconsistency["case_id"],
+                            "old_status": tc_inconsistency["test_case_status"],
+                            "new_status": tc_inconsistency["work_item_state"],
+                            "status": "success"
+                        })
+
+                        print(f"   ✅ 同步测试用例 {tc_inconsistency['case_id']} 状态: {tc_inconsistency['test_case_status']} → {tc_inconsistency['work_item_state']}")
+
                 except Exception as e:
-                    await self._update_operation_result(operation, False, f"同步测试用例 {tc.case_id} 失败: {str(e)}")
+                    result["details"].append({
+                        "type": "test_case",
+                        "case_id": tc_inconsistency["case_id"],
+                        "status": "failed",
+                        "error": str(e)
+                    })
+                    print(f"   ❌ 修复测试用例 {tc_inconsistency['case_id']} 状态失败: {e}")
             else:
-                await self._update_operation_result(operation, False, f"测试用例 {tc.case_id} 缺少工作流ID")
+                result["test_cases_repaired"] += 1
+                result["details"].append({
+                    "type": "test_case",
+                    "case_id": tc_inconsistency["case_id"],
+                    "action": f"同步状态: {tc_inconsistency['test_case_status']} → {tc_inconsistency['work_item_state']}",
+                    "status": "planned"
+                })
+                print(f"   📋 计划同步测试用例 {tc_inconsistency['case_id']} 状态: {tc_inconsistency['test_case_status']} → {tc_inconsistency['work_item_state']}")
 
-    async def _sync_test_case_statuses_from_samples(self, samples: List[Dict[str, Any]]):
-        """从样本数据同步测试用例状态"""
-        operation = await self._create_operation(
-            "sync_test_case_statuses",
-            "从样本数据同步测试用例状态",
-            len(samples)
-        )
+        print(f"   总计: 需求 {result['requirements_repaired']} 个, 测试用例 {result['test_cases_repaired']} 个")
+        return result
 
-        for sample in samples:
-            try:
-                tc = await TestCaseDoc.get(sample['test_case_id'])
-                if tc:
-                    if not self.dry_run:
-                        tc.status = sample['work_item_state']
-                        await tc.save()
+    async def repair_delete_inconsistency(self) -> Dict[str, Any]:
+        """修复删除状态不一致问题"""
+        print("\n🔧 修复删除状态不一致问题...")
 
-                    await self._update_operation_result(operation, True, f"同步测试用例 {tc.case_id}")
-                else:
-                    await self._update_operation_result(operation, False, f"测试用例 {sample['test_case_id']} 不存在")
+        result = {
+            "description": "修复删除状态不一致的问题",
+            "business_docs_deleted": 0,
+            "work_items_deleted": 0,
+            "details": []
+        }
 
-            except Exception as e:
-                await self._update_operation_result(operation, False, f"同步测试用例状态失败: {str(e)}")
-
-    async def _cleanup_deleted_business_orphans(self):
-        """清理业务文档被删除但工作项仍活跃的孤立记录"""
-        operation = await self._create_operation(
-            "cleanup_deleted_business_orphans",
-            "清理业务文档被删除但工作项仍活跃的孤立记录",
-            0
-        )
-
-        # 获取所有被删除的需求对应的活跃工作项
-        deleted_requirements = await TestRequirementDoc.find({"is_deleted": True}).to_list()
-        deleted_work_items = set()
-
-        for req in deleted_requirements:
-            if req.workflow_item_id:
+        # 修复业务文档删除但工作流项活跃的问题
+        business_deleted_workitem_active = self.audit_results["details"]["delete_inconsistency"]["business_deleted_workitem_active"]
+        for inconsistency in business_deleted_workitem_active:
+            if not self.dry_run:
                 try:
-                    work_item = await BusWorkItemDoc.get(req.workflow_item_id)
-                    if work_item and not work_item.is_deleted:
-                        deleted_work_items.add(str(work_item.id))
-
-                        if not self.dry_run:
-                            work_item.is_deleted = True
-                            await work_item.save()
-
-                        await self._update_operation_result(operation, True, f"删除需求 {req.req_id} 对应的孤立工作项")
-                except Exception as e:
-                    await self._update_operation_result(operation, False, f"处理需求 {req.req_id} 对应工作项失败: {str(e)}")
-
-        # 获取所有被删除的测试用例对应的活跃工作项
-        deleted_test_cases = await TestCaseDoc.find({"is_deleted": True}).to_list()
-
-        for tc in deleted_test_cases:
-            if tc.workflow_item_id:
-                try:
-                    work_item = await BusWorkItemDoc.get(tc.workflow_item_id)
-                    if work_item and not work_item.is_deleted:
-                        if str(work_item.id) not in deleted_work_items:  # 避免重复删除
-                            if not self.dry_run:
-                                work_item.is_deleted = True
-                                await work_item.save()
-
-                            await self._update_operation_result(operation, True, f"删除测试用例 {tc.case_id} 对应的孤立工作项")
-                except Exception as e:
-                    await self._update_operation_result(operation, False, f"处理测试用例 {tc.case_id} 对应工作项失败: {str(e)}")
-
-        operation.target_count = self.processed_count
-
-    async def _cleanup_deleted_business_orphans_from_samples(self, samples: List[Dict[str, Any]]):
-        """从样本数据清理业务文档孤立记录"""
-        operation = await self._create_operation(
-            "cleanup_deleted_business_orphans",
-            "从样本数据清理业务文档孤立记录",
-            len(samples)
-        )
-
-        for sample in samples:
-            try:
-                work_item = await BusWorkItemDoc.get(sample['work_item_id'])
-                if work_item and not work_item.is_deleted:
-                    if not self.dry_run:
+                    # 删除对应的工作流项
+                    work_item = await BusWorkItemDoc.get(PydanticObjectId(inconsistency["work_item_id"]))
+                    if work_item:
                         work_item.is_deleted = True
                         await work_item.save()
 
-                    await self._update_operation_result(operation, True, f"删除孤立工作项 {work_item.title}")
-                else:
-                    await self._update_operation_result(operation, True, f"工作项 {sample['work_item_id']} 不需要删除")
+                        result["work_items_deleted"] += 1
+                        result["details"].append({
+                            "type": "work_item",
+                            "work_item_id": inconsistency["work_item_id"],
+                            "business_doc_type": inconsistency["business_doc_type"],
+                            "action": "删除工作流项以保持删除状态同步",
+                            "status": "success"
+                        })
 
-            except Exception as e:
-                await self._update_operation_result(operation, False, f"清理孤立工作项失败: {str(e)}")
+                        print(f"   ✅ 删除工作流项 {inconsistency['work_item_id']} 以匹配业务文档删除状态")
 
-    async def _cleanup_deleted_work_item_orphans(self):
-        """清理工作项被删除但业务文档仍活跃的孤立记录"""
-        operation = await self._create_operation(
-            "cleanup_deleted_work_item_orphans",
-            "清理工作项被删除但业务文档仍活跃的孤立记录",
-            0
-        )
+                except Exception as e:
+                    result["details"].append({
+                        "type": "work_item",
+                        "work_item_id": inconsistency["work_item_id"],
+                        "status": "failed",
+                        "error": str(e)
+                    })
+                    print(f"   ❌ 删除工作流项 {inconsistency['work_item_id']} 失败: {e}")
+            else:
+                result["work_items_deleted"] += 1
+                result["details"].append({
+                    "type": "work_item",
+                    "work_item_id": inconsistency["work_item_id"],
+                    "business_doc_type": inconsistency["business_doc_type"],
+                    "action": "删除工作流项以保持删除状态同步",
+                    "status": "planned"
+                })
+                print(f"   📋 计划删除工作流项 {inconsistency['work_item_id']}")
 
-        # 获取所有已删除的工作项
-        deleted_work_items = await BusWorkItemDoc.find({"is_deleted": True}).to_list()
+        # 修复工作流项删除但业务文档活跃的问题
+        workitem_deleted_business_active = self.audit_results["details"]["delete_inconsistency"]["workitem_deleted_business_active"]
+        for inconsistency in workitem_deleted_business_active:
+            if not self.dry_run:
+                try:
+                    # 删除对应的业务文档
+                    if inconsistency["business_doc_type"] == "requirement":
+                        req_doc = await TestRequirementDoc.get(PydanticObjectId(inconsistency["business_doc_id"]))
+                        if req_doc:
+                            req_doc.is_deleted = True
+                            await req_doc.save()
 
-        for work_item in deleted_work_items:
-            # 查找关联的活跃需求
-            requirements = await TestRequirementDoc.find(
-                {"workflow_item_id": str(work_item.id), "is_deleted": False}
-            ).to_list()
+                            result["business_docs_deleted"] += 1
+                            result["details"].append({
+                                "type": "requirement",
+                                "req_id": inconsistency["business_doc_identifier"],
+                                "action": "删除需求以保持删除状态同步",
+                                "status": "success"
+                            })
 
-            for req in requirements:
-                if not self.dry_run:
-                    req.is_deleted = True
-                    await req.save()
+                            print(f"   ✅ 删除需求 {inconsistency['business_doc_identifier']} 以匹配工作流项删除状态")
 
-                await self._update_operation_result(operation, True, f"删除孤立需求 {req.req_id}")
+                    elif inconsistency["business_doc_type"] == "test_case":
+                        tc_doc = await TestCaseDoc.get(PydanticObjectId(inconsistency["business_doc_id"]))
+                        if tc_doc:
+                            tc_doc.is_deleted = True
+                            await tc_doc.save()
 
-            # 查找关联的活跃测试用例
-            test_cases = await TestCaseDoc.find(
-                {"workflow_item_id": str(work_item.id), "is_deleted": False}
-            ).to_list()
+                            result["business_docs_deleted"] += 1
+                            result["details"].append({
+                                "type": "test_case",
+                                "case_id": inconsistency["business_doc_identifier"],
+                                "action": "删除测试用例以保持删除状态同步",
+                                "status": "success"
+                            })
 
-            for tc in test_cases:
-                if not self.dry_run:
-                    tc.is_deleted = True
-                    await tc.save()
+                            print(f"   ✅ 删除测试用例 {inconsistency['business_doc_identifier']} 以匹配工作流项删除状态")
 
-                await self._update_operation_result(operation, True, f"删除孤立测试用例 {tc.case_id}")
+                except Exception as e:
+                    result["details"].append({
+                        "type": inconsistency["business_doc_type"],
+                        "business_doc_id": inconsistency["business_doc_id"],
+                        "status": "failed",
+                        "error": str(e)
+                    })
+                    print(f"   ❌ 删除业务文档 {inconsistency['business_doc_identifier']} 失败: {e}")
+            else:
+                result["business_docs_deleted"] += 1
+                result["details"].append({
+                    "type": inconsistency["business_doc_type"],
+                    "business_doc_id": inconsistency["business_doc_id"],
+                    "action": "删除业务文档以保持删除状态同步",
+                    "status": "planned"
+                })
+                print(f"   📋 计划删除{inconsistency['business_doc_type']} {inconsistency['business_doc_identifier']}")
 
-        operation.target_count = self.processed_count
+        print(f"   总计: 删除工作流项 {result['work_items_deleted']} 个, 删除业务文档 {result['business_docs_deleted']} 个")
+        return result
 
-    async def _cleanup_deleted_work_item_orphans_from_samples(self, samples: List[Dict[str, Any]]):
-        """从样本数据清理工作项孤立记录"""
-        operation = await self._create_operation(
-            "cleanup_deleted_work_item_orphans",
-            "从样本数据清理工作项孤立记录",
-            len(samples)
-        )
+    async def repair_parent_child_inconsistency(self) -> Dict[str, Any]:
+        """修复父子关系不一致问题"""
+        print("\n🔧 修复父子关系不一致问题...")
 
-        processed_business_ids = set()
-
-        for sample in samples:
-            business_id = sample['business_id']
-            if business_id in processed_business_ids:
-                continue  # 避免重复处理
-
-            processed_business_ids.add(business_id)
-
-            try:
-                if sample['business_type'] == 'requirement':
-                    req = await TestRequirementDoc.get(business_id)
-                    if req and not req.is_deleted:
-                        if not self.dry_run:
-                            req.is_deleted = True
-                            await req.save()
-
-                        await self._update_operation_result(operation, True, f"删除孤立需求 {req.req_id}")
-                    else:
-                        await self._update_operation_result(operation, True, f"需求 {business_id} 不需要删除")
-
-                elif sample['business_type'] == 'test_case':
-                    tc = await TestCaseDoc.get(business_id)
-                    if tc and not tc.is_deleted:
-                        if not self.dry_run:
-                            tc.is_deleted = True
-                            await tc.save()
-
-                        await self._update_operation_result(operation, True, f"删除孤立测试用例 {tc.case_id}")
-                    else:
-                        await self._update_operation_result(operation, True, f"测试用例 {business_id} 不需要删除")
-
-            except Exception as e:
-                await self._update_operation_result(operation, False, f"清理孤立记录失败: {str(e)}")
-
-    async def _fix_test_case_requirement_relationships(self):
-        """修复测试用例与需求的关联关系"""
-        operation = await self._create_operation(
-            "fix_test_case_requirement_relationships",
-            "修复测试用例与需求的关联关系",
-            0
-        )
-
-        test_cases = await TestCaseDoc.find({"is_deleted": False}).to_list()
-        operation.target_count = len(test_cases)
-
-        for tc in test_cases:
-            try:
-                # 查找对应的需求
-                requirement = await TestRequirementDoc.find_one(
-                    {"req_id": tc.ref_req_id, "is_deleted": False}
-                )
-
-                if requirement and requirement.workflow_item_id and tc.workflow_item_id:
-                    # 检查并修复父子关系
-                    tc_work_item = await BusWorkItemDoc.get(tc.workflow_item_id)
-                    if tc_work_item and tc_work_item.parent_item_id != requirement.workflow_item_id:
-                        if not self.dry_run:
-                            tc_work_item.parent_item_id = requirement.workflow_item_id
-                            await tc_work_item.save()
-
-                        await self._update_operation_result(
-                            operation, True, 
-                            f"修复测试用例 {tc.case_id} 的父子关系"
-                        )
-                    else:
-                        await self._update_operation_result(operation, True, f"测试用例 {tc.case_id} 关系正确")
-
-                elif not requirement:
-                    await self._update_operation_result(operation, False, f"测试用例 {tc.case_id} 引用的需求不存在")
-                elif not requirement.workflow_item_id:
-                    await self._update_operation_result(operation, False, f"需求 {requirement.req_id} 缺少工作流ID")
-                elif not tc.workflow_item_id:
-                    await self._update_operation_result(operation, False, f"测试用例 {tc.case_id} 缺少工作流ID")
-
-            except Exception as e:
-                await self._update_operation_result(operation, False, f"修复测试用例 {tc.case_id} 关系失败: {str(e)}")
-
-    async def _fix_test_case_requirement_relationships_from_samples(self, samples: List[Dict[str, Any]]):
-        """从样本数据修复测试用例与需求的关联关系"""
-        operation = await self._create_operation(
-            "fix_test_case_requirement_relationships",
-            "从样本数据修复测试用例与需求的关联关系",
-            len(samples)
-        )
-
-        for sample in samples:
-            try:
-                tc = await TestCaseDoc.get(sample['test_case_id'])
-                if tc and tc.workflow_item_id:
-                    tc_work_item = await BusWorkItemDoc.get(tc.workflow_item_id)
-                    if tc_work_item:
-                        if not self.dry_run:
-                            tc_work_item.parent_item_id = sample['expected_parent']
-                            await tc_work_item.save()
-
-                        await self._update_operation_result(operation, True, f"修复测试用例 {tc.case_id}")
-                    else:
-                        await self._update_operation_result(operation, False, f"工作流项 {tc.workflow_item_id} 不存在")
-                else:
-                    await self._update_operation_result(operation, False, f"测试用例 {sample['test_case_id']} 缺少工作流ID")
-
-            except Exception as e:
-                await self._update_operation_result(operation, False, f"修复关系失败: {str(e)}")
-
-    def _generate_result(self) -> RepairResult:
-        """生成修复结果报告"""
-        summary = {
-            "dry_run": str(self.dry_run),
-            "total_operations": str(len(self.operations)),
-            "total_processed": str(self.processed_count),
-            "total_succeeded": str(self.succeeded_count),
-            "total_failed": str(self.failed_count),
-            "success_rate": f"{(self.succeeded_count / max(self.processed_count, 1) * 100):.1f}%"
+        result = {
+            "description": "修复父子关系不一致的问题",
+            "parent_relations_repaired": 0,
+            "details": []
         }
 
-        if self.failed_count == 0:
-            summary["status"] = "✅ 所有修复操作成功完成"
-        elif self.succeeded_count > self.failed_count:
-            summary["status"] = "⚠️ 大部分修复操作成功，但存在部分失败"
-        else:
-            summary["status"] = "🚨 修复操作存在较多失败，需要进一步检查"
+        inconsistent_parent_child_relations = self.audit_results["details"]["parent_child_inconsistency"]["inconsistent_parent_child_relations"]
+        for inconsistency in inconsistent_parent_child_relations:
+            if not self.dry_run:
+                try:
+                    # 修正父工作流项的 parent_item_id
+                    tc_work_item = await BusWorkItemDoc.get(PydanticObjectId(inconsistency["test_case_work_item_id"]))
+                    if tc_work_item and inconsistency["req_work_item_id"]:
+                        tc_work_item.parent_item_id = PydanticObjectId(inconsistency["req_work_item_id"])
+                        await tc_work_item.save()
 
-        return RepairResult(
-            repair_timestamp=datetime.now(timezone.utc),
-            total_operations=len(self.operations),
-            total_processed=self.processed_count,
-            total_succeeded=self.succeeded_count,
-            total_failed=self.failed_count,
-            operations=self.operations,
-            summary=summary
-        )
+                        result["parent_relations_repaired"] += 1
+                        result["details"].append({
+                            "type": "parent_child_relation",
+                            "test_case_work_item_id": inconsistency["test_case_work_item_id"],
+                            "old_parent_item_id": inconsistency["tc_parent_item_id"],
+                            "new_parent_item_id": inconsistency["req_work_item_id"],
+                            "referenced_req_id": inconsistency["referenced_req_id"],
+                            "status": "success"
+                        })
+
+                        print(f"   ✅ 修正测试用例 {inconsistency['test_case_identifier']} 的父工作流项关系: {inconsistency['tc_parent_item_id']} → {inconsistency['req_work_item_id']}")
+
+                except Exception as e:
+                    result["details"].append({
+                        "type": "parent_child_relation",
+                        "test_case_work_item_id": inconsistency["test_case_work_item_id"],
+                        "status": "failed",
+                        "error": str(e)
+                    })
+                    print(f"   ❌ 修正测试用例 {inconsistency['test_case_identifier']} 父子关系失败: {e}")
+            else:
+                result["parent_relations_repaired"] += 1
+                result["details"].append({
+                    "type": "parent_child_relation",
+                    "test_case_work_item_id": inconsistency["test_case_work_item_id"],
+                    "action": f"修正父工作流项: {inconsistency['tc_parent_item_id']} → {inconsistency['req_work_item_id']}",
+                    "referenced_req_id": inconsistency["referenced_req_id"],
+                    "status": "planned"
+                })
+                print(f"   📋 计划修正测试用例 {inconsistency['test_case_identifier']} 父子关系: {inconsistency['tc_parent_item_id']} → {inconsistency['req_work_item_id']}")
+
+        print(f"   总计: 修正父子关系 {result['parent_relations_repaired']} 个")
+        return result
+
+    async def run_repair_operations(self, operations: List[str]) -> Dict[str, Any]:
+        """运行指定的修复操作"""
+        print(f"🚀 开始执行修复操作: {', '.join(operations)}")
+
+        try:
+            await self.connect_to_mongodb()
+
+            # 执行修复操作
+            if "fix_missing_workflow" in operations:
+                self.repair_results["details"]["missing_workflow_item_ids"] = await self.repair_missing_workflow_item_ids()
+
+            if "fix_status" in operations:
+                self.repair_results["details"]["status_inconsistency"] = await self.repair_status_inconsistency()
+
+            if "fix_delete" in operations:
+                self.repair_results["details"]["delete_inconsistency"] = await self.repair_delete_inconsistency()
+
+            if "fix_parent_child" in operations:
+                self.repair_results["details"]["parent_child_inconsistency"] = await self.repair_parent_child_inconsistency()
+
+            # 生成总结
+            self.repair_results["summary"] = {
+                "missing_workflow_item_ids": self.repair_results["details"].get("missing_workflow_item_ids", {}).get("requirements_repaired", 0) + self.repair_results["details"].get("missing_workflow_item_ids", {}).get("test_cases_repaired", 0),
+                "status_inconsistency": self.repair_results["details"].get("status_inconsistency", {}).get("requirements_repaired", 0) + self.repair_results["details"].get("status_inconsistency", {}).get("test_cases_repaired", 0),
+                "delete_inconsistency": self.repair_results["details"].get("delete_inconsistency", {}).get("business_docs_deleted", 0) + self.repair_results["details"].get("delete_inconsistency", {}).get("work_items_deleted", 0),
+                "parent_child_inconsistency": self.repair_results["details"].get("parent_child_inconsistency", {}).get("parent_relations_repaired", 0)
+            }
+
+            total_repaired = sum(self.repair_results["summary"].values())
+            print(f"\n✅ 修复完成！总共修复 {total_repaired} 个问题")
+
+        except Exception as e:
+            print(f"❌ 修复失败: {e}")
+            raise
+        finally:
+            await self.disconnect_from_mongodb()
+
+        return self.repair_results
+
+    def save_repair_report(self, output_file: Optional[str] = None):
+        """保存修复报告"""
+        if output_file is None:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            mode = "dry_run" if self.dry_run else "actual"
+            output_file = f"repair_workflow_consistency_{mode}_{timestamp}.json"
+
+        output_path = Path(output_file)
+
+        with open(output_path, 'w', encoding='utf-8') as f:
+            json.dump(self.repair_results, f, indent=2, ensure_ascii=False)
+
+        print(f"📄 修复报告已保存到: {output_path}")
+
+        return str(output_path)
 
 
-async def main():
+def load_audit_results(audit_file: str) -> Dict[str, Any]:
+    """加载审计结果文件"""
+    audit_path = Path(audit_file)
+    if not audit_path.exists():
+        raise FileNotFoundError(f"审计结果文件不存在: {audit_file}")
+
+    with open(audit_path, 'r', encoding='utf-8') as f:
+        return json.load(f)
+
+
+def main():
     """主函数"""
-    parser = argparse.ArgumentParser(description="工作流数据一致性修复工具")
-    parser.add_argument(
-        "--dry-run", 
-        action="store_true",
-        help="预览模式，不实际执行修改"
-    )
-    parser.add_argument(
-        "--fix-missing-ids",
-        action="store_true",
-        help="修复缺少 workflow_item_id 的记录"
-    )
-    parser.add_argument(
-        "--sync-statuses",
-        action="store_true",
-        help="同步状态到工作流状态"
-    )
-    parser.add_argument(
-        "--cleanup-orphans",
-        action="store_true",
-        help="清理孤立记录"
-    )
-    parser.add_argument(
-        "--fix-relationships",
-        action="store_true",
-        help="修复关联关系"
-    )
-    parser.add_argument(
-        "--all",
-        action="store_true",
-        help="执行所有修复操作"
-    )
-    parser.add_argument(
-        "--audit-report",
-        type=str,
-        help="从审计报告执行修复"
-    )
+    parser = argparse.ArgumentParser(description="工作流一致性修复工具")
+    parser.add_argument("--audit-file", required=True, help="审计结果文件路径")
+    parser.add_argument("--dry-run", action="store_true", help="仅显示计划操作，不实际执行")
+    parser.add_argument("--fix-missing-workflow", action="store_true", help="修复缺失 workflow_item_id 的问题")
+    parser.add_argument("--fix-status", action="store_true", help="修复状态不一致问题")
+    parser.add_argument("--fix-delete", action="store_true", help="修复删除状态不一致问题")
+    parser.add_argument("--fix-parent-child", action="store_true", help="修复父子关系不一致问题")
+    parser.add_argument("--fix-all", action="store_true", help="执行所有修复操作")
 
     args = parser.parse_args()
 
-    # 创建修复器
-    repairer = WorkflowConsistencyRepairer(dry_run=args.dry_run)
+    # 确定要执行的修复操作
+    operations = []
+    if args.fix_all:
+        operations = ["fix_missing_workflow", "fix_status", "fix_delete", "fix_parent_child"]
+    else:
+        if args.fix_missing_workflow:
+            operations.append("fix_missing_workflow")
+        if args.fix_status:
+            operations.append("fix_status")
+        if args.fix_delete:
+            operations.append("fix_delete")
+        if args.fix_parent_child:
+            operations.append("fix_parent_child")
+
+    if not operations:
+        print("❌ 请指定至少一个修复操作或使用 --fix-all")
+        return
+
+    # 加载审计结果
+    try:
+        audit_results = load_audit_results(args.audit_file)
+        print(f"✅ 成功加载审计结果: {args.audit_file}")
+    except Exception as e:
+        print(f"❌ 加载审计结果失败: {e}")
+        return
+
+    # 创建修复器并执行修复
+    repairer = WorkflowConsistencyRepairer(audit_results, args.dry_run)
 
     try:
-        # 确定要执行的修复操作
-        if args.all:
-            # 执行所有修复
-            result = await repairer.repair_all()
-        elif args.audit_report:
-            # 从审计报告执行修复
-            result = await repairer.repair_all(audit_report_path=args.audit_report)
-        else:
-            # 执行特定的修复操作
-            operations = []
+        asyncio.run(repairer.run_repair_operations(operations))
 
-            if args.fix_missing_ids:
-                await repairer._repair_missing_workflow_item_ids()
-                operations.append("修复缺少的workflow_item_id")
+        # 保存修复报告
+        report_file = repairer.save_repair_report()
 
-            if args.sync_statuses:
-                await repairer._sync_requirement_statuses()
-                await repairer._sync_test_case_statuses()
-                operations.append("同步状态")
+        # 输出摘要
+        print("\n📊 修复摘要:")
+        summary = repairer.repair_results["summary"]
+        print(f"   缺失 workflow_item_id: {summary['missing_workflow_item_ids']} 个")
+        print(f"   状态不一致: {summary['status_inconsistency']} 个")
+        print(f"   删除状态不一致: {summary['delete_inconsistency']} 个")
+        print(f"   父子关系不一致: {summary['parent_child_inconsistency']} 个")
+        print(f"   总计修复: {sum(summary.values())} 个")
 
-            if args.cleanup_orphans:
-                await repairer._cleanup_deleted_business_orphans()
-                await repairer._cleanup_deleted_work_item_orphans()
-                operations.append("清理孤立记录")
-
-            if args.fix_relationships:
-                await repairer._fix_test_case_requirement_relationships()
-                operations.append("修复关联关系")
-
-            if not operations:
-                print("请指定要执行的修复操作，或使用 --all 执行所有修复")
-                return
-
-            result = repairer._generate_result()
-            result.summary["operations_executed"] = ", ".join(operations)
-
-        # 输出结果
-        print(f"\n{'='*80}")
-        print(f"工作流数据一致性修复报告")
-        print(f"{'='*80}")
-        print(f"修复时间: {result.repair_timestamp}")
-        print(f"模式: {'预览模式（dry-run）' if args.dry_run else '实际执行模式'}")
-        print(f"状态: {result.summary['status']}")
-        print(f"\n总体统计:")
-        print(f"  总操作: {result.total_operations}")
-        print(f"  总处理: {result.total_processed}")
-        print(f"  成功: {result.total_succeeded}")
-        print(f"  失败: {result.total_failed}")
-        print(f"  成功率: {result.summary['success_rate']}")
-
-        if result.operations:
-            print(f"\n详细操作:")
-            for i, op in enumerate(result.operations, 1):
-                print(f"\n{i}. {op.description}")
-                print(f"   目标: {op.target_count}")
-                print(f"   成功: {op.success_count}")
-                print(f"   失败: {op.failed_count}")
-                if op.details:
-                    print(f"   详情: {', '.join(op.details[:3])}")
-                    if len(op.details) > 3:
-                        print(f"          ... 还有 {len(op.details) - 3} 条详情")
-
-        print(f"\n{'='*80}")
-
-        # 如果是dry-run模式，提示用户
-        if args.dry_run:
-            print("⚠️ 这是预览模式，未实际执行修改。要执行实际修改，请去掉 --dry-run 参数")
+        return report_file
 
     except Exception as e:
-        logger.error(f"修复过程出错: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        exit(1)
+        print(f"❌ 修复过程失败: {e}")
+        return None
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

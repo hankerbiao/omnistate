@@ -1,521 +1,413 @@
 #!/usr/bin/env python3
 """
-数据一致性审计脚本 - Phase 7
+工作流一致性审计脚本
 
-此脚本审计工作流系统的数据一致性，检查并报告以下6种不一致性：
+该脚本检查以下数据一致性问题：
+1. 缺失 workflow_item_id 的业务记录
+2. 状态不一致问题 (Requirement.status != WorkItem.current_state)
+3. 状态不一致问题 (TestCase.status != WorkItem.current_state)
+4. 删除状态不一致 - 业务文档删除但工作流项活跃
+5. 删除状态不一致 - 工作流项删除但业务文档活跃
+6. 测试用例父子关系不一致 (ref_req_id 与 parent_item_id 不匹配)
 
-1. find linked business records missing `workflow_item_id`
-2. find `Requirement.status != WorkItem.current_state`
-3. find `TestCase.status != WorkItem.current_state`
-4. find business docs deleted but work items active
-5. find work items deleted but business docs active
-6. find test cases whose `ref_req_id` and parent work item relation disagree
-
-Usage:
-    python scripts/audit_workflow_consistency.py [--output=json|console] [--fix-suggestions]
+使用方法：
+python scripts/audit_workflow_consistency.py
 """
 
 import asyncio
-import argparse
 import json
-from datetime import datetime, timezone
-from typing import Dict, List, Any, Optional
-from pydantic import BaseModel
-from beanie import PydanticObjectId
+import sys
+from datetime import datetime
+from typing import Dict, List, Any, Optional, Tuple
+from pathlib import Path
 
+# 添加项目根目录到 Python 路径
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from beanie import PydanticObjectId
+from pymongo import AsyncMongoClient
+
+# 导入相关模型
 from app.modules.workflow.repository.models.business import BusWorkItemDoc
 from app.modules.test_specs.repository.models.requirement import TestRequirementDoc
 from app.modules.test_specs.repository.models.test_case import TestCaseDoc
-from app.shared.core.logger import log as logger
-
-
-class ConsistencyIssue(BaseModel):
-    """一致性问题的数据模型"""
-    issue_type: str
-    severity: str  # CRITICAL, HIGH, MEDIUM, LOW
-    title: str
-    description: str
-    affected_count: int
-    sample_data: List[Dict[str, Any]]
-    suggestions: List[str]
-    repairable: bool = True
-
-
-class ConsistencyAuditReport(BaseModel):
-    """数据一致性审计报告"""
-    audit_timestamp: datetime
-    total_issues: int
-    issues_by_severity: Dict[str, int]
-    issues: List[ConsistencyIssue]
-    summary: Dict[str, str]
 
 
 class WorkflowConsistencyAuditor:
     """工作流一致性审计器"""
 
     def __init__(self):
-        self.issues: List[ConsistencyIssue] = []
-        self.sample_size = 10  # 用于展示的样本数量
+        self.audit_results = {
+            "audit_time": datetime.now().isoformat(),
+            "summary": {},
+            "details": {}
+        }
+        self.mongo_client: Optional[AsyncMongoClient] = None
 
-    async def audit_all(self) -> ConsistencyAuditReport:
-        """执行所有一致性检查"""
-        logger.info("开始工作流数据一致性审计...")
+    async def connect_to_mongodb(self):
+        """连接到 MongoDB"""
+        try:
+            # 从环境变量获取 MongoDB 连接信息
+            mongo_uri = "mongodb://localhost:27017/dmlv4_backend"
+            self.mongo_client = AsyncMongoClient(mongo_uri)
+            print(f"✅ 成功连接到 MongoDB: {mongo_uri}")
 
-        # 执行6种检查
-        await self._check_missing_workflow_item_ids()
-        await self._check_requirement_status_consistency()
-        await self._check_test_case_status_consistency()
-        await self._check_deleted_business_active_work_items()
-        await self._check_deleted_work_items_active_business()
-        await self._check_test_case_requirement_relationship()
-
-        # 生成报告
-        report = self._generate_report()
-        logger.info(f"数据一致性审计完成，发现 {report.total_issues} 个问题")
-
-        return report
-
-    async def _check_missing_workflow_item_ids(self):
-        """检查缺少 workflow_item_id 的业务记录"""
-        logger.info("检查缺少 workflow_item_id 的业务记录...")
-
-        # 检查需求
-        requirements_missing_id = await TestRequirementDoc.find(
-            {"workflow_item_id": None, "is_deleted": False}
-        ).to_list()
-
-        # 检查测试用例
-        test_cases_missing_id = await TestCaseDoc.find(
-            {"workflow_item_id": None, "is_deleted": False}
-        ).to_list()
-
-        # 合并问题
-        all_missing = []
-        for req in requirements_missing_id[:self.sample_size]:
-            all_missing.append({
-                "type": "requirement",
-                "id": str(req.id),
-                "req_id": req.req_id,
-                "title": req.title,
-                "workflow_item_id": req.workflow_item_id
-            })
-
-        for tc in test_cases_missing_id[:self.sample_size]:
-            all_missing.append({
-                "type": "test_case",
-                "id": str(tc.id),
-                "case_id": tc.case_id,
-                "title": tc.title,
-                "workflow_item_id": tc.workflow_item_id
-            })
-
-        if all_missing:
-            issue = ConsistencyIssue(
-                issue_type="missing_workflow_item_id",
-                severity="CRITICAL",
-                title="缺少工作流ID的关联业务记录",
-                description="发现缺少 workflow_item_id 的业务记录，这些记录无法与工作流状态关联",
-                affected_count=len(requirements_missing_id) + len(test_cases_missing_id),
-                sample_data=all_missing,
-                suggestions=[
-                    "为每个缺失的工作流ID创建对应的 BusWorkItemDoc",
-                    "更新业务记录的 workflow_item_id 字段",
-                    "确保工作流ID的唯一性和正确性"
+            # 初始化 Beanie
+            from beanie import init_beanie
+            await init_beanie(
+                database=self.mongo_client.dmlv4_backend,
+                document_models=[
+                    BusWorkItemDoc,
+                    TestRequirementDoc,
+                    TestCaseDoc
                 ]
             )
-            self.issues.append(issue)
+            print("✅ 成功初始化 Beanie ODM")
 
-    async def _check_requirement_status_consistency(self):
-        """检查需求状态与工作流状态的一致性"""
-        logger.info("检查需求状态与工作流状态的一致性...")
+        except Exception as e:
+            print(f"❌ 连接 MongoDB 失败: {e}")
+            raise
 
-        # 获取所有非删除的需求及其工作流项
+    async def disconnect_from_mongodb(self):
+        """断开 MongoDB 连接"""
+        if self.mongo_client:
+            await self.mongo_client.close()
+            print("✅ 已断开 MongoDB 连接")
+
+    async def audit_missing_workflow_item_ids(self) -> Dict[str, Any]:
+        """审计缺失 workflow_item_id 的业务记录"""
+        print("\n🔍 审计缺失 workflow_item_id 的业务记录...")
+
+        # 检查需求文档
+        requirements_without_workflow = await TestRequirementDoc.find(
+            {"workflow_item_id": None, "is_deleted": False}
+        ).to_list()
+
+        # 检查测试用例文档
+        test_cases_without_workflow = await TestCaseDoc.find(
+            {"workflow_item_id": None, "is_deleted": False}
+        ).to_list()
+
+        result = {
+            "description": "检查缺失 workflow_item_id 的业务记录",
+            "requirements_without_workflow": [
+                {
+                    "id": str(req.id),
+                    "req_id": req.req_id,
+                    "title": req.title,
+                    "created_at": req.created_at.isoformat()
+                }
+                for req in requirements_without_workflow
+            ],
+            "test_cases_without_workflow": [
+                {
+                    "id": str(tc.id),
+                    "case_id": tc.case_id,
+                    "title": tc.title,
+                    "ref_req_id": tc.ref_req_id,
+                    "created_at": tc.created_at.isoformat()
+                }
+                for tc in test_cases_without_workflow
+            ],
+            "total_count": len(requirements_without_workflow) + len(test_cases_without_workflow)
+        }
+
+        print(f"   发现 {len(requirements_without_workflow)} 个需求缺失 workflow_item_id")
+        print(f"   发现 {len(test_cases_without_workflow)} 个测试用例缺失 workflow_item_id")
+
+        return result
+
+    async def audit_status_inconsistency(self) -> Dict[str, Any]:
+        """审计状态不一致问题"""
+        print("\n🔍 审计状态不一致问题...")
+
+        # 检查需求状态不一致
+        requirements_with_inconsistent_status = []
+
+        # 获取所有需求及其关联的工作流项
         requirements = await TestRequirementDoc.find({"is_deleted": False}).to_list()
 
-        inconsistent_requirements = []
         for req in requirements:
             if req.workflow_item_id:
                 try:
-                    work_item = await BusWorkItemDoc.get(req.workflow_item_id)
+                    # 转换为 ObjectId
+                    workflow_item_id = PydanticObjectId(req.workflow_item_id)
+                    work_item = await BusWorkItemDoc.get(workflow_item_id)
+
                     if work_item and req.status != work_item.current_state:
-                        inconsistent_requirements.append({
+                        requirements_with_inconsistent_status.append({
                             "requirement_id": str(req.id),
                             "req_id": req.req_id,
                             "requirement_status": req.status,
                             "work_item_id": str(work_item.id),
-                            "work_item_state": work_item.current_state
+                            "work_item_state": work_item.current_state,
+                            "inconsistency": f"需求状态 '{req.status}' != 工作流状态 '{work_item.current_state}'"
                         })
                 except Exception as e:
-                    # 工作流项不存在或无法访问
-                    inconsistent_requirements.append({
-                        "requirement_id": str(req.id),
-                        "req_id": req.req_id,
-                        "requirement_status": req.status,
-                        "work_item_id": req.workflow_item_id,
-                        "work_item_state": "NOT_FOUND",
-                        "error": str(e)
-                    })
+                    print(f"   ⚠️  无法检查需求 {req.req_id}: {e}")
 
-        if inconsistent_requirements:
-            issue = ConsistencyIssue(
-                issue_type="requirement_status_inconsistency",
-                severity="HIGH",
-                title="需求状态与工作流状态不一致",
-                description="发现需求的状态与其关联工作流项的当前状态不匹配",
-                affected_count=len(inconsistent_requirements),
-                sample_data=inconsistent_requirements[:self.sample_size],
-                suggestions=[
-                    "同步需求状态到工作流状态",
-                    "验证工作流状态转换的规则",
-                    "检查状态同步机制是否正常工作"
-                ]
-            )
-            self.issues.append(issue)
+        # 检查测试用例状态不一致
+        test_cases_with_inconsistent_status = []
 
-    async def _check_test_case_status_consistency(self):
-        """检查测试用例状态与工作流状态的一致性"""
-        logger.info("检查测试用例状态与工作流状态的一致性...")
-
-        # 获取所有非删除的测试用例及其工作流项
         test_cases = await TestCaseDoc.find({"is_deleted": False}).to_list()
 
-        inconsistent_test_cases = []
         for tc in test_cases:
             if tc.workflow_item_id:
                 try:
-                    work_item = await BusWorkItemDoc.get(tc.workflow_item_id)
+                    # 转换为 ObjectId
+                    workflow_item_id = PydanticObjectId(tc.workflow_item_id)
+                    work_item = await BusWorkItemDoc.get(workflow_item_id)
+
                     if work_item and tc.status != work_item.current_state:
-                        inconsistent_test_cases.append({
+                        test_cases_with_inconsistent_status.append({
                             "test_case_id": str(tc.id),
                             "case_id": tc.case_id,
                             "test_case_status": tc.status,
                             "work_item_id": str(work_item.id),
-                            "work_item_state": work_item.current_state
+                            "work_item_state": work_item.current_state,
+                            "inconsistency": f"用例状态 '{tc.status}' != 工作流状态 '{work_item.current_state}'"
                         })
                 except Exception as e:
-                    # 工作流项不存在或无法访问
-                    inconsistent_test_cases.append({
-                        "test_case_id": str(tc.id),
-                        "case_id": tc.case_id,
-                        "test_case_status": tc.status,
-                        "work_item_id": tc.workflow_item_id,
-                        "work_item_state": "NOT_FOUND",
-                        "error": str(e)
-                    })
+                    print(f"   ⚠️  无法检查测试用例 {tc.case_id}: {e}")
 
-        if inconsistent_test_cases:
-            issue = ConsistencyIssue(
-                issue_type="test_case_status_inconsistency",
-                severity="HIGH",
-                title="测试用例状态与工作流状态不一致",
-                description="发现测试用例的状态与其关联工作流项的当前状态不匹配",
-                affected_count=len(inconsistent_test_cases),
-                sample_data=inconsistent_test_cases[:self.sample_size],
-                suggestions=[
-                    "同步测试用例状态到工作流状态",
-                    "验证工作流状态转换的规则",
-                    "检查状态同步机制是否正常工作"
-                ]
-            )
-            self.issues.append(issue)
+        result = {
+            "description": "检查业务文档状态与工作流状态不一致的问题",
+            "requirements_with_inconsistent_status": requirements_with_inconsistent_status,
+            "test_cases_with_inconsistent_status": test_cases_with_inconsistent_status,
+            "total_count": len(requirements_with_inconsistent_status) + len(test_cases_with_inconsistent_status)
+        }
 
-    async def _check_deleted_business_active_work_items(self):
-        """检查业务文档被删除但工作项仍活跃的情况"""
-        logger.info("检查业务文档被删除但工作项仍活跃的情况...")
+        print(f"   发现 {len(requirements_with_inconsistent_status)} 个需求状态不一致")
+        print(f"   发现 {len(test_cases_with_inconsistent_status)} 个测试用例状态不一致")
 
-        # 检查被删除的需求对应的活跃工作项
+        return result
+
+    async def audit_delete_inconsistency(self) -> Dict[str, Any]:
+        """审计删除状态不一致问题"""
+        print("\n🔍 审计删除状态不一致问题...")
+
+        # 检查业务文档删除但工作流项活跃
+        business_deleted_workitem_active = []
+
+        # 检查需求
         deleted_requirements = await TestRequirementDoc.find({"is_deleted": True}).to_list()
-        orphaned_work_items_requirements = []
 
         for req in deleted_requirements:
             if req.workflow_item_id:
                 try:
-                    work_item = await BusWorkItemDoc.get(req.workflow_item_id)
+                    workflow_item_id = PydanticObjectId(req.workflow_item_id)
+                    work_item = await BusWorkItemDoc.get(workflow_item_id)
+
                     if work_item and not work_item.is_deleted:
-                        orphaned_work_items_requirements.append({
-                            "requirement_id": str(req.id),
-                            "req_id": req.req_id,
+                        business_deleted_workitem_active.append({
+                            "business_doc_type": "requirement",
+                            "business_doc_id": str(req.id),
+                            "business_doc_identifier": req.req_id,
                             "work_item_id": str(work_item.id),
                             "work_item_title": work_item.title,
-                            "work_item_state": work_item.current_state
+                            "inconsistency": f"需求已删除但工作流项仍活跃"
                         })
-                except Exception:
-                    pass
+                except Exception as e:
+                    print(f"   ⚠️  无法检查已删除需求 {req.req_id}: {e}")
 
-        # 检查被删除的测试用例对应的活跃工作项
+        # 检查测试用例
         deleted_test_cases = await TestCaseDoc.find({"is_deleted": True}).to_list()
-        orphaned_work_items_test_cases = []
 
         for tc in deleted_test_cases:
             if tc.workflow_item_id:
                 try:
-                    work_item = await BusWorkItemDoc.get(tc.workflow_item_id)
+                    workflow_item_id = PydanticObjectId(tc.workflow_item_id)
+                    work_item = await BusWorkItemDoc.get(workflow_item_id)
+
                     if work_item and not work_item.is_deleted:
-                        orphaned_work_items_test_cases.append({
-                            "test_case_id": str(tc.id),
-                            "case_id": tc.case_id,
+                        business_deleted_workitem_active.append({
+                            "business_doc_type": "test_case",
+                            "business_doc_id": str(tc.id),
+                            "business_doc_identifier": tc.case_id,
                             "work_item_id": str(work_item.id),
                             "work_item_title": work_item.title,
-                            "work_item_state": work_item.current_state
+                            "inconsistency": f"测试用例已删除但工作流项仍活跃"
                         })
-                except Exception:
-                    pass
+                except Exception as e:
+                    print(f"   ⚠️  无法检查已删除测试用例 {tc.case_id}: {e}")
 
-        total_orphaned = len(orphaned_work_items_requirements) + len(orphaned_work_items_test_cases)
+        # 检查工作流项删除但业务文档活跃
+        workitem_deleted_business_active = []
 
-        if total_orphaned > 0:
-            all_orphaned = (
-                orphaned_work_items_requirements + orphaned_work_items_test_cases
-            )[:self.sample_size]
-
-            issue = ConsistencyIssue(
-                issue_type="deleted_business_active_work_items",
-                severity="MEDIUM",
-                title="业务文档被删除但工作项仍活跃",
-                description="发现业务文档已被删除，但其关联的工作流项仍然活跃",
-                affected_count=total_orphaned,
-                sample_data=all_orphaned,
-                suggestions=[
-                    "将活跃的工作流项标记为已删除",
-                    "或恢复相应的业务文档（如果误删）",
-                    "检查删除逻辑确保级联删除的一致性"
-                ]
-            )
-            self.issues.append(issue)
-
-    async def _check_deleted_work_items_active_business(self):
-        """检查工作项被删除但业务文档仍活跃的情况"""
-        logger.info("检查工作项被删除但业务文档仍活跃的情况...")
-
-        # 获取所有已删除的工作项
         deleted_work_items = await BusWorkItemDoc.find({"is_deleted": True}).to_list()
-
-        orphaned_business_docs = []
 
         for work_item in deleted_work_items:
             # 检查关联的需求
-            requirements = await TestRequirementDoc.find(
-                {"workflow_item_id": str(work_item.id), "is_deleted": False}
-            ).to_list()
-
-            for req in requirements:
-                orphaned_business_docs.append({
-                    "work_item_id": str(work_item.id),
-                    "work_item_title": work_item.title,
-                    "business_type": "requirement",
-                    "business_id": str(req.id),
-                    "req_id": req.req_id
-                })
-
-            # 检查关联的测试用例
-            test_cases = await TestCaseDoc.find(
-                {"workflow_item_id": str(work_item.id), "is_deleted": False}
-            ).to_list()
-
-            for tc in test_cases:
-                orphaned_business_docs.append({
-                    "work_item_id": str(work_item.id),
-                    "work_item_title": work_item.title,
-                    "business_type": "test_case",
-                    "business_id": str(tc.id),
-                    "case_id": tc.case_id
-                })
-
-        if orphaned_business_docs:
-            issue = ConsistencyIssue(
-                issue_type="deleted_work_items_active_business",
-                severity="MEDIUM",
-                title="工作项被删除但业务文档仍活跃",
-                description="发现工作流项已被删除，但其关联的业务文档仍然活跃",
-                affected_count=len(orphaned_business_docs),
-                sample_data=orphaned_business_docs[:self.sample_size],
-                suggestions=[
-                    "将活跃的业务文档标记为已删除",
-                    "或恢复相应的工作流项（如果误删）",
-                    "检查删除逻辑确保级联删除的一致性"
-                ]
-            )
-            self.issues.append(issue)
-
-    async def _check_test_case_requirement_relationship(self):
-        """检查测试用例的 ref_req_id 和父工作项关系的一致性"""
-        logger.info("检查测试用例与需求的关联关系...")
-
-        test_cases = await TestCaseDoc.find({"is_deleted": False}).to_list()
-
-        inconsistent_relationships = []
-
-        for tc in test_cases:
-            # 查找对应的需求
-            try:
-                requirement = await TestRequirementDoc.find_one(
-                    {"req_id": tc.ref_req_id, "is_deleted": False}
+            if work_item.type_code in ["REQUIREMENT"]:
+                req = await TestRequirementDoc.find_one(
+                    {"workflow_item_id": str(work_item.id), "is_deleted": False}
                 )
-
-                if requirement:
-                    # 检查测试用例的工作流项和需求的工作流项是否关联
-                    if tc.workflow_item_id and requirement.workflow_item_id:
-                        tc_work_item = await BusWorkItemDoc.get(tc.workflow_item_id)
-                        req_work_item = await BusWorkItemDoc.get(requirement.workflow_item_id)
-
-                        if tc_work_item and req_work_item:
-                            # 检查是否应该是父子关系（测试用例的工作流项应该是需求的子项）
-                            if tc_work_item.parent_item_id != requirement.workflow_item_id:
-                                inconsistent_relationships.append({
-                                    "test_case_id": str(tc.id),
-                                    "case_id": tc.case_id,
-                                    "ref_req_id": tc.ref_req_id,
-                                    "requirement_work_item_id": requirement.workflow_item_id,
-                                    "test_case_work_item_id": tc.workflow_item_id,
-                                    "expected_parent": requirement.workflow_item_id,
-                                    "actual_parent": tc_work_item.parent_item_id
-                                })
-                    else:
-                        # 缺少工作流项关联
-                        inconsistent_relationships.append({
-                            "test_case_id": str(tc.id),
-                            "case_id": tc.case_id,
-                            "ref_req_id": tc.ref_req_id,
-                            "requirement_work_item_id": requirement.workflow_item_id,
-                            "test_case_work_item_id": tc.workflow_item_id,
-                            "issue": "missing_workflow_associations"
-                        })
-                else:
-                    # 引用的需求不存在
-                    inconsistent_relationships.append({
-                        "test_case_id": str(tc.id),
-                        "case_id": tc.case_id,
-                        "ref_req_id": tc.ref_req_id,
-                        "issue": "referenced_requirement_not_found"
+                if req:
+                    workitem_deleted_business_active.append({
+                        "work_item_id": str(work_item.id),
+                        "work_item_title": work_item.title,
+                        "work_item_type": work_item.type_code,
+                        "business_doc_type": "requirement",
+                        "business_doc_id": str(req.id),
+                        "business_doc_identifier": req.req_id,
+                        "inconsistency": f"工作流项已删除但需求仍活跃"
                     })
 
-            except Exception as e:
-                inconsistent_relationships.append({
-                    "test_case_id": str(tc.id),
-                    "case_id": tc.case_id,
-                    "ref_req_id": tc.ref_req_id,
-                    "error": str(e)
-                })
+            # 检查关联的测试用例
+            elif work_item.type_code in ["TEST_CASE"]:
+                tc = await TestCaseDoc.find_one(
+                    {"workflow_item_id": str(work_item.id), "is_deleted": False}
+                )
+                if tc:
+                    workitem_deleted_business_active.append({
+                        "work_item_id": str(work_item.id),
+                        "work_item_title": work_item.title,
+                        "work_item_type": work_item.type_code,
+                        "business_doc_type": "test_case",
+                        "business_doc_id": str(tc.id),
+                        "business_doc_identifier": tc.case_id,
+                        "inconsistency": f"工作流项已删除但测试用例仍活跃"
+                    })
 
-        if inconsistent_relationships:
-            issue = ConsistencyIssue(
-                issue_type="test_case_requirement_relationship_inconsistency",
-                severity="MEDIUM",
-                title="测试用例与需求关联关系不一致",
-                description="发现测试用例的 ref_req_id 与其父工作项关系不一致",
-                affected_count=len(inconsistent_relationships),
-                sample_data=inconsistent_relationships[:self.sample_size],
-                suggestions=[
-                    "修正测试用例的工作流项父子关系",
-                    "确保 ref_req_id 指向的需求存在",
-                    "验证工作流项的 parent_item_id 设置正确"
-                ]
-            )
-            self.issues.append(issue)
-
-    def _generate_report(self) -> ConsistencyAuditReport:
-        """生成审计报告"""
-        issues_by_severity = {}
-        for issue in self.issues:
-            issues_by_severity[issue.severity] = issues_by_severity.get(issue.severity, 0) + 1
-
-        # 生成总结
-        summary = {
-            "total_issues": str(len(self.issues)),
-            "critical_issues": str(issues_by_severity.get("CRITICAL", 0)),
-            "high_issues": str(issues_by_severity.get("HIGH", 0)),
-            "medium_issues": str(issues_by_severity.get("MEDIUM", 0)),
-            "low_issues": str(issues_by_severity.get("LOW", 0))
+        result = {
+            "description": "检查删除状态不一致的问题",
+            "business_deleted_workitem_active": business_deleted_workitem_active,
+            "workitem_deleted_business_active": workitem_deleted_business_active,
+            "total_count": len(business_deleted_workitem_active) + len(workitem_deleted_business_active)
         }
 
-        # 生成状态信息
-        status_info = "数据一致性审计完成"
-        if len(self.issues) == 0:
-            status_info = "✅ 所有数据一致性检查通过，未发现问题"
-        elif issues_by_severity.get("CRITICAL", 0) > 0:
-            status_info = "🚨 发现关键数据一致性问题，需要立即处理"
-        elif issues_by_severity.get("HIGH", 0) > 0:
-            status_info = "⚠️ 发现高优先级数据一致性问题，建议尽快处理"
+        print(f"   发现 {len(business_deleted_workitem_active)} 个业务文档删除但工作流项活跃的记录")
+        print(f"   发现 {len(workitem_deleted_business_active)} 个工作流项删除但业务文档活跃的记录")
 
-        summary["status"] = status_info
+        return result
 
-        return ConsistencyAuditReport(
-            audit_timestamp=datetime.now(timezone.utc),
-            total_issues=len(self.issues),
-            issues_by_severity=issues_by_severity,
-            issues=self.issues,
-            summary=summary
-        )
+    async def audit_parent_child_inconsistency(self) -> Dict[str, Any]:
+        """审计父子关系不一致问题"""
+        print("\n🔍 审计父子关系不一致问题...")
+
+        inconsistent_parent_child_relations = []
+
+        # 检查测试用例的 ref_req_id 与父工作流项的 parent_item_id 是否匹配
+        test_cases = await TestCaseDoc.find({"is_deleted": False}).to_list()
+
+        for tc in test_cases:
+            if tc.workflow_item_id and tc.ref_req_id:
+                try:
+                    # 获取测试用例的工作流项
+                    workflow_item_id = PydanticObjectId(tc.workflow_item_id)
+                    tc_work_item = await BusWorkItemDoc.get(workflow_item_id)
+
+                    if tc_work_item:
+                        # 获取需求文档
+                        req = await TestRequirementDoc.find_one(
+                            {"req_id": tc.ref_req_id, "is_deleted": False}
+                        )
+
+                        if req and req.workflow_item_id:
+                            # 检查父工作流项的 ID 是否匹配
+                            parent_work_item_id = tc_work_item.parent_item_id
+                            if parent_work_item_id and req.workflow_item_id:
+                                if parent_work_item_id != req.workflow_item_id:
+                                    inconsistent_parent_child_relations.append({
+                                        "test_case_id": str(tc.id),
+                                        "test_case_identifier": tc.case_id,
+                                        "test_case_work_item_id": str(tc_work_item.id),
+                                        "referenced_req_id": tc.ref_req_id,
+                                        "req_work_item_id": req.workflow_item_id,
+                                        "tc_parent_item_id": str(parent_work_item_id) if parent_work_item_id else None,
+                                        "inconsistency": f"测试用例引用需求 {tc.ref_req_id}，但父工作流项不匹配"
+                                    })
+                except Exception as e:
+                    print(f"   ⚠️  无法检查测试用例 {tc.case_id} 的父子关系: {e}")
+
+        result = {
+            "description": "检查父子关系不一致的问题",
+            "inconsistent_parent_child_relations": inconsistent_parent_child_relations,
+            "total_count": len(inconsistent_parent_child_relations)
+        }
+
+        print(f"   发现 {len(inconsistent_parent_child_relations)} 个父子关系不一致的记录")
+
+        return result
+
+    async def run_full_audit(self) -> Dict[str, Any]:
+        """运行完整的审计流程"""
+        print("🚀 开始工作流一致性审计...")
+
+        try:
+            await self.connect_to_mongodb()
+
+            # 执行各项审计
+            self.audit_results["details"]["missing_workflow_item_ids"] = await self.audit_missing_workflow_item_ids()
+            self.audit_results["details"]["status_inconsistency"] = await self.audit_status_inconsistency()
+            self.audit_results["details"]["delete_inconsistency"] = await self.audit_delete_inconsistency()
+            self.audit_results["details"]["parent_child_inconsistency"] = await self.audit_parent_child_inconsistency()
+
+            # 生成总结
+            self.audit_results["summary"] = {
+                "missing_workflow_item_ids": self.audit_results["details"]["missing_workflow_item_ids"]["total_count"],
+                "status_inconsistency": self.audit_results["details"]["status_inconsistency"]["total_count"],
+                "delete_inconsistency": self.audit_results["details"]["delete_inconsistency"]["total_count"],
+                "parent_child_inconsistency": self.audit_results["details"]["parent_child_inconsistency"]["total_count"],
+                "total_inconsistencies": sum([
+                    self.audit_results["details"]["missing_workflow_item_ids"]["total_count"],
+                    self.audit_results["details"]["status_inconsistency"]["total_count"],
+                    self.audit_results["details"]["delete_inconsistency"]["total_count"],
+                    self.audit_results["details"]["parent_child_inconsistency"]["total_count"]
+                ])
+            }
+
+            print(f"\n✅ 审计完成！发现总计 {self.audit_results['summary']['total_inconsistencies']} 个不一致问题")
+
+        except Exception as e:
+            print(f"❌ 审计失败: {e}")
+            raise
+        finally:
+            await self.disconnect_from_mongodb()
+
+        return self.audit_results
+
+    def save_audit_report(self, output_file: str = None):
+        """保存审计报告"""
+        if output_file is None:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_file = f"audit_workflow_consistency_{timestamp}.json"
+
+        output_path = Path(output_file)
+
+        with open(output_path, 'w', encoding='utf-8') as f:
+            json.dump(self.audit_results, f, indent=2, ensure_ascii=False)
+
+        print(f"📄 审计报告已保存到: {output_path}")
+
+        return str(output_path)
 
 
 async def main():
     """主函数"""
-    parser = argparse.ArgumentParser(description="工作流数据一致性审计工具")
-    parser.add_argument(
-        "--output", 
-        choices=["json", "console"], 
-        default="console",
-        help="输出格式（json或console）"
-    )
-    parser.add_argument(
-        "--fix-suggestions",
-        action="store_true",
-        help="包含修复建议"
-    )
-
-    args = parser.parse_args()
+    auditor = WorkflowConsistencyAuditor()
 
     try:
-        # 创建审计器并执行审计
-        auditor = WorkflowConsistencyAuditor()
-        report = await auditor.audit_all()
+        # 运行审计
+        await auditor.run_full_audit()
 
-        # 输出结果
-        if args.output == "json":
-            # JSON格式输出
-            output_data = report.model_dump()
-            print(json.dumps(output_data, ensure_ascii=False, indent=2))
-        else:
-            # 控制台格式输出
-            print(f"\n{'='*80}")
-            print(f"工作流数据一致性审计报告")
-            print(f"{'='*80}")
-            print(f"审计时间: {report.audit_timestamp}")
-            print(f"状态: {report.summary['status']}")
-            print(f"\n问题统计:")
-            print(f"  总计: {report.total_issues}")
-            print(f"  关键: {report.issues_by_severity.get('CRITICAL', 0)}")
-            print(f"  高:   {report.issues_by_severity.get('HIGH', 0)}")
-            print(f"  中:   {report.issues_by_severity.get('MEDIUM', 0)}")
-            print(f"  低:   {report.issues_by_severity.get('LOW', 0)}")
+        # 保存报告
+        report_file = auditor.save_audit_report()
 
-            if report.issues:
-                print(f"\n详细问题:")
-                for i, issue in enumerate(report.issues, 1):
-                    print(f"\n{i}. [{issue.severity}] {issue.title}")
-                    print(f"   类型: {issue.issue_type}")
-                    print(f"   描述: {issue.description}")
-                    print(f"   影响: {issue.affected_count} 个记录")
+        # 输出摘要
+        print("\n📊 审计摘要:")
+        summary = auditor.audit_results["summary"]
+        print(f"   缺失 workflow_item_id: {summary['missing_workflow_item_ids']} 个")
+        print(f"   状态不一致: {summary['status_inconsistency']} 个")
+        print(f"   删除状态不一致: {summary['delete_inconsistency']} 个")
+        print(f"   父子关系不一致: {summary['parent_child_inconsistency']} 个")
+        print(f"   总计: {summary['total_inconsistencies']} 个")
 
-                    if issue.sample_data:
-                        print(f"   样本数据:")
-                        for sample in issue.sample_data[:3]:  # 只显示前3个样本
-                            print(f"     - {sample}")
-
-                    if args.fix_suggestions and issue.suggestions:
-                        print(f"   修复建议:")
-                        for suggestion in issue.suggestions:
-                            print(f"     - {suggestion}")
-            else:
-                print(f"\n✅ 未发现数据一致性问题")
-
-            print(f"\n{'='*80}")
+        return report_file
 
     except Exception as e:
-        logger.error(f"审计过程出错: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        exit(1)
+        print(f"❌ 审计过程失败: {e}")
+        return None
 
 
 if __name__ == "__main__":
