@@ -6,7 +6,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from app.shared.api.schemas.base import APIResponse
 from app.shared.auth import require_permission
 from app.modules.assets.service.assets_service import AssetsService
-from app.shared.infrastructure.resource_lock import get_lock_manager
 from app.modules.assets.schemas import (
     CreateComponentRequest,
     UpdateComponentRequest,
@@ -271,59 +270,6 @@ async def test_dut_status(
         raise HTTPException(status_code=404, detail="dut not found")
     except RuntimeError as e:
         raise HTTPException(status_code=409, detail=str(e))
-
-
-@router.get(
-    "/duts/{asset_id}/lock-status",
-    response_model=APIResponse[dict],
-    summary="获取设备锁状态",
-    dependencies=[Depends(require_permission("assets:read"))],
-)
-async def get_dut_lock_status(
-    asset_id: str,
-):
-    """获取 DUT 设备的锁状态信息
-
-    返回：
-    - is_locked: 是否被锁定
-    - lock_info: 锁详细信息（如果被锁定）
-    """
-    lock_manager = get_lock_manager()
-    is_locked = await lock_manager.is_locked(resource_id=asset_id, lock_type="dut_test")
-    
-    lock_info = None
-    if is_locked:
-        lock_info = await lock_manager.get_lock_info(resource_id=asset_id, lock_type="dut_test")
-    
-    return APIResponse(data={
-        "asset_id": asset_id,
-        "is_locked": is_locked,
-        "lock_info": lock_info
-    })
-
-
-@router.delete(
-    "/duts/{asset_id}/lock",
-    response_model=APIResponse[dict],
-    summary="强制释放设备锁",
-    dependencies=[Depends(require_permission("assets:write"))],
-)
-async def force_release_dut_lock(
-    asset_id: str,
-):
-    """强制释放 DUT 设备的锁（管理员操作）
-
-    注意：此操作会强制释放锁，可能导致正在进行的测试任务中断。
-    建议仅在锁异常未释放时使用。
-    """
-    lock_manager = get_lock_manager()
-    released = await lock_manager.force_release_lock(resource_id=asset_id, lock_type="dut_test")
-    
-    return APIResponse(data={
-        "asset_id": asset_id,
-        "released": released,
-        "message": "Lock released successfully" if released else "No lock found"
-    })
 
 
 # ==================== Test Plan Component ====================
