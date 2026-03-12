@@ -5,7 +5,6 @@ from app.modules.test_specs.application.commands import (
     LinkAutomationCaseCommand,
     MoveTestCaseToRequirementCommand,
     UnlinkAutomationCaseCommand,
-    UpdateTestCaseContentCommand,
     CreateTestCaseCommand,
     UpdateTestCaseCommand,
     DeleteTestCaseCommand,

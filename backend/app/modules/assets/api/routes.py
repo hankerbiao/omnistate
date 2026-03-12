@@ -1,21 +1,21 @@
-"""硬件与资产管理路由"""
-from typing import List, Optional, Annotated
+"""硬件与资产管理路由。"""
+from typing import Annotated, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from app.shared.api.schemas.base import APIResponse
-from app.shared.auth import require_permission
-from app.modules.assets.service.assets_service import AssetsService
 from app.modules.assets.schemas import (
-    CreateComponentRequest,
-    UpdateComponentRequest,
     ComponentResponse,
     CreateDutRequest,
-    UpdateDutRequest,
-    DutResponse,
+    CreateComponentRequest,
     CreateTestPlanComponentRequest,
+    DutResponse,
     TestPlanComponentResponse,
+    UpdateComponentRequest,
+    UpdateDutRequest,
 )
+from app.modules.assets.service.assets_service import AssetsService
+from app.shared.api.schemas.base import APIResponse
+from app.shared.auth import require_permission
 
 router = APIRouter(prefix="/assets", tags=["Assets"])
 
@@ -25,6 +25,20 @@ def get_assets_service() -> AssetsService:
 
 
 AssetsServiceDep = Annotated[AssetsService, Depends(get_assets_service)]
+
+
+def _validate_update_payload(payload: dict) -> dict:
+    if not payload:
+        raise HTTPException(status_code=400, detail="no fields to update")
+    return payload
+
+
+def _raise_conflict(exc: ValueError) -> None:
+    raise HTTPException(status_code=409, detail=str(exc))
+
+
+def _raise_not_found(detail: str) -> None:
+    raise HTTPException(status_code=404, detail=detail)
 
 
 # ==================== Component Library ====================
@@ -43,8 +57,8 @@ async def create_component(
     try:
         data = await service.create_component(request.model_dump())
         return APIResponse(data=data)
-    except ValueError as e:
-        raise HTTPException(status_code=409, detail=str(e))
+    except ValueError as exc:
+        _raise_conflict(exc)
 
 
 @router.get(
@@ -61,7 +75,7 @@ async def get_component(
         data = await service.get_component(part_number)
         return APIResponse(data=data)
     except KeyError:
-        raise HTTPException(status_code=404, detail="component not found")
+        _raise_not_found("component not found")
 
 
 @router.get(
@@ -104,13 +118,11 @@ async def update_component(
     service: AssetsServiceDep,
 ):
     try:
-        payload = request.model_dump(exclude_unset=True)
-        if not payload:
-            raise HTTPException(status_code=400, detail="no fields to update")
+        payload = _validate_update_payload(request.model_dump(exclude_unset=True))
         data = await service.update_component(part_number, payload)
         return APIResponse(data=data)
     except KeyError:
-        raise HTTPException(status_code=404, detail="component not found")
+        _raise_not_found("component not found")
 
 
 @router.delete(
@@ -127,7 +139,7 @@ async def delete_component(
         await service.delete_component(part_number)
         return APIResponse(data={"deleted": True})
     except KeyError:
-        raise HTTPException(status_code=404, detail="component not found")
+        _raise_not_found("component not found")
 
 
 # ==================== DUT ====================
@@ -146,8 +158,8 @@ async def create_dut(
     try:
         data = await service.create_dut(request.model_dump())
         return APIResponse(data=data)
-    except ValueError as e:
-        raise HTTPException(status_code=409, detail=str(e))
+    except ValueError as exc:
+        _raise_conflict(exc)
 
 
 @router.get(
@@ -164,7 +176,7 @@ async def get_dut(
         data = await service.get_dut(asset_id)
         return APIResponse(data=data)
     except KeyError:
-        raise HTTPException(status_code=404, detail="dut not found")
+        _raise_not_found("dut not found")
 
 
 @router.get(
@@ -205,13 +217,11 @@ async def update_dut(
     service: AssetsServiceDep,
 ):
     try:
-        payload = request.model_dump(exclude_unset=True)
-        if not payload:
-            raise HTTPException(status_code=400, detail="no fields to update")
+        payload = _validate_update_payload(request.model_dump(exclude_unset=True))
         data = await service.update_dut(asset_id, payload)
         return APIResponse(data=data)
     except KeyError:
-        raise HTTPException(status_code=404, detail="dut not found")
+        _raise_not_found("dut not found")
 
 
 @router.delete(
@@ -228,7 +238,7 @@ async def delete_dut(
         await service.delete_dut(asset_id)
         return APIResponse(data={"deleted": True})
     except KeyError:
-        raise HTTPException(status_code=404, detail="dut not found")
+        _raise_not_found("dut not found")
 
 
 @router.post(
@@ -240,36 +250,13 @@ async def delete_dut(
 async def test_dut_status(
     asset_id: str,
     service: AssetsServiceDep,
-    use_lock: bool = Query(True, description="是否使用资源锁"),
-    lock_ttl: int = Query(300, ge=1, le=3600, description="锁超时时间（秒）"),
-    wait_timeout: float = Query(0, ge=0, le=300, description="等待获取锁的超时时间（秒）"),
 ):
-    """测试 DUT 设备状态，包括 OS 状态（SSH）和 BMC 状态（Redfish API）
-
-    返回设备状态信息：
-    - os_status: OS 连接状态
-    - bmc_status: BMC 连接状态
-    - overall_status: 整体状态（healthy/degraded/unreachable）
-    - lock_acquired: 是否成功获取锁
-    - lock_owner: 锁持有者标识
-
-    参数说明：
-    - use_lock: 是否使用资源锁防止并发测试冲突，默认为 True
-    - lock_ttl: 锁超时时间（秒），默认 300 秒
-    - wait_timeout: 等待获取锁的超时时间（秒），0 表示不等待，默认为 0
-    """
+    """测试 DUT 的 OS 和 BMC 可达性。"""
     try:
-        data = await service.test_dut_status(
-            asset_id=asset_id,
-            use_lock=use_lock,
-            lock_ttl=lock_ttl,
-            wait_timeout=wait_timeout
-        )
+        data = await service.test_dut_status(asset_id=asset_id)
         return APIResponse(data=data)
     except KeyError:
-        raise HTTPException(status_code=404, detail="dut not found")
-    except RuntimeError as e:
-        raise HTTPException(status_code=409, detail=str(e))
+        _raise_not_found("dut not found")
 
 
 # ==================== Test Plan Component ====================
@@ -288,8 +275,8 @@ async def create_plan_component(
     try:
         data = await service.create_plan_component(request.model_dump())
         return APIResponse(data=data)
-    except ValueError as e:
-        raise HTTPException(status_code=409, detail=str(e))
+    except ValueError as exc:
+        _raise_conflict(exc)
 
 
 @router.get(
@@ -329,4 +316,4 @@ async def delete_plan_component(
         await service.delete_plan_component(plan_id, part_number)
         return APIResponse(data={"deleted": True})
     except KeyError:
-        raise HTTPException(status_code=404, detail="plan component not found")
+        _raise_not_found("plan component not found")

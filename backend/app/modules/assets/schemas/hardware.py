@@ -1,10 +1,8 @@
-"""硬件与资产管理 API 模型"""
-from typing import Optional, Dict, Any, List
+"""硬件与资产管理 API 模型。"""
 from datetime import datetime
+from typing import Any, Dict, List, Optional
+
 from pydantic import BaseModel, Field
-
-
-# ========== Component Library ==========
 
 class CreateComponentRequest(BaseModel):
     part_number: str = Field(..., description="唯一物料编号（PN）")
@@ -113,14 +111,10 @@ class DutResponse(BaseModel):
     os_ip: Optional[str]
     os_port: Optional[int]
     login_username: Optional[str]
-    login_password: Optional[str]
     health_status: Optional[str]
     notes: Optional[str]
     created_at: datetime
     updated_at: datetime
-
-
-# ========== Test Plan Component ==========
 
 class CreateTestPlanComponentRequest(BaseModel):
     plan_id: str

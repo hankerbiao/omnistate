@@ -12,7 +12,7 @@
 - `api/`：HTTP 路由层（FastAPI）
 - `schemas/`：API 请求/响应模型
 - `service/`：领域服务逻辑
-- `repository/models/`：Beanie 文档模型与 Pydantic 模型
+- `repository/models/`：Beanie 文档模型
 
 ## 核心模型
 - `ComponentLibraryDoc`：部件字典
@@ -43,6 +43,9 @@
 - `login_password`：登录密码
 - `health_status`：健康状态
 - `notes`：备注
+
+安全说明：
+- `login_password` 仅用于设备连通性测试，不会在 API 响应中返回
 
 系统自动生成字段：
 - `created_at`

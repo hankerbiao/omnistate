@@ -1,18 +1,10 @@
-"""
-硬件与资产管理模型 (Beanie ODM 版本)
-
-包含：
-- MongoDB 持久化文档模型（Document）
-- 对应的 Pydantic 响应模型（用于 API 层返回）
-"""
-from typing import Optional, Dict, Any, List
+"""硬件与资产管理持久化模型。"""
 from datetime import datetime, timezone
-from pydantic import BaseModel, Field, ConfigDict
+from typing import Any, Dict, List, Optional
+
 from beanie import Document, before_event, Save, Insert
-from pymongo import IndexModel, ASCENDING, DESCENDING
-
-
-# ========== Beanie 文档模型 ==========
+from pydantic import Field
+from pymongo import ASCENDING, IndexModel
 
 class ComponentLibraryDoc(Document):
     """部件字典 - 数据库模型"""
@@ -112,61 +104,3 @@ class TestPlanComponentDoc(Document):
             IndexModel("part_number"),
             IndexModel("created_at"),
         ]
-
-
-# ========== Pydantic 响应模型 (API) ==========
-
-class ComponentLibraryModel(BaseModel):
-    id: Optional[str] = None
-    part_number: str
-    category: str
-    subcategory: Optional[str] = None
-    vendor: Optional[str] = None
-    model: Optional[str] = None
-    revision: Optional[str] = None
-    form_factor: Optional[str] = None
-    interface_type: Optional[str] = None
-    interface_gen: Optional[str] = None
-    protocol: Optional[str] = None
-    attributes: Dict[str, Any]
-    power_watt: Optional[float] = None
-    firmware_baseline: Optional[str] = None
-    spec: Dict[str, Any]
-    datasheet_url: Optional[str] = None
-    lifecycle_status: Optional[str] = None
-    aliases: List[str]
-    created_at: datetime
-    updated_at: datetime
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-class DutModel(BaseModel):
-    id: Optional[str] = None
-    asset_id: str
-    model: str
-    status: str
-    owner_team: Optional[str] = None
-    rack_location: Optional[str] = None
-    bmc_ip: Optional[str] = None
-    bmc_port: Optional[int] = None
-    os_ip: Optional[str] = None
-    os_port: Optional[int] = None
-    login_username: Optional[str] = None
-    login_password: Optional[str] = None
-    health_status: Optional[str] = None
-    notes: Optional[str] = None
-    created_at: datetime
-    updated_at: datetime
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-class TestPlanComponentModel(BaseModel):
-    id: Optional[str] = None
-    plan_id: str
-    part_number: str
-    created_at: datetime
-    updated_at: datetime
-
-    model_config = ConfigDict(from_attributes=True)

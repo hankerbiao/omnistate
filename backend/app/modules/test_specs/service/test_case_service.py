@@ -28,7 +28,6 @@ from app.modules.test_specs.repository.models import (
 )
 from app.modules.workflow.service.workflow_service import AsyncWorkflowService
 from app.modules.workflow.repository.models.business import BusWorkItemDoc
-from app.shared.core.logger import log as logger
 from app.shared.core.mongo_client import get_mongo_client
 from app.shared.service import BaseService, SequenceIdService
 
