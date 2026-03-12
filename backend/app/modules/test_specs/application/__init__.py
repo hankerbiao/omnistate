@@ -1,40 +1,31 @@
+"""测试规范应用层公共导出。"""
+
 from .commands import (
-    # Phase 4: 显式命令对象
     AssignRequirementOwnersCommand,
     AssignTestCaseOwnersCommand,
-    MoveTestCaseToRequirementCommand,
-    LinkAutomationCaseCommand,
-    UnlinkAutomationCaseCommand,
-    UpdateRequirementContentCommand,
-    UpdateTestCaseContentCommand,
-    # 向后兼容的传统命令
     CreateRequirementCommand,
-    UpdateRequirementCommand,
-    DeleteRequirementCommand,
     CreateTestCaseCommand,
-    UpdateTestCaseCommand,
+    DeleteRequirementCommand,
     DeleteTestCaseCommand,
+    LinkAutomationCaseCommand,
+    MoveTestCaseToRequirementCommand,
+    UpdateRequirementCommand,
+    UpdateTestCaseCommand,
 )
 from .requirement_command_service import RequirementCommandService
 from .test_case_command_service import TestCaseCommandService
 
 __all__ = [
-    # Phase 4: 显式命令对象
     "AssignRequirementOwnersCommand",
     "AssignTestCaseOwnersCommand",
-    "MoveTestCaseToRequirementCommand",
-    "LinkAutomationCaseCommand",
-    "UnlinkAutomationCaseCommand",
-    "UpdateRequirementContentCommand",
-    "UpdateTestCaseContentCommand",
-    # 向后兼容的传统命令
     "CreateRequirementCommand",
-    "UpdateRequirementCommand",
-    "DeleteRequirementCommand",
     "CreateTestCaseCommand",
-    "UpdateTestCaseCommand",
+    "DeleteRequirementCommand",
     "DeleteTestCaseCommand",
-    # 现有的应用服务
+    "LinkAutomationCaseCommand",
+    "MoveTestCaseToRequirementCommand",
     "RequirementCommandService",
     "TestCaseCommandService",
+    "UpdateRequirementCommand",
+    "UpdateTestCaseCommand",
 ]

@@ -3,11 +3,15 @@ import asyncio
 import pytest
 
 from app.modules.test_specs.application import (
+    AssignTestCaseOwnersCommand,
     CreateTestCaseCommand,
     DeleteTestCaseCommand,
+    LinkAutomationCaseCommand,
+    MoveTestCaseToRequirementCommand,
     TestCaseCommandService,
     UpdateTestCaseCommand,
 )
+from app.modules.workflow.domain.exceptions import PermissionDeniedError
 from app.modules.workflow.application import OperationContext
 
 
@@ -94,3 +98,76 @@ def test_delete_test_case_command_service_routes_linked_delete_to_workflow():
     assert captured["case_id"] == "TC-1"
     assert captured["actor_id"] == "admin"
     assert captured["work_item_id"] == "workflow-1"
+
+
+def test_assign_test_case_owners_command_service_validates_command():
+    class FakeTestCaseService:
+        async def get_test_case(self, case_id):
+            raise AssertionError("service should not be called when command is invalid")
+
+    class FakeRequirementService:
+        pass
+
+    class FakeWorkflowCommandService:
+        pass
+
+    service = TestCaseCommandService(FakeTestCaseService(), FakeRequirementService(), FakeWorkflowCommandService())
+
+    with pytest.raises(ValueError, match="at least one owner must be specified"):
+        asyncio.run(
+            service.assign_owners(
+                OperationContext(actor_id="user-1"),
+                AssignTestCaseOwnersCommand(case_id="TC-1"),
+            )
+        )
+
+
+def test_move_test_case_command_service_rejects_same_requirement():
+    class FakeTestCaseService:
+        async def get_test_case(self, case_id):
+            return {"case_id": case_id, "ref_req_id": "REQ-1", "owner_id": "user-1", "workflow_item_id": None}
+
+        async def move_to_requirement(self, case_id, target_req_id):
+            raise AssertionError("move should not run when target requirement is unchanged")
+
+    class FakeRequirementService:
+        async def get_requirement(self, req_id):
+            return {"req_id": req_id}
+
+    class FakeWorkflowCommandService:
+        pass
+
+    service = TestCaseCommandService(FakeTestCaseService(), FakeRequirementService(), FakeWorkflowCommandService())
+
+    with pytest.raises(ValueError, match="already linked to the target requirement"):
+        asyncio.run(
+            service.move_to_requirement(
+                OperationContext(actor_id="user-1"),
+                MoveTestCaseToRequirementCommand(case_id="TC-1", target_req_id="REQ-1"),
+            )
+        )
+
+
+def test_link_automation_case_requires_object_permission():
+    class FakeTestCaseService:
+        async def get_test_case(self, case_id):
+            return {"case_id": case_id, "owner_id": "owner-1", "workflow_item_id": None}
+
+        async def link_automation_case(self, case_id, auto_case_id, version=None):
+            raise AssertionError("link should not run without permission")
+
+    class FakeRequirementService:
+        pass
+
+    class FakeWorkflowCommandService:
+        pass
+
+    service = TestCaseCommandService(FakeTestCaseService(), FakeRequirementService(), FakeWorkflowCommandService())
+
+    with pytest.raises(PermissionDeniedError):
+        asyncio.run(
+            service.link_automation_case(
+                OperationContext(actor_id="user-2", role_ids=["ROLE_USER"]),
+                LinkAutomationCaseCommand(case_id="TC-1", auto_case_id="AUTO-1"),
+            )
+        )

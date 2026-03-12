@@ -8,14 +8,13 @@ from app.modules.test_specs.application import (
     DeleteTestCaseCommand,
     LinkAutomationCaseCommand,
     TestCaseCommandService,
-    UnlinkAutomationCaseCommand,
     UpdateTestCaseCommand,
 )
 from app.modules.workflow.application import OperationContext, WorkflowCommandService
 from app.modules.workflow.service.workflow_service import AsyncWorkflowService
 from app.shared.api.schemas.base import APIResponse
 from app.shared.auth import get_current_user, require_permission
-from app.modules.test_specs.service import TestCaseService
+from app.modules.test_specs.service import RequirementService, TestCaseService
 from app.modules.test_specs.schemas import (
     CreateTestCaseRequest,
     UpdateTestCaseRequest,
@@ -34,6 +33,14 @@ def get_test_case_service() -> TestCaseService:
 TestCaseServiceDep = Annotated[TestCaseService, Depends(get_test_case_service)]
 
 
+def get_requirement_service() -> RequirementService:
+    """FastAPI 依赖：为命令服务提供需求服务实例。"""
+    return RequirementService()
+
+
+RequirementServiceDep = Annotated[RequirementService, Depends(get_requirement_service)]
+
+
 def get_workflow_command_service() -> WorkflowCommandService:
     return WorkflowCommandService(AsyncWorkflowService())
 
@@ -43,9 +50,10 @@ WorkflowCommandServiceDep = Annotated[WorkflowCommandService, Depends(get_workfl
 
 def get_test_case_command_service(
     test_case_service: TestCaseServiceDep,
+    requirement_service: RequirementServiceDep,
     workflow_command_service: WorkflowCommandServiceDep,
 ) -> TestCaseCommandService:
-    return TestCaseCommandService(test_case_service, workflow_command_service)
+    return TestCaseCommandService(test_case_service, requirement_service, workflow_command_service)
 
 
 TestCaseCommandServiceDep = Annotated[TestCaseCommandService, Depends(get_test_case_command_service)]
@@ -219,25 +227,4 @@ async def link_automation_case(
     except KeyError as e:
         if str(e) == "'automation test case not found'":
             raise HTTPException(status_code=404, detail="automation test case not found")
-        raise HTTPException(status_code=404, detail="test case not found")
-
-
-@router.delete(
-    "/{case_id}/automation-link",
-    response_model=APIResponse[TestCaseResponse],
-    summary="解绑自动化测试用例",
-    dependencies=[Depends(require_permission("test_cases:write"))],
-)
-async def unlink_automation_case(
-    case_id: str,
-    command_service: TestCaseCommandServiceDep,
-    current_user=Depends(get_current_user),
-):
-    try:
-        data = await command_service.unlink_automation_case(
-            build_operation_context(current_user),
-            UnlinkAutomationCaseCommand(case_id=case_id),
-        )
-        return APIResponse(data=data)
-    except KeyError:
         raise HTTPException(status_code=404, detail="test case not found")

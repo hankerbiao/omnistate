@@ -2,7 +2,6 @@ from copy import deepcopy
 
 from app.modules.test_specs.application.commands import (
     AssignRequirementOwnersCommand,
-    UpdateRequirementContentCommand,
     CreateRequirementCommand,
     UpdateRequirementCommand,
     DeleteRequirementCommand,
@@ -179,6 +178,7 @@ class RequirementCommandService:
             RequirementNotFoundError: 需求不存在时抛出
             PermissionDeniedError: 没有更新权限时抛出
         """
+        command.validate()
         requirement = await self._requirement_service.get_requirement(command.req_id)
         if not requirement:
             from app.modules.test_specs.domain.exceptions import RequirementNotFoundError

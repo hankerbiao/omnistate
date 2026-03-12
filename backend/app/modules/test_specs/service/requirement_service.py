@@ -43,6 +43,18 @@ class RequirementService(BaseService):
     def __init__(self):
         super().__init__()
         self.workflow_service = AsyncWorkflowService()
+        self._workflow_service = self.workflow_service
+
+    async def _enrich_requirement_status(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """使用工作流状态覆盖业务文档中的状态投影字段。"""
+        workflow_item_id = str(data.get("workflow_item_id") or "").strip()
+        if not workflow_item_id:
+            return data
+
+        work_item = await BusWorkItemDoc.get(workflow_item_id)
+        if work_item and not work_item.is_deleted:
+            data["status"] = work_item.current_state
+        return data
 
     async def _get_workflow_state_for_requirement(self, req_id: str) -> Optional[str]:
         """从工作流获取需求的真实状态（单一真实来源）。
@@ -131,7 +143,7 @@ class RequirementService(BaseService):
         )
         if not doc:
             raise KeyError("requirement not found")
-        return self._doc_to_dict(doc)
+        return await self._enrich_requirement_status(self._doc_to_dict(doc))
 
     async def list_requirements(
         self,
@@ -162,26 +174,17 @@ class RequirementService(BaseService):
 
         # 获取候选文档（如果需要状态过滤，先获取更大的集合）
         if status:
-            # Phase 3B: 状态过滤需要从工作流查询
-            docs = await query.sort("-created_at").skip(offset).limit(limit * 2).to_list()  # 多获取一些，因为还要过滤状态
+            docs = await query.sort("-created_at").to_list()
             if not docs:
                 return []
 
-            # 批量获取工作流状态进行过滤
             req_ids = [doc.req_id for doc in docs]
             workflow_states = await self._get_workflow_states_for_requirements(req_ids)
-
-            # 按工作流状态过滤
-            filtered_docs = []
-            for doc in docs:
-                workflow_state = workflow_states.get(doc.req_id)
-                if workflow_state == status:
-                    filtered_docs.append(doc)
-                elif workflow_state is None and status == "未开始":
-                    # 处理没有工作项的情况（向后兼容）
-                    filtered_docs.append(doc)
-
-            # 应用分页
+            filtered_docs = [
+                doc for doc in docs
+                if workflow_states.get(doc.req_id) == status
+                or (workflow_states.get(doc.req_id) is None and status == "未开始")
+            ]
             docs = filtered_docs[offset:offset + limit]
         else:
             docs = await query.sort("-created_at").skip(offset).limit(limit).to_list()

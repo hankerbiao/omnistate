@@ -4,7 +4,6 @@ from app.modules.test_specs.application.commands import (
     AssignTestCaseOwnersCommand,
     LinkAutomationCaseCommand,
     MoveTestCaseToRequirementCommand,
-    UnlinkAutomationCaseCommand,
     CreateTestCaseCommand,
     UpdateTestCaseCommand,
     DeleteTestCaseCommand,
@@ -185,36 +184,23 @@ class TestCaseCommandService:
         Raises:
             相关异常可能由底层服务抛出
         """
-        del context
+        test_case = await self._test_case_service.get_test_case(command.case_id)
+        workflow_item_id = str(test_case.get("workflow_item_id") or "").strip()
+        work_item = None
+        if workflow_item_id:
+            from app.modules.workflow.service.workflow_service import AsyncWorkflowService
+            workflow_service = AsyncWorkflowService()
+            work_item = await workflow_service.get_item_by_id(workflow_item_id)
+
+        actor = {"actor_id": context.actor_id, "role_ids": context.role_ids}
+        if not can_update_test_case(actor, test_case, work_item):
+            raise PermissionDeniedError(context.actor_id, "link automation case")
+
         return await self._test_case_service.link_automation_case(
             case_id=command.case_id,
             auto_case_id=command.auto_case_id,
             version=command.version,
         )
-
-    async def unlink_automation_case(
-        self,
-        context: OperationContext,
-        command: UnlinkAutomationCaseCommand,
-    ) -> dict:
-        """
-        取消测试用例与自动化测试用例的关联。
-
-        此操作用于移除测试用例与自动化测试用例之间的关联关系。
-        操作不需要权限检查，所有用户都可以执行。
-
-        Args:
-            context: 操作上下文（此方法中未使用）
-            command: 取消关联命令，包含要取消关联的测试用例ID
-
-        Returns:
-            取消关联操作的结果数据字典
-
-        Raises:
-            相关异常可能由底层服务抛出
-        """
-        del context
-        return await self._test_case_service.unlink_automation_case(case_id=command.case_id)
 
     async def assign_owners(
         self,
@@ -237,6 +223,7 @@ class TestCaseCommandService:
             TestCaseNotFoundError: 测试用例不存在时抛出
             PermissionDeniedError: 没有更新权限时抛出
         """
+        command.validate()
         test_case = await self._test_case_service.get_test_case(command.case_id)
         if not test_case:
             from app.modules.test_specs.domain.exceptions import TestCaseNotFoundError
@@ -287,11 +274,16 @@ class TestCaseCommandService:
             from app.modules.test_specs.domain.exceptions import TestCaseNotFoundError
             raise TestCaseNotFoundError(command.case_id)
 
+        if test_case.get("ref_req_id") == command.target_req_id:
+            raise ValueError("test case is already linked to the target requirement")
+
         # 验证目标需求存在
         target_requirement = await self._requirement_service.get_requirement(command.target_req_id)
         if not target_requirement:
             from app.modules.test_specs.domain.exceptions import RequirementNotFoundError
             raise RequirementNotFoundError(command.target_req_id)
+
+        command.validate()
 
         workflow_item_id = str(test_case.get("workflow_item_id") or "").strip()
         work_item = None
