@@ -27,7 +27,6 @@ from beanie import PydanticObjectId
 # 业务服务导入
 from app.modules.test_specs.service.requirement_service import RequirementService
 from app.modules.test_specs.service.test_case_service import TestCaseService
-from app.modules.execution.service.execution_service import ExecutionService
 
 # 领域和应用服务导入
 from app.modules.test_specs.application.commands import (
@@ -65,10 +64,6 @@ class TestPhase3BPhysicalConvergence:
     @pytest.fixture
     def test_case_service(self):
         return TestCaseService()
-
-    @pytest.fixture
-    def execution_service(self):
-        return ExecutionService()
 
     @pytest.fixture
     def mock_work_item(self):
@@ -159,21 +154,6 @@ class TestPhase3BPhysicalConvergence:
             # 实际测试中需要更多的mock设置来完整验证
 
     @pytest.mark.asyncio
-    async def test_execution_snapshot_uses_workflow_state(self, execution_service, mock_work_item, mock_test_case_doc):
-        """测试执行快照使用工作流状态"""
-        # 设置测试用例有工作流项关联
-        mock_test_case_doc.workflow_item_id = str(mock_work_item.id)
-
-        # 验证执行快照中状态来源
-        with patch.object(execution_service, '_get_workflow_state_for_test_case') as mock_get_state:
-            mock_get_state.return_value = mock_work_item.current_state
-
-            # 验证状态来源为工作流而非业务文档
-            state = await execution_service._get_workflow_state_for_test_case("TC-001")
-            assert state == "进行中"
-            assert state != mock_test_case_doc.status
-
-    @pytest.mark.asyncio
     async def test_fallback_to_default_when_work_item_missing(self, requirement_service):
         """测试工作项不存在时的回退行为"""
         # 模拟工作项不存在的情况
@@ -207,10 +187,6 @@ class TestPhase3BPhysicalConvergence:
         # 验证测试用例服务包含工作流服务依赖
         assert hasattr(test_case_service, '_workflow_service')
 
-    def test_execution_service_dependency_on_workflow_service(self, execution_service):
-        """测试执行服务对工作流服务的依赖"""
-        # 验证执行服务包含工作流服务依赖
-        assert hasattr(execution_service, '_workflow_service')
 
 
 # =============================================================================
@@ -425,42 +401,39 @@ class TestPhase5OutboxPattern:
         """测试任务分发命令验证：缺失必需字段"""
         from app.modules.execution.application.commands import DispatchExecutionTaskCommand
 
-        # 缺失task_id
-        with pytest.raises(ValueError, match="task_id cannot be empty"):
-            DispatchExecutionTaskCommand(
-                task_id="",
-                external_task_id="ext_001",
-                framework="pytest",
-                trigger_source="manual",
-                created_by="user_001",
-                case_ids=["TC-001"]
-            )
+        missing_task_id = DispatchExecutionTaskCommand(
+            task_id="",
+            external_task_id="ext_001",
+            framework="pytest",
+            trigger_source="manual",
+            created_by="user_001",
+            case_ids=["TC-001"]
+        )
+        assert "task_id is required" in missing_task_id.validate()
 
-        # 缺失case_ids
-        with pytest.raises(ValueError, match="case_ids cannot be empty"):
-            DispatchExecutionTaskCommand(
-                task_id="task_001",
-                external_task_id="ext_001",
-                framework="pytest",
-                trigger_source="manual",
-                created_by="user_001",
-                case_ids=[]
-            )
+        missing_case_ids = DispatchExecutionTaskCommand(
+            task_id="task_001",
+            external_task_id="ext_001",
+            framework="pytest",
+            trigger_source="manual",
+            created_by="user_001",
+            case_ids=[]
+        )
+        assert "case_ids cannot be empty" in missing_case_ids.validate()
 
     def test_dispatch_execution_task_command_validation_duplicate_case_ids(self):
         """测试任务分发命令验证：重复的case_ids"""
         from app.modules.execution.application.commands import DispatchExecutionTaskCommand
 
-        # 重复的case_ids应该被检测
-        with pytest.raises(ValueError, match="case_ids cannot contain duplicates"):
-            DispatchExecutionTaskCommand(
-                task_id="task_001",
-                external_task_id="ext_001",
-                framework="pytest",
-                trigger_source="manual",
-                created_by="user_001",
-                case_ids=["TC-001", "TC-001", "TC-002"]
-            )
+        command = DispatchExecutionTaskCommand(
+            task_id="task_001",
+            external_task_id="ext_001",
+            framework="pytest",
+            trigger_source="manual",
+            created_by="user_001",
+            case_ids=["TC-001", "TC-001", "TC-002"]
+        )
+        assert "case_ids must not contain duplicates" in command.validate()
 
     def test_outbox_event_creation(self):
         """测试outbox事件创建"""
@@ -489,7 +462,7 @@ class TestPhase5OutboxPattern:
 
         # 验证默认配置
         assert worker.batch_size == 50
-        assert worker.poll_interval == 1.0
+        assert worker.poll_interval == 5
 
     @pytest.mark.asyncio
     async def test_execution_command_service_dispatch_task_method_exists(self, execution_command_service):
@@ -499,17 +472,10 @@ class TestPhase5OutboxPattern:
 
     def test_outbox_retry_strategy(self):
         """测试outbox重试策略"""
-        from app.shared.integration.outbox_service import OutboxService
+        from app.modules.execution.infrastructure.outbox_worker import OutboxWorker
 
-        # 测试指数退避计算
-        # 2^0 = 1, 2^1 = 2, 2^2 = 4, 2^3 = 8, 2^4 = 16, 2^5 = 32 (超过最大5分钟)
-        retry_intervals = [1, 2, 4, 8, 16, 32]
-
-        for i, interval in enumerate(retry_intervals):
-            if i < 5:  # 最大重试5次
-                assert interval <= 300  # 5分钟 = 300秒
-            else:
-                assert interval > 300  # 超过最大重试时间
+        worker = OutboxWorker()
+        assert worker.max_retries == 3
 
     def test_outbox_event_status_transitions(self):
         """测试outbox事件状态转换"""

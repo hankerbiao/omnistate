@@ -364,7 +364,7 @@ class KafkaMessageManager:
 
     def register_task_handler(self, task_type: str, handler_func: Callable):
         """
-        注册任务处理器
+        注册任务处理器，注册表模式
 
         Args:
             task_type: 任务类型

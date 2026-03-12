@@ -22,7 +22,6 @@ from beanie import PydanticObjectId
 # 测试对象导入
 from app.modules.test_specs.service.requirement_service import RequirementService
 from app.modules.test_specs.service.test_case_service import TestCaseService
-from app.modules.execution.service.execution_service import ExecutionService
 from app.modules.test_specs.repository.models import TestRequirementDoc, TestCaseDoc
 from app.modules.workflow.repository.models.business import BusWorkItemDoc
 from app.modules.execution.application.execution_command_service import ExecutionCommandService
@@ -58,10 +57,6 @@ class TestPhase3BPhysicalConvergence:
     @pytest.fixture
     def test_case_service(self):
         return TestCaseService()
-
-    @pytest.fixture
-    def execution_service(self):
-        return ExecutionService()
 
     @pytest.fixture
     def mock_work_item(self):
@@ -148,10 +143,10 @@ class TestPhase5Commands:
         command = DispatchExecutionTaskCommand(
             task_id="ET-2026-000001",
             external_task_id="EXT-ET-2026-000001",
-            task_type="自动化测试",
-            target_environment="生产环境",
-            priority=1,
-            payload={"test_data": "sample"}
+            framework="pytest",
+            trigger_source="manual",
+            created_by="user-001",
+            case_ids=["TC-001"],
         )
         assert command.task_id == "ET-2026-000001"
         assert command.external_task_id == "EXT-ET-2026-000001"

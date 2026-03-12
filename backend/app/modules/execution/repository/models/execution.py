@@ -1,9 +1,9 @@
 """测试执行域数据模型（Beanie ODM）。"""
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from beanie import Document, Insert, Save, before_event
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import Field
 from pymongo import ASCENDING, DESCENDING, IndexModel
 
 
@@ -107,63 +107,3 @@ class ExecutionEventDoc(Document):
             IndexModel([("task_id", ASCENDING), ("seq", ASCENDING)]),
             IndexModel("received_at"),
         ]
-
-
-class ExecutionTaskModel(BaseModel):
-    id: Optional[str] = None
-    task_id: str
-    external_task_id: Optional[str] = None
-    framework: str
-    dispatch_status: str
-    overall_status: str
-    request_payload: Dict[str, Any]
-    dispatch_response: Dict[str, Any]
-    dispatch_error: Optional[str] = None
-    created_by: str
-    case_count: int
-    reported_case_count: int
-    started_at: Optional[datetime] = None
-    finished_at: Optional[datetime] = None
-    last_callback_at: Optional[datetime] = None
-    created_at: datetime
-    updated_at: datetime
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-class ExecutionTaskCaseModel(BaseModel):
-    id: Optional[str] = None
-    task_id: str
-    case_id: str
-    case_snapshot: Dict[str, Any]
-    status: str
-    progress_percent: Optional[float] = None
-    step_total: int
-    step_passed: int
-    step_failed: int
-    step_skipped: int
-    last_seq: int
-    last_event_id: Optional[str] = None
-    started_at: Optional[datetime] = None
-    finished_at: Optional[datetime] = None
-    created_at: datetime
-    updated_at: datetime
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-class ExecutionEventModel(BaseModel):
-    id: Optional[str] = None
-    task_id: str
-    event_id: str
-    event_type: str
-    seq: int
-    source_time: Optional[datetime] = None
-    received_at: datetime
-    raw_payload: Dict[str, Any]
-    processed: bool
-    process_error: Optional[str] = None
-    created_at: datetime
-    updated_at: datetime
-
-    model_config = ConfigDict(from_attributes=True)
