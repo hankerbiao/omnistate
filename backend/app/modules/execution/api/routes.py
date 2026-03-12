@@ -1,8 +1,4 @@
-"""测试执行 API 路由 - Phase 5
-
-使用发件箱模式的执行任务分发API。
-通过显式命令服务确保可靠的外部事件发布。
-"""
+"""测试执行 API 路由。"""
 from __future__ import annotations
 
 from typing import Annotated
@@ -14,7 +10,7 @@ from app.modules.execution.schemas import (
     DispatchTaskRequest,
     DispatchTaskResponse,
 )
-from app.modules.execution.application.execution_command_service import ExecutionCommandService
+from app.modules.execution.application.execution_service import ExecutionService
 from app.modules.execution.application.commands import DispatchExecutionTaskCommand
 from app.shared.service import SequenceIdService
 from app.shared.api.schemas.base import APIResponse
@@ -23,11 +19,11 @@ from app.shared.auth import get_current_user, require_permission
 router = APIRouter(prefix="/execution", tags=["Execution"])
 
 
-def get_execution_command_service() -> ExecutionCommandService:
-    return ExecutionCommandService()
+def get_execution_service() -> ExecutionService:
+    return ExecutionService()
 
 
-ExecutionCommandServiceDep = Annotated[ExecutionCommandService, Depends(get_execution_command_service)]
+ExecutionServiceDep = Annotated[ExecutionService, Depends(get_execution_service)]
 
 
 @router.post(
@@ -39,16 +35,10 @@ ExecutionCommandServiceDep = Annotated[ExecutionCommandService, Depends(get_exec
 )
 async def dispatch_task(
         request: DispatchTaskRequest,
-        service: ExecutionCommandServiceDep,
+        service: ExecutionServiceDep,
         current_user=Depends(get_current_user),
 ):
-    """分发测试任务 - 使用发件箱模式
-
-    该端点使用显式命令模式和发件箱机制，确保：
-    - 本地数据库事务与Kafka发布解耦
-    - 任务创建不依赖外部Kafka的可用性
-    - 支持可靠的重试机制
-    """
+    """分发测试任务。"""
     try:
         # 生成任务ID
         year = datetime.now().year
@@ -72,7 +62,7 @@ async def dispatch_task(
             runtime_config=request.runtime_config,
         )
 
-        # 使用命令服务处理任务分发
+        # 使用执行服务处理任务分发
         data = await service.dispatch_execution_task(command, actor_id=current_user["user_id"])
 
         return APIResponse(data=data)
@@ -91,7 +81,7 @@ async def dispatch_task(
 )
 async def get_task_status(
         task_id: str,
-        service: ExecutionCommandServiceDep,
+        service: ExecutionServiceDep,
         current_user=Depends(get_current_user),
 ):
     """获取任务状态"""
@@ -110,7 +100,7 @@ async def get_task_status(
 )
 async def retry_task(
         task_id: str,
-        service: ExecutionCommandServiceDep,
+        service: ExecutionServiceDep,
         current_user=Depends(get_current_user),
 ):
     """重试失败的任务"""

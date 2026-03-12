@@ -24,12 +24,8 @@ from app.modules.test_specs.service.requirement_service import RequirementServic
 from app.modules.test_specs.service.test_case_service import TestCaseService
 from app.modules.test_specs.repository.models import TestRequirementDoc, TestCaseDoc
 from app.modules.workflow.repository.models.business import BusWorkItemDoc
-from app.modules.execution.application.execution_command_service import ExecutionCommandService
+from app.modules.execution.application.execution_service import ExecutionService
 from app.modules.execution.application.commands import DispatchExecutionTaskCommand
-from app.modules.execution.infrastructure.kafka_task_publisher import KafkaTaskPublisher
-from app.modules.execution.infrastructure.outbox_worker import OutboxWorker
-from app.shared.integration.outbox_service import OutboxService
-from app.shared.integration.outbox_models import OutboxEventDoc
 from app.shared.infrastructure import (
     InfrastructureRegistry,
     InfrastructureStatus,
@@ -132,7 +128,7 @@ class TestPhase4ExplicitCommands:
 
 
 # =============================================================================
-# Phase 5: 命令和发件箱模式测试
+# Phase 5: 命令和直接下发测试
 # =============================================================================
 
 class TestPhase5Commands:
@@ -157,43 +153,24 @@ class TestPhase5Commands:
         pass
 
 
-class TestPhase5OutboxPattern:
-    """Phase 5 发件箱模式测试"""
+class TestPhase5DispatchFlow:
+    """Phase 5 直接下发测试"""
 
     @pytest.fixture
-    def execution_command_service(self):
-        return ExecutionCommandService()
+    def execution_service(self):
+        return ExecutionService()
 
-    @pytest.fixture
-    def outbox_service(self):
-        return OutboxService()
+    def test_dispatch_service_exists(self, execution_service):
+        """测试执行服务存在直接下发入口"""
+        assert hasattr(execution_service, "dispatch_execution_task")
 
-    @pytest.fixture
-    def kafka_publisher(self):
-        return KafkaTaskPublisher()
+    def test_retry_method_exists(self, execution_service):
+        """测试重试方法存在"""
+        assert hasattr(execution_service, "retry_failed_task")
 
-    @pytest.fixture
-    def outbox_worker(self):
-        return OutboxWorker()
-
-    async def test_outbox_event_creation(self):
-        """测试发件箱事件创建"""
-        # 验证发件箱事件的创建和存储
-        pass
-
-    async def test_transaction_consistency(self):
-        """测试事务一致性"""
-        # 验证业务操作和发件箱事件在同一事务中创建
-        pass
-
-    async def test_retry_mechanism(self):
-        """测试重试机制"""
-        # 验证失败事件的重试机制
-        pass
-
-    async def test_error_handling(self):
-        """测试错误处理"""
-        # 验证错误处理和回滚机制
+    def test_error_handling(self, execution_service):
+        """测试错误处理入口存在"""
+        assert hasattr(execution_service, "get_task_status")
         pass
 
 

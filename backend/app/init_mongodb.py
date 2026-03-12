@@ -42,7 +42,6 @@ from app.modules.auth.repository.models import (
     RoleDoc,
     NavigationPageDoc,
 )
-from app.shared.integration.outbox_models import OutboxEventDoc
 from app.modules.auth.service.navigation_page_service import DEFAULT_NAVIGATION_PAGES
 
 
@@ -427,7 +426,6 @@ async def main():
                 SysWorkTypeDoc,
                 SysWorkflowStateDoc,
                 SysWorkflowConfigDoc,
-                OutboxEventDoc,
                 PermissionDoc,
                 RoleDoc,
                 NavigationPageDoc,

@@ -1,8 +1,4 @@
-"""执行模块命令定义 - Phase 5
-
-显式的命令对象用于定义执行任务分发的高风险操作。
-通过发件箱模式确保可靠的外部事件发布。
-"""
+"""执行任务请求命令。"""
 
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
@@ -11,11 +7,7 @@ from datetime import datetime, timezone
 
 @dataclass
 class DispatchExecutionTaskCommand:
-    """分发执行任务命令
-
-    这个命令表示要分发一个测试任务到外部测试框架。
-    通过发件箱模式确保任务能够可靠地发布到Kafka队列。
-    """
+    """分发执行任务命令。"""
     # 任务基本信息
     task_id: str
     external_task_id: str
@@ -31,7 +23,7 @@ class DispatchExecutionTaskCommand:
     dut: Optional[Dict[str, Any]] = None
     runtime_config: Optional[Dict[str, Any]] = None
 
-    # Kafka任务数据（内部生成）
+    # 发送到 Kafka 的任务数据，由命令对象统一构建
     kafka_task_data: Optional[Dict[str, Any]] = None
 
     def __post_init__(self):

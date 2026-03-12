@@ -1,12 +1,4 @@
-"""应用级基础设施注册表 - Phase 6
-
-负责统一管理应用中的所有基础设施组件，包括：
-- Kafka生产者、消费者
-- Outbox工作器
-- 其他后台任务
-
-在应用生命周期中初始化和清理这些资源，避免在服务构造函数中创建网络连接。
-"""
+"""应用级基础设施注册表。"""
 
 import asyncio
 from typing import Any, Dict, Optional, List
@@ -38,9 +30,6 @@ class InfrastructureRegistry:
         """初始化基础设施注册表"""
         # 基础设施组件实例
         self.kafka_manager: Optional[KafkaMessageManager] = None
-        self.outbox_worker: Any = None
-
-        # 组件状态跟踪
         self._component_status: Dict[str, InfrastructureStatus] = {}
         self._initialization_lock = asyncio.Lock()
         self._is_initialized = False
@@ -64,10 +53,6 @@ class InfrastructureRegistry:
                 # 初始化Kafka管理器
                 await self._initialize_kafka_manager(bootstrap_servers)
 
-                # 初始化Outbox工作器
-                await self._initialize_outbox_worker()
-
-                # 标记为已初始化
                 self._is_initialized = True
                 logger.success("Application infrastructure initialized successfully")
 
@@ -99,34 +84,6 @@ class InfrastructureRegistry:
             )
             raise
 
-    async def _initialize_outbox_worker(self) -> None:
-        """初始化Outbox工作器"""
-        component_name = "outbox_worker"
-        self._set_component_status(component_name, "INITIALIZING")
-
-        try:
-            # 延迟导入OutboxWorker
-            from app.modules.execution.infrastructure.outbox_worker import OutboxWorker
-            
-            # 创建Outbox工作器实例
-            self.outbox_worker = OutboxWorker(
-                batch_size=50,
-                poll_interval=5,
-                max_retries=3
-            )
-
-            # 启动Outbox工作器
-            await self.outbox_worker.start()
-            self._set_component_status(component_name, "RUNNING")
-            logger.success("Outbox worker initialized and started")
-
-        except Exception as e:
-            self._set_component_status(
-                component_name, "ERROR",
-                error_message=f"Failed to initialize outbox worker: {str(e)}"
-            )
-            raise
-
     async def shutdown(self) -> None:
         """关闭所有基础设施组件"""
         if not self._is_initialized:
@@ -141,11 +98,6 @@ class InfrastructureRegistry:
         if self.kafka_manager:
             shutdown_tasks.append(self._shutdown_kafka_manager())
 
-        # 关闭Outbox工作器
-        if self.outbox_worker:
-            shutdown_tasks.append(self._shutdown_outbox_worker())
-
-        # 并发关闭所有组件
         if shutdown_tasks:
             await asyncio.gather(*shutdown_tasks, return_exceptions=True)
 
@@ -169,24 +121,6 @@ class InfrastructureRegistry:
                 error_message=f"Error stopping Kafka manager: {str(e)}"
             )
             logger.exception(f"Error stopping Kafka manager: {str(e)}")
-
-    async def _shutdown_outbox_worker(self) -> None:
-        """关闭Outbox工作器"""
-        component_name = "outbox_worker"
-        self._set_component_status(component_name, "STOPPING")
-
-        try:
-            if self.outbox_worker:
-                await self.outbox_worker.stop()
-                self.outbox_worker = None
-            self._set_component_status(component_name, "STOPPED")
-            logger.info("Outbox worker stopped")
-        except Exception as e:
-            self._set_component_status(
-                component_name, "ERROR",
-                error_message=f"Error stopping outbox worker: {str(e)}"
-            )
-            logger.exception(f"Error stopping outbox worker: {str(e)}")
 
     def _set_component_status(
         self, 
@@ -213,17 +147,6 @@ class InfrastructureRegistry:
             return None
         return self.kafka_manager
 
-    def get_outbox_worker(self) -> Any:
-        """获取Outbox工作器实例
-
-        Returns:
-            Outbox工作器实例，如果未初始化则返回None
-        """
-        if not self._is_initialized or not self.outbox_worker:
-            logger.warning("Outbox worker not available (not initialized)")
-            return None
-        return self.outbox_worker
-
     async def health_check(self) -> Dict[str, Any]:
         """执行所有基础设施组件的健康检查
 
@@ -242,14 +165,9 @@ class InfrastructureRegistry:
         kafka_health = await self._check_kafka_health()
         health_results["components"]["kafka_manager"] = kafka_health
 
-        # 检查Outbox工作器
-        outbox_health = await self._check_outbox_health()
-        health_results["components"]["outbox_worker"] = outbox_health
-
-        # 评估整体健康状态
-        if kafka_health["status"] == "ERROR" or outbox_health["status"] == "ERROR":
+        if kafka_health["status"] == "ERROR":
             health_results["overall_status"] = "UNHEALTHY"
-        elif kafka_health["status"] == "DEGRADED" or outbox_health["status"] == "DEGRADED":
+        elif kafka_health["status"] == "DEGRADED":
             health_results["overall_status"] = "DEGRADED"
 
         return health_results
@@ -295,36 +213,6 @@ class InfrastructureRegistry:
             return {
                 "status": "ERROR",
                 "message": f"Kafka health check failed: {str(e)}",
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            }
-
-    async def _check_outbox_health(self) -> Dict[str, Any]:
-        """检查Outbox工作器健康状态"""
-        component_name = "outbox_worker"
-        
-        if not self.outbox_worker:
-            return {
-                "status": "NOT_INITIALIZED",
-                "message": "Outbox worker not initialized",
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            }
-
-        try:
-            # 使用Outbox工作器的健康检查方法
-            worker_health = await self.outbox_worker.health_check()
-            
-            return {
-                "status": "HEALTHY" if worker_health.get("worker_running") else "DEGRADED",
-                "message": "Outbox worker health check completed",
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "details": worker_health
-            }
-
-        except Exception as e:
-            logger.exception(f"Outbox worker health check failed: {str(e)}")
-            return {
-                "status": "ERROR",
-                "message": f"Outbox worker health check failed: {str(e)}",
                 "timestamp": datetime.now(timezone.utc).isoformat()
             }
 
@@ -396,14 +284,3 @@ def get_kafka_manager() -> Optional[KafkaMessageManager]:
         return None
     return _infrastructure_registry.get_kafka_manager()
 
-
-def get_outbox_worker() -> Any:
-    """获取全局Outbox工作器实例
-
-    Returns:
-        Outbox工作器实例，如果未初始化则返回None
-    """
-    if _infrastructure_registry is None:
-        logger.warning("Infrastructure registry not initialized")
-        return None
-    return _infrastructure_registry.get_outbox_worker()
