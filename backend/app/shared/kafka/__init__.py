@@ -1,8 +1,4 @@
-"""
-Kafka 消息管理模块
-
-这个模块提供了完整的 Kafka 消息管理功能，用于任务下发和接收。
-"""
+"""Kafka 消息管理模块。"""
 
 from .kafka_message_manager import (
     KafkaMessageManager,
@@ -11,25 +7,12 @@ from .kafka_message_manager import (
 )
 
 
-from .config import (
-    get_kafka_config,
-    get_task_config,
-    get_message_config,
-    update_config,
-    load_from_environment
-)
+from .config import KafkaConfig, load_kafka_config
 
 __all__ = [
-    # 消息管理
-    'KafkaMessageManager',
-    'TaskMessage',
-    'ResultMessage',
-    # 配置管理
-    'get_kafka_config',
-    'get_task_config',
-    'get_message_config',
-    'update_config',
-    'load_from_environment'
+    "KafkaMessageManager",
+    "TaskMessage",
+    "ResultMessage",
+    "KafkaConfig",
+    "load_kafka_config",
 ]
-
-__version__ = '1.0.0'

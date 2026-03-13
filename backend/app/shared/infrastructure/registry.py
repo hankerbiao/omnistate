@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from app.shared.core.logger import log as logger
-from app.shared.kafka import KafkaMessageManager
+from app.shared.kafka import KafkaMessageManager, load_kafka_config
 
 
 @dataclass
@@ -67,9 +67,13 @@ class InfrastructureRegistry:
         self._set_component_status(component_name, "INITIALIZING")
 
         try:
+            kafka_config = load_kafka_config()
+            if bootstrap_servers is not None:
+                kafka_config.bootstrap_servers = bootstrap_servers
+
             self.kafka_manager = KafkaMessageManager(
-                bootstrap_servers=bootstrap_servers or ["10.17.154.252:9092"],
-                client_id="dmlv4-infrastructure"
+                client_id="dmlv4-infrastructure",
+                config=kafka_config,
             )
 
             # 启动Kafka管理器
@@ -283,4 +287,3 @@ def get_kafka_manager() -> Optional[KafkaMessageManager]:
         logger.warning("Infrastructure registry not initialized")
         return None
     return _infrastructure_registry.get_kafka_manager()
-
