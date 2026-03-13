@@ -154,46 +154,12 @@ setup_exception_handlers(app)
 app.include_router(api_router)
 
 
-if __name__ == "__main__":
-    import asyncio
-    import sys
+def main() -> None:
+    """Python 3.13 runtime entrypoint."""
     import uvicorn
 
-    try:
-        # 首先尝试原始方式
-        uvicorn.run(app, host="0.0.0.0", port=8000)
-    except TypeError as e:
-        if "loop_factory" in str(e):
-            print(f"⚠️  检测到Python 3.13兼容性问题，使用修复模式启动...")
-            print(f"🔧 错误详情: {e}")
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=False)
 
-            # Python 3.13兼容方式：手动创建服务器并启动
-            config = uvicorn.Config(
-                app,
-                host="0.0.0.0",
-                port=8000,
-                log_level="info",
-                access_log=True
-            )
-            server = uvicorn.Server(config)
 
-            # 在Python 3.13中使用兼容的启动方式
-            if sys.version_info >= (3, 13):
-                # 直接调用serve方法而不是通过asyncio.run
-                import asyncio
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    loop.run_until_complete(server.serve())
-                finally:
-                    loop.close()
-            else:
-                # 旧版本Python
-                asyncio.run(server.serve())
-
-        else:
-            # 其他TypeError，重新抛出
-            raise
-    except Exception as e:
-        print(f"❌ 启动失败: {e}")
-        raise
+if __name__ == "__main__":
+    main()
