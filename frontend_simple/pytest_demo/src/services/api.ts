@@ -1,4 +1,4 @@
-import type { LoginRequest, LoginResponse, ApiResponse, CreateTestCaseRequest, TestCaseResponse, ListTestCasesParams, DispatchTaskRequest, DispatchTaskResponse, ExecutionAgent, ListAgentsParams } from '../types';
+import type { LoginRequest, LoginResponse, ApiResponse, CreateTestCaseRequest, TestCaseResponse, ListTestCasesParams, DispatchTaskRequest, DispatchTaskResponse, ExecutionAgent, ListAgentsParams, CreateAutomationTestCaseRequest, AutomationTestCaseResponse, ListAutomationTestCasesParams } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
 
@@ -122,6 +122,36 @@ class ApiClient {
 
   async getAgent(agentId: string): Promise<ApiResponse<ExecutionAgent>> {
     return this.request<ExecutionAgent>(`/execution/agents/${agentId}`, {
+      method: 'GET',
+    });
+  }
+
+  async createAutomationTestCase(data: CreateAutomationTestCaseRequest): Promise<ApiResponse<AutomationTestCaseResponse>> {
+    return this.request<AutomationTestCaseResponse>('/automation-test-cases', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async listAutomationTestCases(params: ListAutomationTestCasesParams = {}): Promise<ApiResponse<AutomationTestCaseResponse[]>> {
+    const queryParams = new URLSearchParams();
+    
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        queryParams.append(key, String(value));
+      }
+    });
+
+    const queryString = queryParams.toString();
+    const endpoint = `/automation-test-cases${queryString ? `?${queryString}` : ''}`;
+    
+    return this.request<AutomationTestCaseResponse[]>(endpoint, {
+      method: 'GET',
+    });
+  }
+
+  async getAutomationTestCase(autoCaseId: string): Promise<ApiResponse<AutomationTestCaseResponse>> {
+    return this.request<AutomationTestCaseResponse>(`/automation-test-cases/${autoCaseId}`, {
       method: 'GET',
     });
   }

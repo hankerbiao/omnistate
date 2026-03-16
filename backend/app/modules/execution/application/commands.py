@@ -18,6 +18,8 @@ class DispatchExecutionTaskCommand:
     # 测试用例信息
     case_ids: List[str]
     agent_id: Optional[str] = None
+    schedule_type: str = "IMMEDIATE"
+    planned_at: Optional[datetime] = None
 
     # 任务配置
     callback_url: Optional[str] = None
@@ -40,6 +42,8 @@ class DispatchExecutionTaskCommand:
             "framework": self.framework,
             "trigger_source": self.trigger_source,
             "agent_id": self.agent_id,
+            "schedule_type": self.schedule_type,
+            "planned_at": self.planned_at.isoformat() if self.planned_at else None,
             "callback_url": self.callback_url,
             "dut": self.dut or {},
             "cases": [{"case_id": cid} for cid in self.case_ids],

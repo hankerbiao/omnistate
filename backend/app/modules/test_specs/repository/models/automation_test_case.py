@@ -26,7 +26,6 @@ class AutomationTestCaseDoc(Document):
     maintainer_id: Optional[str] = Field(None, description="维护人")
     reviewer_id: Optional[str] = Field(None, description="评审人")
     description: Optional[str] = Field(None, description="描述")
-    assertions: List[str] = Field(default_factory=list, description="断言清单")
     is_deleted: bool = Field(default=False, description="逻辑删除标志")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -70,7 +69,6 @@ class AutomationTestCaseModel(BaseModel):
     maintainer_id: Optional[str] = None
     reviewer_id: Optional[str] = None
     description: Optional[str] = None
-    assertions: List[str]
     created_at: datetime
     updated_at: datetime
 

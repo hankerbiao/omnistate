@@ -184,7 +184,6 @@ class CreateAutomationTestCaseRequest(BaseModel):
     maintainer_id: Optional[str] = Field(None, description="维护人")
     reviewer_id: Optional[str] = Field(None, description="评审人")
     description: Optional[str] = Field(None, description="描述")
-    assertions: List[str] = Field(default_factory=list, description="断言清单")
 
     model_config = ConfigDict(extra="forbid")
 
@@ -207,6 +206,5 @@ class AutomationTestCaseResponse(BaseModel):
     maintainer_id: Optional[str] = Field(None, description="维护人")
     reviewer_id: Optional[str] = Field(None, description="评审人")
     description: Optional[str] = Field(None, description="描述")
-    assertions: List[str] = Field(..., description="断言清单")
     created_at: datetime = Field(..., description="创建时间")
     updated_at: datetime = Field(..., description="更新时间")

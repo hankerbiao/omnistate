@@ -16,6 +16,8 @@ class ExecutionTaskDoc(Document):
     agent_id: Optional[str] = Field(None, description="目标代理 ID")
     dispatch_channel: str = Field(default="KAFKA", description="下发通道")
     dedup_key: Optional[str] = Field(None, description="业务去重键")
+    schedule_type: str = Field(default="IMMEDIATE", description="调度类型")
+    schedule_status: str = Field(default="READY", description="调度状态")
     dispatch_status: str = Field(default="PENDING", description="下发状态")
     consume_status: str = Field(default="PENDING", description="消费状态")
     overall_status: str = Field(default="QUEUED", description="总体执行状态")
@@ -25,6 +27,8 @@ class ExecutionTaskDoc(Document):
     created_by: str = Field(..., description="创建者 user_id")
     case_count: int = Field(default=0, description="任务包含用例数量")
     reported_case_count: int = Field(default=0, description="已上报进度的用例数")
+    planned_at: Optional[datetime] = None
+    triggered_at: Optional[datetime] = None
     started_at: Optional[datetime] = None
     finished_at: Optional[datetime] = None
     last_callback_at: Optional[datetime] = None
@@ -46,12 +50,15 @@ class ExecutionTaskDoc(Document):
             IndexModel("agent_id"),
             IndexModel("dispatch_channel"),
             IndexModel("dedup_key"),
+            IndexModel("schedule_type"),
+            IndexModel("schedule_status"),
             IndexModel("dispatch_status"),
             IndexModel("consume_status"),
             IndexModel("overall_status"),
             IndexModel("created_by"),
             IndexModel("is_deleted"),
             IndexModel([("dedup_key", ASCENDING), ("consume_status", ASCENDING)]),
+            IndexModel([("schedule_status", ASCENDING), ("planned_at", ASCENDING)]),
             IndexModel([("created_by", ASCENDING), ("created_at", DESCENDING)]),
             IndexModel([("overall_status", ASCENDING), ("created_at", DESCENDING)]),
             IndexModel([("dispatch_status", ASCENDING), ("created_at", DESCENDING)]),

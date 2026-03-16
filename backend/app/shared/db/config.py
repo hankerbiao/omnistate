@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     EXECUTION_DISPATCH_MODE: str = "kafka"  # kafka | http
     EXECUTION_AGENT_DISPATCH_PATH: str = "/api/v1/execution/tasks/dispatch"
     EXECUTION_HTTP_TIMEOUT_SEC: int = 10
+    EXECUTION_SCHEDULER_INTERVAL_SEC: int = 5
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

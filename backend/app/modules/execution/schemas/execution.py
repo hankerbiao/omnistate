@@ -13,6 +13,8 @@ class DispatchTaskRequest(BaseModel):
     framework: str = Field(..., description="执行框架标识")
     agent_id: Optional[str] = Field(None, description="目标代理 ID，HTTP 直连模式下必填")
     trigger_source: Optional[str] = Field(default="manual", description="触发来源")
+    schedule_type: str = Field(default="IMMEDIATE", description="调度类型：IMMEDIATE/SCHEDULED")
+    planned_at: Optional[datetime] = Field(None, description="计划执行时间（UTC）")
     callback_url: Optional[str] = Field(None, description="框架回调地址")
     dut: Dict[str, Any] = Field(default_factory=dict)
     cases: List[DispatchCaseItem] = Field(default_factory=list)
@@ -27,11 +29,44 @@ class DispatchTaskResponse(BaseModel):
     agent_id: Optional[str] = None
     dispatch_channel: str
     dedup_key: Optional[str] = None
+    schedule_type: str
+    schedule_status: str
     dispatch_status: str
     consume_status: str
     overall_status: str
     case_count: int
+    planned_at: Optional[datetime] = None
+    triggered_at: Optional[datetime] = None
     created_at: datetime
+
+
+class UpdateScheduledTaskRequest(BaseModel):
+    agent_id: Optional[str] = Field(None, description="目标代理 ID")
+    planned_at: Optional[datetime] = Field(None, description="新的计划执行时间（UTC）")
+    callback_url: Optional[str] = Field(None, description="框架回调地址")
+    dut: Optional[Dict[str, Any]] = Field(None)
+    cases: Optional[List[DispatchCaseItem]] = Field(None, description="新的测试用例列表")
+    runtime_config: Optional[Dict[str, Any]] = Field(None)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class ScheduledTaskMutationResponse(BaseModel):
+    task_id: str
+    external_task_id: Optional[str] = None
+    agent_id: Optional[str] = None
+    dispatch_channel: Optional[str] = None
+    dedup_key: Optional[str] = None
+    schedule_type: str
+    schedule_status: str
+    dispatch_status: str
+    overall_status: str
+    consume_status: Optional[str] = None
+    case_count: Optional[int] = None
+    planned_at: Optional[datetime] = None
+    triggered_at: Optional[datetime] = None
+    created_at: Optional[datetime] = None
+    updated_at: datetime
 
 
 class ConsumeAckRequest(BaseModel):

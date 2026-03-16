@@ -12,7 +12,6 @@ from app.modules.execution.application.commands import DispatchExecutionTaskComm
 from app.modules.execution.repository.models import ExecutionAgentDoc
 from app.shared.core.logger import log as logger
 from app.shared.db.config import settings
-from app.shared.infrastructure import get_kafka_manager
 from app.shared.kafka import TaskMessage
 
 
@@ -37,6 +36,8 @@ class ExecutionTaskDispatcher:
         return self._dispatch_via_kafka(command)
 
     def _dispatch_via_kafka(self, command: DispatchExecutionTaskCommand) -> DispatchResult:
+        from app.shared.infrastructure import get_kafka_manager
+
         kafka_manager = get_kafka_manager()
         if not kafka_manager:
             return DispatchResult(

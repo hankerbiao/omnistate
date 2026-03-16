@@ -7,6 +7,8 @@ from .execution import (
     DispatchTaskRequest,
     DispatchTaskResponse,
     ExecutionAgentResponse,
+    ScheduledTaskMutationResponse,
+    UpdateScheduledTaskRequest,
 )
 
 
@@ -18,4 +20,6 @@ __all__ = [
     "DispatchTaskRequest",
     "DispatchTaskResponse",
     "ExecutionAgentResponse",
+    "ScheduledTaskMutationResponse",
+    "UpdateScheduledTaskRequest",
 ]

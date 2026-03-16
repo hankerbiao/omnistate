@@ -11,7 +11,7 @@ from app.modules.execution.repository.models import (
     ExecutionTaskCaseDoc,
     ExecutionTaskDoc,
 )
-from app.modules.execution.service import ExecutionTaskDispatcher
+from app.modules.execution.service.task_dispatcher import ExecutionTaskDispatcher
 from app.modules.test_specs.repository.models import TestCaseDoc
 from app.shared.core.logger import log as logger
 from app.shared.db.config import settings
@@ -30,6 +30,8 @@ class ExecutionService:
             "framework": command.framework,
             "agent_id": command.agent_id,
             "trigger_source": command.trigger_source,
+            "schedule_type": command.schedule_type,
+            "planned_at": command.planned_at.isoformat() if command.planned_at else None,
             "callback_url": command.callback_url,
             "dut": command.dut or {},
             "runtime_config": command.runtime_config or {},
@@ -44,6 +46,27 @@ class ExecutionService:
         if value.tzinfo is None or value.tzinfo.utcoffset(value) is None:
             return value.replace(tzinfo=timezone.utc)
         return value.astimezone(timezone.utc)
+
+    @classmethod
+    def _normalize_schedule(
+        cls,
+        schedule_type: str | None,
+        planned_at: datetime | None,
+        now: datetime | None = None,
+    ) -> tuple[str, datetime | None, str, bool]:
+        """统一调度类型和状态。"""
+        current_time = cls._ensure_utc_datetime(now or datetime.now(timezone.utc))
+        normalized_type = (schedule_type or "IMMEDIATE").upper()
+        normalized_planned_at = cls._ensure_utc_datetime(planned_at) if planned_at else None
+
+        if normalized_type == "SCHEDULED":
+            if normalized_planned_at is None:
+                raise ValueError("planned_at is required when schedule_type is SCHEDULED")
+            if normalized_planned_at <= current_time:
+                return normalized_type, normalized_planned_at, "READY", True
+            return normalized_type, normalized_planned_at, "PENDING", False
+
+        return "IMMEDIATE", normalized_planned_at, "READY", True
 
     @classmethod
     def _resolve_agent_runtime_status(
@@ -81,6 +104,78 @@ class ExecutionService:
         data["status"] = resolved_status
         data["is_online"] = is_online
         return data
+
+    @staticmethod
+    async def _load_case_docs(case_ids: List[str]) -> Dict[str, Any]:
+        """加载并校验任务关联的测试用例。"""
+        docs = await TestCaseDoc.find({
+            "case_id": {"$in": case_ids},
+            "is_deleted": False,
+        }).to_list()
+        doc_map = {doc.case_id: doc for doc in docs}
+        missing = [cid for cid in case_ids if cid not in doc_map]
+        if missing:
+            raise KeyError(f"Test cases not found: {missing}")
+        return doc_map
+
+    @staticmethod
+    async def _replace_task_case_docs(
+        task_id: str,
+        case_ids: List[str],
+        doc_map: Dict[str, Any],
+    ) -> None:
+        """重建尚未触发任务的 case 明细快照。"""
+        existing_docs = await ExecutionTaskCaseDoc.find({"task_id": task_id}).to_list()
+        for existing_doc in existing_docs:
+            await existing_doc.delete()
+
+        for case_id in case_ids:
+            case_doc = doc_map[case_id]
+            snapshot = {
+                "case_id": case_doc.case_id,
+                "title": case_doc.title,
+                "version": case_doc.version,
+                "priority": case_doc.priority,
+                "status": getattr(case_doc, "status", "待执行"),
+            }
+            await ExecutionTaskCaseDoc(
+                task_id=task_id,
+                case_id=case_id,
+                case_snapshot=snapshot,
+                status="QUEUED",
+                last_seq=0,
+            ).insert()
+
+    @staticmethod
+    def _ensure_pending_scheduled_task(task_doc: ExecutionTaskDoc) -> None:
+        """限制取消/修改仅作用于未触发的定时任务。"""
+        if task_doc.schedule_type != "SCHEDULED":
+            raise ValueError(f"Task {task_doc.task_id} is not a scheduled task")
+        if task_doc.schedule_status != "PENDING":
+            raise ValueError(
+                f"Task {task_doc.task_id} cannot be changed in schedule_status {task_doc.schedule_status}"
+            )
+
+    async def _dispatch_existing_task(
+        self,
+        task_doc: ExecutionTaskDoc,
+        command: DispatchExecutionTaskCommand,
+    ) -> None:
+        """对已有任务执行真正下发。"""
+        dispatch_result = await self._dispatcher.dispatch(command)
+        task_doc.dispatch_channel = dispatch_result.channel
+        task_doc.dispatch_status = "DISPATCHED" if dispatch_result.success else "DISPATCH_FAILED"
+        task_doc.dispatch_error = dispatch_result.error
+        task_doc.dispatch_response = dispatch_result.response
+        task_doc.schedule_status = "TRIGGERED" if dispatch_result.success else "FAILED"
+        if dispatch_result.success and not task_doc.triggered_at:
+            task_doc.triggered_at = datetime.now(timezone.utc)
+        await task_doc.save()
+
+        if dispatch_result.success:
+            logger.info(f"Successfully dispatched task {command.task_id} via {dispatch_result.channel}")
+        else:
+            logger.warning(f"Failed to dispatch task {command.task_id} via {dispatch_result.channel}")
 
     async def register_agent(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """注册或更新代理静态信息。"""
@@ -181,15 +276,16 @@ class ExecutionService:
             raise ValueError("Actor identity mismatch")
 
         case_ids = command.case_ids
-        docs = await TestCaseDoc.find({
-            "case_id": {"$in": case_ids},
-            "is_deleted": False
-        }).to_list()
+        doc_map = await self._load_case_docs(case_ids)
 
-        doc_map = {doc.case_id: doc for doc in docs}
-        missing = [cid for cid in case_ids if cid not in doc_map]
-        if missing:
-            raise KeyError(f"Test cases not found: {missing}")
+        now = datetime.now(timezone.utc)
+        schedule_type, planned_at, schedule_status, should_dispatch_now = self._normalize_schedule(
+            command.schedule_type,
+            command.planned_at,
+            now=now,
+        )
+        command.schedule_type = schedule_type
+        command.planned_at = planned_at
 
         dedup_key = self._build_dedup_key(command)
         pending_task = await ExecutionTaskDoc.find_one({
@@ -209,7 +305,9 @@ class ExecutionService:
             agent_id=command.agent_id,
             dispatch_channel=(settings.EXECUTION_DISPATCH_MODE or "kafka").strip().upper(),
             dedup_key=dedup_key,
-            dispatch_status="DISPATCHING",
+            schedule_type=schedule_type,
+            schedule_status=schedule_status,
+            dispatch_status="DISPATCHING" if should_dispatch_now else "PENDING",
             consume_status="PENDING",
             overall_status="QUEUED",
             request_payload=command.kafka_task_data,
@@ -218,51 +316,152 @@ class ExecutionService:
             created_by=command.created_by,
             case_count=len(case_ids),
             reported_case_count=0,
+            planned_at=planned_at,
         )
         await task_doc.insert()
 
-        for cid in case_ids:
-            case_doc = doc_map[cid]
-            snapshot = {
-                "case_id": case_doc.case_id,
-                "title": case_doc.title,
-                "version": case_doc.version,
-                "priority": case_doc.priority,
-                "status": getattr(case_doc, "status", "待执行"),
-            }
+        await self._replace_task_case_docs(command.task_id, case_ids, doc_map)
 
-            await ExecutionTaskCaseDoc(
-                task_id=command.task_id,
-                case_id=cid,
-                case_snapshot=snapshot,
-                status="QUEUED",
-                last_seq=0,
-            ).insert()
+        if should_dispatch_now:
+            await self._dispatch_existing_task(task_doc, command)
 
-        dispatch_result = await self._dispatcher.dispatch(command)
-        task_doc.dispatch_channel = dispatch_result.channel
-        task_doc.dispatch_status = "DISPATCHED" if dispatch_result.success else "DISPATCH_FAILED"
-        task_doc.dispatch_error = dispatch_result.error
-        task_doc.dispatch_response = dispatch_result.response
-
-        if dispatch_result.success:
-            logger.info(f"Successfully dispatched task {command.task_id} via {dispatch_result.channel}")
-        else:
-            logger.warning(f"Failed to dispatch task {command.task_id} via {dispatch_result.channel}")
-
-        await task_doc.save()
         return {
             "task_id": task_doc.task_id,
             "external_task_id": task_doc.external_task_id,
             "agent_id": task_doc.agent_id,
             "dispatch_channel": task_doc.dispatch_channel,
             "dedup_key": task_doc.dedup_key,
+            "schedule_type": task_doc.schedule_type,
+            "schedule_status": task_doc.schedule_status,
             "dispatch_status": task_doc.dispatch_status,
             "consume_status": task_doc.consume_status,
             "overall_status": task_doc.overall_status,
             "case_count": task_doc.case_count,
+            "planned_at": task_doc.planned_at,
+            "triggered_at": task_doc.triggered_at,
             "created_at": task_doc.created_at,
             "message": task_doc.dispatch_response.get("message", ""),
+        }
+
+    async def cancel_scheduled_task(self, task_id: str, actor_id: str) -> Dict[str, Any]:
+        """取消未触发的定时任务。"""
+        task_doc = await ExecutionTaskDoc.find_one({"task_id": task_id, "is_deleted": False})
+        if not task_doc:
+            raise KeyError(f"Task not found: {task_id}")
+        if actor_id != task_doc.created_by:
+            raise ValueError("Actor identity mismatch")
+
+        self._ensure_pending_scheduled_task(task_doc)
+        task_doc.schedule_status = "CANCELLED"
+        task_doc.dispatch_status = "CANCELLED"
+        task_doc.overall_status = "CANCELLED"
+        await task_doc.save()
+
+        return {
+            "task_id": task_doc.task_id,
+            "schedule_type": task_doc.schedule_type,
+            "schedule_status": task_doc.schedule_status,
+            "dispatch_status": task_doc.dispatch_status,
+            "overall_status": task_doc.overall_status,
+            "planned_at": task_doc.planned_at,
+            "triggered_at": task_doc.triggered_at,
+            "updated_at": task_doc.updated_at,
+        }
+
+    async def update_scheduled_task(
+        self,
+        task_id: str,
+        actor_id: str,
+        payload: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """修改未触发的定时任务。"""
+        task_doc = await ExecutionTaskDoc.find_one({"task_id": task_id, "is_deleted": False})
+        if not task_doc:
+            raise KeyError(f"Task not found: {task_id}")
+        if actor_id != task_doc.created_by:
+            raise ValueError("Actor identity mismatch")
+
+        self._ensure_pending_scheduled_task(task_doc)
+
+        request_payload = dict(task_doc.request_payload or {})
+        case_items = payload.get("cases")
+        case_ids = [item["case_id"] for item in case_items] if case_items is not None else [
+            case["case_id"] for case in request_payload.get("cases", [])
+        ]
+        if not case_ids:
+            raise ValueError("cases cannot be empty")
+
+        doc_map = await self._load_case_docs(case_ids)
+        planned_at = payload.get("planned_at", task_doc.planned_at)
+        agent_id = payload.get("agent_id", task_doc.agent_id)
+        callback_url = payload.get("callback_url", request_payload.get("callback_url"))
+        dut = payload.get("dut", request_payload.get("dut", {}))
+        runtime_config = payload.get("runtime_config", request_payload.get("runtime_config", {}))
+        trigger_source = request_payload.get("trigger_source", "manual")
+
+        schedule_type, normalized_planned_at, schedule_status, should_dispatch_now = self._normalize_schedule(
+            task_doc.schedule_type,
+            planned_at,
+        )
+
+        command = DispatchExecutionTaskCommand(
+            task_id=task_doc.task_id,
+            external_task_id=task_doc.external_task_id or f"EXT-{task_doc.task_id}",
+            framework=task_doc.framework,
+            agent_id=agent_id,
+            trigger_source=trigger_source,
+            created_by=task_doc.created_by,
+            case_ids=case_ids,
+            schedule_type=schedule_type,
+            planned_at=normalized_planned_at,
+            callback_url=callback_url,
+            dut=dut,
+            runtime_config=runtime_config,
+        )
+        dedup_key = self._build_dedup_key(command)
+        pending_task = await ExecutionTaskDoc.find_one({
+            "dedup_key": dedup_key,
+            "consume_status": "PENDING",
+            "task_id": {"$ne": task_doc.task_id},
+            "is_deleted": False,
+        })
+        if pending_task:
+            raise ValueError(
+                f"Task already dispatched and not yet consumed: existing_task_id={pending_task.task_id}"
+            )
+
+        task_doc.agent_id = agent_id
+        task_doc.dedup_key = dedup_key
+        task_doc.case_count = len(case_ids)
+        task_doc.planned_at = normalized_planned_at
+        task_doc.schedule_type = schedule_type
+        task_doc.schedule_status = schedule_status
+        task_doc.dispatch_status = "DISPATCHING" if should_dispatch_now else "PENDING"
+        task_doc.request_payload = command.kafka_task_data
+        task_doc.dispatch_error = None
+        task_doc.dispatch_response = {}
+        await task_doc.save()
+        await self._replace_task_case_docs(task_doc.task_id, case_ids, doc_map)
+
+        if should_dispatch_now:
+            await self._dispatch_existing_task(task_doc, command)
+
+        return {
+            "task_id": task_doc.task_id,
+            "external_task_id": task_doc.external_task_id,
+            "agent_id": task_doc.agent_id,
+            "dispatch_channel": task_doc.dispatch_channel,
+            "dedup_key": task_doc.dedup_key,
+            "schedule_type": task_doc.schedule_type,
+            "schedule_status": task_doc.schedule_status,
+            "dispatch_status": task_doc.dispatch_status,
+            "consume_status": task_doc.consume_status,
+            "overall_status": task_doc.overall_status,
+            "case_count": task_doc.case_count,
+            "planned_at": task_doc.planned_at,
+            "triggered_at": task_doc.triggered_at,
+            "created_at": task_doc.created_at,
+            "updated_at": task_doc.updated_at,
         }
 
     async def ack_task_consumed(self, task_id: str, consumer_id: str | None = None) -> Dict[str, Any]:
@@ -306,10 +505,14 @@ class ExecutionService:
             "agent_id": task_doc.agent_id,
             "dispatch_channel": task_doc.dispatch_channel,
             "dedup_key": task_doc.dedup_key,
+            "schedule_type": task_doc.schedule_type,
+            "schedule_status": task_doc.schedule_status,
             "dispatch_status": task_doc.dispatch_status,
             "consume_status": task_doc.consume_status,
             "overall_status": task_doc.overall_status,
             "case_count": task_doc.case_count,
+            "planned_at": task_doc.planned_at,
+            "triggered_at": task_doc.triggered_at,
             "created_at": task_doc.created_at,
             "updated_at": task_doc.updated_at,
             "consumed_at": task_doc.consumed_at,
@@ -330,6 +533,9 @@ class ExecutionService:
             logger.warning(f"Actor ID mismatch on retry: actor={actor_id}, task.created_by={task_doc.created_by}")
             raise ValueError("Actor identity mismatch")
 
+        if task_doc.schedule_type == "SCHEDULED" and task_doc.schedule_status == "PENDING":
+            raise ValueError(f"Task {task_id} cannot be retried before scheduled trigger")
+
         command = DispatchExecutionTaskCommand(
             task_id=task_doc.task_id,
             external_task_id=task_doc.external_task_id or f"EXT-{task_doc.task_id}",
@@ -338,28 +544,27 @@ class ExecutionService:
             trigger_source=task_doc.request_payload.get("trigger_source", "manual"),
             created_by=task_doc.created_by,
             case_ids=[case["case_id"] for case in task_doc.request_payload.get("cases", [])],
+            schedule_type=task_doc.schedule_type,
+            planned_at=self._ensure_utc_datetime(task_doc.planned_at) if task_doc.planned_at else None,
             callback_url=task_doc.request_payload.get("callback_url"),
             dut=task_doc.request_payload.get("dut"),
             runtime_config=task_doc.request_payload.get("runtime_config"),
             kafka_task_data=task_doc.request_payload,
         )
-        dispatch_result = await self._dispatcher.dispatch(command)
-
-        task_doc.dispatch_channel = dispatch_result.channel
-        task_doc.dispatch_status = "DISPATCHED" if dispatch_result.success else "DISPATCH_FAILED"
+        task_doc.schedule_status = "READY"
+        task_doc.triggered_at = None
+        await self._dispatch_existing_task(task_doc, command)
         task_doc.consume_status = "PENDING"
         task_doc.consumed_at = None
-        task_doc.dispatch_error = dispatch_result.error
-        task_doc.dispatch_response = dispatch_result.response
         await task_doc.save()
 
-        if dispatch_result.success:
+        if task_doc.dispatch_status == "DISPATCHED":
             logger.info(f"Task {task_id} retried successfully")
         else:
             logger.warning(f"Task {task_id} retry failed")
 
         return {
             "task_id": task_doc.task_id,
-            "status": "retried" if dispatch_result.success else "retry_failed",
+            "status": "retried" if task_doc.dispatch_status == "DISPATCHED" else "retry_failed",
             "message": task_doc.dispatch_response["message"],
         }

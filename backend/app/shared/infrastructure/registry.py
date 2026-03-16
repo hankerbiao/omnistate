@@ -5,12 +5,14 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
+from app.modules.execution.service.task_scheduler import ExecutionTaskScheduler
 from app.shared.core.logger import log as logger
 from app.shared.db.config import settings
 from app.shared.kafka import KafkaMessageManager, load_kafka_config
 
 
 KAFKA_COMPONENT = "kafka_manager"
+EXECUTION_SCHEDULER_COMPONENT = "execution_task_scheduler"
 
 
 @dataclass
@@ -29,6 +31,8 @@ class InfrastructureRegistry:
 
     def __init__(self) -> None:
         self.kafka_manager: KafkaMessageManager | None = None
+        self.execution_task_scheduler = ExecutionTaskScheduler()
+        self.execution_scheduler_task: asyncio.Task | None = None
         self._component_status: dict[str, InfrastructureStatus] = {}
         self._initialization_lock = asyncio.Lock()
         self._is_initialized = False
@@ -48,6 +52,8 @@ class InfrastructureRegistry:
                     "SKIPPED",
                     health_details={"dispatch_mode": dispatch_mode},
                 )
+                self.execution_scheduler_task = asyncio.create_task(self._run_execution_scheduler_loop())
+                self._set_component_status(EXECUTION_SCHEDULER_COMPONENT, "RUNNING")
                 self._is_initialized = True
                 logger.info(f"Skipping Kafka initialization because dispatch mode is {dispatch_mode}")
                 return
@@ -66,6 +72,8 @@ class InfrastructureRegistry:
                 self.kafka_manager.start()
 
                 self._set_component_status(KAFKA_COMPONENT, "RUNNING")
+                self.execution_scheduler_task = asyncio.create_task(self._run_execution_scheduler_loop())
+                self._set_component_status(EXECUTION_SCHEDULER_COMPONENT, "RUNNING")
                 self._is_initialized = True
                 logger.success("Application infrastructure initialized successfully")
             except Exception as e:
@@ -90,6 +98,14 @@ class InfrastructureRegistry:
             if self.kafka_manager:
                 self.kafka_manager.stop()
                 self.kafka_manager = None
+            if self.execution_scheduler_task:
+                self.execution_scheduler_task.cancel()
+                try:
+                    await self.execution_scheduler_task
+                except asyncio.CancelledError:
+                    pass
+                self.execution_scheduler_task = None
+            self._set_component_status(EXECUTION_SCHEDULER_COMPONENT, "STOPPED")
             self._set_component_status(KAFKA_COMPONENT, "STOPPED")
             logger.success("Application infrastructure shutdown completed")
         except Exception as e:
@@ -120,6 +136,22 @@ class InfrastructureRegistry:
     def get_kafka_manager(self) -> KafkaMessageManager | None:
         return self.kafka_manager if self._is_initialized else None
 
+    async def _run_execution_scheduler_loop(self) -> None:
+        interval = max(int(settings.EXECUTION_SCHEDULER_INTERVAL_SEC), 1)
+        while True:
+            try:
+                await self.execution_task_scheduler.dispatch_due_tasks()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                self._set_component_status(
+                    EXECUTION_SCHEDULER_COMPONENT,
+                    "ERROR",
+                    error_message=str(exc),
+                )
+                logger.exception(f"Execution task scheduler loop failed: {exc}")
+            await asyncio.sleep(interval)
+
     async def health_check(self) -> dict[str, Any]:
         logger.debug("Performing infrastructure health check...")
 
@@ -148,6 +180,10 @@ class InfrastructureRegistry:
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "components": {
                 KAFKA_COMPONENT: kafka_health,
+                EXECUTION_SCHEDULER_COMPONENT: {
+                    "status": "RUNNING" if self.execution_scheduler_task else "STOPPED",
+                    "message": "Execution task scheduler status",
+                },
             },
         }
 

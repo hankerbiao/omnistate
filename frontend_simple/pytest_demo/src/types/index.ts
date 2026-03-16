@@ -178,3 +178,51 @@ export interface ListAgentsParams {
   status?: string;
   online_only?: boolean;
 }
+
+export interface CreateAutomationTestCaseRequest {
+  auto_case_id?: string;
+  name: string;
+  version?: string;
+  status?: string;
+  framework?: string;
+  automation_type?: string;
+  repo_url?: string;
+  repo_branch?: string;
+  script_entity_id?: string;
+  entry_command?: string;
+  runtime_env?: Record<string, unknown>;
+  tags?: string[];
+  maintainer_id?: string;
+  reviewer_id?: string;
+  description?: string;
+}
+
+export interface AutomationTestCaseResponse {
+  id: string;
+  auto_case_id: string;
+  name: string;
+  version: string;
+  status: string;
+  framework?: string;
+  automation_type?: string;
+  repo_url?: string;
+  repo_branch?: string;
+  script_entity_id?: string;
+  entry_command?: string;
+  runtime_env: Record<string, unknown>;
+  tags: string[];
+  maintainer_id?: string;
+  reviewer_id?: string;
+  description?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ListAutomationTestCasesParams {
+  framework?: string;
+  automation_type?: string;
+  status?: string;
+  maintainer_id?: string;
+  limit?: number;
+  offset?: number;
+}

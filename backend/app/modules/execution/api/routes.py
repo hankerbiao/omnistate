@@ -13,6 +13,8 @@ from app.modules.execution.schemas import (
     DispatchTaskRequest,
     DispatchTaskResponse,
     ExecutionAgentResponse,
+    ScheduledTaskMutationResponse,
+    UpdateScheduledTaskRequest,
 )
 from app.modules.execution.application.execution_service import ExecutionService
 from app.modules.execution.application.commands import DispatchExecutionTaskCommand
@@ -30,6 +32,14 @@ def get_execution_service() -> ExecutionService:
 ExecutionServiceDep = Annotated[ExecutionService, Depends(get_execution_service)]
 
 
+def get_sequence_id_service() -> SequenceIdService:
+    """提供可覆盖的序列号服务依赖，便于接口测试。"""
+    return SequenceIdService()
+
+
+SequenceIdServiceDep = Annotated[SequenceIdService, Depends(get_sequence_id_service)]
+
+
 @router.post(
     "/tasks/dispatch",
     response_model=APIResponse[DispatchTaskResponse],
@@ -40,13 +50,14 @@ ExecutionServiceDep = Annotated[ExecutionService, Depends(get_execution_service)
 async def dispatch_task(
         request: DispatchTaskRequest,
         service: ExecutionServiceDep,
+        sequence_service: SequenceIdServiceDep,
         current_user=Depends(get_current_user),
 ):
     """分发测试任务。"""
     try:
         # 生成任务ID
         year = datetime.now().year
-        seq = await SequenceIdService().next(f"execution_task:{year}")
+        seq = await sequence_service.next(f"execution_task:{year}")
         task_id = f"ET-{year}-{str(seq).zfill(6)}"
         external_task_id = f"EXT-{task_id}"
 
@@ -62,6 +73,8 @@ async def dispatch_task(
             trigger_source=request.trigger_source or "manual",
             created_by=current_user["user_id"],
             case_ids=case_ids,
+            schedule_type=request.schedule_type,
+            planned_at=request.planned_at,
             callback_url=request.callback_url,
             dut=request.dut,
             runtime_config=request.runtime_config,
@@ -99,6 +112,53 @@ async def ack_task_consumed(
         return APIResponse(data=data)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.post(
+    "/tasks/{task_id}/cancel",
+    response_model=APIResponse[ScheduledTaskMutationResponse],
+    summary="取消未触发的定时任务",
+    dependencies=[Depends(require_permission("execution_tasks:write"))],
+)
+async def cancel_scheduled_task(
+        task_id: str,
+        service: ExecutionServiceDep,
+        current_user=Depends(get_current_user),
+):
+    """取消未触发的定时执行任务。"""
+    try:
+        data = await service.cancel_scheduled_task(task_id, actor_id=current_user["user_id"])
+        return APIResponse(data=data)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.put(
+    "/tasks/{task_id}/schedule",
+    response_model=APIResponse[ScheduledTaskMutationResponse],
+    summary="修改未触发的定时任务",
+    dependencies=[Depends(require_permission("execution_tasks:write"))],
+)
+async def update_scheduled_task(
+        task_id: str,
+        request: UpdateScheduledTaskRequest,
+        service: ExecutionServiceDep,
+        current_user=Depends(get_current_user),
+):
+    """修改未触发的定时执行任务。"""
+    try:
+        data = await service.update_scheduled_task(
+            task_id,
+            actor_id=current_user["user_id"],
+            payload=request.model_dump(exclude_none=True),
+        )
+        return APIResponse(data=data)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @router.post(
