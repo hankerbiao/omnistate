@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from app.shared.core.logger import log as logger
+from app.shared.db.config import settings
 from app.shared.kafka import KafkaMessageManager, load_kafka_config
 
 
@@ -40,6 +41,17 @@ class InfrastructureRegistry:
                 return
 
             logger.info("Initializing application infrastructure...")
+            dispatch_mode = (settings.EXECUTION_DISPATCH_MODE or "kafka").strip().lower()
+            if dispatch_mode != "kafka":
+                self._set_component_status(
+                    KAFKA_COMPONENT,
+                    "SKIPPED",
+                    health_details={"dispatch_mode": dispatch_mode},
+                )
+                self._is_initialized = True
+                logger.info(f"Skipping Kafka initialization because dispatch mode is {dispatch_mode}")
+                return
+
             self._set_component_status(KAFKA_COMPONENT, "INITIALIZING")
 
             try:

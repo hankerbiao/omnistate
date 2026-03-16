@@ -162,3 +162,51 @@ class LinkAutomationCaseRequest(BaseModel):
     """测试用例关联自动化用例请求体"""
     auto_case_id: str = Field(..., description="自动化用例库 ID")
     version: Optional[str] = Field(None, description="自动化用例版本（为空时默认最新版本）")
+
+
+class CreateAutomationTestCaseRequest(BaseModel):
+    """创建自动化测试用例请求体。"""
+    auto_case_id: Optional[str] = Field(
+        None,
+        description="自动化用例业务编号（可选，默认由后端生成）",
+    )
+    name: str = Field(..., description="自动化用例名称")
+    version: str = Field("1.0.0", description="自动化用例版本")
+    status: str = Field("ACTIVE", description="状态（ACTIVE/DEPRECATED）")
+    framework: Optional[str] = Field(None, description="自动化框架")
+    automation_type: Optional[str] = Field(None, description="自动化类型")
+    repo_url: Optional[str] = Field(None, description="脚本仓库地址")
+    repo_branch: Optional[str] = Field(None, description="默认分支")
+    script_entity_id: Optional[str] = Field(None, description="脚本实体 ID")
+    entry_command: Optional[str] = Field(None, description="执行入口命令")
+    runtime_env: Dict[str, Any] = Field(default_factory=dict, description="运行环境信息")
+    tags: List[str] = Field(default_factory=list, description="标签")
+    maintainer_id: Optional[str] = Field(None, description="维护人")
+    reviewer_id: Optional[str] = Field(None, description="评审人")
+    description: Optional[str] = Field(None, description="描述")
+    assertions: List[str] = Field(default_factory=list, description="断言清单")
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class AutomationTestCaseResponse(BaseModel):
+    """自动化测试用例响应体。"""
+    id: str = Field(..., description="自动化用例唯一标识 ID")
+    auto_case_id: str = Field(..., description="自动化用例业务编号")
+    name: str = Field(..., description="自动化用例名称")
+    version: str = Field(..., description="自动化用例版本")
+    status: str = Field(..., description="状态")
+    framework: Optional[str] = Field(None, description="自动化框架")
+    automation_type: Optional[str] = Field(None, description="自动化类型")
+    repo_url: Optional[str] = Field(None, description="脚本仓库地址")
+    repo_branch: Optional[str] = Field(None, description="默认分支")
+    script_entity_id: Optional[str] = Field(None, description="脚本实体 ID")
+    entry_command: Optional[str] = Field(None, description="执行入口命令")
+    runtime_env: Dict[str, Any] = Field(..., description="运行环境信息")
+    tags: List[str] = Field(..., description="标签")
+    maintainer_id: Optional[str] = Field(None, description="维护人")
+    reviewer_id: Optional[str] = Field(None, description="评审人")
+    description: Optional[str] = Field(None, description="描述")
+    assertions: List[str] = Field(..., description="断言清单")
+    created_at: datetime = Field(..., description="创建时间")
+    updated_at: datetime = Field(..., description="更新时间")

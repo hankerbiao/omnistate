@@ -33,4 +33,5 @@
 
 ## 备注
 - 创建或更新用例时会校验 `ref_req_id` 是否存在。
+- 自动化用例库当前已提供创建接口：`POST /api/v1/automation-test-cases`
 - 所有时间字段统一使用 UTC。

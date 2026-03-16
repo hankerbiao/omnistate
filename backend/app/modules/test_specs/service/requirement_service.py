@@ -334,7 +334,7 @@ class RequirementService(BaseService):
         workflow_service = AsyncWorkflowService()
 
         async with client.start_session() as session:
-            async with session.start_transaction():
+            async with await session.start_transaction():
                 existing = await TestRequirementDoc.find_one(
                     TestRequirementDoc.req_id == payload["req_id"],
                     session=session,

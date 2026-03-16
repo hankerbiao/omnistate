@@ -7,8 +7,12 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.modules.execution.schemas import (
+    AgentHeartbeatRequest,
+    AgentRegisterRequest,
+    ConsumeAckRequest,
     DispatchTaskRequest,
     DispatchTaskResponse,
+    ExecutionAgentResponse,
 )
 from app.modules.execution.application.execution_service import ExecutionService
 from app.modules.execution.application.commands import DispatchExecutionTaskCommand
@@ -54,6 +58,7 @@ async def dispatch_task(
             task_id=task_id,
             external_task_id=external_task_id,
             framework=request.framework,
+            agent_id=request.agent_id,
             trigger_source=request.trigger_source or "manual",
             created_by=current_user["user_id"],
             case_ids=case_ids,
@@ -69,6 +74,103 @@ async def dispatch_task(
 
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.post(
+    "/tasks/{task_id}/consume-ack",
+    response_model=APIResponse[dict],
+    summary="确认任务已被消费",
+    dependencies=[Depends(require_permission("execution_tasks:write"))],
+)
+async def ack_task_consumed(
+        task_id: str,
+        request: ConsumeAckRequest,
+        service: ExecutionServiceDep,
+        current_user=Depends(get_current_user),
+):
+    """消费者确认已接收到任务。"""
+    try:
+        data = await service.ack_task_consumed(
+            task_id,
+            consumer_id=request.consumer_id or current_user["user_id"],
+        )
+        return APIResponse(data=data)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.post(
+    "/agents/register",
+    response_model=APIResponse[ExecutionAgentResponse],
+    status_code=201,
+    summary="注册或刷新执行代理",
+)
+async def register_agent(
+        request: AgentRegisterRequest,
+        service: ExecutionServiceDep,
+):
+    """执行代理注册接口。"""
+    data = await service.register_agent(request.model_dump())
+    return APIResponse(data=data)
+
+
+@router.post(
+    "/agents/{agent_id}/heartbeat",
+    response_model=APIResponse[ExecutionAgentResponse],
+    summary="上报代理心跳",
+)
+async def heartbeat_agent(
+        agent_id: str,
+        request: AgentHeartbeatRequest,
+        service: ExecutionServiceDep,
+):
+    """执行代理心跳接口。"""
+    try:
+        data = await service.heartbeat_agent(agent_id, request.model_dump())
+        return APIResponse(data=data)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.get(
+    "/agents",
+    response_model=APIResponse[list[ExecutionAgentResponse]],
+    summary="查询执行代理列表",
+    dependencies=[Depends(require_permission("execution_agents:read"))],
+)
+async def list_agents(
+        service: ExecutionServiceDep,
+        region: str | None = None,
+        status: str | None = None,
+        online_only: bool = False,
+        current_user=Depends(get_current_user),
+):
+    """查询执行代理列表。"""
+    data = await service.list_agents(
+        region=region,
+        status=status,
+        online_only=online_only,
+    )
+    return APIResponse(data=data)
+
+
+@router.get(
+    "/agents/{agent_id}",
+    response_model=APIResponse[ExecutionAgentResponse],
+    summary="查询执行代理详情",
+    dependencies=[Depends(require_permission("execution_agents:read"))],
+)
+async def get_agent(
+        agent_id: str,
+        service: ExecutionServiceDep,
+        current_user=Depends(get_current_user),
+):
+    """查询执行代理详情。"""
+    try:
+        data = await service.get_agent(agent_id)
+        return APIResponse(data=data)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
 

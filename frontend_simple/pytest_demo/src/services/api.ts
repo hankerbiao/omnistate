@@ -1,0 +1,130 @@
+import type { LoginRequest, LoginResponse, ApiResponse, CreateTestCaseRequest, TestCaseResponse, ListTestCasesParams, DispatchTaskRequest, DispatchTaskResponse, ExecutionAgent, ListAgentsParams } from '../types';
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
+
+class ApiClient {
+  private baseUrl: string;
+  private token: string | null = null;
+
+  constructor(baseUrl: string) {
+    this.baseUrl = baseUrl;
+    this.loadTokenFromStorage();
+  }
+
+  private loadTokenFromStorage() {
+    const storedToken = localStorage.getItem('jwt_token');
+    if (storedToken) {
+      this.token = storedToken;
+    }
+  }
+
+  setToken(token: string) {
+    this.token = token;
+    localStorage.setItem('jwt_token', token);
+  }
+
+  clearToken() {
+    this.token = null;
+    localStorage.removeItem('jwt_token');
+  }
+
+  private async request<T>(
+    endpoint: string,
+    options: RequestInit = {}
+  ): Promise<ApiResponse<T>> {
+    const url = `${this.baseUrl}${endpoint}`;
+
+    const headers: HeadersInit = {
+      'Content-Type': 'application/json',
+    };
+
+    if (this.token) {
+      headers['Authorization'] = `Bearer ${this.token}`;
+    }
+
+    const config: RequestInit = {
+      ...options,
+      headers: {
+        ...headers,
+        ...options.headers,
+      },
+    };
+
+    try {
+      const response = await fetch(url, config);
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      console.error('API request failed:', error);
+      throw error;
+    }
+  }
+
+  async login(credentials: LoginRequest): Promise<LoginResponse> {
+    return this.request<LoginResponse['data']>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify(credentials),
+    });
+  }
+
+  async listTestCases(params: ListTestCasesParams = {}): Promise<ApiResponse<TestCaseResponse[]>> {
+    const queryParams = new URLSearchParams();
+    
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        queryParams.append(key, String(value));
+      }
+    });
+
+    const queryString = queryParams.toString();
+    const endpoint = `/test-cases${queryString ? `?${queryString}` : ''}`;
+    
+    return this.request<TestCaseResponse[]>(endpoint, {
+      method: 'GET',
+    });
+  }
+
+  async createTestCase(data: CreateTestCaseRequest): Promise<ApiResponse<TestCaseResponse>> {
+    return this.request<TestCaseResponse>('/test-cases', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async dispatchTask(data: DispatchTaskRequest): Promise<ApiResponse<DispatchTaskResponse>> {
+    return this.request<DispatchTaskResponse>('/execution/tasks/dispatch', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async listAgents(params: ListAgentsParams = {}): Promise<ApiResponse<ExecutionAgent[]>> {
+    const queryParams = new URLSearchParams();
+    
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        queryParams.append(key, String(value));
+      }
+    });
+
+    const queryString = queryParams.toString();
+    const endpoint = `/execution/agents${queryString ? `?${queryString}` : ''}`;
+    
+    return this.request<ExecutionAgent[]>(endpoint, {
+      method: 'GET',
+    });
+  }
+
+  async getAgent(agentId: string): Promise<ApiResponse<ExecutionAgent>> {
+    return this.request<ExecutionAgent>(`/execution/agents/${agentId}`, {
+      method: 'GET',
+    });
+  }
+}
+
+export const api = new ApiClient(API_BASE_URL);

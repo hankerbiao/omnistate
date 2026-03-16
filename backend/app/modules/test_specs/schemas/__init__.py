@@ -5,7 +5,9 @@ from .requirement import (
     RequirementResponse,
 )
 from .test_case import (
+    AutomationTestCaseResponse,
     CreateTestCaseRequest,
+    CreateAutomationTestCaseRequest,
     UpdateTestCaseRequest,
     TestCaseResponse,
     LinkAutomationCaseRequest,
@@ -16,6 +18,8 @@ __all__ = [
     "CreateRequirementRequest",
     "UpdateRequirementRequest",
     "RequirementResponse",
+    "AutomationTestCaseResponse",
+    "CreateAutomationTestCaseRequest",
     "CreateTestCaseRequest",
     "UpdateTestCaseRequest",
     "TestCaseResponse",

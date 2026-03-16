@@ -26,6 +26,7 @@ from app.modules.test_specs.repository.models import (
     AutomationTestCaseDoc,
 )
 from app.modules.execution.repository.models import (
+    ExecutionAgentDoc,
     ExecutionTaskDoc,
     ExecutionTaskCaseDoc,
     ExecutionEventDoc,
@@ -96,6 +97,7 @@ async def lifespan(app: FastAPI):
                 TestRequirementDoc,
                 TestCaseDoc,
                 AutomationTestCaseDoc,
+                ExecutionAgentDoc,
                 ExecutionTaskDoc,
                 ExecutionTaskCaseDoc,
                 ExecutionEventDoc,

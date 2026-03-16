@@ -17,6 +17,7 @@ class DispatchExecutionTaskCommand:
 
     # 测试用例信息
     case_ids: List[str]
+    agent_id: Optional[str] = None
 
     # 任务配置
     callback_url: Optional[str] = None
@@ -38,6 +39,7 @@ class DispatchExecutionTaskCommand:
             "external_task_id": self.external_task_id,
             "framework": self.framework,
             "trigger_source": self.trigger_source,
+            "agent_id": self.agent_id,
             "callback_url": self.callback_url,
             "dut": self.dut or {},
             "cases": [{"case_id": cid} for cid in self.case_ids],
