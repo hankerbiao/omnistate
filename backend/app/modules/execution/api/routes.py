@@ -13,6 +13,13 @@ from app.modules.execution.schemas import (
     DispatchTaskRequest,
     DispatchTaskResponse,
     ExecutionAgentResponse,
+    ExecutionCaseStatusReportRequest,
+    ExecutionCaseStatusReportResponse,
+    ExecutionEventReportRequest,
+    ExecutionEventReportResponse,
+    ExecutionTaskCompleteRequest,
+    ExecutionTaskCompleteResponse,
+    ExecutionTaskListItem,
     ScheduledTaskMutationResponse,
     UpdateScheduledTaskRequest,
 )
@@ -109,6 +116,61 @@ async def ack_task_consumed(
             task_id,
             consumer_id=request.consumer_id or current_user["user_id"],
         )
+        return APIResponse(data=data)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.post(
+    "/tasks/{task_id}/events",
+    response_model=APIResponse[ExecutionEventReportResponse],
+    summary="接收任务事件上报",
+)
+async def report_task_event(
+        task_id: str,
+        request: ExecutionEventReportRequest,
+        service: ExecutionServiceDep,
+):
+    """接收代理端上报的任务事件。"""
+    try:
+        data = await service.report_task_event(task_id, request.model_dump())
+        return APIResponse(data=data)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.post(
+    "/tasks/{task_id}/cases/{case_id}/status",
+    response_model=APIResponse[ExecutionCaseStatusReportResponse],
+    summary="接收用例执行状态上报",
+)
+async def report_case_status(
+        task_id: str,
+        case_id: str,
+        request: ExecutionCaseStatusReportRequest,
+        service: ExecutionServiceDep,
+):
+    """接收代理端上报的用例状态和进度。"""
+    try:
+        data = await service.report_case_status(task_id, case_id, request.model_dump())
+        return APIResponse(data=data)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.post(
+    "/tasks/{task_id}/complete",
+    response_model=APIResponse[ExecutionTaskCompleteResponse],
+    summary="接收任务完成结果上报",
+)
+async def complete_task(
+        task_id: str,
+        request: ExecutionTaskCompleteRequest,
+        service: ExecutionServiceDep,
+):
+    """接收代理端上报的任务最终状态。"""
+    try:
+        data = await service.complete_task(task_id, request.model_dump())
         return APIResponse(data=data)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
@@ -233,6 +295,46 @@ async def get_agent(
         return APIResponse(data=data)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.get(
+    "/tasks",
+    response_model=APIResponse[list[ExecutionTaskListItem]],
+    summary="查询执行任务列表",
+    dependencies=[Depends(require_permission("execution_tasks:read"))],
+)
+async def list_tasks(
+        service: ExecutionServiceDep,
+        schedule_type: str | None = None,
+        schedule_status: str | None = None,
+        dispatch_status: str | None = None,
+        consume_status: str | None = None,
+        overall_status: str | None = None,
+        created_by: str | None = None,
+        agent_id: str | None = None,
+        framework: str | None = None,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
+        limit: int = 20,
+        offset: int = 0,
+        current_user=Depends(get_current_user),
+):
+    """查询执行任务列表。"""
+    data = await service.list_tasks(
+        schedule_type=schedule_type,
+        schedule_status=schedule_status,
+        dispatch_status=dispatch_status,
+        consume_status=consume_status,
+        overall_status=overall_status,
+        created_by=created_by,
+        agent_id=agent_id,
+        framework=framework,
+        date_from=date_from,
+        date_to=date_to,
+        limit=limit,
+        offset=offset,
+    )
+    return APIResponse(data=data)
 
 
 @router.get(

@@ -40,6 +40,100 @@ class DispatchTaskResponse(BaseModel):
     created_at: datetime
 
 
+class ExecutionTaskListItem(BaseModel):
+    task_id: str
+    external_task_id: Optional[str] = None
+    framework: str
+    agent_id: Optional[str] = None
+    dispatch_channel: str
+    dedup_key: Optional[str] = None
+    schedule_type: str
+    schedule_status: str
+    dispatch_status: str
+    consume_status: str
+    overall_status: str
+    case_count: int
+    planned_at: Optional[datetime] = None
+    triggered_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class ExecutionEventReportRequest(BaseModel):
+    event_id: str = Field(..., min_length=1, description="事件唯一标识")
+    event_type: str = Field(..., min_length=1, description="事件类型")
+    seq: int = Field(default=0, ge=0, description="事件序号")
+    source_time: Optional[datetime] = Field(None, description="事件源时间（UTC）")
+    payload: Dict[str, Any] = Field(default_factory=dict, description="原始事件载荷")
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class ExecutionEventReportResponse(BaseModel):
+    task_id: str
+    event_id: str
+    event_type: str
+    seq: int
+    received_at: datetime
+    processed: bool
+
+
+class ExecutionCaseStatusReportRequest(BaseModel):
+    status: str = Field(..., min_length=1, description="用例执行状态")
+    event_id: Optional[str] = Field(None, description="事件唯一标识")
+    seq: int = Field(default=0, ge=0, description="事件序号")
+    progress_percent: Optional[float] = Field(None, ge=0, le=100, description="进度百分比")
+    step_total: Optional[int] = Field(None, ge=0)
+    step_passed: Optional[int] = Field(None, ge=0)
+    step_failed: Optional[int] = Field(None, ge=0)
+    step_skipped: Optional[int] = Field(None, ge=0)
+    started_at: Optional[datetime] = Field(None, description="用例开始时间（UTC）")
+    finished_at: Optional[datetime] = Field(None, description="用例结束时间（UTC）")
+    result_data: Dict[str, Any] = Field(default_factory=dict, description="执行结果扩展信息")
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class ExecutionCaseStatusReportResponse(BaseModel):
+    task_id: str
+    case_id: str
+    status: str
+    progress_percent: Optional[float] = None
+    step_total: int
+    step_passed: int
+    step_failed: int
+    step_skipped: int
+    last_seq: int
+    accepted: bool
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
+    updated_at: datetime
+
+
+class ExecutionTaskCompleteRequest(BaseModel):
+    status: str = Field(..., min_length=1, description="任务最终状态")
+    event_id: Optional[str] = Field(None, description="完成事件ID")
+    seq: int = Field(default=0, ge=0, description="完成事件序号")
+    finished_at: Optional[datetime] = Field(None, description="任务结束时间（UTC）")
+    summary: Dict[str, Any] = Field(default_factory=dict, description="任务结果摘要")
+    error_message: Optional[str] = Field(None, description="失败原因")
+    executor: Optional[str] = Field(None, description="执行器标识")
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class ExecutionTaskCompleteResponse(BaseModel):
+    task_id: str
+    overall_status: str
+    dispatch_status: str
+    consume_status: str
+    reported_case_count: int
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
+    last_callback_at: Optional[datetime] = None
+    updated_at: datetime
+
+
 class UpdateScheduledTaskRequest(BaseModel):
     agent_id: Optional[str] = Field(None, description="目标代理 ID")
     planned_at: Optional[datetime] = Field(None, description="新的计划执行时间（UTC）")

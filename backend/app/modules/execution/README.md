@@ -42,8 +42,14 @@
 - `GET /api/v1/execution/agents`：查询代理列表
 - `GET /api/v1/execution/agents/{agent_id}`：查询代理详情
 - `POST /api/v1/execution/tasks/dispatch`：下发测试任务
+- `POST /api/v1/execution/tasks/{task_id}/events`：接收任务事件上报
+- `POST /api/v1/execution/tasks/{task_id}/cases/{case_id}/status`：接收用例状态/进度上报
+- `POST /api/v1/execution/tasks/{task_id}/complete`：接收任务最终完成结果
 - `POST /api/v1/execution/tasks/{task_id}/consume-ack`：确认任务已被消费者消费
+- `GET /api/v1/execution/tasks`：查询执行任务列表
 - `GET /api/v1/execution/tasks/{task_id}/status`：查询任务状态
+- `POST /api/v1/execution/tasks/{task_id}/cancel`：取消未触发的定时任务
+- `PUT /api/v1/execution/tasks/{task_id}/schedule`：修改未触发的定时任务
 - `POST /api/v1/execution/tasks/{task_id}/retry`：重试下发失败的任务
 
 路由定义位于 `api/routes.py`，权限要求如下：

@@ -1,11 +1,12 @@
-import React, { useState } from 'react'
+import { useState } from 'react'
 import { api } from './services/api'
 import LoginPage from './components/LoginPage'
 import TestCaseList from './components/TestCaseList'
 import AgentList from './components/AgentList'
+import TaskList from './components/TaskList'
 import './App.css'
 
-type PageType = 'testCases' | 'agents'
+type PageType = 'testCases' | 'agents' | 'tasks'
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
@@ -54,13 +55,24 @@ function App() {
                 >
                   执行代理
                 </button>
+                <button
+                  style={{
+                    ...styles.navbarLink,
+                    ...(currentPage === 'tasks' ? styles.navbarLinkActive : {}),
+                  }}
+                  onClick={() => setCurrentPage('tasks')}
+                >
+                  执行任务
+                </button>
               </div>
             </div>
           </nav>
           {currentPage === 'testCases' ? (
             <TestCaseList onLogout={handleLogout} />
-          ) : (
+          ) : currentPage === 'agents' ? (
             <AgentList onLogout={handleLogout} />
+          ) : (
+            <TaskList onLogout={handleLogout} />
           )}
         </div>
       ) : (

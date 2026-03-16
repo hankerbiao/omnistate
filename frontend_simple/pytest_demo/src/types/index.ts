@@ -226,3 +226,58 @@ export interface ListAutomationTestCasesParams {
   limit?: number;
   offset?: number;
 }
+
+export interface ExecutionTask {
+  task_id: string;
+  external_task_id?: string;
+  framework: string;
+  agent_id?: string;
+  dispatch_channel: string;
+  dedup_key?: string;
+  schedule_type: string;
+  schedule_status: string;
+  dispatch_status: string;
+  consume_status: string;
+  overall_status: string;
+  case_count: number;
+  planned_at?: string;
+  triggered_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TaskStatus {
+  task_id: string;
+  external_task_id?: string;
+  framework: string;
+  agent_id?: string;
+  dispatch_channel: string;
+  dedup_key?: string;
+  schedule_type: string;
+  schedule_status: string;
+  dispatch_status: string;
+  consume_status: string;
+  overall_status: string;
+  case_count: number;
+  planned_at?: string;
+  triggered_at?: string;
+  created_at: string;
+  updated_at: string;
+  error_message?: string;
+  result_summary?: Record<string, unknown>;
+}
+
+export interface ListTasksParams {
+  schedule_type?: string;
+  schedule_status?: string;
+  dispatch_status?: string;
+  consume_status?: string;
+  overall_status?: string;
+  created_by?: string;
+  agent_id?: string;
+  framework?: string;
+  date_from?: string;
+  date_to?: string;
+  limit?: number;
+  offset?: number;
+}

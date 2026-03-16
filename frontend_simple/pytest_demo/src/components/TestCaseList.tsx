@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { api } from '../services/api';
 import type { TestCaseResponse } from '../types';
 import CreateTestCaseForm from './CreateTestCaseForm';
@@ -12,13 +12,6 @@ const TestCaseList: React.FC<TestCaseListProps> = ({ onLogout }) => {
   const [testCases, setTestCases] = useState<TestCaseResponse[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [filters, setFilters] = useState({
-    ref_req_id: '',
-    status: '',
-    owner_id: '',
-    priority: '',
-    is_active: '',
-  });
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [showCreateAutomationForm, setShowCreateAutomationForm] = useState(false);
   const [selectedCaseIds, setSelectedCaseIds] = useState<Set<string>>(new Set());
@@ -28,15 +21,7 @@ const TestCaseList: React.FC<TestCaseListProps> = ({ onLogout }) => {
     setError(null);
 
     try {
-      const response = await api.listTestCases({
-        ref_req_id: filters.ref_req_id || undefined,
-        status: filters.status || undefined,
-        owner_id: filters.owner_id || undefined,
-        priority: filters.priority || undefined,
-        is_active: filters.is_active === 'true' ? true : filters.is_active === 'false' ? false : undefined,
-        limit: 50,
-        offset: 0,
-      });
+      const response = await api.listTestCases({ limit: 50 });
       setTestCases(response.data || []);
     } catch (err) {
       setError('获取测试用例列表失败');
@@ -44,34 +29,11 @@ const TestCaseList: React.FC<TestCaseListProps> = ({ onLogout }) => {
     } finally {
       setLoading(false);
     }
-  }, [filters]);
+  }, []);
 
   useEffect(() => {
     fetchTestCases();
   }, [fetchTestCases]);
-
-  const handleFilterChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    const { name, value } = e.target;
-    setFilters(prev => ({
-      ...prev,
-      [name]: value,
-    }));
-  };
-
-  const handleSearch = () => {
-    fetchTestCases();
-  };
-
-  const handleReset = () => {
-    setFilters({
-      ref_req_id: '',
-      status: '',
-      owner_id: '',
-      priority: '',
-      is_active: '',
-    });
-    fetchTestCases();
-  };
 
   const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
     const checked = e.target.checked;
@@ -106,7 +68,7 @@ const TestCaseList: React.FC<TestCaseListProps> = ({ onLogout }) => {
     try {
       const selectedTestCases = testCases.filter(tc => selectedCaseIds.has(tc.id));
       const cases = selectedTestCases.map(tc => ({ case_id: tc.case_id }));
-      
+
       const response = await api.dispatchTask({
         framework: 'pytest',
         trigger_source: 'manual',
@@ -159,89 +121,6 @@ const TestCaseList: React.FC<TestCaseListProps> = ({ onLogout }) => {
           {error}
         </div>
       )}
-
-      <div style={styles.filterSection}>
-        <div style={styles.filterRow}>
-          <div style={styles.filterGroup}>
-            <label style={styles.label}>需求编号</label>
-            <input
-              type="text"
-              name="ref_req_id"
-              value={filters.ref_req_id}
-              onChange={handleFilterChange}
-              style={styles.input}
-              placeholder="REQ-001"
-            />
-          </div>
-
-          <div style={styles.filterGroup}>
-            <label style={styles.label}>状态</label>
-            <select
-              name="status"
-              value={filters.status}
-              onChange={handleFilterChange}
-              style={styles.input}
-            >
-              <option value="">全部</option>
-              <option value="DRAFT">草稿</option>
-              <option value="PENDING">待审核</option>
-              <option value="APPROVED">已批准</option>
-              <option value="REJECTED">已拒绝</option>
-            </select>
-          </div>
-
-          <div style={styles.filterGroup}>
-            <label style={styles.label}>负责人</label>
-            <input
-              type="text"
-              name="owner_id"
-              value={filters.owner_id}
-              onChange={handleFilterChange}
-              style={styles.input}
-              placeholder="用户ID"
-            />
-          </div>
-
-          <div style={styles.filterGroup}>
-            <label style={styles.label}>优先级</label>
-            <select
-              name="priority"
-              value={filters.priority}
-              onChange={handleFilterChange}
-              style={styles.input}
-            >
-              <option value="">全部</option>
-              <option value="P0">P0</option>
-              <option value="P1">P1</option>
-              <option value="P2">P2</option>
-              <option value="P3">P3</option>
-            </select>
-          </div>
-
-          <div style={styles.filterGroup}>
-            <label style={styles.label}>激活状态</label>
-            <select
-              name="is_active"
-              value={filters.is_active}
-              onChange={handleFilterChange}
-              style={styles.input}
-            >
-              <option value="">全部</option>
-              <option value="true">激活</option>
-              <option value="false">未激活</option>
-            </select>
-          </div>
-        </div>
-
-        <div style={styles.buttonGroup}>
-          <button style={styles.searchButton} onClick={handleSearch}>
-            查询
-          </button>
-          <button style={styles.resetButton} onClick={handleReset}>
-            重置
-          </button>
-        </div>
-      </div>
 
       {loading ? (
         <div style={styles.loading}>加载中...</div>
@@ -390,63 +269,6 @@ const styles = {
     fontSize: '14px',
     marginBottom: '20px',
   } as const,
-  filterSection: {
-    backgroundColor: '#f8f9fa',
-    padding: '20px',
-    borderRadius: '8px',
-    marginBottom: '20px',
-  } as const,
-  filterRow: {
-    display: 'flex',
-    gap: '15px',
-    flexWrap: 'wrap' as const,
-    marginBottom: '15px',
-  } as const,
-  filterGroup: {
-    flex: '1',
-    minWidth: '150px',
-  } as const,
-  label: {
-    display: 'block',
-    fontSize: '12px',
-    fontWeight: '500',
-    color: '#555',
-    marginBottom: '5px',
-  } as const,
-  input: {
-    width: '100%',
-    padding: '8px',
-    border: '1px solid #ddd',
-    borderRadius: '4px',
-    fontSize: '14px',
-  } as const,
-  checkbox: {
-    width: '18px',
-    height: '18px',
-    cursor: 'pointer',
-  } as const,
-  buttonGroup: {
-    display: 'flex',
-    gap: '10px',
-  } as const,
-  searchButton: {
-    padding: '8px 20px',
-    backgroundColor: '#007bff',
-    color: '#fff',
-    border: 'none',
-    borderRadius: '4px',
-    fontSize: '14px',
-    cursor: 'pointer',
-  } as const,
-  resetButton: {
-    padding: '8px 20px',
-    backgroundColor: '#6c757d',
-    color: '#fff',
-    border: 'none',
-    borderRadius: '4px',
-    fontSize: '14px',
-    cursor: 'pointer',
-  } as const,
   loading: {
     textAlign: 'center' as const,
     padding: '40px',
@@ -472,6 +294,11 @@ const styles = {
     padding: '12px',
     textAlign: 'left' as const,
     fontSize: '14px',
+  } as const,
+  checkbox: {
+    width: '18px',
+    height: '18px',
+    cursor: 'pointer',
   } as const,
   emptyCell: {
     padding: '40px',

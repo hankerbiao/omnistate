@@ -8,6 +8,7 @@ from typing import Any, Dict, List
 from app.modules.execution.application.commands import DispatchExecutionTaskCommand
 from app.modules.execution.repository.models import (
     ExecutionAgentDoc,
+    ExecutionEventDoc,
     ExecutionTaskCaseDoc,
     ExecutionTaskDoc,
 )
@@ -104,6 +105,18 @@ class ExecutionService:
         data["status"] = resolved_status
         data["is_online"] = is_online
         return data
+
+    @staticmethod
+    def _normalize_status(value: str, default: str = "UNKNOWN") -> str:
+        """统一状态字符串格式。"""
+        return (value or default).strip().upper()
+
+    @staticmethod
+    def _merge_result_payload(base: Dict[str, Any], extra: Dict[str, Any]) -> Dict[str, Any]:
+        """合并执行结果扩展信息。"""
+        merged = dict(base or {})
+        merged.update(extra or {})
+        return merged
 
     @staticmethod
     async def _load_case_docs(case_ids: List[str]) -> Dict[str, Any]:
@@ -261,6 +274,76 @@ class ExecutionService:
             raise KeyError(f"Agent not found: {agent_id}")
         return self._serialize_agent_doc(agent_doc)
 
+    async def list_tasks(
+        self,
+        schedule_type: str | None = None,
+        schedule_status: str | None = None,
+        dispatch_status: str | None = None,
+        consume_status: str | None = None,
+        overall_status: str | None = None,
+        created_by: str | None = None,
+        agent_id: str | None = None,
+        framework: str | None = None,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> List[Dict[str, Any]]:
+        """列出执行任务，支持按状态和时间窗口过滤。"""
+        query: Dict[str, Any] = {"is_deleted": False}
+        if schedule_type:
+            query["schedule_type"] = schedule_type.upper()
+        if schedule_status:
+            query["schedule_status"] = schedule_status.upper()
+        if dispatch_status:
+            query["dispatch_status"] = dispatch_status.upper()
+        if consume_status:
+            query["consume_status"] = consume_status.upper()
+        if overall_status:
+            query["overall_status"] = overall_status.upper()
+        if created_by:
+            query["created_by"] = created_by
+        if agent_id:
+            query["agent_id"] = agent_id
+        if framework:
+            query["framework"] = framework
+        if date_from or date_to:
+            created_at_query: Dict[str, datetime] = {}
+            if date_from:
+                created_at_query["$gte"] = self._ensure_utc_datetime(date_from)
+            if date_to:
+                created_at_query["$lte"] = self._ensure_utc_datetime(date_to)
+            query["created_at"] = created_at_query
+
+        docs = await (
+            ExecutionTaskDoc.find(query)
+            .sort("-created_at")
+            .skip(max(offset, 0))
+            .limit(max(limit, 1))
+            .to_list()
+        )
+        return [
+            {
+                "task_id": task_doc.task_id,
+                "external_task_id": task_doc.external_task_id,
+                "framework": task_doc.framework,
+                "agent_id": task_doc.agent_id,
+                "dispatch_channel": task_doc.dispatch_channel,
+                "dedup_key": task_doc.dedup_key,
+                "schedule_type": task_doc.schedule_type,
+                "schedule_status": task_doc.schedule_status,
+                "dispatch_status": task_doc.dispatch_status,
+                "consume_status": task_doc.consume_status,
+                "overall_status": task_doc.overall_status,
+                "case_count": task_doc.case_count,
+                "planned_at": task_doc.planned_at,
+                "triggered_at": task_doc.triggered_at,
+                "created_at": task_doc.created_at,
+                "updated_at": task_doc.updated_at,
+            }
+            for task_doc in docs
+        ]
+
     async def dispatch_execution_task(
         self,
         command: DispatchExecutionTaskCommand,
@@ -341,6 +424,196 @@ class ExecutionService:
             "triggered_at": task_doc.triggered_at,
             "created_at": task_doc.created_at,
             "message": task_doc.dispatch_response.get("message", ""),
+        }
+
+    async def report_task_event(
+        self,
+        task_id: str,
+        payload: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """记录代理上报的原始任务事件。"""
+        task_doc = await ExecutionTaskDoc.find_one({"task_id": task_id, "is_deleted": False})
+        if not task_doc:
+            raise KeyError(f"Task not found: {task_id}")
+
+        existing_event = await ExecutionEventDoc.find_one({
+            "task_id": task_id,
+            "event_id": payload["event_id"],
+        })
+        if existing_event:
+            return {
+                "task_id": existing_event.task_id,
+                "event_id": existing_event.event_id,
+                "event_type": existing_event.event_type,
+                "seq": existing_event.seq,
+                "received_at": existing_event.received_at,
+                "processed": existing_event.processed,
+            }
+
+        source_time = payload.get("source_time")
+        event_doc = ExecutionEventDoc(
+            task_id=task_id,
+            event_id=payload["event_id"],
+            event_type=self._normalize_status(payload["event_type"], default="UNKNOWN"),
+            seq=payload.get("seq", 0),
+            source_time=self._ensure_utc_datetime(source_time) if source_time else None,
+            raw_payload=payload.get("payload", {}),
+            processed=True,
+        )
+        await event_doc.insert()
+
+        task_doc.last_callback_at = datetime.now(timezone.utc)
+        if event_doc.event_type in {"TASK_STARTED", "STARTED"} and not task_doc.started_at:
+            task_doc.started_at = task_doc.last_callback_at
+            task_doc.overall_status = "RUNNING"
+        await task_doc.save()
+
+        return {
+            "task_id": event_doc.task_id,
+            "event_id": event_doc.event_id,
+            "event_type": event_doc.event_type,
+            "seq": event_doc.seq,
+            "received_at": event_doc.received_at,
+            "processed": event_doc.processed,
+        }
+
+    async def report_case_status(
+        self,
+        task_id: str,
+        case_id: str,
+        payload: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """更新单个测试用例执行状态。"""
+        task_doc = await ExecutionTaskDoc.find_one({"task_id": task_id, "is_deleted": False})
+        if not task_doc:
+            raise KeyError(f"Task not found: {task_id}")
+
+        case_doc = await ExecutionTaskCaseDoc.find_one({"task_id": task_id, "case_id": case_id})
+        if not case_doc:
+            raise KeyError(f"Task case not found: {task_id}/{case_id}")
+
+        seq = payload.get("seq", 0)
+        accepted = seq >= case_doc.last_seq
+        if accepted:
+            status = self._normalize_status(payload["status"], default=case_doc.status)
+            case_doc.status = status
+            if payload.get("progress_percent") is not None:
+                case_doc.progress_percent = payload["progress_percent"]
+            if payload.get("step_total") is not None:
+                case_doc.step_total = payload["step_total"]
+            if payload.get("step_passed") is not None:
+                case_doc.step_passed = payload["step_passed"]
+            if payload.get("step_failed") is not None:
+                case_doc.step_failed = payload["step_failed"]
+            if payload.get("step_skipped") is not None:
+                case_doc.step_skipped = payload["step_skipped"]
+            if payload.get("started_at"):
+                case_doc.started_at = self._ensure_utc_datetime(payload["started_at"])
+            elif not case_doc.started_at and status in {"RUNNING", "PASSED", "FAILED", "SKIPPED"}:
+                case_doc.started_at = datetime.now(timezone.utc)
+            if payload.get("finished_at"):
+                case_doc.finished_at = self._ensure_utc_datetime(payload["finished_at"])
+            elif status in {"PASSED", "FAILED", "SKIPPED"} and not case_doc.finished_at:
+                case_doc.finished_at = datetime.now(timezone.utc)
+            if payload.get("event_id"):
+                case_doc.last_event_id = payload["event_id"]
+            case_doc.last_seq = seq
+            case_doc.case_snapshot = self._merge_result_payload(
+                case_doc.case_snapshot,
+                payload.get("result_data", {}),
+            )
+            await case_doc.save()
+
+            task_doc.last_callback_at = datetime.now(timezone.utc)
+            if not task_doc.started_at:
+                task_doc.started_at = task_doc.last_callback_at
+            if task_doc.overall_status in {"QUEUED", "DISPATCHED"}:
+                task_doc.overall_status = "RUNNING"
+            finished_case_count = await ExecutionTaskCaseDoc.find({
+                "task_id": task_id,
+                "status": {"$in": ["PASSED", "FAILED", "SKIPPED"]},
+            }).count()
+            task_doc.reported_case_count = finished_case_count
+            await task_doc.save()
+
+        return {
+            "task_id": task_id,
+            "case_id": case_id,
+            "status": case_doc.status,
+            "progress_percent": case_doc.progress_percent,
+            "step_total": case_doc.step_total,
+            "step_passed": case_doc.step_passed,
+            "step_failed": case_doc.step_failed,
+            "step_skipped": case_doc.step_skipped,
+            "last_seq": case_doc.last_seq,
+            "accepted": accepted,
+            "started_at": case_doc.started_at,
+            "finished_at": case_doc.finished_at,
+            "updated_at": case_doc.updated_at,
+        }
+
+    async def complete_task(
+        self,
+        task_id: str,
+        payload: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """接收任务最终完成结果。"""
+        task_doc = await ExecutionTaskDoc.find_one({"task_id": task_id, "is_deleted": False})
+        if not task_doc:
+            raise KeyError(f"Task not found: {task_id}")
+
+        normalized_status = self._normalize_status(payload["status"], default=task_doc.overall_status)
+        now = datetime.now(timezone.utc)
+        finished_at = self._ensure_utc_datetime(payload["finished_at"]) if payload.get("finished_at") else now
+        task_doc.overall_status = normalized_status
+        task_doc.finished_at = finished_at
+        task_doc.last_callback_at = now
+        if not task_doc.started_at:
+            task_doc.started_at = now
+        if task_doc.dispatch_status != "DISPATCH_FAILED":
+            task_doc.dispatch_status = "COMPLETED"
+        task_doc.dispatch_response = self._merge_result_payload(task_doc.dispatch_response, payload.get("summary", {}))
+        if payload.get("error_message"):
+            task_doc.dispatch_error = payload["error_message"]
+        if payload.get("executor"):
+            task_doc.dispatch_response["executor"] = payload["executor"]
+        if payload.get("event_id"):
+            existing_event = await ExecutionEventDoc.find_one({
+                "task_id": task_id,
+                "event_id": payload["event_id"],
+            })
+            if not existing_event:
+                await ExecutionEventDoc(
+                    task_id=task_id,
+                    event_id=payload["event_id"],
+                    event_type="TASK_COMPLETED",
+                    seq=payload.get("seq", 0),
+                    source_time=finished_at,
+                    raw_payload={
+                        "status": normalized_status,
+                        "summary": payload.get("summary", {}),
+                        "error_message": payload.get("error_message"),
+                    },
+                    processed=True,
+                ).insert()
+
+        completed_case_count = await ExecutionTaskCaseDoc.find({
+            "task_id": task_id,
+            "status": {"$in": ["PASSED", "FAILED", "SKIPPED"]},
+        }).count()
+        task_doc.reported_case_count = completed_case_count
+        await task_doc.save()
+
+        return {
+            "task_id": task_doc.task_id,
+            "overall_status": task_doc.overall_status,
+            "dispatch_status": task_doc.dispatch_status,
+            "consume_status": task_doc.consume_status,
+            "reported_case_count": task_doc.reported_case_count,
+            "started_at": task_doc.started_at,
+            "finished_at": task_doc.finished_at,
+            "last_callback_at": task_doc.last_callback_at,
+            "updated_at": task_doc.updated_at,
         }
 
     async def cancel_scheduled_task(self, task_id: str, actor_id: str) -> Dict[str, Any]:
