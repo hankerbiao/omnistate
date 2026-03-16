@@ -8,6 +8,12 @@ import './App.css'
 
 type PageType = 'testCases' | 'agents' | 'tasks'
 
+const navItems: { key: PageType; label: string; icon: string }[] = [
+  { key: 'testCases', label: '测试用例', icon: '⬡' },
+  { key: 'agents', label: '执行代理', icon: '◉' },
+  { key: 'tasks', label: '执行任务', icon: '▸' },
+]
+
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
     const token = localStorage.getItem('jwt_token')
@@ -30,95 +36,160 @@ function App() {
   }
 
   return (
-    <>
+    <div style={styles.app}>
       {isAuthenticated ? (
-        <div>
+        <>
           <nav style={styles.navbar}>
-            <div style={styles.navbarContainer}>
-              <div style={styles.navbarBrand}>测试管理平台</div>
-              <div style={styles.navbarLinks}>
-                <button
-                  style={{
-                    ...styles.navbarLink,
-                    ...(currentPage === 'testCases' ? styles.navbarLinkActive : {}),
-                  }}
-                  onClick={() => setCurrentPage('testCases')}
-                >
-                  测试用例
-                </button>
-                <button
-                  style={{
-                    ...styles.navbarLink,
-                    ...(currentPage === 'agents' ? styles.navbarLinkActive : {}),
-                  }}
-                  onClick={() => setCurrentPage('agents')}
-                >
-                  执行代理
-                </button>
-                <button
-                  style={{
-                    ...styles.navbarLink,
-                    ...(currentPage === 'tasks' ? styles.navbarLinkActive : {}),
-                  }}
-                  onClick={() => setCurrentPage('tasks')}
-                >
-                  执行任务
+            <div style={styles.navbarInner}>
+              <div style={styles.brandSection}>
+                <div style={styles.logo}>
+                  <span style={styles.logoIcon}>⬢</span>
+                  <span style={styles.logoText}>TestHub</span>
+                </div>
+                <div style={styles.navDivider} />
+                <div style={styles.navLinks}>
+                  {navItems.map((item) => (
+                    <button
+                      key={item.key}
+                      style={{
+                        ...styles.navLink,
+                        ...(currentPage === item.key ? styles.navLinkActive : {}),
+                      }}
+                      onClick={() => setCurrentPage(item.key)}
+                    >
+                      <span style={styles.navIcon}>{item.icon}</span>
+                      <span>{item.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div style={styles.userSection}>
+                <button style={styles.logoutBtn} onClick={handleLogout}>
+                  <span style={styles.logoutIcon}>⎋</span>
+                  退出
                 </button>
               </div>
             </div>
           </nav>
-          {currentPage === 'testCases' ? (
-            <TestCaseList onLogout={handleLogout} />
-          ) : currentPage === 'agents' ? (
-            <AgentList onLogout={handleLogout} />
-          ) : (
-            <TaskList onLogout={handleLogout} />
-          )}
-        </div>
+          <main style={styles.main}>
+            {currentPage === 'testCases' ? (
+              <TestCaseList onLogout={handleLogout} />
+            ) : currentPage === 'agents' ? (
+              <AgentList onLogout={handleLogout} />
+            ) : (
+              <TaskList onLogout={handleLogout} />
+            )}
+          </main>
+        </>
       ) : (
         <LoginPage onLoginSuccess={handleLoginSuccess} />
       )}
-    </>
+    </div>
   )
 }
 
 const styles = {
-  navbar: {
-    backgroundColor: '#343a40',
-    color: '#fff',
-    padding: '0',
-    marginBottom: '20px',
+  app: {
+    minHeight: '100vh',
+    backgroundColor: 'var(--bg-primary)',
   } as const,
-  navbarContainer: {
-    maxWidth: '1600px',
+  navbar: {
+    position: 'sticky',
+    top: 0,
+    zIndex: 100,
+    backgroundColor: 'var(--bg-secondary)',
+    borderBottom: '1px solid var(--border-default)',
+    backdropFilter: 'blur(12px)',
+  } as const,
+  navbarInner: {
+    maxWidth: '1400px',
     margin: '0 auto',
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: '0 20px',
-    height: '60px',
+    padding: '0 24px',
+    height: '64px',
   } as const,
-  navbarBrand: {
-    fontSize: '20px',
-    fontWeight: 'bold',
-  } as const,
-  navbarLinks: {
+  brandSection: {
     display: 'flex',
+    alignItems: 'center',
+    gap: '24px',
+  } as const,
+  logo: {
+    display: 'flex',
+    alignItems: 'center',
     gap: '10px',
   } as const,
-  navbarLink: {
-    backgroundColor: 'transparent',
-    color: '#adb5bd',
-    border: 'none',
-    padding: '10px 20px',
-    fontSize: '14px',
-    cursor: 'pointer',
-    borderRadius: '4px',
-    transition: 'all 0.2s',
+  logoIcon: {
+    fontSize: '24px',
+    color: 'var(--accent-cyan)',
+    filter: 'drop-shadow(0 0 8px rgba(57, 208, 214, 0.5))',
   } as const,
-  navbarLinkActive: {
-    backgroundColor: '#007bff',
-    color: '#fff',
+  logoText: {
+    fontSize: '20px',
+    fontWeight: 700,
+    letterSpacing: '-0.5px',
+    background: 'linear-gradient(135deg, var(--accent-cyan), var(--accent-blue))',
+    WebkitBackgroundClip: 'text',
+    WebkitTextFillColor: 'transparent',
+    backgroundClip: 'text',
+  } as const,
+  navDivider: {
+    width: '1px',
+    height: '24px',
+    backgroundColor: 'var(--border-default)',
+  } as const,
+  navLinks: {
+    display: 'flex',
+    gap: '4px',
+  } as const,
+  navLink: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '8px 16px',
+    fontSize: '14px',
+    fontWeight: 500,
+    color: 'var(--text-secondary)',
+    backgroundColor: 'transparent',
+    borderRadius: 'var(--radius-md)',
+    transition: 'all var(--transition-fast)',
+    cursor: 'pointer',
+    border: 'none',
+  } as const,
+  navLinkActive: {
+    color: 'var(--text-primary)',
+    backgroundColor: 'var(--bg-tertiary)',
+  } as const,
+  navIcon: {
+    fontSize: '16px',
+    opacity: 0.8,
+  } as const,
+  userSection: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+  } as const,
+  logoutBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '8px 14px',
+    fontSize: '13px',
+    fontWeight: 500,
+    color: 'var(--text-secondary)',
+    backgroundColor: 'transparent',
+    borderRadius: 'var(--radius-md)',
+    border: '1px solid var(--border-default)',
+    transition: 'all var(--transition-fast)',
+    cursor: 'pointer',
+  } as const,
+  logoutIcon: {
+    fontSize: '14px',
+  } as const,
+  main: {
+    minHeight: 'calc(100vh - 64px)',
+    animation: 'fadeIn 0.3s ease',
   } as const,
 }
 
