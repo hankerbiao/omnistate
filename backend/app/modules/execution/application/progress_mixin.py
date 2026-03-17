@@ -8,7 +8,11 @@ from typing import Any, Dict
 
 from pymongo import ReturnDocument
 
-from app.modules.execution.application.constants import FINAL_CASE_STATUSES
+from app.modules.execution.application.constants import (
+    FINAL_CASE_STATUSES,
+    STOP_MODE_AFTER_CURRENT_CASE,
+    STOP_MODE_NONE,
+)
 from app.modules.execution.repository.models import (
     ExecutionEventDoc,
     ExecutionTaskCaseDoc,
@@ -103,6 +107,24 @@ class ExecutionProgressMixin:
         await task_doc.save()
         await self._sync_run_from_task(task_doc)
 
+    async def _mark_task_stopped_after_current_case(self, task_doc: ExecutionTaskDoc) -> None:
+        """在当前 case 完成后执行优雅停止，不再继续下发下一条。"""
+        completed_case_count = await ExecutionTaskCaseDoc.find({
+            "task_id": task_doc.task_id,
+            "status": {"$in": list(FINAL_CASE_STATUSES)},
+        }).count()
+        task_doc.reported_case_count = completed_case_count
+        task_doc.current_case_id = None
+        task_doc.current_case_index = min(task_doc.current_case_index + 1, task_doc.case_count)
+        task_doc.finished_at = datetime.now(timezone.utc)
+        task_doc.last_callback_at = task_doc.finished_at
+        task_doc.overall_status = "STOPPED"
+        if task_doc.dispatch_status != "DISPATCH_FAILED":
+            task_doc.dispatch_status = "COMPLETED"
+        task_doc.orchestration_lock = None
+        await task_doc.save()
+        await self._sync_run_from_task(task_doc)
+
     async def _sync_run_from_task(self, task_doc: ExecutionTaskDoc) -> None:
         """把任务当前结果同步到当前执行轮次。"""
         if task_doc.current_run_no <= 0:
@@ -121,6 +143,10 @@ class ExecutionProgressMixin:
         run_doc.dispatch_response = dict(task_doc.dispatch_response or {})
         run_doc.dispatch_error = task_doc.dispatch_error
         run_doc.reported_case_count = task_doc.reported_case_count
+        run_doc.stop_mode = getattr(task_doc, "stop_mode", STOP_MODE_NONE)
+        run_doc.stop_requested_at = getattr(task_doc, "stop_requested_at", None)
+        run_doc.stop_requested_by = getattr(task_doc, "stop_requested_by", None)
+        run_doc.stop_reason = getattr(task_doc, "stop_reason", None)
         run_doc.started_at = task_doc.started_at
         run_doc.finished_at = task_doc.finished_at
         run_doc.last_callback_at = task_doc.last_callback_at
@@ -145,6 +171,10 @@ class ExecutionProgressMixin:
 
         next_case_doc: ExecutionTaskCaseDoc | None = None
         try:
+            if locked_task_doc.stop_mode == STOP_MODE_AFTER_CURRENT_CASE:
+                await self._mark_task_stopped_after_current_case(locked_task_doc)
+                return
+
             next_case_doc = await self._get_case_doc_by_order(
                 locked_task_doc.task_id,
                 locked_task_doc.current_case_index + 1,

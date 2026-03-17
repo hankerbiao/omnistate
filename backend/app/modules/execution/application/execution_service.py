@@ -20,7 +20,11 @@ from typing import Any, Dict, List
 
 from app.modules.execution.application.agent_mixin import ExecutionAgentMixin
 from app.modules.execution.application.commands import DispatchExecutionTaskCommand
-from app.modules.execution.application.constants import FINAL_TASK_STATUSES
+from app.modules.execution.application.constants import (
+    FINAL_TASK_STATUSES,
+    STOP_MODE_AFTER_CURRENT_CASE,
+    STOP_MODE_NONE, FINAL_CASE_STATUSES,
+)
 from app.modules.execution.application.progress_mixin import ExecutionProgressMixin
 from app.modules.execution.application.query_mixin import ExecutionTaskQueryMixin
 from app.modules.execution.repository.models import (
@@ -209,6 +213,10 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
             dispatch_status=task_doc.dispatch_status,
             dispatch_channel=task_doc.dispatch_channel,
             case_count=task_doc.case_count,
+            stop_mode=task_doc.stop_mode,
+            stop_requested_at=task_doc.stop_requested_at,
+            stop_requested_by=task_doc.stop_requested_by,
+            stop_reason=task_doc.stop_reason,
         ).insert()
         for case_doc in case_docs:
             await ExecutionTaskRunCaseDoc(
@@ -410,6 +418,10 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
         # 当前态默认指向第 1 条 case；真正推进到后续 case 由 progress 流程负责。
         task_doc.current_case_id = command.case_ids[0]
         task_doc.current_case_index = 0
+        task_doc.stop_mode = STOP_MODE_NONE
+        task_doc.stop_requested_at = None
+        task_doc.stop_requested_by = None
+        task_doc.stop_reason = None
         task_doc.planned_at = command.planned_at
         task_doc.schedule_type = schedule_type
         task_doc.schedule_status = schedule_status
@@ -544,16 +556,7 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
         task_doc.overall_status = "CANCELLED"
         await task_doc.save()
 
-        return {
-            "task_id": task_doc.task_id,
-            "schedule_type": task_doc.schedule_type,
-            "schedule_status": task_doc.schedule_status,
-            "dispatch_status": task_doc.dispatch_status,
-            "overall_status": task_doc.overall_status,
-            "planned_at": task_doc.planned_at,
-            "triggered_at": task_doc.triggered_at,
-            "updated_at": task_doc.updated_at,
-        }
+        return self._serialize_task_doc(task_doc)
 
     async def update_scheduled_task(
             self,
@@ -638,6 +641,74 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
         await self._dispatch_first_case_if_needed(task_doc, should_dispatch_now)
 
         return self._serialize_task_doc(task_doc)
+
+    async def stop_task_after_current_case(
+            self,
+            task_id: str,
+            actor_id: str,
+            reason: str | None = None,
+    ) -> Dict[str, Any]:
+        """请求在当前 case 完成后停止任务，不再继续下发下一条。"""
+        task_doc = await ExecutionTaskDoc.find_one({"task_id": task_id, "is_deleted": False})
+        if not task_doc:
+            raise KeyError(f"Task not found: {task_id}")
+
+        self._ensure_actor_identity(actor_id, task_doc.created_by)
+
+        if task_doc.overall_status in FINAL_TASK_STATUSES:
+            raise ValueError(f"Task {task_id} is already finished with status {task_doc.overall_status}")
+        if task_doc.schedule_type == "SCHEDULED" and task_doc.schedule_status == "PENDING":
+            raise ValueError(f"Task {task_id} has not started yet; use cancel instead")
+
+        if task_doc.stop_mode == STOP_MODE_AFTER_CURRENT_CASE:
+            return {
+                "task_id": task_doc.task_id,
+                "stop_mode": task_doc.stop_mode,
+                "stop_requested_at": task_doc.stop_requested_at,
+                "stop_requested_by": task_doc.stop_requested_by,
+                "stop_reason": task_doc.stop_reason,
+                "overall_status": task_doc.overall_status,
+                "current_case_id": task_doc.current_case_id,
+                "current_case_index": task_doc.current_case_index,
+                "updated_at": task_doc.updated_at,
+            }
+
+        now = datetime.now(timezone.utc)
+        task_doc.stop_mode = STOP_MODE_AFTER_CURRENT_CASE
+        task_doc.stop_requested_at = now
+        task_doc.stop_requested_by = actor_id
+        task_doc.stop_reason = reason
+
+        current_case_doc = None
+        if task_doc.current_case_id:
+            current_case_doc = await ExecutionTaskCaseDoc.find_one({
+                "task_id": task_id,
+                "case_id": task_doc.current_case_id,
+            })
+
+        if not current_case_doc or current_case_doc.status in FINAL_CASE_STATUSES:
+            task_doc.overall_status = "STOPPED"
+            task_doc.finished_at = now
+            task_doc.last_callback_at = now
+            task_doc.current_case_id = None
+            task_doc.current_case_index = min(task_doc.current_case_index + 1, task_doc.case_count)
+            if task_doc.dispatch_status != "DISPATCH_FAILED":
+                task_doc.dispatch_status = "COMPLETED"
+
+        await task_doc.save()
+        await self._sync_run_from_task(task_doc)
+
+        return {
+            "task_id": task_doc.task_id,
+            "stop_mode": task_doc.stop_mode,
+            "stop_requested_at": task_doc.stop_requested_at,
+            "stop_requested_by": task_doc.stop_requested_by,
+            "stop_reason": task_doc.stop_reason,
+            "overall_status": task_doc.overall_status,
+            "current_case_id": task_doc.current_case_id,
+            "current_case_index": task_doc.current_case_index,
+            "updated_at": task_doc.updated_at,
+        }
 
     async def ack_task_consumed(self, task_id: str, consumer_id: str | None = None) -> Dict[str, Any]:
         """标记任务已被消费者消费。
@@ -750,6 +821,10 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
         task_doc.reported_case_count = 0
         task_doc.current_case_id = case_ids[0]
         task_doc.current_case_index = 0
+        task_doc.stop_mode = STOP_MODE_NONE
+        task_doc.stop_requested_at = None
+        task_doc.stop_requested_by = None
+        task_doc.stop_reason = None
         task_doc.triggered_at = None
         task_doc.started_at = None
         task_doc.finished_at = None

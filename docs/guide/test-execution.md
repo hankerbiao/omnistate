@@ -10,6 +10,7 @@
 - 平台每次只推进当前 1 条 case。
 - 执行端回调任务事件、case 状态和最终完成结果。
 - 同一个任务支持重试，并保留执行轮次历史。
+- 支持“执行完当前 case 后停止”，不会中断当前 case。
 
 ## 2. 核心对象
 
@@ -136,6 +137,7 @@ Authorization: Bearer <token>
 |------|------|------|------|
 | POST | `/api/v1/execution/tasks/dispatch` | `execution_tasks:write` | 创建并下发任务 |
 | POST | `/api/v1/execution/tasks/{task_id}/consume-ack` | `execution_tasks:write` | 确认任务已被消费 |
+| POST | `/api/v1/execution/tasks/{task_id}/stop` | `execution_tasks:write` | 执行完当前 case 后停止 |
 | POST | `/api/v1/execution/tasks/{task_id}/cancel` | `execution_tasks:write` | 取消未触发定时任务 |
 | PUT | `/api/v1/execution/tasks/{task_id}/schedule` | `execution_tasks:write` | 修改未触发定时任务 |
 | POST | `/api/v1/execution/tasks/{task_id}/retry` | `execution_tasks:write` | 重试任务 |
@@ -181,9 +183,32 @@ Authorization: Bearer <token>
 - `case_count`
 - `current_case_id`
 - `current_case_index`
+- `stop_mode`
+- `stop_requested_at`
+- `stop_requested_by`
+- `stop_reason`
 - `planned_at`
 - `triggered_at`
 - `created_at`
+
+### 4.5 停止语义
+
+`POST /api/v1/execution/tasks/{task_id}/stop` 不是强制中断。
+
+行为如下：
+
+- 当前正在执行的 case 继续跑完。
+- 平台收到该 case 终态后，不再下发下一条。
+- 任务整体状态进入 `STOPPED`。
+- 若任务此时没有正在执行的 case，平台可直接将任务收口为 `STOPPED`。
+
+请求体：
+
+```json
+{
+  "reason": "用户手动停止，当前 case 结束后停止继续执行"
+}
+```
 
 ## 5. 回调接口
 
@@ -314,6 +339,10 @@ Content-Type: application/json
     "case_count": 2,
     "current_case_id": "TC-20260317-0001",
     "current_case_index": 0,
+    "stop_mode": "NONE",
+    "stop_requested_at": null,
+    "stop_requested_by": null,
+    "stop_reason": null,
     "planned_at": null,
     "triggered_at": "2026-03-17T12:40:00Z",
     "created_at": "2026-03-17T12:40:00Z"
@@ -358,6 +387,10 @@ Content-Type: application/json
     "case_count": 1,
     "current_case_id": "TC-20260317-0001",
     "current_case_index": 0,
+    "stop_mode": "NONE",
+    "stop_requested_at": null,
+    "stop_requested_by": null,
+    "stop_reason": null,
     "planned_at": "2026-03-18T09:00:00Z",
     "triggered_at": null,
     "created_at": "2026-03-17T12:42:00Z"
@@ -389,7 +422,37 @@ Content-Type: application/json
 }
 ```
 
-### 8.4 查询历史轮次
+### 8.4 请求执行完当前 case 后停止
+
+```http
+POST /api/v1/execution/tasks/ET-2026-000001/stop
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "reason": "当前 case 执行完后停止"
+}
+```
+
+```json
+{
+  "code": 0,
+  "message": "ok",
+  "data": {
+    "task_id": "ET-2026-000001",
+    "stop_mode": "STOP_AFTER_CURRENT_CASE",
+    "stop_requested_at": "2026-03-17T13:02:00Z",
+    "stop_requested_by": "admin",
+    "stop_reason": "当前 case 执行完后停止",
+    "overall_status": "RUNNING",
+    "current_case_id": "TC-20260317-0002",
+    "current_case_index": 1,
+    "updated_at": "2026-03-17T13:02:00Z"
+  }
+}
+```
+
+### 8.5 查询历史轮次
 
 ```http
 GET /api/v1/execution/tasks/ET-2026-000001/runs
@@ -410,6 +473,10 @@ Authorization: Bearer <token>
       "dispatch_status": "COMPLETED",
       "case_count": 2,
       "reported_case_count": 2,
+      "stop_mode": "NONE",
+      "stop_requested_at": null,
+      "stop_requested_by": null,
+      "stop_reason": null,
       "started_at": "2026-03-17T12:40:00Z",
       "finished_at": "2026-03-17T12:55:00Z",
       "created_at": "2026-03-17T12:40:00Z",
@@ -424,6 +491,10 @@ Authorization: Bearer <token>
       "dispatch_status": "DISPATCHED",
       "case_count": 2,
       "reported_case_count": 1,
+      "stop_mode": "STOP_AFTER_CURRENT_CASE",
+      "stop_requested_at": "2026-03-17T13:02:00Z",
+      "stop_requested_by": "admin",
+      "stop_reason": "当前 case 执行完后停止",
       "started_at": "2026-03-17T13:00:00Z",
       "finished_at": null,
       "created_at": "2026-03-17T13:00:00Z",
@@ -451,6 +522,10 @@ Authorization: Bearer <token>
     "dispatch_status": "DISPATCHED",
     "case_count": 2,
     "reported_case_count": 1,
+    "stop_mode": "STOP_AFTER_CURRENT_CASE",
+    "stop_requested_at": "2026-03-17T13:02:00Z",
+    "stop_requested_by": "admin",
+    "stop_reason": "当前 case 执行完后停止",
     "started_at": "2026-03-17T13:00:00Z",
     "finished_at": null,
     "created_at": "2026-03-17T13:00:00Z",
@@ -497,7 +572,7 @@ Authorization: Bearer <token>
 }
 ```
 
-### 8.5 任务列表与状态查询示例
+### 8.6 任务列表与状态查询示例
 
 ```http
 GET /api/v1/execution/tasks?overall_status=RUNNING&limit=20&offset=0
@@ -526,6 +601,10 @@ Authorization: Bearer <token>
       "current_run_no": 2,
       "current_case_id": "TC-20260317-0002",
       "current_case_index": 1,
+      "stop_mode": "STOP_AFTER_CURRENT_CASE",
+      "stop_requested_at": "2026-03-17T13:02:00Z",
+      "stop_requested_by": "admin",
+      "stop_reason": "当前 case 执行完后停止",
       "planned_at": null,
       "triggered_at": "2026-03-17T12:40:00Z",
       "created_at": "2026-03-17T12:40:00Z",
@@ -552,7 +631,11 @@ Authorization: Bearer <token>
     "overall_status": "RUNNING",
     "current_case_id": "TC-20260317-0002",
     "current_case_index": 1,
-    "latest_run_no": 2
+    "latest_run_no": 2,
+    "stop_mode": "STOP_AFTER_CURRENT_CASE",
+    "stop_requested_at": "2026-03-17T13:02:00Z",
+    "stop_requested_by": "admin",
+    "stop_reason": "当前 case 执行完后停止"
   }
 }
 ```

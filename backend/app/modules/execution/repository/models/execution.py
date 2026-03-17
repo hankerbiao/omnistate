@@ -35,6 +35,10 @@ class ExecutionTaskDoc(Document):
     current_run_no: int = Field(default=0, description="当前正在执行的轮次")
     current_case_id: Optional[str] = Field(None, description="当前下发中的测试用例 ID")
     current_case_index: int = Field(default=0, description="当前下发中的测试用例序号")
+    stop_mode: str = Field(default="NONE", description="停止模式")
+    stop_requested_at: Optional[datetime] = Field(None, description="请求停止时间（UTC）")
+    stop_requested_by: Optional[str] = Field(None, description="请求停止的用户 ID")
+    stop_reason: Optional[str] = Field(None, description="停止原因")
     orchestration_lock: Optional[str] = Field(None, description="平台串行推进锁")
     planned_at: Optional[datetime] = Field(None, description="计划触发时间（UTC），定时任务使用")
     triggered_at: Optional[datetime] = Field(None, description="任务首次真正触发下发的时间（UTC）")
@@ -72,6 +76,7 @@ class ExecutionTaskDoc(Document):
             IndexModel([("overall_status", ASCENDING), ("created_at", DESCENDING)]),
             IndexModel([("dispatch_status", ASCENDING), ("created_at", DESCENDING)]),
             IndexModel([("task_id", ASCENDING), ("current_case_index", ASCENDING)]),
+            IndexModel([("stop_mode", ASCENDING), ("created_at", DESCENDING)]),
         ]
 
 
@@ -93,6 +98,10 @@ class ExecutionTaskRunDoc(Document):
     dispatch_error: Optional[str] = Field(None, description="本轮下发失败原因")
     case_count: int = Field(default=0, description="本轮用例数量")
     reported_case_count: int = Field(default=0, description="本轮已完成回报的用例数量")
+    stop_mode: str = Field(default="NONE", description="本轮停止模式")
+    stop_requested_at: Optional[datetime] = Field(None, description="本轮请求停止时间（UTC）")
+    stop_requested_by: Optional[str] = Field(None, description="本轮请求停止的用户 ID")
+    stop_reason: Optional[str] = Field(None, description="本轮停止原因")
     started_at: Optional[datetime] = Field(None, description="本轮任务开始时间（UTC）")
     finished_at: Optional[datetime] = Field(None, description="本轮任务结束时间（UTC）")
     last_callback_at: Optional[datetime] = Field(None, description="本轮最近一次回调时间（UTC）")
@@ -127,10 +136,6 @@ class ExecutionTaskCaseDoc(Document):
     dispatch_attempts: int = Field(default=0, description="平台下发次数")
     status: str = Field(default="QUEUED", description="用例执行状态")
     progress_percent: Optional[float] = Field(None, description="当前 case 执行进度百分比")
-    step_total: int = Field(0, description="当前 case 总步骤数")
-    step_passed: int = Field(0, description="当前 case 已通过步骤数")
-    step_failed: int = Field(0, description="当前 case 已失败步骤数")
-    step_skipped: int = Field(0, description="当前 case 已跳过步骤数")
     last_seq: int = Field(0, description="当前 case 已接受的最后一个事件序号")
     last_event_id: Optional[str] = Field(None, description="当前 case 最近一次处理的事件 ID")
     started_at: Optional[datetime] = Field(None, description="当前 case 开始时间（UTC）")
@@ -170,10 +175,6 @@ class ExecutionTaskRunCaseDoc(Document):
     dispatch_attempts: int = Field(default=0, description="本轮下发次数")
     status: str = Field(default="QUEUED", description="本轮执行状态")
     progress_percent: Optional[float] = Field(None, description="本轮该 case 的进度百分比")
-    step_total: int = Field(0, description="本轮该 case 总步骤数")
-    step_passed: int = Field(0, description="本轮该 case 已通过步骤数")
-    step_failed: int = Field(0, description="本轮该 case 已失败步骤数")
-    step_skipped: int = Field(0, description="本轮该 case 已跳过步骤数")
     started_at: Optional[datetime] = Field(None, description="本轮该 case 开始时间（UTC）")
     finished_at: Optional[datetime] = Field(None, description="本轮该 case 结束时间（UTC）")
     dispatched_at: Optional[datetime] = Field(None, description="本轮该 case 最近一次被下发的时间（UTC）")
