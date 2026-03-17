@@ -67,32 +67,66 @@ def _parse_state_entry(entry: Any) -> Optional[tuple[str, str, Optional[bool]]]:
     return None
 
 
-async def init_config_data():
-    """
-    从配置文件初始化基础数据 (Beanie ODM 版本)
-    
-    流程：
-    1. 扫描 `configs/` 目录，加载 JSON 配置到内存字典。
-    2. 同步 `SysWorkTypeDoc` (事项类型)。
-    3. 同步 `SysWorkflowStateDoc` (工作流状态)。
-    4. 同步 `SysWorkflowConfigDoc` (流转规则)。
-    5. 清理数据库中已废弃（配置文件中不存在）的数据。
-    """
-    log.info("开始从配置文件初始化基础数据...")
+def _merge_work_types(data: Dict[str, Any], work_types_map: Dict[str, str]) -> None:
+    """合并事项类型配置。"""
+    for item in data.get("work_types", []):
+        if isinstance(item, list) and len(item) == 2:
+            work_types_map[item[0]] = item[1]
 
-    config_dir = Path(__file__).parent / "configs"
-    if not config_dir.exists():
-        log.warning(f"配置目录不存在: {config_dir}")
+
+def _merge_states(data: Dict[str, Any], states_map: Dict[str, Dict[str, Any]]) -> None:
+    """合并状态定义并校验冲突。"""
+    for state_entry in data.get("states", []):
+        parsed = _parse_state_entry(state_entry)
+        if parsed is None:
+            raise ValueError(f"非法 states 配置项: {state_entry}")
+        state_code, state_name, state_is_end = parsed
+
+        existing_state = states_map.get(state_code)
+        if existing_state is None:
+            states_map[state_code] = {
+                "name": state_name,
+                "is_end_explicit": state_is_end,
+            }
+            continue
+
+        if existing_state["name"] != state_name:
+            raise ValueError(
+                f"状态定义冲突: code={state_code}, "
+                f"name='{existing_state['name']}' vs '{state_name}'"
+            )
+        if state_is_end is not None:
+            explicit = existing_state.get("is_end_explicit")
+            if explicit is not None and explicit != state_is_end:
+                raise ValueError(f"状态 is_end 定义冲突: code={state_code}")
+            existing_state["is_end_explicit"] = state_is_end
+
+
+def _merge_workflow_configs(
+    data: Dict[str, Any],
+    workflow_configs_map: Dict[str, list[dict]],
+) -> None:
+    """合并工作流配置，兼容两种格式。"""
+    wf_configs = data.get("workflow_configs", [])
+    if isinstance(wf_configs, dict):
+        for type_code, configs in wf_configs.items():
+            workflow_configs_map.setdefault(type_code, []).extend(configs)
         return
 
-    # --- 1. 准备内存数据结构 ---
+    for cfg in wf_configs:
+        type_code = cfg.get("type_code")
+        if type_code:
+            workflow_configs_map.setdefault(type_code, []).append(cfg)
+
+
+def _load_config_maps(
+    config_dir: Path,
+) -> tuple[Dict[str, str], Dict[str, Dict[str, Any]], Dict[str, list[dict]]]:
+    """从配置目录加载并合并所有配置。"""
     work_types_map: Dict[str, str] = {}
-    # 状态定义：code -> {"name": str, "is_end_explicit": Optional[bool], "is_end": bool}
     states_map: Dict[str, Dict[str, Any]] = {}
-    # 存储流转配置： type_code -> [config_dict, ...]
     workflow_configs_map: Dict[str, list[dict]] = {}
 
-    # --- 2. 加载 JSON 配置文件 ---
     for filename in os.listdir(config_dir):
         if not filename.endswith(".json"):
             continue
@@ -100,61 +134,23 @@ async def init_config_data():
         try:
             with open(config_dir / filename, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                
-                # 解析事项类型 (work_types)
-                for item in data.get("work_types", []):
-                    if isinstance(item, list) and len(item) == 2:
-                        work_types_map[item[0]] = item[1]
-
-                # 解析状态定义 (states)
-                for state_entry in data.get("states", []):
-                    parsed = _parse_state_entry(state_entry)
-                    if parsed is None:
-                        raise ValueError(f"非法 states 配置项: {state_entry}")
-                    state_code, state_name, state_is_end = parsed
-
-                    existing_state = states_map.get(state_code)
-                    if existing_state is None:
-                        states_map[state_code] = {
-                            "name": state_name,
-                            "is_end_explicit": state_is_end,
-                        }
-                    else:
-                        if existing_state["name"] != state_name:
-                            raise ValueError(
-                                f"状态定义冲突: code={state_code}, "
-                                f"name='{existing_state['name']}' vs '{state_name}'"
-                            )
-                        if state_is_end is not None:
-                            explicit = existing_state.get("is_end_explicit")
-                            if explicit is not None and explicit != state_is_end:
-                                raise ValueError(f"状态 is_end 定义冲突: code={state_code}")
-                            existing_state["is_end_explicit"] = state_is_end
-
-                # 解析流转配置 (workflow_configs)
-                wf_configs = data.get("workflow_configs", [])
-                if isinstance(wf_configs, dict):
-                    # 格式 A: {"REQ": [...], "TASK": [...]}
-                    for type_code, configs in wf_configs.items():
-                        if type_code not in workflow_configs_map:
-                            workflow_configs_map[type_code] = []
-                        workflow_configs_map[type_code].extend(configs)
-                else:
-                    # 格式 B: [{"type_code": "REQ", ...}, ...]
-                    for cfg in wf_configs:
-                        type_code = cfg.get("type_code")
-                        if type_code:
-                            if type_code not in workflow_configs_map:
-                                workflow_configs_map[type_code] = []
-                            workflow_configs_map[type_code].append(cfg)
         except Exception as e:
             log.error(f"解析配置文件 {filename} 失败: {e}")
             raise
 
-    if not states_map:
-        raise ValueError("未加载到任何状态定义，请在配置文件中声明 states")
+        _merge_work_types(data, work_types_map)
+        _merge_states(data, states_map)
+        _merge_workflow_configs(data, workflow_configs_map)
 
-    # --- 2.1 一致性校验（工作流配置引用） ---
+    return work_types_map, states_map, workflow_configs_map
+
+
+def _validate_workflow_configs(
+    work_types_map: Dict[str, str],
+    states_map: Dict[str, Dict[str, Any]],
+    workflow_configs_map: Dict[str, list[dict]],
+) -> set[str]:
+    """校验工作流配置并返回所有存在出边的状态。"""
     validation_errors: list[str] = []
     seen_transitions: set[tuple[str, str, str]] = set()
     from_states: set[str] = set()
@@ -196,21 +192,28 @@ async def init_config_data():
     if validation_errors:
         raise ValueError("配置一致性校验失败: " + " | ".join(validation_errors))
 
-    # 推导终态：显式配置优先，否则使用“无出边状态即终态”
+    return from_states
+
+
+def _derive_state_end_flags(states_map: Dict[str, Dict[str, Any]], from_states: set[str]) -> None:
+    """推导状态是否为终态。"""
     for state_code, meta in states_map.items():
         explicit_is_end = meta.get("is_end_explicit")
         meta["is_end"] = explicit_is_end if explicit_is_end is not None else state_code not in from_states
 
-    # --- 3. 初始化事项类型 (SysWorkTypeDoc) ---
+
+async def _sync_work_types(work_types_map: Dict[str, str]) -> None:
+    """同步事项类型。"""
     for code, name in work_types_map.items():
-        # upsert: 存在则更新 $set 指定的字段，不存在则插入 on_insert
         await SysWorkTypeDoc.find_one(SysWorkTypeDoc.code == code).upsert(
             {"$set": {"name": name, "updated_at": datetime.now(timezone.utc)}},
             on_insert=SysWorkTypeDoc(code=code, name=name)
         )
         log.info(f"初始化事项类型: {code}")
 
-    # --- 4. 初始化流程状态 (SysWorkflowStateDoc) ---
+
+async def _sync_workflow_states(states_map: Dict[str, Dict[str, Any]]) -> None:
+    """同步状态定义。"""
     for code, meta in states_map.items():
         name = meta["name"]
         is_end = bool(meta["is_end"])
@@ -220,21 +223,23 @@ async def init_config_data():
         )
         log.info(f"初始化流程状态: {code}")
 
-    # --- 5. 初始化流程流转配置 (SysWorkflowConfigDoc) ---
+
+async def _sync_workflow_configs(
+    work_types_map: Dict[str, str],
+    workflow_configs_map: Dict[str, list[dict]],
+) -> None:
+    """同步流转配置。"""
     for type_code, configs in workflow_configs_map.items():
         if type_code not in work_types_map:
-            continue # 跳过未定义类型的工作流
-            
+            continue  # 跳过未定义类型的工作流
+
         for cfg in configs:
-            # 唯一键：type_code + from_state + action
-            # 意味着同一个类型下，同一个状态不能有两个相同的动作
             await SysWorkflowConfigDoc.find_one(
                 SysWorkflowConfigDoc.type_code == type_code,
                 SysWorkflowConfigDoc.from_state == cfg.get("from_state"),
                 SysWorkflowConfigDoc.action == cfg.get("action")
             ).upsert(
                 {"$set": {
-                    # 只更新这些字段，保留其他可能存在的扩展字段
                     "to_state": cfg.get("to_state"),
                     "target_owner_strategy": cfg.get("target_owner_strategy", "KEEP"),
                     "required_fields": cfg.get("required_fields", []),
@@ -243,33 +248,71 @@ async def init_config_data():
                 }},
                 on_insert=SysWorkflowConfigDoc(type_code=type_code, **cfg)
             )
-            log.info(f"初始化流转配置: {type_code} {cfg.get('from_state')} -> {cfg.get('action')}")
+            log.info(
+                f"初始化流转配置: {type_code} {cfg.get('from_state')} -> {cfg.get('action')}"
+            )
 
-    # --- 6. 清理逻辑：删除已下线的事项类型 ---
-    # 警告：这会物理删除数据库中存在但配置文件中不存在的记录
+
+async def _cleanup_removed_work_types(work_types_map: Dict[str, str]) -> None:
+    """删除配置中已移除的事项类型。"""
     existing_types = await SysWorkTypeDoc.find_all().to_list()
     for doc in existing_types:
         if doc.code not in work_types_map:
             await doc.delete()
             log.info(f"删除已下线事项类型: {doc.code}")
 
-    # --- 7. 清理逻辑：删除已下线的流转配置 ---
-    # 构建当前配置中所有合法的 (type_code, from_state, action) 集合
+
+async def _cleanup_removed_workflow_configs(
+    work_types_map: Dict[str, str],
+    workflow_configs_map: Dict[str, list[dict]],
+) -> None:
+    """删除配置中已移除的流转配置。"""
     desired_workflow_keys = set()
     for type_code, configs in workflow_configs_map.items():
         if type_code not in work_types_map:
             continue
         for cfg in configs:
-            key = (type_code, cfg.get("from_state"), cfg.get("action"))
-            desired_workflow_keys.add(key)
+            desired_workflow_keys.add((type_code, cfg.get("from_state"), cfg.get("action")))
 
-    # 遍历数据库现有记录，如果不在合法集合中，则删除
     existing_workflows = await SysWorkflowConfigDoc.find_all().to_list()
     for cfg_doc in existing_workflows:
         key = (cfg_doc.type_code, cfg_doc.from_state, cfg_doc.action)
         if key not in desired_workflow_keys:
             await cfg_doc.delete()
             log.info(f"删除已下线流转配置: {cfg_doc.type_code} {cfg_doc.from_state} -> {cfg_doc.action}")
+
+
+async def init_config_data():
+    """
+    从配置文件初始化基础数据 (Beanie ODM 版本)
+
+    流程：
+    1. 扫描 `configs/` 目录，加载 JSON 配置到内存字典。
+    2. 同步 `SysWorkTypeDoc` (事项类型)。
+    3. 同步 `SysWorkflowStateDoc` (工作流状态)。
+    4. 同步 `SysWorkflowConfigDoc` (流转规则)。
+    5. 清理数据库中已废弃（配置文件中不存在）的数据。
+    """
+    log.info("开始从配置文件初始化基础数据...")
+
+    config_dir = Path(__file__).parent / "configs"
+    if not config_dir.exists():
+        log.warning(f"配置目录不存在: {config_dir}")
+        return
+
+    work_types_map, states_map, workflow_configs_map = _load_config_maps(config_dir)
+
+    if not states_map:
+        raise ValueError("未加载到任何状态定义，请在配置文件中声明 states")
+
+    from_states = _validate_workflow_configs(work_types_map, states_map, workflow_configs_map)
+    _derive_state_end_flags(states_map, from_states)
+
+    await _sync_work_types(work_types_map)
+    await _sync_workflow_states(states_map)
+    await _sync_workflow_configs(work_types_map, workflow_configs_map)
+    await _cleanup_removed_work_types(work_types_map)
+    await _cleanup_removed_workflow_configs(work_types_map, workflow_configs_map)
 
     log.success("基础数据初始化完成")
 
@@ -368,7 +411,13 @@ async def init_rbac_data():
 
     for role_id, permission_ids in default_roles.items():
         await RoleDoc.find_one(RoleDoc.role_id == role_id).upsert(
-            {"$set": {"name": role_id, "permission_ids": permission_ids, "updated_at": datetime.now(timezone.utc)}},
+            {
+                "$set": {
+                    "name": role_id,
+                    "permission_ids": permission_ids,
+                    "updated_at": datetime.now(timezone.utc),
+                }
+            },
             on_insert=RoleDoc(role_id=role_id, name=role_id, permission_ids=permission_ids)
         )
 
@@ -409,7 +458,7 @@ async def init_navigation_pages():
 async def main():
     """
     主函数 (Beanie ODM 版本)
-    
+
     功能：
     1. 连接 MongoDB。
     2. 初始化 Beanie ODM。

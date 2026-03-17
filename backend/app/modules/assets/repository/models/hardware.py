@@ -6,6 +6,7 @@ from beanie import Document, before_event, Save, Insert
 from pydantic import Field
 from pymongo import ASCENDING, IndexModel
 
+
 class ComponentLibraryDoc(Document):
     """部件字典 - 数据库模型"""
     part_number: str = Field(..., description="唯一物料编号（PN）")

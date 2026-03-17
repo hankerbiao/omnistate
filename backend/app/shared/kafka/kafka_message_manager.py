@@ -11,7 +11,6 @@ from kafka.errors import KafkaError, KafkaTimeoutError
 from app.shared.core.logger import log
 from app.shared.kafka.config import KafkaConfig, load_kafka_config
 
-
 CONSUMER_GROUPS = {
     "task": "dmlv4-task-handlers",
     "result": "dmlv4-result-collectors",
@@ -101,10 +100,10 @@ class KafkaMessageManager:
     """Kafka 消息管理类。"""
 
     def __init__(
-        self,
-        bootstrap_servers: list[str] | None = None,
-        client_id: str | None = None,
-        config: KafkaConfig | None = None,
+            self,
+            bootstrap_servers: list[str] | None = None,
+            client_id: str | None = None,
+            config: KafkaConfig | None = None,
     ):
         runtime_config = config or load_kafka_config()
         if bootstrap_servers is not None:
@@ -154,11 +153,11 @@ class KafkaMessageManager:
             raise
 
     def _send_message(
-        self,
-        topic: str,
-        key: str,
-        value: str,
-        headers: list[tuple[str, bytes]] | None = None,
+            self,
+            topic: str,
+            key: str,
+            value: str,
+            headers: list[tuple[str, bytes]] | None = None,
     ) -> bool:
         if not self.is_running or not self.producer:
             log.error("消息管理器未启动或生产者不可用")
@@ -269,6 +268,60 @@ class KafkaMessageManager:
         self.task_handlers[task_type] = handler_func
         log.info(f"已注册任务处理器 - 类型: {task_type}")
 
+    def _process_task_result(self, task_msg: TaskMessage, result: Any) -> None:
+        """标准化任务处理结果并发送结果消息。"""
+        if isinstance(result, ResultMessage):
+            self.send_result(result)
+            return
+
+        self.send_result(
+            ResultMessage(
+                task_id=task_msg.task_id,
+                status="SUCCESS" if result else "FAILED",
+            )
+        )
+
+    def _handle_task_message(self, message) -> bool:
+        """处理单条任务消息，返回是否完成一次业务处理。"""
+        try:
+            task_msg = TaskMessage.from_json(message.value)
+            log.info(f"处理任务 - ID: {task_msg.task_id}, 类型: {task_msg.task_type}")
+
+            handler = self.task_handlers.get(task_msg.task_type)
+            if not handler:
+                error_msg = f"未找到任务类型 {task_msg.task_type} 的处理器"
+                log.error(error_msg)
+                self.send_to_dead_letter_queue(task_msg, error_msg)
+                return False
+
+            try:
+                result = handler(task_msg)
+                self._process_task_result(task_msg, result)
+                return True
+            except Exception as e:
+                log.error(f"处理任务时发生错误 - ID: {task_msg.task_id}, 错误: {e}")
+                self.send_result(
+                    ResultMessage(
+                        task_id=task_msg.task_id,
+                        status="FAILED",
+                        error_message=str(e),
+                    )
+                )
+                return False
+        except Exception as e:
+            log.error(f"解析任务消息时发生错误: {e}")
+            self.send_to_dead_letter_queue(message.value, f"消息解析错误: {e}")
+            return False
+
+    def _iter_polled_messages(self, consumer, timeout_ms: int = 1000):
+        """遍历 poll 返回的消息包。"""
+        msg_pack = consumer.poll(timeout_ms=timeout_ms)
+        if not msg_pack:
+            return
+        for messages in msg_pack.values():
+            for message in messages:
+                yield message
+
     def process_tasks(self, max_tasks: int | None = None) -> None:
         if "task" not in self.consumers:
             log.error("任务消费者未初始化")
@@ -284,47 +337,16 @@ class KafkaMessageManager:
                     log.info(f"已达到最大处理任务数: {max_tasks}")
                     break
 
-                msg_pack = consumer.poll(timeout_ms=1000)
-                if not msg_pack:
+                polled_any = False
+                for message in self._iter_polled_messages(consumer):
+                    polled_any = True
+                    if self._handle_task_message(message):
+                        processed_count += 1
+                        if max_tasks and processed_count >= max_tasks:
+                            log.info(f"已达到最大处理任务数: {max_tasks}")
+                            break
+                if not polled_any:
                     continue
-
-                for messages in msg_pack.values():
-                    for message in messages:
-                        try:
-                            task_msg = TaskMessage.from_json(message.value)
-                            log.info(f"处理任务 - ID: {task_msg.task_id}, 类型: {task_msg.task_type}")
-
-                            handler = self.task_handlers.get(task_msg.task_type)
-                            if not handler:
-                                error_msg = f"未找到任务类型 {task_msg.task_type} 的处理器"
-                                log.error(error_msg)
-                                self.send_to_dead_letter_queue(task_msg, error_msg)
-                                continue
-
-                            try:
-                                result = handler(task_msg)
-                                if isinstance(result, ResultMessage):
-                                    self.send_result(result)
-                                else:
-                                    self.send_result(
-                                        ResultMessage(
-                                            task_id=task_msg.task_id,
-                                            status="SUCCESS" if result else "FAILED",
-                                        )
-                                    )
-                                processed_count += 1
-                            except Exception as e:
-                                log.error(f"处理任务时发生错误 - ID: {task_msg.task_id}, 错误: {e}")
-                                self.send_result(
-                                    ResultMessage(
-                                        task_id=task_msg.task_id,
-                                        status="FAILED",
-                                        error_message=str(e),
-                                    )
-                                )
-                        except Exception as e:
-                            log.error(f"解析任务消息时发生错误: {e}")
-                            self.send_to_dead_letter_queue(message.value, f"消息解析错误: {e}")
         except Exception as e:
             log.error(f"处理任务时发生严重错误: {e}")
 

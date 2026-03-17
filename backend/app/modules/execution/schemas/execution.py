@@ -2,7 +2,7 @@
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class DispatchCaseItem(BaseModel):
@@ -22,6 +22,17 @@ class DispatchTaskRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    @model_validator(mode="after")
+    def validate_dispatch_request(self) -> "DispatchTaskRequest":
+        case_ids = [item.case_id for item in self.cases]
+        if not case_ids:
+            raise ValueError("cases cannot be empty")
+        if len(case_ids) != len(set(case_ids)):
+            raise ValueError("cases must not contain duplicate case_id")
+        if self.schedule_type.upper() not in {"IMMEDIATE", "SCHEDULED"}:
+            raise ValueError("schedule_type must be IMMEDIATE or SCHEDULED")
+        return self
+
 
 class DispatchTaskResponse(BaseModel):
     task_id: str
@@ -35,6 +46,8 @@ class DispatchTaskResponse(BaseModel):
     consume_status: str
     overall_status: str
     case_count: int
+    current_case_id: Optional[str] = None
+    current_case_index: int = 0
     planned_at: Optional[datetime] = None
     triggered_at: Optional[datetime] = None
     created_at: datetime
@@ -53,6 +66,8 @@ class ExecutionTaskListItem(BaseModel):
     consume_status: str
     overall_status: str
     case_count: int
+    current_case_id: Optional[str] = None
+    current_case_index: int = 0
     planned_at: Optional[datetime] = None
     triggered_at: Optional[datetime] = None
     created_at: datetime
@@ -144,6 +159,17 @@ class UpdateScheduledTaskRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    @model_validator(mode="after")
+    def validate_schedule_update(self) -> "UpdateScheduledTaskRequest":
+        if self.cases is None:
+            return self
+        case_ids = [item.case_id for item in self.cases]
+        if not case_ids:
+            raise ValueError("cases cannot be empty")
+        if len(case_ids) != len(set(case_ids)):
+            raise ValueError("cases must not contain duplicate case_id")
+        return self
+
 
 class ScheduledTaskMutationResponse(BaseModel):
     task_id: str
@@ -157,6 +183,8 @@ class ScheduledTaskMutationResponse(BaseModel):
     overall_status: str
     consume_status: Optional[str] = None
     case_count: Optional[int] = None
+    current_case_id: Optional[str] = None
+    current_case_index: int = 0
     planned_at: Optional[datetime] = None
     triggered_at: Optional[datetime] = None
     created_at: Optional[datetime] = None

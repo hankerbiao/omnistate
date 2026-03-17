@@ -17,7 +17,6 @@ from app.modules.test_specs.repository.models import TestRequirementDoc, TestCas
 from app.modules.workflow.domain.exceptions import (
     WorkItemNotFoundError,
     InvalidTransitionError,
-    MissingRequiredFieldError,
     PermissionDeniedError,
 )
 from app.modules.workflow.domain.rules import (
@@ -64,9 +63,9 @@ class AsyncWorkflowService:
     def _is_transaction_not_supported(exc: Exception) -> bool:
         message = str(exc).lower()
         return (
-            "transaction numbers are only allowed on a replica set member" in message
-            or "this mongodb deployment does not support retryable writes" in message
-            or "sessions are not supported" in message
+                "transaction numbers are only allowed on a replica set member" in message
+                or "this mongodb deployment does not support retryable writes" in message
+                or "sessions are not supported" in message
         )
 
     # ========== 查询方法 ==========
@@ -521,13 +520,13 @@ class AsyncWorkflowService:
             raise
 
     async def _handle_transition_core(
-        self,
-        work_item_id: str,
-        action: str,
-        operator_id: str,
-        form_data: Dict[str, Any],
-        actor_role_ids: Optional[List[str]],
-        session: Optional[AsyncClientSession],
+            self,
+            work_item_id: str,
+            action: str,
+            operator_id: str,
+            form_data: Dict[str, Any],
+            actor_role_ids: Optional[List[str]],
+            session: Optional[AsyncClientSession],
     ) -> Dict[str, Any]:
         item_doc = await self._get_work_item(work_item_id, session=session)
         if not item_doc or item_doc.is_deleted:
@@ -613,8 +612,8 @@ class AsyncWorkflowService:
 
     @staticmethod
     async def _get_work_item(
-        work_item_id: str,
-        session: Optional[AsyncClientSession],
+            work_item_id: str,
+            session: Optional[AsyncClientSession],
     ):
         if session is None:
             return await BusWorkItemDoc.get(work_item_id)
@@ -644,10 +643,10 @@ class AsyncWorkflowService:
             await doc.insert()
 
     async def delete_item(
-        self,
-        item_id: str,
-        operator_id: str,
-        actor_role_ids: Optional[List[str]] = None,
+            self,
+            item_id: str,
+            operator_id: str,
+            actor_role_ids: Optional[List[str]] = None,
     ) -> bool:
         """
         逻辑删除业务事项。
@@ -677,11 +676,11 @@ class AsyncWorkflowService:
             raise
 
     async def _delete_item_core(
-        self,
-        item_id: str,
-        operator_id: str,
-        actor_role_ids: Optional[List[str]],
-        session: Optional[AsyncClientSession],
+            self,
+            item_id: str,
+            operator_id: str,
+            actor_role_ids: Optional[List[str]],
+            session: Optional[AsyncClientSession],
     ) -> bool:
         item_doc = await self._get_work_item(item_id, session=session)
         if not item_doc or item_doc.is_deleted:
@@ -740,12 +739,12 @@ class AsyncWorkflowService:
         return True
 
     async def reassign_item(
-        self,
-        item_id: str,
-        operator_id: str,
-        target_owner_id: str,
-        remark: Optional[str] = None,
-        actor_role_ids: Optional[List[str]] = None,
+            self,
+            item_id: str,
+            operator_id: str,
+            target_owner_id: str,
+            remark: Optional[str] = None,
+            actor_role_ids: Optional[List[str]] = None,
     ) -> Dict:
         """
         改派当前事项的处理人（不改变状态）。

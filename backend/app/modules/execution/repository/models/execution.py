@@ -27,6 +27,9 @@ class ExecutionTaskDoc(Document):
     created_by: str = Field(..., description="创建者 user_id")
     case_count: int = Field(default=0, description="任务包含用例数量")
     reported_case_count: int = Field(default=0, description="已上报进度的用例数")
+    current_case_id: Optional[str] = Field(None, description="当前下发中的测试用例 ID")
+    current_case_index: int = Field(default=0, description="当前下发中的测试用例序号")
+    orchestration_lock: Optional[str] = Field(None, description="平台串行推进锁")
     planned_at: Optional[datetime] = None
     triggered_at: Optional[datetime] = None
     started_at: Optional[datetime] = None
@@ -62,6 +65,7 @@ class ExecutionTaskDoc(Document):
             IndexModel([("created_by", ASCENDING), ("created_at", DESCENDING)]),
             IndexModel([("overall_status", ASCENDING), ("created_at", DESCENDING)]),
             IndexModel([("dispatch_status", ASCENDING), ("created_at", DESCENDING)]),
+            IndexModel([("task_id", ASCENDING), ("current_case_index", ASCENDING)]),
         ]
 
 
@@ -71,6 +75,9 @@ class ExecutionTaskCaseDoc(Document):
     task_id: str = Field(..., description="平台任务 ID")
     case_id: str = Field(..., description="测试用例业务 ID")
     case_snapshot: Dict[str, Any] = Field(default_factory=dict, description="用例快照")
+    order_no: int = Field(default=0, description="用例在任务中的顺序")
+    dispatch_status: str = Field(default="PENDING", description="平台下发状态")
+    dispatch_attempts: int = Field(default=0, description="平台下发次数")
     status: str = Field(default="QUEUED", description="用例执行状态")
     progress_percent: Optional[float] = None
     step_total: int = 0
@@ -81,6 +88,7 @@ class ExecutionTaskCaseDoc(Document):
     last_event_id: Optional[str] = None
     started_at: Optional[datetime] = None
     finished_at: Optional[datetime] = None
+    dispatched_at: Optional[datetime] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -93,6 +101,7 @@ class ExecutionTaskCaseDoc(Document):
         indexes = [
             IndexModel([("task_id", ASCENDING), ("case_id", ASCENDING)], unique=True),
             IndexModel([("task_id", ASCENDING), ("status", ASCENDING)]),
+            IndexModel([("task_id", ASCENDING), ("order_no", ASCENDING)]),
             IndexModel("task_id"),
             IndexModel("case_id"),
         ]

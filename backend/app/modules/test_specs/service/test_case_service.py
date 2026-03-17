@@ -166,15 +166,15 @@ class TestCaseService(BaseService):
         return await self._enrich_test_case_status(self._doc_to_dict(doc))
 
     async def list_test_cases(
-        self,
-        ref_req_id: Optional[str] = None,
-        status: Optional[str] = None,
-        owner_id: Optional[str] = None,
-        reviewer_id: Optional[str] = None,
-        priority: Optional[str] = None,
-        is_active: Optional[bool] = None,
-        limit: int = 20,
-        offset: int = 0,
+            self,
+            ref_req_id: Optional[str] = None,
+            status: Optional[str] = None,
+            owner_id: Optional[str] = None,
+            reviewer_id: Optional[str] = None,
+            priority: Optional[str] = None,
+            is_active: Optional[bool] = None,
+            limit: int = 20,
+            offset: int = 0,
     ) -> List[Dict[str, Any]]:
         """分页查询测试用例列表，支持多种过滤条件。
 
@@ -203,8 +203,10 @@ class TestCaseService(BaseService):
             workflow_states = await self._get_workflow_states_for_test_cases(case_ids)
             filtered_docs = [
                 doc for doc in docs
-                if workflow_states.get(doc.case_id) == status
-                or (workflow_states.get(doc.case_id) is None and status == "未开始")
+                if (
+                    workflow_states.get(doc.case_id) == status
+                    or (workflow_states.get(doc.case_id) is None and status == "未开始")
+                )
             ]
             docs = filtered_docs[offset:offset + limit]
         else:
@@ -294,10 +296,10 @@ class TestCaseService(BaseService):
         await doc.save()
 
     async def link_automation_case(
-        self,
-        case_id: str,
-        auto_case_id: str,
-        version: Optional[str] = None,
+            self,
+            case_id: str,
+            auto_case_id: str,
+            version: Optional[str] = None,
     ) -> Dict[str, Any]:
         """将自动化测试用例关联到手工测试用例"""
         case_doc = await TestCaseDoc.find_one(
@@ -336,7 +338,8 @@ class TestCaseService(BaseService):
         await case_doc.save()
         return self._doc_to_dict(case_doc)
 
-    async def assign_owners(self, case_id: str, owner_id: str | None = None, reviewer_id: str | None = None, auto_dev_id: str | None = None) -> Dict[str, Any]:
+    async def assign_owners(self, case_id: str, owner_id: str | None = None, reviewer_id: str | None = None,
+                            auto_dev_id: str | None = None) -> Dict[str, Any]:
         """分配测试用例负责人（Phase 4显式命令）。
 
         这是Phase 4的核心实现：负责人分配必须通过显式命令，不能通过通用更新。
@@ -416,11 +419,10 @@ class TestCaseService(BaseService):
 
         return self._doc_to_dict(case_doc)
 
-
     async def _create_test_case_with_transaction(
-        self,
-        client: AsyncMongoClient,
-        payload: Dict[str, Any],
+            self,
+            client: AsyncMongoClient,
+            payload: Dict[str, Any],
     ) -> Dict[str, Any]:
         """使用事务模式创建测试用例（推荐）"""
         workflow_service = AsyncWorkflowService()
@@ -449,6 +451,7 @@ class TestCaseService(BaseService):
                 doc = TestCaseDoc(**payload)
                 await doc.insert(session=session)
                 return self._doc_to_dict(doc)
+
     @staticmethod
     def _get_mongo_client_or_none() -> Optional[AsyncMongoClient]:
         """获取MongoDB客户端，如果未初始化则返回None"""

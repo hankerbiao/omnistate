@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
+
 class CreateComponentRequest(BaseModel):
     part_number: str = Field(..., description="唯一物料编号（PN）")
     category: str = Field(..., description="大类")
@@ -115,6 +116,7 @@ class DutResponse(BaseModel):
     notes: Optional[str]
     created_at: datetime
     updated_at: datetime
+
 
 class CreateTestPlanComponentRequest(BaseModel):
     plan_id: str

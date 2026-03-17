@@ -33,4 +33,3 @@ class SequenceIdService:
             session=session,
         )
         return int(doc["seq"])
-

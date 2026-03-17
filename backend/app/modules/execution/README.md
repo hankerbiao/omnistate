@@ -1,16 +1,17 @@
 # 测试执行模块（execution）
 
-本模块负责 **测试执行任务的创建、分发、代理注册与状态查询**，对应架构中的“执行层”。
-当前实现通过 **统一任务分发器** 下发任务，可通过配置选择 **Kafka 发布** 或 **HTTP 直连代理**。
+本模块负责 **测试执行任务的创建、分发、串行推进、代理注册与状态查询**，对应架构中的“执行层”。
+当前实现由 **平台主导串行 case 执行**：一个任务可包含多条测试用例，但平台每次只向外部框架下发当前 1 条 case；上一条进入终态并完成回报后，平台才推进下一条。
 
 ## 主要职责
 - 接收执行任务下发请求并生成平台任务 ID
 - 校验测试用例是否存在，写入任务主记录与任务明细
-- 根据配置选择 Kafka 或 HTTP 通道下发任务，并记录成功或失败结果
-- 在消费者确认消费前阻止同业务命令重复下发
-- 提供任务状态查询与失败重试能力
+- 根据配置选择 Kafka 或 HTTP 通道，下发当前 1 条 case
+- 接收 case 回报并在平台内推进下一条 case
+- 在存在同业务载荷且未完成任务时阻止重复下发
+- 提供任务状态查询、定时任务修改与失败重试能力
 - 提供执行代理注册、心跳和在线状态查询能力
-- 为执行回调与审计预留执行事件模型
+- 保存任务与 case 级执行事件审计
 
 ## 目录结构
 - `api/`：HTTP 路由层（FastAPI）
@@ -27,14 +28,22 @@
 - `DispatchExecutionTaskCommand`：任务下发命令对象，统一构建并校验 Kafka 任务载荷
 - `ExecutionTaskDispatcher`：根据配置选择 Kafka 或 HTTP 直连代理进行下发
 
+## 当前架构
+- `ExecutionService`：对外兼容门面，负责任务创建、定时修改、重试与真实下发
+- `ExecutionProgressMixin`：处理 task event、case status、平台推进与自动收口
+- `ExecutionTaskQueryMixin`：处理任务查询与统一序列化
+- `ExecutionAgentMixin`：处理代理注册、心跳和查询
+- 外部框架：仅负责执行当前 case 并回报结果，不参与任务级调度或完成判定
+
 ## 当前主链路
 1. 客户端调用 `POST /api/v1/execution/tasks/dispatch` 提交任务下发请求。
 2. 路由生成 `task_id` / `external_task_id`，并构造 `DispatchExecutionTaskCommand`；HTTP 模式下请求需显式传 `agent_id`。
 3. `ExecutionService` 校验命令、校验测试用例存在性，并检查操作者身份。
 4. 服务写入 `ExecutionTaskDoc` 与 `ExecutionTaskCaseDoc`。
-5. `ExecutionTaskDispatcher` 根据 `EXECUTION_DISPATCH_MODE` 选择 Kafka 或 HTTP 通道执行下发。
-6. 根据发送结果更新 `dispatch_status`、`dispatch_channel` 和错误信息。
-7. 消费者领取消息后通过 ack 接口将 `consume_status` 更新为 `CONSUMED`。
+5. 平台只下发首条 case；`ExecutionTaskDispatcher` 根据 `EXECUTION_DISPATCH_MODE` 选择 Kafka 或 HTTP 通道执行下发。
+6. 外部框架回报 `POST /tasks/{task_id}/cases/{case_id}/status` 后，平台更新当前 case 状态。
+7. 若该 case 已终态，平台获取推进锁并自动下发下一条 case。
+8. 最后一条 case 完成后，平台自动将任务收口为最终状态。
 
 ## API 概览
 - `POST /api/v1/execution/agents/register`：注册或刷新代理基础信息
@@ -59,7 +68,13 @@
 
 ## 分层说明
 - `application/execution_service.py`
-  负责当前唯一写操作入口，包含任务下发与代理注册/心跳逻辑。
+  负责对外兼容门面，保留任务命令入口。
+- `application/progress_mixin.py`
+  负责平台主导的串行 case 推进、事件处理与任务自动收口。
+- `application/query_mixin.py`
+  负责任务查询与统一序列化。
+- `application/agent_mixin.py`
+  负责代理注册、心跳和查询。
 - `service/task_dispatcher.py`
   负责具体下发通道选择与适配。
 
@@ -73,5 +88,6 @@
 - 任务 ID 格式为 `ET-年份-6位序号`，外部任务 ID 格式为 `EXT-ET-...`。
 - 当前实现不依赖 MongoDB 事务能力。
 - 代理查询结果会基于 `last_heartbeat_at + heartbeat_ttl_seconds` 推导在线状态，超时心跳会自动视为 `OFFLINE`。
-- 执行任务会生成 `dedup_key`；当存在同 `dedup_key` 且 `consume_status=PENDING` 的任务时，系统会拒绝重复下发。
+- 执行任务会生成 `dedup_key`；当存在同 `dedup_key` 且任务尚未完成时，系统会拒绝重复下发。
 - `EXECUTION_DISPATCH_MODE=http` 时，系统会通过代理的 `base_url + EXECUTION_AGENT_DISPATCH_PATH` 进行异步 HTTP 下发，请求必须显式传 `agent_id`。
+- `/tasks/{task_id}/complete` 不再允许外部框架提前结束任务；只有所有 case 都已到终态时才允许收口。

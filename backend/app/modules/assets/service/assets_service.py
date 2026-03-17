@@ -98,14 +98,14 @@ class AssetsService(BaseService):
         return self._doc_to_dict(doc)
 
     async def list_components(
-        self,
-        category: Optional[str] = None,
-        subcategory: Optional[str] = None,
-        vendor: Optional[str] = None,
-        model: Optional[str] = None,
-        lifecycle_status: Optional[str] = None,
-        limit: int = 20,
-        offset: int = 0,
+            self,
+            category: Optional[str] = None,
+            subcategory: Optional[str] = None,
+            vendor: Optional[str] = None,
+            model: Optional[str] = None,
+            lifecycle_status: Optional[str] = None,
+            limit: int = 20,
+            offset: int = 0,
     ) -> List[Dict[str, Any]]:
         """分页查询部件列表。"""
         query = ComponentLibraryDoc.find()
@@ -160,13 +160,13 @@ class AssetsService(BaseService):
         return self._sanitize_dut(doc)
 
     async def list_duts(
-        self,
-        status: Optional[str] = None,
-        owner_team: Optional[str] = None,
-        rack_location: Optional[str] = None,
-        health_status: Optional[str] = None,
-        limit: int = 20,
-        offset: int = 0,
+            self,
+            status: Optional[str] = None,
+            owner_team: Optional[str] = None,
+            rack_location: Optional[str] = None,
+            health_status: Optional[str] = None,
+            limit: int = 20,
+            offset: int = 0,
     ) -> List[Dict[str, Any]]:
         """分页查询 DUT 列表。"""
         query = DutDoc.find()
@@ -195,8 +195,8 @@ class AssetsService(BaseService):
         await doc.delete()
 
     async def test_dut_status(
-        self,
-        asset_id: str,
+            self,
+            asset_id: str,
     ) -> Dict[str, Any]:
         """测试 DUT 的 OS 和 BMC 可达性。"""
         doc = await self._get_by_field_or_raise(DutDoc, DutDoc.asset_id, asset_id, "dut not found")
@@ -312,11 +312,11 @@ class AssetsService(BaseService):
         return self._doc_to_dict(doc)
 
     async def list_plan_components(
-        self,
-        plan_id: Optional[str] = None,
-        part_number: Optional[str] = None,
-        limit: int = 50,
-        offset: int = 0,
+            self,
+            plan_id: Optional[str] = None,
+            part_number: Optional[str] = None,
+            limit: int = 50,
+            offset: int = 0,
     ) -> List[Dict[str, Any]]:
         """查询测试计划关联部件列表。"""
         query = TestPlanComponentDoc.find()

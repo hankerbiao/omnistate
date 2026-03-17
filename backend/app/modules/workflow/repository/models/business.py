@@ -5,7 +5,7 @@
 - MongoDB 持久化文档模型（Document）
 - 对应的 Pydantic 响应模型（用于 API 层返回）
 """
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any
 from datetime import datetime, timezone
 from pydantic import BaseModel, Field, ConfigDict
 from beanie import Document, PydanticObjectId, before_event, Save, Insert

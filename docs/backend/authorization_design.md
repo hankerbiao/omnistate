@@ -15,6 +15,7 @@
   - `workflow`
   - `assets`
   - `test_specs`（`requirements`、`test_cases`）
+  - `execution`
   - `auth`（用户/角色/权限管理）
 - 非业务接口：
   - 健康检查接口（`/health`）不要求授权。
@@ -38,9 +39,13 @@
 - `requirements:write`
 - `test_cases:read`
 - `test_cases:write`
+- `execution_tasks:read`
+- `execution_tasks:write`
+- `execution_agents:read`
 - `users:read` / `users:write`
 - `roles:read` / `roles:write`
 - `permissions:read` / `permissions:write`
+- `navigation:read` / `navigation:write`
 
 ## 4. 授权链路
 
@@ -135,15 +140,12 @@
 - `users:write`
   - `POST /users`
   - `PUT /users/{user_id}`
-  - `PATCH /users/{user_id}/roles`
-  - `PATCH /users/{user_id}/password`
 - `roles:read`
   - `GET /roles`
   - `GET /roles/{role_id}`
 - `roles:write`
   - `POST /roles`
   - `PUT /roles/{role_id}`
-  - `PATCH /roles/{role_id}/permissions`
 - `permissions:read`
   - `GET /permissions`
   - `GET /permissions/{perm_id}`
@@ -155,11 +157,40 @@
 - 仅登录（不要求显式权限）
   - `POST /users/me/password`
   - `GET /users/me/permissions`
-  - `GET /users/me/navigation`
+- 需登录且要求导航读取权限
+  - `GET /users/me/navigation`（`navigation:read`）
 - 管理员专用（`require_admin_user`）
   - `GET /admin/navigation/pages`
+  - `GET /admin/navigation/pages/{view}`
+  - `POST /admin/navigation/pages`
+  - `PUT /admin/navigation/pages/{view}`
+  - `DELETE /admin/navigation/pages/{view}`
   - `GET /admin/users/{user_id}/navigation`
   - `PUT /admin/users/{user_id}/navigation`
+  - `PATCH /users/{user_id}/roles`
+  - `PATCH /users/{user_id}/password`
+  - `PATCH /roles/{role_id}/permissions`
+
+### 6.6 Execution（`/api/v1/execution`）
+
+- `execution_tasks:write`
+  - `POST /tasks/dispatch`
+  - `POST /tasks/{task_id}/consume-ack`
+  - `POST /tasks/{task_id}/cancel`
+  - `PUT /tasks/{task_id}/schedule`
+  - `POST /tasks/{task_id}/retry`
+- `execution_tasks:read`
+  - `GET /tasks`
+  - `GET /tasks/{task_id}/status`
+- `execution_agents:read`
+  - `GET /agents`
+  - `GET /agents/{agent_id}`
+- 当前未挂显式 RBAC 依赖的代理/回传接口
+  - `POST /agents/register`
+  - `POST /agents/{agent_id}/heartbeat`
+  - `POST /tasks/{task_id}/events`
+  - `POST /tasks/{task_id}/cases/{case_id}/status`
+  - `POST /tasks/{task_id}/complete`
 
 ## 7. 默认权限与角色初始化
 

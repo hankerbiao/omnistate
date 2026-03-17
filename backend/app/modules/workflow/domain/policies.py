@@ -151,8 +151,8 @@ def can_transition(actor: Any, work_item: Any, workflow_config: Any) -> bool:
             return False
     else:
         if not (
-            _matches_actor_type(actor, work_item, "creator")
-            or _matches_actor_type(actor, work_item, "current_owner")
+                _matches_actor_type(actor, work_item, "creator")
+                or _matches_actor_type(actor, work_item, "current_owner")
         ):
             return False
 

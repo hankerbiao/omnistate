@@ -16,7 +16,6 @@ from app.shared.db.config import settings
 from app.modules.auth.repository.models import UserDoc, RoleDoc, PermissionDoc
 
 
-
 def _b64url_encode(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode("utf-8")
 
@@ -71,11 +70,11 @@ def decode_token(token: str) -> Dict[str, Any]:
     try:
         payload = json.loads(_b64url_decode(payload_b64))
     except (
-        binascii.Error,
-        UnicodeDecodeError,
-        json.JSONDecodeError,
-        TypeError,
-        ValueError,
+            binascii.Error,
+            UnicodeDecodeError,
+            json.JSONDecodeError,
+            TypeError,
+            ValueError,
     ):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid token")
 
@@ -105,7 +104,7 @@ bearer_scheme = HTTPBearer(auto_error=True)
 
 
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+        credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
 ) -> Dict[str, Any]:
     """解析 JWT 并返回用户信息
 
