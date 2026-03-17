@@ -44,8 +44,6 @@ DEFAULT_PERMISSIONS = [
     ("roles:write", "Roles write"),
     ("permissions:read", "Permissions read"),
     ("permissions:write", "Permissions write"),
-    ("assets:read", "Assets read"),
-    ("assets:write", "Assets write"),
     ("requirements:read", "Requirements read"),
     ("requirements:write", "Requirements write"),
     ("test_cases:read", "Test cases read"),

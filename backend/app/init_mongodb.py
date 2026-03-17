@@ -5,19 +5,6 @@ MongoDB 数据库初始化脚本
 功能说明：
 该脚本用于将代码中的配置（configs/*.json）同步到 MongoDB 数据库中。
 它是幂等的（Idempotent），可以重复运行。
-
-主要逻辑：
-1. **加载配置**：从 `configs/` 目录读取 JSON 配置文件，解析出事项类型、工作流状态、流转规则。
-2. **数据同步 (Upsert)**：
-   - 使用 `upsert` (Update + Insert) 操作。
-   - 如果数据不存在，则创建。
-   - 如果数据已存在，则使用 `$set` 更新指定字段（如 name, to_state），**保留**其他自定义字段。
-3. **数据清理 (Cleanup)**：
-   - 反向检查数据库中的数据。
-   - 如果数据库中存在某条配置，但配置文件中已将其移除，脚本会**物理删除**该文档。
-   - 注意：这意味着未在配置文件中定义的“野生”数据会被清除。
-
-使用方法：
 python backend/app/init_mongodb.py
 """
 import asyncio
@@ -339,9 +326,6 @@ async def init_rbac_data():
         ("roles:write", "角色写入权限"),
         ("permissions:read", "权限读取权限"),
         ("permissions:write", "权限写入权限"),
-        # assets (预留)
-        ("assets:read", "资产读取权限"),
-        ("assets:write", "资产写入权限"),
         # test specs (预留)
         ("requirements:read", "需求读取权限"),
         ("requirements:write", "需求写入权限"),
@@ -371,8 +355,6 @@ async def init_rbac_data():
             "requirements:read",
             "requirements:write",
             "test_cases:read",
-            "assets:read",
-            "assets:write",
             "work_items:read",
             "work_items:transition",
             "execution_agents:read",
@@ -387,8 +369,6 @@ async def init_rbac_data():
             "requirements:read",
             "test_cases:read",
             "test_cases:write",
-            "assets:read",
-            "assets:write",
             "work_items:read",
             "work_items:transition",
             "execution_agents:read",
