@@ -13,6 +13,8 @@ from app.modules.execution.repository.models import (
     ExecutionEventDoc,
     ExecutionTaskCaseDoc,
     ExecutionTaskDoc,
+    ExecutionTaskRunCaseDoc,
+    ExecutionTaskRunDoc,
 )
 from app.shared.core.mongo_client import get_mongo_client
 from app.shared.db.config import settings
@@ -99,6 +101,30 @@ class ExecutionProgressMixin:
             task_doc.dispatch_status = "COMPLETED"
         task_doc.orchestration_lock = None
         await task_doc.save()
+        await self._sync_run_from_task(task_doc)
+
+    async def _sync_run_from_task(self, task_doc: ExecutionTaskDoc) -> None:
+        """把任务当前结果同步到当前执行轮次。"""
+        if task_doc.current_run_no <= 0:
+            return
+
+        run_doc = await ExecutionTaskRunDoc.find_one({
+            "task_id": task_doc.task_id,
+            "run_no": task_doc.current_run_no,
+        })
+        if not run_doc:
+            return
+
+        run_doc.overall_status = task_doc.overall_status
+        run_doc.dispatch_status = task_doc.dispatch_status
+        run_doc.dispatch_channel = task_doc.dispatch_channel
+        run_doc.dispatch_response = dict(task_doc.dispatch_response or {})
+        run_doc.dispatch_error = task_doc.dispatch_error
+        run_doc.reported_case_count = task_doc.reported_case_count
+        run_doc.started_at = task_doc.started_at
+        run_doc.finished_at = task_doc.finished_at
+        run_doc.last_callback_at = task_doc.last_callback_at
+        await run_doc.save()
 
     async def _dispatch_next_case_if_needed(
             self,
@@ -143,6 +169,18 @@ class ExecutionProgressMixin:
         finally:
             if next_case_doc:
                 await self._release_progress_lock(task_doc.task_id)
+    @staticmethod
+    def _normalize_status(value: str, default: str = "UNKNOWN") -> str:
+        """统一状态字符串格式。"""
+        return (value or default).strip().upper()
+
+    @staticmethod
+    def _merge_result_payload(base: Dict[str, Any], extra: Dict[str, Any]) -> Dict[str, Any]:
+        """合并执行结果扩展信息。"""
+        merged = dict(base or {})
+        merged.update(extra or {})
+        return merged
+
 
     async def report_task_event(
             self,
@@ -185,6 +223,7 @@ class ExecutionProgressMixin:
             task_doc.started_at = task_doc.last_callback_at
             task_doc.overall_status = "RUNNING"
         await task_doc.save()
+        await self._sync_run_from_task(task_doc)
 
         return {
             "task_id": event_doc.task_id,
@@ -248,6 +287,43 @@ class ExecutionProgressMixin:
             payload.get("result_data", {}),
         )
 
+    async def _sync_run_case_from_case(
+        self,
+        task_doc: ExecutionTaskDoc,
+        case_doc: ExecutionTaskCaseDoc,
+        payload: Dict[str, Any],
+    ) -> None:
+        """把当前 case 结果同步到本轮历史记录。"""
+        if task_doc.current_run_no <= 0:
+            return
+
+        run_case_doc = await ExecutionTaskRunCaseDoc.find_one({
+            "task_id": task_doc.task_id,
+            "run_no": task_doc.current_run_no,
+            "case_id": case_doc.case_id,
+        })
+        if not run_case_doc:
+            return
+
+        run_case_doc.dispatch_status = case_doc.dispatch_status
+        run_case_doc.dispatch_attempts = case_doc.dispatch_attempts
+        run_case_doc.status = case_doc.status
+        run_case_doc.progress_percent = case_doc.progress_percent
+        run_case_doc.step_total = case_doc.step_total
+        run_case_doc.step_passed = case_doc.step_passed
+        run_case_doc.step_failed = case_doc.step_failed
+        run_case_doc.step_skipped = case_doc.step_skipped
+        run_case_doc.started_at = case_doc.started_at
+        run_case_doc.finished_at = case_doc.finished_at
+        run_case_doc.dispatched_at = case_doc.dispatched_at
+        run_case_doc.last_seq = case_doc.last_seq
+        run_case_doc.last_event_id = case_doc.last_event_id
+        run_case_doc.result_data = self._merge_result_payload(
+            run_case_doc.result_data,
+            payload.get("result_data", {}),
+        )
+        await run_case_doc.save()
+
     async def _update_task_progress_from_case(self, task_doc: ExecutionTaskDoc, task_id: str) -> None:
         """根据 case 更新任务进度统计。"""
         task_doc.last_callback_at = datetime.now(timezone.utc)
@@ -284,6 +360,8 @@ class ExecutionProgressMixin:
             self._apply_case_status_payload(case_doc, payload, status)
             await case_doc.save()
             await self._update_task_progress_from_case(task_doc, task_id)
+            await self._sync_run_case_from_case(task_doc, case_doc, payload)
+            await self._sync_run_from_task(task_doc)
 
             if status in FINAL_CASE_STATUSES:
                 await self._dispatch_next_case_if_needed(task_doc, case_id)
@@ -347,6 +425,7 @@ class ExecutionProgressMixin:
         task_doc.current_case_id = None
         task_doc.current_case_index = task_doc.case_count
         await task_doc.save()
+        await self._sync_run_from_task(task_doc)
 
         return {
             "task_id": task_doc.task_id,

@@ -27,6 +27,8 @@ class ExecutionTaskDoc(Document):
     created_by: str = Field(..., description="创建者 user_id")
     case_count: int = Field(default=0, description="任务包含用例数量")
     reported_case_count: int = Field(default=0, description="已上报进度的用例数")
+    latest_run_no: int = Field(default=0, description="最近一次执行轮次")
+    current_run_no: int = Field(default=0, description="当前正在执行的轮次")
     current_case_id: Optional[str] = Field(None, description="当前下发中的测试用例 ID")
     current_case_index: int = Field(default=0, description="当前下发中的测试用例序号")
     orchestration_lock: Optional[str] = Field(None, description="平台串行推进锁")
@@ -69,6 +71,39 @@ class ExecutionTaskDoc(Document):
         ]
 
 
+class ExecutionTaskRunDoc(Document):
+    """执行任务轮次记录。"""
+
+    task_id: str = Field(..., description="平台任务 ID")
+    run_no: int = Field(..., description="执行轮次，从 1 开始递增")
+    trigger_type: str = Field(default="INITIAL", description="触发类型")
+    triggered_by: str = Field(..., description="触发人 user_id")
+    overall_status: str = Field(default="QUEUED", description="本轮总体状态")
+    dispatch_status: str = Field(default="PENDING", description="本轮下发状态")
+    dispatch_channel: str = Field(default="KAFKA", description="本轮下发通道")
+    dispatch_response: Dict[str, Any] = Field(default_factory=dict, description="本轮最近一次下发响应")
+    dispatch_error: Optional[str] = Field(None, description="本轮下发失败原因")
+    case_count: int = Field(default=0, description="本轮用例数量")
+    reported_case_count: int = Field(default=0, description="本轮已完成回报的用例数量")
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
+    last_callback_at: Optional[datetime] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    @before_event([Save, Insert])
+    def update_updated_at(self):
+        self.updated_at = datetime.now(timezone.utc)
+
+    class Settings:
+        name = "execution_task_runs"
+        indexes = [
+            IndexModel([("task_id", ASCENDING), ("run_no", ASCENDING)], unique=True),
+            IndexModel([("task_id", ASCENDING), ("created_at", DESCENDING)]),
+            IndexModel([("task_id", ASCENDING), ("overall_status", ASCENDING)]),
+        ]
+
+
 class ExecutionTaskCaseDoc(Document):
     """执行任务-用例明细。"""
 
@@ -104,6 +139,44 @@ class ExecutionTaskCaseDoc(Document):
             IndexModel([("task_id", ASCENDING), ("order_no", ASCENDING)]),
             IndexModel("task_id"),
             IndexModel("case_id"),
+        ]
+
+
+class ExecutionTaskRunCaseDoc(Document):
+    """执行任务轮次-用例结果。"""
+
+    task_id: str = Field(..., description="平台任务 ID")
+    run_no: int = Field(..., description="执行轮次")
+    case_id: str = Field(..., description="测试用例业务 ID")
+    order_no: int = Field(default=0, description="用例顺序")
+    case_snapshot: Dict[str, Any] = Field(default_factory=dict, description="用例快照")
+    dispatch_status: str = Field(default="PENDING", description="本轮下发状态")
+    dispatch_attempts: int = Field(default=0, description="本轮下发次数")
+    status: str = Field(default="QUEUED", description="本轮执行状态")
+    progress_percent: Optional[float] = None
+    step_total: int = 0
+    step_passed: int = 0
+    step_failed: int = 0
+    step_skipped: int = 0
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
+    dispatched_at: Optional[datetime] = None
+    last_seq: int = Field(default=0, description="本轮最后事件序号")
+    last_event_id: Optional[str] = Field(None, description="本轮最后事件 ID")
+    result_data: Dict[str, Any] = Field(default_factory=dict, description="本轮扩展结果")
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    @before_event([Save, Insert])
+    def update_updated_at(self):
+        self.updated_at = datetime.now(timezone.utc)
+
+    class Settings:
+        name = "execution_task_run_cases"
+        indexes = [
+            IndexModel([("task_id", ASCENDING), ("run_no", ASCENDING), ("case_id", ASCENDING)], unique=True),
+            IndexModel([("task_id", ASCENDING), ("run_no", ASCENDING), ("order_no", ASCENDING)]),
+            IndexModel([("task_id", ASCENDING), ("run_no", ASCENDING), ("status", ASCENDING)]),
         ]
 
 

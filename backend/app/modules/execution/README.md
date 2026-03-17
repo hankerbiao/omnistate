@@ -1,170 +1,288 @@
-# 测试执行模块（execution）
+# 测试执行模块
 
-`execution` 模块是 DML V4 中的执行编排层，负责把“一个执行任务包含多条测试用例”的业务请求，转换成“平台逐条下发 case、逐条接收回报、逐条推进、最终自动收口”的执行流程。
+`execution` 模块负责测试任务编排。当前实现不是“整批 case 一次性下发”，而是平台维护任务和执行历史，按 case 串行下发，并保存同一任务的多次执行结果。
 
-当前设计的核心原则是：
+当前设计目标：
 
 - 平台主导串行 case 执行
-- 外部执行框架只负责执行当前 1 条 case
-- 任务级调度、推进、收口都由平台控制
-- 任务状态和 case 状态都持久化到 MongoDB
+- 外部执行框架只执行当前 1 条 case
+- 同一个任务可以重复执行
+- 每次执行都保留独立历史
+- 当前态和历史态分开存储，避免完全靠覆盖字段追历史
 
-## 模块职责
+## 核心模型
 
-- 创建执行任务并生成平台任务号
-- 校验测试用例存在性，生成任务主记录和任务-case 明细
-- 根据配置通过 Kafka 或 HTTP 下发“当前 case”
-- 接收任务事件和 case 状态回报
-- 在当前 case 进入终态后自动推进下一条 case
-- 在最后一条 case 完成后自动收口任务
-- 提供任务查询、定时任务修改、失败重试、消费确认
-- 提供执行代理注册、心跳和在线状态查询
+### 1. `ExecutionTaskDoc`
+
+任务主表，表示一个稳定的测试任务。
+
+职责：
+
+- 保存任务身份：`task_id`、`external_task_id`
+- 保存任务配置：`framework`、`agent_id`、`request_payload`
+- 保存当前态：`schedule_status`、`dispatch_status`、`overall_status`
+- 保存串行游标：`current_case_id`、`current_case_index`
+- 保存历史指针：`latest_run_no`、`current_run_no`
+- 保存平台推进锁：`orchestration_lock`
+
+这个表回答的问题是：
+
+- 这个任务现在是什么状态
+- 当前执行到哪条 case
+- 最近一次是第几轮执行
+
+### 2. `ExecutionTaskCaseDoc`
+
+任务内 case 当前态表。
+
+职责：
+
+- 保存任务当前使用的 case 列表和顺序
+- 保存当前一轮执行过程中的实时状态
+- 为串行推进提供游标和状态基础
+
+这个表不是历史表，而是编排用的“当前态工作表”。
+
+### 3. `ExecutionTaskRunDoc`
+
+任务执行轮次表。
+
+每次真正执行一次任务，就生成一条 `run_no` 记录。
+
+职责：
+
+- 标识第几轮执行：`run_no`
+- 记录触发方式：`trigger_type`
+- 记录触发人：`triggered_by`
+- 记录该轮总体结果：`overall_status`
+- 记录该轮下发结果：`dispatch_status`、`dispatch_response`、`dispatch_error`
+- 记录该轮时间：`started_at`、`finished_at`、`last_callback_at`
+
+### 4. `ExecutionTaskRunCaseDoc`
+
+任务轮次-case 结果表。
+
+职责：
+
+- 保存某个 `task_id + run_no + case_id` 的执行结果
+- 保存该 case 在这一轮的状态、进度、步骤统计、结果数据
+- 支持查看历史每次 case 的执行结果
+
+### 5. `ExecutionEventDoc`
+
+原始回调事件审计表。
+
+职责：
+
+- 保存外部上报的事件原文
+- 作为排障和幂等辅助
+- 不承担“历史结果查询模型”的职责
 
 ## 执行模型
 
-### 1. 任务模型
-
-一个 `ExecutionTaskDoc` 代表一个执行任务，任务内部可包含多条测试用例。
-
-任务层关注：
-
-- 任务标识：`task_id` / `external_task_id`
-- 调度状态：`schedule_type` / `schedule_status`
-- 下发状态：`dispatch_status`
-- 消费状态：`consume_status`
-- 总体状态：`overall_status`
-- 串行游标：`current_case_id` / `current_case_index`
-- 去重键：`dedup_key`
-- 编排锁：`orchestration_lock`
-- 任务原始快照：`request_payload`
-- 最近一次下发响应：`dispatch_response`
-
-### 2. case 模型
-
-一个 `ExecutionTaskCaseDoc` 代表任务中的一条测试用例。
-
-case 层关注：
-
-- 所属任务：`task_id`
-- 用例标识：`case_id`
-- 顺序：`order_no`
-- 下发状态：`dispatch_status`
-- 执行状态：`status`
-- 执行进度：`progress_percent` / `step_*`
-- 时序：`dispatched_at` / `started_at` / `finished_at`
-- 幂等字段：`last_seq` / `last_event_id`
-- 结果快照：`case_snapshot`
-
-### 3. 平台串行推进
-
-当前不是“整批 case 一次下发”，而是：
-
-1. 创建任务时保存完整 case 列表
-2. 平台只下发第 1 条 case
-3. 外部执行框架回报该 case 状态
-4. 若该 case 进入终态 `PASSED/FAILED/SKIPPED`，平台尝试获取推进锁
-5. 获取成功后下发下一条 case
-6. 若没有下一条，平台自动收口任务
-
-推进锁通过任务表上的 `orchestration_lock` 控制，目的是避免重复回报或并发回报导致下一条 case 被重复下发。
-
-## 目录结构
-
-- `api/`
-  FastAPI 路由层，负责入参与响应。
-- `schemas/`
-  请求/响应模型和接口级校验。
-- `application/`
-  执行编排、查询、代理管理和命令对象。
-- `service/`
-  与外部通道交互的适配层。
-- `repository/models/`
-  Beanie 文档模型。
-
-## application 层说明
-
-当前 `application` 采用“门面 + mixin”的低风险拆分方式，既降低单类复杂度，又保持 `ExecutionService` 的对外接口稳定。
-
-- `execution_service.py`
-  对外门面，保留任务创建、定时修改、重试、真实下发等命令入口。
-- `progress_mixin.py`
-  处理任务事件、case 状态回报、串行推进和自动收口。
-- `query_mixin.py`
-  处理任务查询与统一序列化。
-- `agent_mixin.py`
-  处理代理注册、心跳和代理查询。
-- `commands.py`
-  定义 `DispatchExecutionTaskCommand`，统一构建下发载荷。
-- `constants.py`
-  定义终态常量。
-
-## 核心主链路
-
-### 1. 创建任务
+### 创建任务
 
 入口：`POST /api/v1/execution/tasks/dispatch`
 
 流程：
 
 1. 路由生成 `task_id` 和 `external_task_id`
-2. 构造 `DispatchExecutionTaskCommand`
-3. 校验请求参数、操作者身份和 case 列表
+2. 构建 `DispatchExecutionTaskCommand`
+3. service 校验 case 是否存在
 4. 计算 `dedup_key`，阻止相同业务载荷的未完成任务重复创建
 5. 创建 `ExecutionTaskDoc`
-6. 创建全部 `ExecutionTaskCaseDoc`
-7. 如果是立即执行任务，则只下发第 1 条 case
-8. 如果是定时任务且尚未到时间，则只保存任务，不立即下发
+6. 创建当前态 `ExecutionTaskCaseDoc`
+7. 创建首轮执行历史 `ExecutionTaskRunDoc(run_no=1)`
+8. 创建首轮 case 历史 `ExecutionTaskRunCaseDoc`
+9. 如果是立即执行，则只下发第 1 条 case
 
-### 2. 执行回报
+### 串行推进
 
-入口：
+平台推进规则：
 
+1. 当前只下发 1 条 case
+2. 外部框架回报该 case 的状态
+3. 若 case 进入终态 `PASSED/FAILED/SKIPPED`
+4. 平台尝试获取 `orchestration_lock`
+5. 获取成功后下发下一条 case
+6. 没有下一条时，平台自动完成任务
+
+锁的目的很直接：
+
+- 防止同一条 case 的重复回报把下一条下发多次
+
+### 多次执行
+
+当前实现已经支持：
+
+- 一个 `task_id` 可以执行多次
+- 每次执行都会新增一个 `run_no`
+- 每次执行的 case 结果都会单独保存
+
+也就是说：
+
+- `ExecutionTaskDoc` 是任务容器
+- `ExecutionTaskRunDoc` 是第 N 次执行
+- `ExecutionTaskRunCaseDoc` 是第 N 次执行中的单条 case 结果
+
+## `/retry` 的真实语义
+
+入口：`POST /api/v1/execution/tasks/{task_id}/retry`
+
+当前不是“只重试当前失败 case”，而是：
+
+- 重新执行整个任务
+- 重置当前态 `ExecutionTaskCaseDoc`
+- 新建一轮执行历史
+- 从第 1 条 case 开始重新串行执行
+
+这条接口更准确的语义其实是“重新执行任务并保留历史轮次”。
+
+## 当前态与历史态的关系
+
+### 当前态
+
+保存在：
+
+- `ExecutionTaskDoc`
+- `ExecutionTaskCaseDoc`
+
+用途：
+
+- 串行调度
+- 当前任务状态展示
+- 平台推进判断
+
+### 历史态
+
+保存在：
+
+- `ExecutionTaskRunDoc`
+- `ExecutionTaskRunCaseDoc`
+
+用途：
+
+- 查看某次执行结果
+- 查看一个任务的历史执行列表
+- 后续扩展结果比对
+
+当前实现仍然会更新任务主表上的最新状态，但历史轮次已经独立持久化，不再只能依赖覆盖字段追历史。
+
+## application 层结构
+
+当前 `application` 采用“门面 + mixin”结构：
+
+- `execution_service.py`
+  命令入口，负责创建任务、修改定时任务、重跑任务、真实下发
+- `progress_mixin.py`
+  负责任务事件、case 状态回报、平台推进、任务收口、轮次同步
+- `query_mixin.py`
+  负责任务查询、轮次历史查询和序列化
+- `agent_mixin.py`
+  负责代理注册、心跳和查询
+- `commands.py`
+  定义 `DispatchExecutionTaskCommand`
+- `constants.py`
+  定义任务和 case 终态常量
+
+## 对外接口
+
+### 任务执行
+
+- `POST /api/v1/execution/tasks/dispatch`
+  创建任务并启动首轮执行
 - `POST /api/v1/execution/tasks/{task_id}/events`
+  接收任务事件
 - `POST /api/v1/execution/tasks/{task_id}/cases/{case_id}/status`
+  接收 case 状态回报
+- `POST /api/v1/execution/tasks/{task_id}/complete`
+  收口任务
+- `POST /api/v1/execution/tasks/{task_id}/consume-ack`
+  标记任务已被消费者消费
+- `POST /api/v1/execution/tasks/{task_id}/retry`
+  重新执行任务并保留历史轮次
 
-平台处理逻辑：
+### 定时任务
 
-- 记录原始事件审计
-- 更新 case 执行状态和进度
-- 更新任务级统计和最后回调时间
-- 对终态 case 执行“推进下一条 or 自动收口”
+- `POST /api/v1/execution/tasks/{task_id}/cancel`
+  取消未触发的定时任务
+- `PUT /api/v1/execution/tasks/{task_id}/schedule`
+  修改未触发的定时任务
 
-### 3. 任务完成
+### 查询
 
-入口：`POST /api/v1/execution/tasks/{task_id}/complete`
+- `GET /api/v1/execution/tasks`
+  查询任务列表
+- `GET /api/v1/execution/tasks/{task_id}/status`
+  查询任务当前状态
+- `GET /api/v1/execution/tasks/{task_id}/runs`
+  查询任务执行历史
+- `GET /api/v1/execution/tasks/{task_id}/runs/{run_no}`
+  查询某一轮执行详情
 
-当前语义：
+### 代理
 
-- 不是给外部框架提前结束任务用的
-- 只有当所有 case 都已进入终态时，才允许调用该接口收口任务
-- 平台仍然是任务完成状态的最终控制者
+- `POST /api/v1/execution/agents/register`
+  注册代理
+- `POST /api/v1/execution/agents/{agent_id}/heartbeat`
+  上报心跳
+- `GET /api/v1/execution/agents`
+  查询代理列表
+- `GET /api/v1/execution/agents/{agent_id}`
+  查询代理详情
+
+## 查询能力
+
+当前已经支持两类历史查询：
+
+1. 任务有哪些执行轮次  
+通过 `GET /tasks/{task_id}/runs`
+
+2. 某一轮里每条 case 的结果是什么  
+通过 `GET /tasks/{task_id}/runs/{run_no}`
+
+这已经能满足：
+
+- 同一个任务多次执行
+- 每次结果单独查看
+- 追溯某条 case 在不同执行轮次中的表现
+
+当前还没有做专门的“轮次 diff”接口，但数据模型已经具备后续扩展基础。
 
 ## 通道适配
 
-`ExecutionTaskDispatcher` 负责根据配置选择下发通道：
+`ExecutionTaskDispatcher` 负责选择真实下发通道：
 
 - `kafka`
-  将当前 case 封装为 `TaskMessage` 投递到 Kafka
+  构造 `TaskMessage` 投递到 Kafka
 - `http`
-  调用代理的 `base_url + EXECUTION_AGENT_DISPATCH_PATH`
+  调用执行代理 HTTP 接口
 
-无论哪种通道，外部拿到的都是“当前 1 条 case 的执行请求”，不是完整任务批量请求。
+外部始终收到的是“当前 1 条 case 的请求”，而不是整批 case。
 
-## request_payload 与 dispatch_response
+下发 payload 中会带：
 
-这两个字段的职责不同：
+- `task_id`
+- `run_no`
+- `current_case_id`
+- `current_case_index`
+- `case_count`
 
-- `request_payload`
-  保存任务级原始完整快照，包括全部 `cases`
-- `dispatch_response`
-  保存最近一次真实下发的响应结果
+## request_payload 与执行历史
 
-这意味着：
+`request_payload` 仍然保留在任务主表中，但它的职责很明确：
 
-- `request_payload` 用于重试、重建命令、恢复上下文
-- `dispatch_response` 用于记录最近一次通道响应或消费确认信息
+- 保存任务原始完整快照
+- 用于重建命令和重新执行
 
-## 关键状态说明
+它不是历史结果表。
+
+历史结果应查看：
+
+- `ExecutionTaskRunDoc`
+- `ExecutionTaskRunCaseDoc`
+
+## 状态说明
 
 ### 任务终态
 
@@ -179,90 +297,45 @@ case 层关注：
 - `FAILED`
 - `SKIPPED`
 
-### 常见任务状态流转
+### 常见任务状态
 
 - `QUEUED`
-  任务已创建，尚未开始执行
+  任务已创建，尚未开始
 - `RUNNING`
-  已有 case 开始执行
+  当前轮已有 case 开始执行
 - `COMPLETED`
-  所有 case 已完成，且任务已收口
+  当前轮已完成并收口
 - `DISPATCH_FAILED`
-  当前 case 下发失败
+  当前下发失败
 
 ### 常见调度状态
 
 - `PENDING`
-  定时任务尚未到执行时间
+  定时任务尚未到点
 - `READY`
-  可触发下发
+  已具备执行条件
 - `TRIGGERED`
   已触发真实下发
 - `FAILED`
-  下发阶段失败
+  调度或下发失败
 - `CANCELLED`
-  被取消
-
-## API 概览
-
-- `POST /api/v1/execution/tasks/dispatch`
-  创建执行任务
-- `POST /api/v1/execution/tasks/{task_id}/events`
-  接收任务事件
-- `POST /api/v1/execution/tasks/{task_id}/cases/{case_id}/status`
-  接收 case 状态和进度
-- `POST /api/v1/execution/tasks/{task_id}/complete`
-  收口任务
-- `POST /api/v1/execution/tasks/{task_id}/consume-ack`
-  标记任务已被消费者消费
-- `GET /api/v1/execution/tasks`
-  查询任务列表
-- `GET /api/v1/execution/tasks/{task_id}/status`
-  查询任务详情
-- `POST /api/v1/execution/tasks/{task_id}/cancel`
-  取消未触发的定时任务
-- `PUT /api/v1/execution/tasks/{task_id}/schedule`
-  修改未触发的定时任务
-- `POST /api/v1/execution/tasks/{task_id}/retry`
-  重试失败任务
-- `POST /api/v1/execution/agents/register`
-  注册代理
-- `POST /api/v1/execution/agents/{agent_id}/heartbeat`
-  上报代理心跳
-- `GET /api/v1/execution/agents`
-  查询代理列表
-- `GET /api/v1/execution/agents/{agent_id}`
-  查询代理详情
-
-## 权限要求
-
-- `execution_tasks:write`
-  创建任务、修改定时任务、取消、重试、消费确认
-- `execution_tasks:read`
-  查询任务列表和详情
-- `execution_agents:read`
-  查询代理列表和详情
-
-## 依赖关系
-
-- 依赖 `test_specs` 模块校验 `TestCaseDoc`
-- 依赖 `shared.service.SequenceIdService` 生成任务流水号
-- 依赖 `shared.infrastructure` 中的 Kafka 基础设施注册表（仅 Kafka 模式）
-- 依赖 `shared.core.mongo_client` 做原子推进锁控制
+  已取消
 
 ## 当前实现约束
 
-- 所有时间字段统一使用 UTC
-- 任务 ID 格式为 `ET-年份-6位序号`
-- 外部任务 ID 格式为 `EXT-ET-...`
+- 所有时间统一使用 UTC
+- 任务 ID 格式仍为 `ET-年份-6位序号`
+- 外部任务 ID 格式仍为 `EXT-ET-...`
 - 当前不依赖 MongoDB 事务
-- 去重规则是：相同 `dedup_key` 的未完成任务不能重复创建
-- HTTP 模式下必须显式传 `agent_id`
+- 去重规则仍然是：相同 `dedup_key` 的未完成任务不能重复创建
 - `/complete` 不允许在 case 未全部终态时提前结束任务
+- `/retry` 会重跑整任务，不是只跑失败 case
+- 定时任务在未真正触发前，如果被修改，会重建预创建的首轮历史
 
 ## 维护建议
 
-- 新增执行策略时，优先修改 `progress_mixin.py`，不要把推进逻辑散回路由层
-- 新增任务返回字段时，优先更新 `query_mixin.py` 中的统一序列化
-- 新增通道时，优先扩展 `task_dispatcher.py`，保持 `ExecutionService` 不感知通道细节
-- 若后续继续演进，可把 mixin 进一步替换为独立 service 类；当前 mixin 是保持兼容的过渡结构
+- 改串行推进逻辑，优先看 `progress_mixin.py`
+- 改任务创建、重跑和定时修改，优先看 `execution_service.py`
+- 改任务/轮次查询返回，优先看 `query_mixin.py`
+- 改下发通道，优先看 `task_dispatcher.py`
+- 如果后续要做历史结果比对接口，建议直接基于 `ExecutionTaskRunCaseDoc` 做，不要再从当前态表反推

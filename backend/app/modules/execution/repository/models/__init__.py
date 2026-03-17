@@ -2,14 +2,18 @@
 from .execution import (
     ExecutionAgentDoc,
     ExecutionTaskDoc,
+    ExecutionTaskRunDoc,
     ExecutionTaskCaseDoc,
+    ExecutionTaskRunCaseDoc,
     ExecutionEventDoc,
 )
 
 
 __all__ = [
     "ExecutionTaskDoc",
+    "ExecutionTaskRunDoc",
     "ExecutionTaskCaseDoc",
+    "ExecutionTaskRunCaseDoc",
     "ExecutionEventDoc",
     "ExecutionAgentDoc",
 ]

@@ -13,6 +13,8 @@ from app.modules.execution.application.query_mixin import ExecutionTaskQueryMixi
 from app.modules.execution.repository.models import (
     ExecutionTaskCaseDoc,
     ExecutionTaskDoc,
+    ExecutionTaskRunCaseDoc,
+    ExecutionTaskRunDoc,
 )
 from app.modules.execution.service.task_dispatcher import ExecutionTaskDispatcher
 from app.modules.test_specs.repository.models import TestCaseDoc
@@ -71,18 +73,6 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
         return "IMMEDIATE", normalized_planned_at, "READY", True
 
     @staticmethod
-    def _normalize_status(value: str, default: str = "UNKNOWN") -> str:
-        """统一状态字符串格式。"""
-        return (value or default).strip().upper()
-
-    @staticmethod
-    def _merge_result_payload(base: Dict[str, Any], extra: Dict[str, Any]) -> Dict[str, Any]:
-        """合并执行结果扩展信息。"""
-        merged = dict(base or {})
-        merged.update(extra or {})
-        return merged
-
-    @staticmethod
     async def _load_case_docs(case_ids: List[str]) -> Dict[str, Any]:
         """加载并校验任务关联的测试用例。"""
         docs = await TestCaseDoc.find({
@@ -117,6 +107,74 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
     def _extract_case_ids_from_payload(payload: Dict[str, Any]) -> List[str]:
         return [case["case_id"] for case in payload.get("cases", [])]
 
+    @staticmethod
+    async def _create_task_run_docs(
+            task_doc: ExecutionTaskDoc,
+            trigger_type: str,
+            triggered_by: str,
+    ) -> None:
+        """为当前任务创建一轮新的执行历史。"""
+        run_no = task_doc.latest_run_no + 1
+        task_doc.latest_run_no = run_no
+        task_doc.current_run_no = run_no
+
+        case_docs = await (
+            ExecutionTaskCaseDoc.find({"task_id": task_doc.task_id})
+            .sort("order_no")
+            .to_list()
+        )
+        await ExecutionTaskRunDoc(
+            task_id=task_doc.task_id,
+            run_no=run_no,
+            trigger_type=trigger_type,
+            triggered_by=triggered_by,
+            overall_status=task_doc.overall_status,
+            dispatch_status=task_doc.dispatch_status,
+            dispatch_channel=task_doc.dispatch_channel,
+            case_count=task_doc.case_count,
+        ).insert()
+        for case_doc in case_docs:
+            await ExecutionTaskRunCaseDoc(
+                task_id=task_doc.task_id,
+                run_no=run_no,
+                case_id=case_doc.case_id,
+                order_no=case_doc.order_no,
+                case_snapshot=dict(case_doc.case_snapshot or {}),
+                dispatch_status=case_doc.dispatch_status,
+                dispatch_attempts=case_doc.dispatch_attempts,
+                status=case_doc.status,
+            ).insert()
+
+    @staticmethod
+    async def _reset_task_case_docs(task_id: str) -> None:
+        """重跑任务前重置当前态 case 明细。"""
+        case_docs = await ExecutionTaskCaseDoc.find({"task_id": task_id}).to_list()
+        for case_doc in case_docs:
+            case_doc.dispatch_status = "PENDING"
+            case_doc.dispatch_attempts = 0
+            case_doc.status = "QUEUED"
+            case_doc.progress_percent = None
+            case_doc.step_total = 0
+            case_doc.step_passed = 0
+            case_doc.step_failed = 0
+            case_doc.step_skipped = 0
+            case_doc.last_seq = 0
+            case_doc.last_event_id = None
+            case_doc.started_at = None
+            case_doc.finished_at = None
+            case_doc.dispatched_at = None
+            await case_doc.save()
+
+    @staticmethod
+    async def _delete_task_run_docs(task_id: str) -> None:
+        """删除尚未真正执行前预创建的轮次历史。"""
+        run_docs = await ExecutionTaskRunDoc.find({"task_id": task_id}).to_list()
+        for run_doc in run_docs:
+            await run_doc.delete()
+        run_case_docs = await ExecutionTaskRunCaseDoc.find({"task_id": task_id}).to_list()
+        for run_case_doc in run_case_docs:
+            await run_case_doc.delete()
+
     @classmethod
     def _build_case_dispatch_command(
             cls,
@@ -136,6 +194,7 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
             trigger_source=request_payload.get("trigger_source", "manual"),
             created_by=task_doc.created_by,
             case_ids=case_ids,
+            run_no=task_doc.current_run_no or 1,
             dispatch_case_id=dispatch_case_id,
             dispatch_case_index=dispatch_case_index,
             schedule_type=task_doc.schedule_type,
@@ -220,6 +279,7 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
         task_doc.agent_id = command.agent_id
         task_doc.dedup_key = dedup_key
         task_doc.case_count = len(command.case_ids)
+        task_doc.reported_case_count = 0
         task_doc.current_case_id = command.case_ids[0]
         task_doc.current_case_index = 0
         task_doc.planned_at = command.planned_at
@@ -229,6 +289,14 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
         task_doc.request_payload = ExecutionService._build_task_request_payload(command)
         task_doc.dispatch_error = None
         task_doc.dispatch_response = {}
+        task_doc.triggered_at = None
+        task_doc.started_at = None
+        task_doc.finished_at = None
+        task_doc.last_callback_at = None
+        task_doc.consume_status = "PENDING"
+        task_doc.consumed_at = None
+        task_doc.overall_status = "QUEUED"
+        task_doc.orchestration_lock = None
 
     async def _dispatch_first_case_if_needed(
             self,
@@ -276,6 +344,29 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
             case_doc.dispatch_status = "DISPATCHED" if dispatch_result.success else "DISPATCH_FAILED"
             case_doc.dispatched_at = datetime.now(timezone.utc)
             await case_doc.save()
+
+        if task_doc.current_run_no > 0:
+            run_doc = await ExecutionTaskRunDoc.find_one({
+                "task_id": task_doc.task_id,
+                "run_no": task_doc.current_run_no,
+            })
+            if run_doc:
+                run_doc.dispatch_channel = dispatch_result.channel
+                run_doc.dispatch_status = task_doc.dispatch_status
+                run_doc.dispatch_response = dispatch_result.response
+                run_doc.dispatch_error = dispatch_result.error
+                await run_doc.save()
+            if case_doc:
+                run_case_doc = await ExecutionTaskRunCaseDoc.find_one({
+                    "task_id": task_doc.task_id,
+                    "run_no": task_doc.current_run_no,
+                    "case_id": case_doc.case_id,
+                })
+                if run_case_doc:
+                    run_case_doc.dispatch_attempts = case_doc.dispatch_attempts
+                    run_case_doc.dispatch_status = case_doc.dispatch_status
+                    run_case_doc.dispatched_at = case_doc.dispatched_at
+                    await run_case_doc.save()
 
         if dispatch_result.success:
             logger.info(f"Successfully dispatched task {command.task_id} via {dispatch_result.channel}")
@@ -369,6 +460,11 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
         )
         await task_doc.save()
         await self._replace_task_case_docs(task_doc.task_id, case_ids, doc_map)
+        await self._delete_task_run_docs(task_doc.task_id)
+        task_doc.latest_run_no = 0
+        task_doc.current_run_no = 0
+        await self._create_task_run_docs(task_doc, trigger_type="INITIAL", triggered_by=actor_id)
+        await task_doc.save()
         await self._dispatch_first_case_if_needed(task_doc, should_dispatch_now)
 
         return self._serialize_task_doc(task_doc)
@@ -392,14 +488,50 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
             "consumed_at": task_doc.consumed_at,
         }
 
+    async def dispatch_execution_task(
+            self,
+            command: DispatchExecutionTaskCommand,
+            actor_id: str,
+    ) -> Dict[str, Any]:
+        """创建任务并启动首轮执行。"""
+        self._ensure_actor_identity(actor_id, command.created_by)
+        doc_map = await self._load_case_docs(command.case_ids)
+        schedule_type, planned_at, schedule_status, should_dispatch_now = self._normalize_schedule(
+            command.schedule_type,
+            command.planned_at,
+        )
+        command.schedule_type = schedule_type
+        command.planned_at = planned_at
+        dedup_key = self._build_dedup_key(command)
+        await self._ensure_no_active_duplicate(dedup_key)
+
+        task_doc = ExecutionTaskDoc(
+            task_id=command.task_id,
+            external_task_id=command.external_task_id,
+            framework=command.framework,
+            created_by=command.created_by,
+            dispatch_channel="KAFKA",
+        )
+        self._apply_task_command_to_doc(
+            task_doc=task_doc,
+            command=command,
+            dedup_key=dedup_key,
+            schedule_type=schedule_type,
+            schedule_status=schedule_status,
+            dispatch_status="DISPATCHING" if should_dispatch_now else "PENDING",
+        )
+        await task_doc.insert()
+        await self._replace_task_case_docs(task_doc.task_id, command.case_ids, doc_map)
+        await self._create_task_run_docs(task_doc, trigger_type="INITIAL", triggered_by=actor_id)
+        await task_doc.save()
+        await self._dispatch_first_case_if_needed(task_doc, should_dispatch_now)
+        return self._serialize_task_doc(task_doc)
+
     async def retry_failed_task(self, task_id: str, actor_id: str) -> Dict[str, Any]:
-        """重试失败的任务。"""
-        task_doc = await ExecutionTaskDoc.find_one({"task_id": task_id})
+        """重新执行任务并保留历史轮次。"""
+        task_doc = await ExecutionTaskDoc.find_one({"task_id": task_id, "is_deleted": False})
         if not task_doc:
             raise KeyError(f"Task not found: {task_id}")
-
-        if task_doc.dispatch_status not in ["DISPATCH_FAILED", "FAILED"]:
-            raise ValueError(f"Task {task_id} cannot be retried in status {task_doc.dispatch_status}")
 
         self._ensure_actor_identity(actor_id, task_doc.created_by)
 
@@ -407,20 +539,35 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
             raise ValueError(f"Task {task_id} cannot be retried before scheduled trigger")
 
         case_ids = self._extract_case_ids_from_payload(task_doc.request_payload)
-        current_case_id = task_doc.current_case_id or case_ids[min(task_doc.current_case_index, len(case_ids) - 1)]
-        current_case_index = case_ids.index(current_case_id)
+        if not case_ids:
+            raise ValueError(f"Task {task_id} has no cases to retry")
+
+        await self._reset_task_case_docs(task_id)
+        task_doc.schedule_status = "READY"
+        task_doc.dispatch_status = "PENDING"
+        task_doc.dispatch_error = None
+        task_doc.dispatch_response = {}
+        task_doc.consume_status = "PENDING"
+        task_doc.consumed_at = None
+        task_doc.overall_status = "QUEUED"
+        task_doc.reported_case_count = 0
+        task_doc.current_case_id = case_ids[0]
+        task_doc.current_case_index = 0
+        task_doc.triggered_at = None
+        task_doc.started_at = None
+        task_doc.finished_at = None
+        task_doc.last_callback_at = None
+        task_doc.orchestration_lock = None
+        await self._create_task_run_docs(task_doc, trigger_type="RETRY", triggered_by=actor_id)
+        await task_doc.save()
+
         command = self._build_case_dispatch_command(
             task_doc=task_doc,
             case_ids=case_ids,
-            dispatch_case_id=current_case_id,
-            dispatch_case_index=current_case_index,
+            dispatch_case_id=case_ids[0],
+            dispatch_case_index=0,
         )
-        task_doc.schedule_status = "READY"
-        task_doc.triggered_at = None
         await self._dispatch_existing_task(task_doc, command)
-        task_doc.consume_status = "PENDING"
-        task_doc.consumed_at = None
-        await task_doc.save()
 
         if task_doc.dispatch_status == "DISPATCHED":
             logger.info(f"Task {task_id} retried successfully")
@@ -429,6 +576,7 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
 
         return {
             "task_id": task_doc.task_id,
+            "run_no": task_doc.current_run_no,
             "status": "retried" if task_doc.dispatch_status == "DISPATCHED" else "retry_failed",
             "message": task_doc.dispatch_response["message"],
         }

@@ -14,6 +14,8 @@ from .execution import (
     ExecutionTaskCompleteRequest,
     ExecutionTaskCompleteResponse,
     ExecutionTaskListItem,
+    ExecutionTaskRunDetail,
+    ExecutionTaskRunSummary,
     ScheduledTaskMutationResponse,
     UpdateScheduledTaskRequest,
 )
@@ -34,6 +36,8 @@ __all__ = [
     "ExecutionTaskCompleteRequest",
     "ExecutionTaskCompleteResponse",
     "ExecutionTaskListItem",
+    "ExecutionTaskRunDetail",
+    "ExecutionTaskRunSummary",
     "ScheduledTaskMutationResponse",
     "UpdateScheduledTaskRequest",
 ]

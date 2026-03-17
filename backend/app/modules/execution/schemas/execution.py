@@ -66,6 +66,8 @@ class ExecutionTaskListItem(BaseModel):
     consume_status: str
     overall_status: str
     case_count: int
+    latest_run_no: int = 0
+    current_run_no: int = 0
     current_case_id: Optional[str] = None
     current_case_index: int = 0
     planned_at: Optional[datetime] = None
@@ -147,6 +149,45 @@ class ExecutionTaskCompleteResponse(BaseModel):
     finished_at: Optional[datetime] = None
     last_callback_at: Optional[datetime] = None
     updated_at: datetime
+
+
+class ExecutionTaskRunSummary(BaseModel):
+    task_id: str
+    run_no: int
+    trigger_type: str
+    triggered_by: str
+    overall_status: str
+    dispatch_status: str
+    case_count: int
+    reported_case_count: int
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class ExecutionTaskRunCaseResult(BaseModel):
+    case_id: str
+    order_no: int
+    status: str
+    dispatch_status: str
+    dispatch_attempts: int
+    progress_percent: Optional[float] = None
+    step_total: int
+    step_passed: int
+    step_failed: int
+    step_skipped: int
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
+    result_data: Dict[str, Any] = Field(default_factory=dict)
+
+
+class ExecutionTaskRunDetail(ExecutionTaskRunSummary):
+    dispatch_channel: str
+    dispatch_response: Dict[str, Any] = Field(default_factory=dict)
+    dispatch_error: Optional[str] = None
+    last_callback_at: Optional[datetime] = None
+    cases: List[ExecutionTaskRunCaseResult] = Field(default_factory=list)
 
 
 class UpdateScheduledTaskRequest(BaseModel):

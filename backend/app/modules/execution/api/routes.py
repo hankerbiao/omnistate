@@ -20,6 +20,8 @@ from app.modules.execution.schemas import (
     ExecutionTaskCompleteRequest,
     ExecutionTaskCompleteResponse,
     ExecutionTaskListItem,
+    ExecutionTaskRunDetail,
+    ExecutionTaskRunSummary,
     ScheduledTaskMutationResponse,
     UpdateScheduledTaskRequest,
 )
@@ -353,6 +355,45 @@ async def get_task_status(
     """获取任务状态"""
     try:
         data = await service.get_task_status(task_id)
+        return APIResponse(data=data)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.get(
+    "/tasks/{task_id}/runs",
+    response_model=APIResponse[list[ExecutionTaskRunSummary]],
+    summary="查询任务执行历史",
+    dependencies=[Depends(require_permission("execution_tasks:read"))],
+)
+async def list_task_runs(
+        task_id: str,
+        service: ExecutionServiceDep,
+        current_user=Depends(get_current_user),
+):
+    """查询任务历史执行轮次。"""
+    try:
+        data = await service.list_task_runs(task_id)
+        return APIResponse(data=data)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.get(
+    "/tasks/{task_id}/runs/{run_no}",
+    response_model=APIResponse[ExecutionTaskRunDetail],
+    summary="查询单次执行结果",
+    dependencies=[Depends(require_permission("execution_tasks:read"))],
+)
+async def get_task_run_detail(
+        task_id: str,
+        run_no: int,
+        service: ExecutionServiceDep,
+        current_user=Depends(get_current_user),
+):
+    """查询任务指定轮次的执行结果。"""
+    try:
+        data = await service.get_task_run_detail(task_id, run_no)
         return APIResponse(data=data)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc))

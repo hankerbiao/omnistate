@@ -24,7 +24,9 @@ from app.modules.test_specs.repository.models import (
 from app.modules.execution.repository.models import (
     ExecutionAgentDoc,
     ExecutionTaskDoc,
+    ExecutionTaskRunDoc,
     ExecutionTaskCaseDoc,
+    ExecutionTaskRunCaseDoc,
     ExecutionEventDoc,
 )
 from app.modules.auth.repository.models import UserDoc, RoleDoc, PermissionDoc, NavigationPageDoc
@@ -92,7 +94,9 @@ async def lifespan(app: FastAPI):
                 AutomationTestCaseDoc,
                 ExecutionAgentDoc,
                 ExecutionTaskDoc,
+                ExecutionTaskRunDoc,
                 ExecutionTaskCaseDoc,
+                ExecutionTaskRunCaseDoc,
                 ExecutionEventDoc,
                 UserDoc,
                 RoleDoc,

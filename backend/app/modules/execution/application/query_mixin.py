@@ -5,7 +5,11 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Dict, List
 
-from app.modules.execution.repository.models import ExecutionTaskDoc
+from app.modules.execution.repository.models import (
+    ExecutionTaskDoc,
+    ExecutionTaskRunCaseDoc,
+    ExecutionTaskRunDoc,
+)
 
 
 class ExecutionTaskQueryMixin:
@@ -27,6 +31,8 @@ class ExecutionTaskQueryMixin:
             "consume_status": task_doc.consume_status,
             "overall_status": task_doc.overall_status,
             "case_count": task_doc.case_count,
+            "latest_run_no": getattr(task_doc, "latest_run_no", 0),
+            "current_run_no": getattr(task_doc, "current_run_no", 0),
             "current_case_id": getattr(task_doc, "current_case_id", None),
             "current_case_index": getattr(task_doc, "current_case_index", 0),
             "planned_at": task_doc.planned_at,
@@ -95,4 +101,72 @@ class ExecutionTaskQueryMixin:
         result["consumed_at"] = task_doc.consumed_at
         result["dispatch_response"] = task_doc.dispatch_response
         result["dispatch_error"] = task_doc.dispatch_error
+        return result
+
+    @staticmethod
+    def _serialize_run_doc(run_doc: ExecutionTaskRunDoc) -> Dict[str, Any]:
+        return {
+            "task_id": run_doc.task_id,
+            "run_no": run_doc.run_no,
+            "trigger_type": run_doc.trigger_type,
+            "triggered_by": run_doc.triggered_by,
+            "overall_status": run_doc.overall_status,
+            "dispatch_status": run_doc.dispatch_status,
+            "case_count": run_doc.case_count,
+            "reported_case_count": run_doc.reported_case_count,
+            "started_at": run_doc.started_at,
+            "finished_at": run_doc.finished_at,
+            "created_at": run_doc.created_at,
+            "updated_at": run_doc.updated_at,
+        }
+
+    async def list_task_runs(self, task_id: str) -> List[Dict[str, Any]]:
+        task_doc = await ExecutionTaskDoc.find_one({"task_id": task_id, "is_deleted": False})
+        if not task_doc:
+            raise KeyError(f"Task not found: {task_id}")
+
+        run_docs = await (
+            ExecutionTaskRunDoc.find({"task_id": task_id})
+            .sort("-run_no")
+            .to_list()
+        )
+        return [self._serialize_run_doc(run_doc) for run_doc in run_docs]
+
+    async def get_task_run_detail(self, task_id: str, run_no: int) -> Dict[str, Any]:
+        task_doc = await ExecutionTaskDoc.find_one({"task_id": task_id, "is_deleted": False})
+        if not task_doc:
+            raise KeyError(f"Task not found: {task_id}")
+
+        run_doc = await ExecutionTaskRunDoc.find_one({"task_id": task_id, "run_no": run_no})
+        if not run_doc:
+            raise KeyError(f"Task run not found: {task_id}/{run_no}")
+
+        case_docs = await (
+            ExecutionTaskRunCaseDoc.find({"task_id": task_id, "run_no": run_no})
+            .sort("order_no")
+            .to_list()
+        )
+        result = self._serialize_run_doc(run_doc)
+        result["dispatch_channel"] = run_doc.dispatch_channel
+        result["dispatch_response"] = run_doc.dispatch_response
+        result["dispatch_error"] = run_doc.dispatch_error
+        result["last_callback_at"] = run_doc.last_callback_at
+        result["cases"] = [
+            {
+                "case_id": case_doc.case_id,
+                "order_no": case_doc.order_no,
+                "status": case_doc.status,
+                "dispatch_status": case_doc.dispatch_status,
+                "dispatch_attempts": case_doc.dispatch_attempts,
+                "progress_percent": case_doc.progress_percent,
+                "step_total": case_doc.step_total,
+                "step_passed": case_doc.step_passed,
+                "step_failed": case_doc.step_failed,
+                "step_skipped": case_doc.step_skipped,
+                "started_at": case_doc.started_at,
+                "finished_at": case_doc.finished_at,
+                "result_data": case_doc.result_data,
+            }
+            for case_doc in case_docs
+        ]
         return result
