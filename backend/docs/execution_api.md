@@ -35,7 +35,6 @@
 | `dut` | object | 否 | 被测设备信息，键值对 |
 | `cases` | array | 是 | 测试用例列表 |
 | `cases[].case_id` | string | 是 | 测试用例业务 ID |
-| `runtime_config` | object | 否 | 运行时配置，键值对 |
 
 ### 请求示例
 
@@ -55,12 +54,7 @@
     { "case_id": "TC-001" },
     { "case_id": "TC-002" },
     { "case_id": "TC-003" }
-  ],
-  "runtime_config": {
-    "retry_count": 2,
-    "timeout": 300,
-    "tags": ["smoke", "regression"]
-  }
+  ]
 }
 ```
 

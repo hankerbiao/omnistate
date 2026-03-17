@@ -86,7 +86,6 @@ async def dispatch_task(
             planned_at=request.planned_at,
             callback_url=request.callback_url,
             dut=request.dut,
-            runtime_config=request.runtime_config,
         )
 
         # 使用执行服务处理任务分发

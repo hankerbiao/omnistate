@@ -86,11 +86,9 @@ const TestCaseList: React.FC = () => {
 
       const response = await api.dispatchTask({
         framework,
+        agent_id: selectedAgentId,
         trigger_source: 'web_ui',
         cases: Array.from(selectedCases).map(case_id => ({ case_id })),
-        runtime_config: {
-          agent_id: selectedAgentId,
-        },
       });
 
       if (response.code === 0 || response.code === 200) {

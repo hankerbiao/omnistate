@@ -1,4 +1,17 @@
-"""执行命令服务。"""
+"""执行任务应用服务。
+
+这个文件负责 execution 模块里的“写操作”主流程，重点处理：
+
+- 创建执行任务
+- 修改/取消尚未触发的定时任务
+- 重试已有任务
+- 触发首条 case 的真实下发
+
+这里不直接承接所有进度回调和查询逻辑，那部分分别由
+`ExecutionProgressMixin` 和 `ExecutionTaskQueryMixin` 负责。
+当前类更像 execution 模块的命令门面，负责把用户输入的命令
+映射为任务主表、当前态明细表和历史轮次表上的一致更新。
+"""
 
 from datetime import datetime, timezone
 import hashlib
@@ -22,14 +35,34 @@ from app.shared.core.logger import log as logger
 
 
 class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, ExecutionAgentMixin):
-    """执行任务分发服务。"""
+    """执行任务命令服务。
+
+    设计上，这个类有两个核心职责：
+
+    1. 维护任务的“当前态”
+       包括 `ExecutionTaskDoc` 和 `ExecutionTaskCaseDoc`，用于实时编排。
+    2. 在关键时点生成任务“历史态”
+       包括 `ExecutionTaskRunDoc` 和 `ExecutionTaskRunCaseDoc`，用于追溯每一轮执行。
+
+    因为 execution 模块采用“平台串行推进 case”的模型，所以这里的大部分
+    方法都围绕“当前该下发哪条 case”“什么时候创建新 run”“什么时候允许修改”
+    这几个问题展开。
+    """
 
     def __init__(self) -> None:
         self._dispatcher = ExecutionTaskDispatcher()
 
     @staticmethod
     def _build_dedup_key(command: DispatchExecutionTaskCommand) -> str:
-        """基于业务载荷构建稳定去重键。"""
+        """基于业务载荷构建稳定去重键。
+
+        去重目标不是“完全相同的 task_id”，而是“语义上相同、且尚未结束的任务”。
+        也就是说，只要执行框架、代理、触发方式、调度时间、DUT、运行配置和 case 集
+        合一致，就会得到同一个 dedup_key。
+
+        注意这里对 `case_ids` 做了排序，故意忽略传入顺序差异，避免同一批 case
+        因顺序不同被误判为不同任务。
+        """
         payload = {
             "framework": command.framework,
             "agent_id": command.agent_id,
@@ -38,7 +71,6 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
             "planned_at": command.planned_at.isoformat() if command.planned_at else None,
             "callback_url": command.callback_url,
             "dut": command.dut or {},
-            "runtime_config": command.runtime_config or {},
             "case_ids": sorted(command.case_ids),
         }
         normalized = json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
@@ -46,7 +78,11 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
 
     @staticmethod
     def _ensure_utc_datetime(value: datetime) -> datetime:
-        """将 naive/aware datetime 统一规范为 UTC aware datetime。"""
+        """将 naive/aware datetime 统一规范为 UTC aware datetime。
+
+        execution 模块会把计划时间、触发时间、完成时间都落库；如果这里不统一时区，
+        定时调度和状态判断会在不同时区输入下变得不可预测。
+        """
         if value.tzinfo is None or value.tzinfo.utcoffset(value) is None:
             return value.replace(tzinfo=timezone.utc)
         return value.astimezone(timezone.utc)
@@ -58,7 +94,21 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
             planned_at: datetime | None,
             now: datetime | None = None,
     ) -> tuple[str, datetime | None, str, bool]:
-        """统一调度类型和状态。"""
+        """统一调度类型和状态。
+
+        返回值依次表示：
+
+        - 归一化后的 `schedule_type`
+        - 归一化后的 `planned_at`
+        - 初始 `schedule_status`
+        - 是否应该立刻触发首条 case 下发
+
+        规则很简单：
+
+        - `IMMEDIATE` 一律视为立即可执行
+        - `SCHEDULED` 且 `planned_at` 已到或已过，也视为立刻可执行
+        - `SCHEDULED` 且尚未到点，则进入 `PENDING`
+        """
         current_time = cls._ensure_utc_datetime(now or datetime.now(timezone.utc))
         normalized_type = (schedule_type or "IMMEDIATE").upper()
         normalized_planned_at = cls._ensure_utc_datetime(planned_at) if planned_at else None
@@ -74,7 +124,13 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
 
     @staticmethod
     async def _load_case_docs(case_ids: List[str]) -> Dict[str, Any]:
-        """加载并校验任务关联的测试用例。"""
+        """加载并校验任务关联的测试用例。
+
+        这里在任务创建/修改前先把 case 全量查出来，目的有两个：
+
+        - 提前失败，避免创建出引用不存在 case 的脏任务
+        - 为后续生成 `ExecutionTaskCaseDoc.case_snapshot` 提供源数据
+        """
         docs = await TestCaseDoc.find({
             "case_id": {"$in": case_ids},
             "is_deleted": False,
@@ -87,7 +143,11 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
 
     @staticmethod
     def _build_task_request_payload(command: DispatchExecutionTaskCommand) -> Dict[str, Any]:
-        """构建任务级快照，保留完整 case 列表用于后续串行推进。"""
+        """构建任务级快照，保留完整 case 列表用于后续串行推进。
+
+        `request_payload` 是任务创建时的业务快照，不只是为了转发给外部执行端。
+        后续重试、继续推进下一条 case、修改计划任务时，都会从这里恢复原始上下文。
+        """
         return {
             "task_id": command.task_id,
             "external_task_id": command.external_task_id,
@@ -99,12 +159,16 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
             "callback_url": command.callback_url,
             "dut": command.dut or {},
             "cases": [{"case_id": cid} for cid in command.case_ids],
-            "runtime_config": command.runtime_config or {},
             "created_by": command.created_by,
         }
 
     @staticmethod
     def _extract_case_ids_from_payload(payload: Dict[str, Any]) -> List[str]:
+        """从任务快照中恢复 case 顺序。
+
+        execution 的串行调度依赖稳定顺序，所以这里返回的是 payload 中记录的原始顺序，
+        而不是重新排序后的集合。
+        """
         return [case["case_id"] for case in payload.get("cases", [])]
 
     @staticmethod
@@ -113,11 +177,24 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
             trigger_type: str,
             triggered_by: str,
     ) -> None:
-        """为当前任务创建一轮新的执行历史。"""
+        """为当前任务创建一轮新的执行历史。
+
+        这里的关键不是简单“插一条 run 记录”，而是把当前态整体快照成新的历史轮次：
+
+        - `ExecutionTaskRunDoc` 记录任务级历史
+        - `ExecutionTaskRunCaseDoc` 记录 case 级历史
+
+        因此它通常出现在两类场景：
+
+        - 任务初次创建后，预创建第 1 轮历史
+        - 任务重试前，创建下一轮历史
+        """
         run_no = task_doc.latest_run_no + 1
         task_doc.latest_run_no = run_no
         task_doc.current_run_no = run_no
 
+        # 当前态 case 明细按顺序复制到 run_case 表，后续即使当前态被覆盖，
+        # 历史轮次仍然能准确反映当时执行的 case 列表和顺序。
         case_docs = await (
             ExecutionTaskCaseDoc.find({"task_id": task_doc.task_id})
             .sort("order_no")
@@ -147,7 +224,12 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
 
     @staticmethod
     async def _reset_task_case_docs(task_id: str) -> None:
-        """重跑任务前重置当前态 case 明细。"""
+        """重跑任务前重置当前态 case 明细。
+
+        重试语义是“以同一个 task_id 再跑一轮”，不是新建任务。
+        因此在保留 run 历史的前提下，需要把当前态 case 工作表清空回初始状态，
+        让编排器像处理一轮全新执行那样继续工作。
+        """
         case_docs = await ExecutionTaskCaseDoc.find({"task_id": task_id}).to_list()
         for case_doc in case_docs:
             case_doc.dispatch_status = "PENDING"
@@ -167,7 +249,16 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
 
     @staticmethod
     async def _delete_task_run_docs(task_id: str) -> None:
-        """删除尚未真正执行前预创建的轮次历史。"""
+        """删除尚未真正执行前预创建的轮次历史。
+
+        这个方法只用于“修改尚未触发的定时任务”场景。
+        因为任务还没真正开始，旧的 run 快照不应该保留，否则会造成：
+
+        - 当前态已经被新 case 列表替换
+        - 历史态里却残留旧计划的第 1 轮快照
+
+        这种历史对业务没有价值，反而会误导查询结果。
+        """
         run_docs = await ExecutionTaskRunDoc.find({"task_id": task_id}).to_list()
         for run_doc in run_docs:
             await run_doc.delete()
@@ -183,7 +274,12 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
             dispatch_case_id: str,
             dispatch_case_index: int,
     ) -> DispatchExecutionTaskCommand:
-        """构建单 case 下发命令。"""
+        """构建单 case 下发命令。
+
+        虽然外部执行端当前一次只执行 1 条 case，但命令里仍保留完整 case 列表，
+        因为平台后续推进、回调关联和重试都需要知道这轮任务的整体上下文。
+        `dispatch_case_id` / `dispatch_case_index` 表示本次真正要下发的“当前 case”。
+        """
         request_payload = dict(task_doc.request_payload or {})
         planned_at = request_payload.get("planned_at")
         return DispatchExecutionTaskCommand(
@@ -201,7 +297,6 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
             planned_at=cls._ensure_utc_datetime(planned_at) if planned_at else None,
             callback_url=request_payload.get("callback_url"),
             dut=request_payload.get("dut"),
-            runtime_config=request_payload.get("runtime_config"),
         )
 
     @staticmethod
@@ -210,13 +305,25 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
             case_ids: List[str],
             doc_map: Dict[str, Any],
     ) -> None:
-        """重建尚未触发任务的 case 明细快照。"""
+        """重建尚未触发任务的 case 明细快照。
+
+        当前态 case 表本质上是一张“编排工作表”：
+
+        - 保存顺序
+        - 保存每条 case 的即时状态
+        - 保存平台推进所需的游标信息
+
+        当计划任务被修改时，直接整体重建比做增量 patch 更安全，能避免顺序、状态和
+        历史残留字段之间出现不一致。
+        """
         existing_docs = await ExecutionTaskCaseDoc.find({"task_id": task_id}).to_list()
         for existing_doc in existing_docs:
             await existing_doc.delete()
 
         for order_no, case_id in enumerate(case_ids):
             case_doc = doc_map[case_id]
+            # 这里只写入编排必需的轻量快照，而不是完整复制 TestCase 文档，
+            # 避免任务快照随着测试用例模型扩张而无限膨胀。
             snapshot = {
                 "case_id": case_doc.case_id,
                 "title": case_doc.title,
@@ -236,7 +343,11 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
 
     @staticmethod
     def _ensure_pending_scheduled_task(task_doc: ExecutionTaskDoc) -> None:
-        """限制取消/修改仅作用于未触发的定时任务。"""
+        """限制取消/修改仅作用于未触发的定时任务。
+
+        一旦任务已经触发，它就进入 execution 的实际编排阶段。此时再允许修改调度信息，
+        会破坏当前态、run 历史以及外部执行端之间的一致性。
+        """
         if task_doc.schedule_type != "SCHEDULED":
             raise ValueError(f"Task {task_doc.task_id} is not a scheduled task")
         if task_doc.schedule_status != "PENDING":
@@ -246,12 +357,21 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
 
     @staticmethod
     def _ensure_actor_identity(actual_actor_id: str, expected_actor_id: str) -> None:
+        """校验操作者是否就是任务创建者。
+
+        当前实现采用比较保守的约束：修改、取消、重试等敏感写操作要求操作者与
+        `created_by` 一致。这里先做应用层兜底校验，避免只依赖接口层权限判断。
+        """
         if actual_actor_id != expected_actor_id:
             logger.warning(f"Actor ID mismatch: actor={actual_actor_id}, expected={expected_actor_id}")
             raise ValueError("Actor identity mismatch")
 
     async def _ensure_no_active_duplicate(self, dedup_key: str, excluded_task_id: str | None = None) -> None:
-        """阻止创建或修改为相同业务载荷的未完成任务。"""
+        """阻止创建或修改为相同业务载荷的未完成任务。
+
+        这里查询的是“未终态任务”。已经完成、失败、取消的旧任务不会阻塞新的创建；
+        但仍在执行中的同义任务会被拦截，避免外部框架收到重复调度。
+        """
         query: Dict[str, Any] = {
             "dedup_key": dedup_key,
             "overall_status": {"$nin": list(FINAL_TASK_STATUSES)},
@@ -275,11 +395,19 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
             schedule_status: str,
             dispatch_status: str,
     ) -> None:
-        """把任务命令映射到任务文档，复用创建/修改路径。"""
+        """把任务命令映射到任务文档，复用创建/修改路径。
+
+        这个方法的目标是把“创建任务”和“更新未触发任务”两条路径统一起来，保证：
+
+        - 相同字段有相同初始化逻辑
+        - 状态重置完整，不遗留上一次执行痕迹
+        - 当前态字段始终与 `request_payload` 对齐
+        """
         task_doc.agent_id = command.agent_id
         task_doc.dedup_key = dedup_key
         task_doc.case_count = len(command.case_ids)
         task_doc.reported_case_count = 0
+        # 当前态默认指向第 1 条 case；真正推进到后续 case 由 progress 流程负责。
         task_doc.current_case_id = command.case_ids[0]
         task_doc.current_case_index = 0
         task_doc.planned_at = command.planned_at
@@ -303,7 +431,16 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
             task_doc: ExecutionTaskDoc,
             should_dispatch_now: bool,
     ) -> None:
-        """统一处理首条 case 的实际下发。"""
+        """统一处理首条 case 的实际下发。
+
+        任务创建成功并不等于一定马上下发：
+
+        - 立即任务会立刻触发
+        - 已到触发时间的定时任务也会立刻触发
+        - 尚未到时间的定时任务只落库，不下发
+
+        这样调用方不用重复关心调度策略，只需要交给这里统一判断。
+        """
         if not should_dispatch_now:
             return
         case_ids = self._extract_case_ids_from_payload(task_doc.request_payload)
@@ -322,12 +459,22 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
             task_doc: ExecutionTaskDoc,
             command: DispatchExecutionTaskCommand,
     ) -> None:
-        """对已有任务执行真正下发。"""
+        """对已有任务执行真正下发。
+
+        这里会同时更新三层数据：
+
+        - 任务主表当前态
+        - 当前 case 工作表
+        - 当前 run 的历史快照
+
+        这样无论调用方随后查询“任务当前状态”还是“本轮执行历史”，看到的结果都一致。
+        """
         dispatch_result = await self._dispatcher.dispatch(command)
         case_doc = await ExecutionTaskCaseDoc.find_one({
             "task_id": task_doc.task_id,
             "case_id": command.dispatch_case_id,
         })
+        # 任务主表记录的是“当前正在下发/已下发的 case”对应的全局状态。
         task_doc.dispatch_channel = dispatch_result.channel
         task_doc.dispatch_status = "DISPATCHED" if dispatch_result.success else "DISPATCH_FAILED"
         task_doc.dispatch_error = dispatch_result.error
@@ -340,12 +487,15 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
         await task_doc.save()
 
         if case_doc:
+            # case 当前态只反映这条 case 被下发了多少次、最后一次下发结果如何。
             case_doc.dispatch_attempts += 1
             case_doc.dispatch_status = "DISPATCHED" if dispatch_result.success else "DISPATCH_FAILED"
             case_doc.dispatched_at = datetime.now(timezone.utc)
             await case_doc.save()
 
         if task_doc.current_run_no > 0:
+            # 当前 run 同步一次任务级和 case 级快照，保证 run 视图可单独使用，
+            # 不必再和当前态表进行拼装。
             run_doc = await ExecutionTaskRunDoc.find_one({
                 "task_id": task_doc.task_id,
                 "run_no": task_doc.current_run_no,
@@ -374,7 +524,15 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
             logger.warning(f"Failed to dispatch task {command.task_id} via {dispatch_result.channel}")
 
     async def cancel_scheduled_task(self, task_id: str, actor_id: str) -> Dict[str, Any]:
-        """取消未触发的定时任务。"""
+        """取消未触发的定时任务。
+
+        取消的前提是：
+
+        - 任务存在
+        - 操作者是任务创建者
+        - 任务是 `SCHEDULED`
+        - 且仍处于 `PENDING`
+        """
         task_doc = await ExecutionTaskDoc.find_one({"task_id": task_id, "is_deleted": False})
         if not task_doc:
             raise KeyError(f"Task not found: {task_id}")
@@ -403,12 +561,24 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
             actor_id: str,
             payload: Dict[str, Any],
     ) -> Dict[str, Any]:
-        """修改未触发的定时任务。"""
+        """修改未触发的定时任务。
+
+        这条路径本质上是“保留 task_id 的前提下，重建任务当前态”。
+        因为修改项可能覆盖 case 列表、计划时间、agent、回调地址和 DUT，
+        所以这里不会做零碎字段 patch，而是：
+
+        1. 重新装配命令对象
+        2. 重新计算 dedup_key
+        3. 覆盖任务主表
+        4. 重建 case 当前态
+        5. 清空旧的预创建 run 历史
+        6. 重新创建第 1 轮 run
+        7. 若已到触发时间，则立即下发首条 case
+        """
         task_doc = await ExecutionTaskDoc.find_one({"task_id": task_id, "is_deleted": False})
         if not task_doc:
             raise KeyError(f"Task not found: {task_id}")
-        if actor_id != task_doc.created_by:
-            raise ValueError("Actor identity mismatch")
+        self._ensure_actor_identity(actor_id, task_doc.created_by)
 
         self._ensure_pending_scheduled_task(task_doc)
 
@@ -425,7 +595,6 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
         agent_id = payload.get("agent_id", task_doc.agent_id)
         callback_url = payload.get("callback_url", request_payload.get("callback_url"))
         dut = payload.get("dut", request_payload.get("dut", {}))
-        runtime_config = payload.get("runtime_config", request_payload.get("runtime_config", {}))
         trigger_source = request_payload.get("trigger_source", "manual")
 
         schedule_type, normalized_planned_at, schedule_status, should_dispatch_now = self._normalize_schedule(
@@ -445,7 +614,6 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
             planned_at=normalized_planned_at,
             callback_url=callback_url,
             dut=dut,
-            runtime_config=runtime_config,
         )
         dedup_key = self._build_dedup_key(command)
         await self._ensure_no_active_duplicate(dedup_key, excluded_task_id=task_doc.task_id)
@@ -461,6 +629,8 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
         await task_doc.save()
         await self._replace_task_case_docs(task_doc.task_id, case_ids, doc_map)
         await self._delete_task_run_docs(task_doc.task_id)
+        # 计划任务在真正触发前的 run 历史是可重建的，因此这里把 run 序号复位后
+        # 再创建新的首轮快照。
         task_doc.latest_run_no = 0
         task_doc.current_run_no = 0
         await self._create_task_run_docs(task_doc, trigger_type="INITIAL", triggered_by=actor_id)
@@ -470,7 +640,11 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
         return self._serialize_task_doc(task_doc)
 
     async def ack_task_consumed(self, task_id: str, consumer_id: str | None = None) -> Dict[str, Any]:
-        """标记任务已被消费者消费。"""
+        """标记任务已被消费者消费。
+
+        这是任务投递链路上的补充状态，不代表 case 已执行完成。
+        它只说明下游消费者已经显式确认收到了该任务。
+        """
         task_doc = await ExecutionTaskDoc.find_one({"task_id": task_id, "is_deleted": False})
         if not task_doc:
             raise KeyError(f"Task not found: {task_id}")
@@ -493,7 +667,19 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
             command: DispatchExecutionTaskCommand,
             actor_id: str,
     ) -> Dict[str, Any]:
-        """创建任务并启动首轮执行。"""
+        """创建任务并启动首轮执行。
+
+        这是 execution 模块最核心的入口之一。流程顺序不能随意调整：
+
+        1. 校验操作者身份
+        2. 校验 case 是否存在
+        3. 归一化调度信息
+        4. 做未完成任务去重
+        5. 创建任务主表
+        6. 创建 case 当前态工作表
+        7. 预创建首轮 run 历史
+        8. 如果需要，真实下发第 1 条 case
+        """
         self._ensure_actor_identity(actor_id, command.created_by)
         doc_map = await self._load_case_docs(command.case_ids)
         schedule_type, planned_at, schedule_status, should_dispatch_now = self._normalize_schedule(
@@ -510,6 +696,7 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
             external_task_id=command.external_task_id,
             framework=command.framework,
             created_by=command.created_by,
+            # 当前默认通过 dispatcher 走 Kafka 通道；后续如果支持更多通道，
             dispatch_channel="KAFKA",
         )
         self._apply_task_command_to_doc(
@@ -528,7 +715,16 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
         return self._serialize_task_doc(task_doc)
 
     async def retry_failed_task(self, task_id: str, actor_id: str) -> Dict[str, Any]:
-        """重新执行任务并保留历史轮次。"""
+        """重新执行任务并保留历史轮次。
+
+        这里的 retry 语义不是“只补跑失败 case”，而是“以同一个 task_id 重新跑一轮”。
+        因此它会：
+
+        - 重置当前态 case 表
+        - 重置任务主表运行状态
+        - 新增一个 `run_no`
+        - 从第 1 条 case 重新开始下发
+        """
         task_doc = await ExecutionTaskDoc.find_one({"task_id": task_id, "is_deleted": False})
         if not task_doc:
             raise KeyError(f"Task not found: {task_id}")
@@ -543,6 +739,7 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
             raise ValueError(f"Task {task_id} has no cases to retry")
 
         await self._reset_task_case_docs(task_id)
+        # 重试会把任务重新放回可执行态，但不会清掉已有历史轮次。
         task_doc.schedule_status = "READY"
         task_doc.dispatch_status = "PENDING"
         task_doc.dispatch_error = None
