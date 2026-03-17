@@ -9,7 +9,7 @@ import './App.css'
 type PageType = 'testCases' | 'agents' | 'tasks'
 
 const navItems: { key: PageType; label: string; icon: string }[] = [
-  { key: 'testCases', label: '测试用例', icon: '⬡' },
+  { key: 'testCases', label: '自动化用例', icon: '⚡' },
   { key: 'agents', label: '执行代理', icon: '◉' },
   { key: 'tasks', label: '执行任务', icon: '▸' },
 ]
@@ -73,7 +73,7 @@ function App() {
           </nav>
           <main style={styles.main}>
             {currentPage === 'testCases' ? (
-              <TestCaseList onLogout={handleLogout} />
+              <TestCaseList />
             ) : currentPage === 'agents' ? (
               <AgentList onLogout={handleLogout} />
             ) : (
