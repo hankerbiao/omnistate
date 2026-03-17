@@ -27,7 +27,6 @@ class DispatchExecutionTaskCommand:
     # 任务配置
     callback_url: Optional[str] = None
     dut: Optional[Dict[str, Any]] = None
-    runtime_config: Optional[Dict[str, Any]] = None
 
     # 发送到 Kafka 的任务数据，由命令对象统一构建
     kafka_task_data: Optional[Dict[str, Any]] = None
@@ -57,7 +56,6 @@ class DispatchExecutionTaskCommand:
             "current_case_id": current_case_id,
             "current_case_index": self.dispatch_case_index,
             "case_count": len(self.case_ids),
-            "runtime_config": self.runtime_config or {},
             "created_by": self.created_by,
             "created_at": datetime.now(timezone.utc).isoformat(),
         }

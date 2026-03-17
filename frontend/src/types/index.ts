@@ -140,11 +140,11 @@ export interface DispatchCaseItem {
 
 export interface DispatchTaskRequest {
   framework: string;
+  agent_id?: string;
   trigger_source?: string;
   callback_url?: string;
   dut?: Record<string, unknown>;
   cases: DispatchCaseItem[];
-  runtime_config?: Record<string, unknown>;
 }
 
 export interface DispatchTaskResponse {
