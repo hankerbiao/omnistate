@@ -15,11 +15,7 @@ from app.modules.workflow.repository.models import (
     SysWorkTypeDoc, SysWorkflowStateDoc, SysWorkflowConfigDoc,
     BusWorkItemDoc, BusFlowLogDoc
 )
-from app.modules.assets.repository.models import (
-    ComponentLibraryDoc,
-    DutDoc,
-    TestPlanComponentDoc,
-)
+
 from app.modules.test_specs.repository.models import (
     TestRequirementDoc,
     TestCaseDoc,
@@ -91,9 +87,6 @@ async def lifespan(app: FastAPI):
                 SysWorkflowConfigDoc,
                 BusWorkItemDoc,
                 BusFlowLogDoc,
-                ComponentLibraryDoc,
-                DutDoc,
-                TestPlanComponentDoc,
                 TestRequirementDoc,
                 TestCaseDoc,
                 AutomationTestCaseDoc,
