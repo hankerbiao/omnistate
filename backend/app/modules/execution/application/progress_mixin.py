@@ -137,19 +137,22 @@ class ExecutionProgressMixin:
         if not run_doc:
             return
 
-        run_doc.overall_status = task_doc.overall_status
-        run_doc.dispatch_status = task_doc.dispatch_status
-        run_doc.dispatch_channel = task_doc.dispatch_channel
-        run_doc.dispatch_response = dict(task_doc.dispatch_response or {})
-        run_doc.dispatch_error = task_doc.dispatch_error
-        run_doc.reported_case_count = task_doc.reported_case_count
-        run_doc.stop_mode = getattr(task_doc, "stop_mode", STOP_MODE_NONE)
-        run_doc.stop_requested_at = getattr(task_doc, "stop_requested_at", None)
-        run_doc.stop_requested_by = getattr(task_doc, "stop_requested_by", None)
-        run_doc.stop_reason = getattr(task_doc, "stop_reason", None)
-        run_doc.started_at = task_doc.started_at
-        run_doc.finished_at = task_doc.finished_at
-        run_doc.last_callback_at = task_doc.last_callback_at
+        self._assign_fields(
+            run_doc,
+            overall_status=task_doc.overall_status,
+            dispatch_status=task_doc.dispatch_status,
+            dispatch_channel=task_doc.dispatch_channel,
+            dispatch_response=dict(task_doc.dispatch_response or {}),
+            dispatch_error=task_doc.dispatch_error,
+            reported_case_count=task_doc.reported_case_count,
+            stop_mode=getattr(task_doc, "stop_mode", STOP_MODE_NONE),
+            stop_requested_at=getattr(task_doc, "stop_requested_at", None),
+            stop_requested_by=getattr(task_doc, "stop_requested_by", None),
+            stop_reason=getattr(task_doc, "stop_reason", None),
+            started_at=task_doc.started_at,
+            finished_at=task_doc.finished_at,
+            last_callback_at=task_doc.last_callback_at,
+        )
         await run_doc.save()
 
     async def _dispatch_next_case_if_needed(
@@ -183,23 +186,12 @@ class ExecutionProgressMixin:
                 await self._mark_task_completed_from_cases(locked_task_doc)
                 return
 
-            case_ids = self._extract_case_ids_from_payload(locked_task_doc.request_payload)
-            auto_case_ids = self._extract_auto_case_ids_from_payload(locked_task_doc.request_payload)
-            if not auto_case_ids:
-                auto_case_ids = await self.resolve_auto_case_ids_by_case_ids(case_ids)
             locked_task_doc.current_case_id = next_case_doc.case_id
             locked_task_doc.current_case_index = next_case_doc.order_no
             locked_task_doc.consume_status = "PENDING"
             await self._dispatch_existing_task(
                 locked_task_doc,
-                self._build_case_dispatch_command(
-                    task_doc=locked_task_doc,
-                    case_ids=case_ids,
-                    auto_case_ids=auto_case_ids,
-                    dispatch_case_id=next_case_doc.case_id,
-                    dispatch_auto_case_id=auto_case_ids[next_case_doc.order_no],
-                    dispatch_case_index=next_case_doc.order_no,
-                ),
+                await self._build_task_dispatch_command(locked_task_doc, next_case_doc.order_no),
             )
         finally:
             if next_case_doc:
@@ -340,22 +332,25 @@ class ExecutionProgressMixin:
         if not run_case_doc:
             return
 
-        run_case_doc.dispatch_status = case_doc.dispatch_status
-        run_case_doc.dispatch_attempts = case_doc.dispatch_attempts
-        run_case_doc.status = case_doc.status
-        run_case_doc.progress_percent = case_doc.progress_percent
-        run_case_doc.step_total = case_doc.step_total
-        run_case_doc.step_passed = case_doc.step_passed
-        run_case_doc.step_failed = case_doc.step_failed
-        run_case_doc.step_skipped = case_doc.step_skipped
-        run_case_doc.started_at = case_doc.started_at
-        run_case_doc.finished_at = case_doc.finished_at
-        run_case_doc.dispatched_at = case_doc.dispatched_at
-        run_case_doc.last_seq = case_doc.last_seq
-        run_case_doc.last_event_id = case_doc.last_event_id
-        run_case_doc.result_data = self._merge_result_payload(
-            run_case_doc.result_data,
-            payload.get("result_data", {}),
+        self._assign_fields(
+            run_case_doc,
+            dispatch_status=case_doc.dispatch_status,
+            dispatch_attempts=case_doc.dispatch_attempts,
+            status=case_doc.status,
+            progress_percent=case_doc.progress_percent,
+            step_total=case_doc.step_total,
+            step_passed=case_doc.step_passed,
+            step_failed=case_doc.step_failed,
+            step_skipped=case_doc.step_skipped,
+            started_at=case_doc.started_at,
+            finished_at=case_doc.finished_at,
+            dispatched_at=case_doc.dispatched_at,
+            last_seq=case_doc.last_seq,
+            last_event_id=case_doc.last_event_id,
+            result_data=self._merge_result_payload(
+                run_case_doc.result_data,
+                payload.get("result_data", {}),
+            ),
         )
         await run_case_doc.save()
 

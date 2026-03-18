@@ -25,19 +25,8 @@ class ExecutionTaskScheduler:
 
         dispatched_count = 0
         for task_doc in docs:
-            case_ids = self._service._extract_case_ids_from_payload(task_doc.request_payload)
-            auto_case_ids = self._service._extract_auto_case_ids_from_payload(task_doc.request_payload)
-            if not auto_case_ids:
-                auto_case_ids = await self._service.resolve_auto_case_ids_by_case_ids(case_ids)
-            command = self._service._build_case_dispatch_command(
-                task_doc=task_doc,
-                case_ids=case_ids,
-                auto_case_ids=auto_case_ids,
-                dispatch_case_id=case_ids[0],
-                dispatch_auto_case_id=auto_case_ids[0],
-                dispatch_case_index=0,
-            )
-            task_doc.current_case_id = case_ids[0]
+            command = await self._service._build_task_dispatch_command(task_doc, 0)
+            task_doc.current_case_id = command.dispatch_case_id
             task_doc.current_case_index = 0
             task_doc.schedule_status = "READY"
             await task_doc.save()

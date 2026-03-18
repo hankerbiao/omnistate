@@ -25,8 +25,8 @@ from app.modules.test_specs.repository.models import (
     TestRequirementDoc,
     AutomationTestCaseDoc,
 )
+from app.modules.test_specs.service._workflow_status_support import enrich_projected_status, get_workflow_states
 from app.modules.workflow.service.workflow_service import AsyncWorkflowService
-from app.modules.workflow.repository.models.business import BusWorkItemDoc
 from app.shared.core.mongo_client import get_mongo_client
 from app.shared.service import BaseService, SequenceIdService
 
@@ -65,38 +65,9 @@ class TestCaseService(BaseService):
         # - 业务ID和关联：通过显式命令修改
     }
 
-    def __init__(self):
-        super().__init__()
-        self.workflow_service = AsyncWorkflowService()
-        self._workflow_service = self.workflow_service
-
     async def _enrich_test_case_status(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """使用工作流状态覆盖业务文档中的状态投影字段。"""
-        workflow_item_id = str(data.get("workflow_item_id") or "").strip()
-        if not workflow_item_id:
-            return data
-
-        work_item = await BusWorkItemDoc.get(workflow_item_id)
-        if work_item and not work_item.is_deleted:
-            data["status"] = work_item.current_state
-        return data
-
-    async def _get_workflow_state_for_test_case(self, case_id: str) -> Optional[str]:
-        """从工作流获取测试用例的真实状态（单一真实来源）。
-
-        这是Phase 3B的关键实现：确保状态从工作流源读取，而不是业务文档投影字段。
-        """
-        # 先获取测试用例文档的workflow_item_id
-        test_case = await TestCaseDoc.find_one({
-            "case_id": case_id,
-            "is_deleted": False
-        })
-        if not test_case or not test_case.workflow_item_id:
-            return None
-
-        # 根据workflow_item_id查找对应的工作项状态
-        work_item = await BusWorkItemDoc.get(test_case.workflow_item_id)
-        return work_item.current_state if work_item and not work_item.is_deleted else None
+        return await enrich_projected_status(data)
 
     async def _get_workflow_states_for_test_cases(self, case_ids: List[str]) -> Dict[str, str]:
         """批量获取测试用例的工作流状态。
@@ -112,25 +83,7 @@ class TestCaseService(BaseService):
             "is_deleted": False
         }).to_list()
 
-        workflow_id_map = {tc.case_id: tc.workflow_item_id for tc in test_cases if tc.workflow_item_id}
-        if not workflow_id_map:
-            return {}
-
-        # 批量获取工作项状态
-        workflow_ids = list(workflow_id_map.values())
-        work_items = await BusWorkItemDoc.find({
-            "id": {"$in": workflow_ids},
-            "is_deleted": False
-        }).to_list()
-
-        # 构建映射：case_id -> current_state
-        state_map = {}
-        for case_id, workflow_id in workflow_id_map.items():
-            work_item = next((item for item in work_items if str(item.id) == workflow_id), None)
-            if work_item:
-                state_map[case_id] = work_item.current_state
-
-        return state_map
+        return await get_workflow_states(test_cases, "case_id")
 
     async def create_test_case(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """创建测试用例（仅事务模式）

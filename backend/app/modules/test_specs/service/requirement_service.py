@@ -15,8 +15,8 @@ from typing import Dict, Any, Optional, List
 from datetime import datetime
 from pymongo import AsyncMongoClient
 from app.modules.test_specs.repository.models import TestRequirementDoc, TestCaseDoc
+from app.modules.test_specs.service._workflow_status_support import enrich_projected_status, get_workflow_states
 from app.modules.workflow.service.workflow_service import AsyncWorkflowService
-from app.modules.workflow.repository.models.business import BusWorkItemDoc
 from app.shared.core.logger import log as logger
 from app.shared.core.mongo_client import get_mongo_client
 from app.shared.service import BaseService, SequenceIdService
@@ -40,38 +40,9 @@ class RequirementService(BaseService):
         # - 业务ID和关联：通过显式命令修改
     }
 
-    def __init__(self):
-        super().__init__()
-        self.workflow_service = AsyncWorkflowService()
-        self._workflow_service = self.workflow_service
-
     async def _enrich_requirement_status(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """使用工作流状态覆盖业务文档中的状态投影字段。"""
-        workflow_item_id = str(data.get("workflow_item_id") or "").strip()
-        if not workflow_item_id:
-            return data
-
-        work_item = await BusWorkItemDoc.get(workflow_item_id)
-        if work_item and not work_item.is_deleted:
-            data["status"] = work_item.current_state
-        return data
-
-    async def _get_workflow_state_for_requirement(self, req_id: str) -> Optional[str]:
-        """从工作流获取需求的真实状态（单一真实来源）。
-
-        这是Phase 3B的关键实现：确保状态从工作流源读取，而不是业务文档投影字段。
-        """
-        # 先获取需求文档的workflow_item_id
-        requirement = await TestRequirementDoc.find_one({
-            "req_id": req_id,
-            "is_deleted": False
-        })
-        if not requirement or not requirement.workflow_item_id:
-            return None
-
-        # 根据workflow_item_id查找对应的工作项状态
-        work_item = await BusWorkItemDoc.get(requirement.workflow_item_id)
-        return work_item.current_state if work_item and not work_item.is_deleted else None
+        return await enrich_projected_status(data)
 
     async def _get_workflow_states_for_requirements(self, req_ids: List[str]) -> Dict[str, str]:
         """批量获取需求的工作流状态。
@@ -87,25 +58,7 @@ class RequirementService(BaseService):
             "is_deleted": False
         }).to_list()
 
-        workflow_id_map = {req.req_id: req.workflow_item_id for req in requirements if req.workflow_item_id}
-        if not workflow_id_map:
-            return {}
-
-        # 批量获取工作项状态
-        workflow_ids = list(workflow_id_map.values())
-        work_items = await BusWorkItemDoc.find({
-            "id": {"$in": workflow_ids},
-            "is_deleted": False
-        }).to_list()
-
-        # 构建映射：req_id -> current_state
-        state_map = {}
-        for req_id, workflow_id in workflow_id_map.items():
-            work_item = next((item for item in work_items if str(item.id) == workflow_id), None)
-            if work_item:
-                state_map[req_id] = work_item.current_state
-
-        return state_map
+        return await get_workflow_states(requirements, "req_id")
 
     async def create_requirement(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """创建测试需求（仅事务模式）。

@@ -1,15 +1,20 @@
 from copy import deepcopy
 
+from app.modules.test_specs.application._workflow_command_support import (
+    delete_entity_or_work_item,
+    ensure_entity,
+    ensure_permission,
+)
 from app.modules.test_specs.application.commands import (
     AssignRequirementOwnersCommand,
     CreateRequirementCommand,
     UpdateRequirementCommand,
     DeleteRequirementCommand,
 )
+from app.modules.test_specs.domain.exceptions import RequirementNotFoundError
 from app.modules.test_specs.domain.policies import can_delete_requirement, can_update_requirement
 from app.modules.test_specs.service import RequirementService
-from app.modules.workflow.application import DeleteWorkItemCommand, OperationContext, WorkflowCommandService
-from app.modules.workflow.domain.exceptions import PermissionDeniedError
+from app.modules.workflow.application import OperationContext, WorkflowCommandService
 
 
 class RequirementCommandService:
@@ -92,21 +97,12 @@ class RequirementCommandService:
         if not command.payload:
             raise ValueError("no fields to update")
 
-        requirement = await self._requirement_service.get_requirement(command.req_id)
-        if not requirement:
-            from app.modules.test_specs.domain.exceptions import RequirementNotFoundError
-            raise RequirementNotFoundError(command.req_id)
-
-        workflow_item_id = str(requirement.get("workflow_item_id") or "").strip()
-        work_item = None
-        if workflow_item_id:
-            from app.modules.workflow.service.workflow_service import AsyncWorkflowService
-            workflow_service = AsyncWorkflowService()
-            work_item = await workflow_service.get_item_by_id(workflow_item_id)
-
-        actor = {"actor_id": context.actor_id, "role_ids": context.role_ids}
-        if not can_update_requirement(actor, requirement, work_item):
-            raise PermissionDeniedError(context.actor_id, "update requirement")
+        requirement = await ensure_entity(
+            command.req_id,
+            self._requirement_service.get_requirement,
+            RequirementNotFoundError,
+        )
+        await ensure_permission(context, requirement, can_update_requirement, "update requirement")
 
         return await self._requirement_service.update_requirement(command.req_id, command.payload)
 
@@ -133,29 +129,23 @@ class RequirementCommandService:
             RequirementNotFoundError: 需求不存在时抛出
             PermissionDeniedError: 没有删除权限时抛出
         """
-        requirement = await self._requirement_service.get_requirement(command.req_id)
-        if not requirement:
-            from app.modules.test_specs.domain.exceptions import RequirementNotFoundError
-            raise RequirementNotFoundError(command.req_id)
-
-        workflow_item_id = str(requirement.get("workflow_item_id") or "").strip()
-        work_item = None
-        if workflow_item_id:
-            from app.modules.workflow.service.workflow_service import AsyncWorkflowService
-            workflow_service = AsyncWorkflowService()
-            work_item = await workflow_service.get_item_by_id(workflow_item_id)
-
-        actor = {"actor_id": context.actor_id, "role_ids": context.role_ids}
-        if not can_delete_requirement(actor, requirement, work_item):
-            raise PermissionDeniedError(context.actor_id, "delete requirement")
-
-        if workflow_item_id:
-            await self._workflow_command_service.delete_work_item(
-                context,
-                DeleteWorkItemCommand(work_item_id=workflow_item_id),
-            )
-            return
-        await self._requirement_service.delete_requirement(command.req_id)
+        requirement = await ensure_entity(
+            command.req_id,
+            self._requirement_service.get_requirement,
+            RequirementNotFoundError,
+        )
+        workflow_item_id = await ensure_permission(
+            context,
+            requirement,
+            can_delete_requirement,
+            "delete requirement",
+        )
+        await delete_entity_or_work_item(
+            context,
+            self._workflow_command_service,
+            workflow_item_id,
+            lambda: self._requirement_service.delete_requirement(command.req_id),
+        )
 
     async def assign_owners(
         self,
@@ -179,21 +169,12 @@ class RequirementCommandService:
             PermissionDeniedError: 没有更新权限时抛出
         """
         command.validate()
-        requirement = await self._requirement_service.get_requirement(command.req_id)
-        if not requirement:
-            from app.modules.test_specs.domain.exceptions import RequirementNotFoundError
-            raise RequirementNotFoundError(command.req_id)
-
-        workflow_item_id = str(requirement.get("workflow_item_id") or "").strip()
-        work_item = None
-        if workflow_item_id:
-            from app.modules.workflow.service.workflow_service import AsyncWorkflowService
-            workflow_service = AsyncWorkflowService()
-            work_item = await workflow_service.get_item_by_id(workflow_item_id)
-
-        actor = {"actor_id": context.actor_id, "role_ids": context.role_ids}
-        if not can_update_requirement(actor, requirement, work_item):
-            raise PermissionDeniedError(context.actor_id, "assign requirement owners")
+        requirement = await ensure_entity(
+            command.req_id,
+            self._requirement_service.get_requirement,
+            RequirementNotFoundError,
+        )
+        await ensure_permission(context, requirement, can_update_requirement, "assign requirement owners")
 
         return await self._requirement_service.assign_owners(
             req_id=command.req_id,

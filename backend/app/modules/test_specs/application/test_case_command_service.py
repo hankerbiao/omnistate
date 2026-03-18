@@ -1,5 +1,10 @@
 from copy import deepcopy
 
+from app.modules.test_specs.application._workflow_command_support import (
+    delete_entity_or_work_item,
+    ensure_entity,
+    ensure_permission,
+)
 from app.modules.test_specs.application.commands import (
     AssignTestCaseOwnersCommand,
     LinkAutomationCaseCommand,
@@ -8,10 +13,10 @@ from app.modules.test_specs.application.commands import (
     UpdateTestCaseCommand,
     DeleteTestCaseCommand,
 )
+from app.modules.test_specs.domain.exceptions import RequirementNotFoundError, TestCaseNotFoundError
 from app.modules.test_specs.domain.policies import can_delete_test_case, can_update_test_case
 from app.modules.test_specs.service import TestCaseService, RequirementService
-from app.modules.workflow.application import DeleteWorkItemCommand, OperationContext, WorkflowCommandService
-from app.modules.workflow.domain.exceptions import PermissionDeniedError
+from app.modules.workflow.application import OperationContext, WorkflowCommandService
 
 
 class TestCaseCommandService:
@@ -98,21 +103,12 @@ class TestCaseCommandService:
         if not command.payload:
             raise ValueError("no fields to update")
 
-        test_case = await self._test_case_service.get_test_case(command.case_id)
-        if not test_case:
-            from app.modules.test_specs.domain.exceptions import TestCaseNotFoundError
-            raise TestCaseNotFoundError(command.case_id)
-
-        workflow_item_id = str(test_case.get("workflow_item_id") or "").strip()
-        work_item = None
-        if workflow_item_id:
-            from app.modules.workflow.service.workflow_service import AsyncWorkflowService
-            workflow_service = AsyncWorkflowService()
-            work_item = await workflow_service.get_item_by_id(workflow_item_id)
-
-        actor = {"actor_id": context.actor_id, "role_ids": context.role_ids}
-        if not can_update_test_case(actor, test_case, work_item):
-            raise PermissionDeniedError(context.actor_id, "update test case")
+        test_case = await ensure_entity(
+            command.case_id,
+            self._test_case_service.get_test_case,
+            TestCaseNotFoundError,
+        )
+        await ensure_permission(context, test_case, can_update_test_case, "update test case")
 
         return await self._test_case_service.update_test_case(command.case_id, command.payload)
 
@@ -139,29 +135,23 @@ class TestCaseCommandService:
             TestCaseNotFoundError: 测试用例不存在时抛出
             PermissionDeniedError: 没有删除权限时抛出
         """
-        test_case = await self._test_case_service.get_test_case(command.case_id)
-        if not test_case:
-            from app.modules.test_specs.domain.exceptions import TestCaseNotFoundError
-            raise TestCaseNotFoundError(command.case_id)
-
-        workflow_item_id = str(test_case.get("workflow_item_id") or "").strip()
-        work_item = None
-        if workflow_item_id:
-            from app.modules.workflow.service.workflow_service import AsyncWorkflowService
-            workflow_service = AsyncWorkflowService()
-            work_item = await workflow_service.get_item_by_id(workflow_item_id)
-
-        actor = {"actor_id": context.actor_id, "role_ids": context.role_ids}
-        if not can_delete_test_case(actor, test_case, work_item):
-            raise PermissionDeniedError(context.actor_id, "delete test case")
-
-        if workflow_item_id:
-            await self._workflow_command_service.delete_work_item(
-                context,
-                DeleteWorkItemCommand(work_item_id=workflow_item_id),
-            )
-            return
-        await self._test_case_service.delete_test_case(command.case_id)
+        test_case = await ensure_entity(
+            command.case_id,
+            self._test_case_service.get_test_case,
+            TestCaseNotFoundError,
+        )
+        workflow_item_id = await ensure_permission(
+            context,
+            test_case,
+            can_delete_test_case,
+            "delete test case",
+        )
+        await delete_entity_or_work_item(
+            context,
+            self._workflow_command_service,
+            workflow_item_id,
+            lambda: self._test_case_service.delete_test_case(command.case_id),
+        )
 
     async def link_automation_case(
         self,
@@ -184,17 +174,12 @@ class TestCaseCommandService:
         Raises:
             相关异常可能由底层服务抛出
         """
-        test_case = await self._test_case_service.get_test_case(command.case_id)
-        workflow_item_id = str(test_case.get("workflow_item_id") or "").strip()
-        work_item = None
-        if workflow_item_id:
-            from app.modules.workflow.service.workflow_service import AsyncWorkflowService
-            workflow_service = AsyncWorkflowService()
-            work_item = await workflow_service.get_item_by_id(workflow_item_id)
-
-        actor = {"actor_id": context.actor_id, "role_ids": context.role_ids}
-        if not can_update_test_case(actor, test_case, work_item):
-            raise PermissionDeniedError(context.actor_id, "link automation case")
+        test_case = await ensure_entity(
+            command.case_id,
+            self._test_case_service.get_test_case,
+            TestCaseNotFoundError,
+        )
+        await ensure_permission(context, test_case, can_update_test_case, "link automation case")
 
         return await self._test_case_service.link_automation_case(
             case_id=command.case_id,
@@ -224,21 +209,12 @@ class TestCaseCommandService:
             PermissionDeniedError: 没有更新权限时抛出
         """
         command.validate()
-        test_case = await self._test_case_service.get_test_case(command.case_id)
-        if not test_case:
-            from app.modules.test_specs.domain.exceptions import TestCaseNotFoundError
-            raise TestCaseNotFoundError(command.case_id)
-
-        workflow_item_id = str(test_case.get("workflow_item_id") or "").strip()
-        work_item = None
-        if workflow_item_id:
-            from app.modules.workflow.service.workflow_service import AsyncWorkflowService
-            workflow_service = AsyncWorkflowService()
-            work_item = await workflow_service.get_item_by_id(workflow_item_id)
-
-        actor = {"actor_id": context.actor_id, "role_ids": context.role_ids}
-        if not can_update_test_case(actor, test_case, work_item):
-            raise PermissionDeniedError(context.actor_id, "assign test case owners")
+        test_case = await ensure_entity(
+            command.case_id,
+            self._test_case_service.get_test_case,
+            TestCaseNotFoundError,
+        )
+        await ensure_permission(context, test_case, can_update_test_case, "assign test case owners")
 
         return await self._test_case_service.assign_owners(
             case_id=command.case_id,
@@ -269,32 +245,24 @@ class TestCaseCommandService:
             RequirementNotFoundError: 目标需求不存在时抛出
             PermissionDeniedError: 没有更新权限时抛出
         """
-        test_case = await self._test_case_service.get_test_case(command.case_id)
-        if not test_case:
-            from app.modules.test_specs.domain.exceptions import TestCaseNotFoundError
-            raise TestCaseNotFoundError(command.case_id)
+        test_case = await ensure_entity(
+            command.case_id,
+            self._test_case_service.get_test_case,
+            TestCaseNotFoundError,
+        )
 
         if test_case.get("ref_req_id") == command.target_req_id:
             raise ValueError("test case is already linked to the target requirement")
 
         # 验证目标需求存在
-        target_requirement = await self._requirement_service.get_requirement(command.target_req_id)
-        if not target_requirement:
-            from app.modules.test_specs.domain.exceptions import RequirementNotFoundError
-            raise RequirementNotFoundError(command.target_req_id)
+        await ensure_entity(
+            command.target_req_id,
+            self._requirement_service.get_requirement,
+            RequirementNotFoundError,
+        )
 
         command.validate()
-
-        workflow_item_id = str(test_case.get("workflow_item_id") or "").strip()
-        work_item = None
-        if workflow_item_id:
-            from app.modules.workflow.service.workflow_service import AsyncWorkflowService
-            workflow_service = AsyncWorkflowService()
-            work_item = await workflow_service.get_item_by_id(workflow_item_id)
-
-        actor = {"actor_id": context.actor_id, "role_ids": context.role_ids}
-        if not can_update_test_case(actor, test_case, work_item):
-            raise PermissionDeniedError(context.actor_id, "move test case to requirement")
+        await ensure_permission(context, test_case, can_update_test_case, "move test case to requirement")
 
         return await self._test_case_service.move_to_requirement(
             case_id=command.case_id,

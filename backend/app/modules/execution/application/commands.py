@@ -30,17 +30,17 @@ class DispatchExecutionTaskCommand:
     callback_url: Optional[str] = None
     dut: Optional[Dict[str, Any]] = None
 
-    # 发送到 Kafka 的任务数据，由命令对象统一构建
-    kafka_task_data: Optional[Dict[str, Any]] = None
-
     def __post_init__(self):
         """初始化后处理"""
         if self.dispatch_case_id is None and len(self.case_ids) == 1:
             self.dispatch_case_id = self.case_ids[0]
         if self.dispatch_auto_case_id is None and len(self.auto_case_ids) == 1:
             self.dispatch_auto_case_id = self.auto_case_ids[0]
-        if self.kafka_task_data is None:
-            self.kafka_task_data = self._build_kafka_task_data()
+
+    @property
+    def kafka_task_data(self) -> Dict[str, Any]:
+        """按需构建发送到 Kafka/HTTP 的任务数据，避免命令被更新后缓存失效。"""
+        return self._build_kafka_task_data()
 
     def _build_kafka_task_data(self) -> Dict[str, Any]:
         """构建Kafka任务数据"""

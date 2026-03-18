@@ -57,6 +57,11 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
         self._dispatcher = ExecutionTaskDispatcher()
 
     @staticmethod
+    def _assign_fields(target: Any, **values: Any) -> None:
+        for field_name, field_value in values.items():
+            setattr(target, field_name, field_value)
+
+    @staticmethod
     def _build_dedup_key(command: DispatchExecutionTaskCommand) -> str:
         """基于业务载荷构建稳定去重键。
 
@@ -260,6 +265,13 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
         """从任务快照中恢复 auto_case_id 顺序。"""
         return [case["auto_case_id"] for case in payload.get("cases", []) if "auto_case_id" in case]
 
+    async def _resolve_task_case_pairs(self, task_doc: ExecutionTaskDoc) -> tuple[List[str], List[str]]:
+        case_ids = self._extract_case_ids_from_payload(task_doc.request_payload)
+        auto_case_ids = self._extract_auto_case_ids_from_payload(task_doc.request_payload)
+        if not auto_case_ids:
+            auto_case_ids = await self.resolve_auto_case_ids_by_case_ids(case_ids)
+        return case_ids, auto_case_ids
+
     @staticmethod
     async def _create_task_run_docs(
             task_doc: ExecutionTaskDoc,
@@ -332,20 +344,23 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
         """
         case_docs = await ExecutionTaskCaseDoc.find({"task_id": task_id}).to_list()
         for case_doc in case_docs:
-            case_doc.dispatch_status = "PENDING"
-            case_doc.dispatch_attempts = 0
-            case_doc.status = "QUEUED"
-            case_doc.progress_percent = None
-            case_doc.step_total = 0
-            case_doc.step_passed = 0
-            case_doc.step_failed = 0
-            case_doc.step_skipped = 0
-            case_doc.last_seq = 0
-            case_doc.last_event_id = None
-            case_doc.started_at = None
-            case_doc.finished_at = None
-            case_doc.dispatched_at = None
-            case_doc.result_data = {}
+            ExecutionService._assign_fields(
+                case_doc,
+                dispatch_status="PENDING",
+                dispatch_attempts=0,
+                status="QUEUED",
+                progress_percent=None,
+                step_total=0,
+                step_passed=0,
+                step_failed=0,
+                step_skipped=0,
+                last_seq=0,
+                last_event_id=None,
+                started_at=None,
+                finished_at=None,
+                dispatched_at=None,
+                result_data={},
+            )
             await case_doc.save()
 
     @staticmethod
@@ -399,16 +414,9 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
             task_doc: ExecutionTaskDoc,
             case_ids: List[str],
             auto_case_ids: List[str],
-            dispatch_case_id: str,
-            dispatch_auto_case_id: str,
             dispatch_case_index: int,
     ) -> DispatchExecutionTaskCommand:
-        """构建单 case 下发命令。
-
-        虽然外部执行端当前一次只执行 1 条 case，但命令里仍保留完整 case 列表，
-        因为平台后续推进、回调关联和重试都需要知道这轮任务的整体上下文。
-        `dispatch_case_id` / `dispatch_case_index` 表示本次真正要下发的“当前 case”。
-        """
+        """构建单 case 下发命令。"""
         request_payload = dict(task_doc.request_payload or {})
         planned_at = request_payload.get("planned_at")
         return DispatchExecutionTaskCommand(
@@ -421,14 +429,22 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
             auto_case_ids=auto_case_ids,
             case_ids=case_ids,
             run_no=task_doc.current_run_no or 1,
-            dispatch_case_id=dispatch_case_id,
-            dispatch_auto_case_id=dispatch_auto_case_id,
+            dispatch_case_id=case_ids[dispatch_case_index],
+            dispatch_auto_case_id=auto_case_ids[dispatch_case_index],
             dispatch_case_index=dispatch_case_index,
             schedule_type=task_doc.schedule_type,
             planned_at=cls._ensure_utc_datetime(planned_at) if planned_at else None,
             callback_url=request_payload.get("callback_url"),
             dut=request_payload.get("dut"),
         )
+
+    async def _build_task_dispatch_command(
+            self,
+            task_doc: ExecutionTaskDoc,
+            dispatch_case_index: int,
+    ) -> DispatchExecutionTaskCommand:
+        case_ids, auto_case_ids = await self._resolve_task_case_pairs(task_doc)
+        return self._build_case_dispatch_command(task_doc, case_ids, auto_case_ids, dispatch_case_index)
 
     @staticmethod
     async def _replace_task_case_docs(
@@ -540,64 +556,47 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
         - 状态重置完整，不遗留上一次执行痕迹
         - 当前态字段始终与 `request_payload` 对齐
         """
-        task_doc.agent_id = command.agent_id
-        task_doc.dedup_key = dedup_key
-        task_doc.case_count = len(command.case_ids)
-        task_doc.reported_case_count = 0
-        # 当前态默认指向第 1 条 case；真正推进到后续 case 由 progress 流程负责。
-        task_doc.current_case_id = command.case_ids[0]
-        task_doc.current_case_index = 0
-        task_doc.stop_mode = STOP_MODE_NONE
-        task_doc.stop_requested_at = None
-        task_doc.stop_requested_by = None
-        task_doc.stop_reason = None
-        task_doc.planned_at = command.planned_at
-        task_doc.schedule_type = schedule_type
-        task_doc.schedule_status = schedule_status
-        task_doc.dispatch_status = dispatch_status
-        task_doc.request_payload = ExecutionService._build_task_request_payload(command)
-        task_doc.dispatch_error = None
-        task_doc.dispatch_response = {}
-        task_doc.triggered_at = None
-        task_doc.started_at = None
-        task_doc.finished_at = None
-        task_doc.last_callback_at = None
-        task_doc.consume_status = "PENDING"
-        task_doc.consumed_at = None
-        task_doc.overall_status = "QUEUED"
-        task_doc.orchestration_lock = None
+        ExecutionService._assign_fields(
+            task_doc,
+            agent_id=command.agent_id,
+            dedup_key=dedup_key,
+            case_count=len(command.case_ids),
+            reported_case_count=0,
+            current_case_id=command.case_ids[0],
+            current_case_index=0,
+            stop_mode=STOP_MODE_NONE,
+            stop_requested_at=None,
+            stop_requested_by=None,
+            stop_reason=None,
+            planned_at=command.planned_at,
+            schedule_type=schedule_type,
+            schedule_status=schedule_status,
+            dispatch_status=dispatch_status,
+            request_payload=ExecutionService._build_task_request_payload(command),
+            dispatch_error=None,
+            dispatch_response={},
+            triggered_at=None,
+            started_at=None,
+            finished_at=None,
+            last_callback_at=None,
+            consume_status="PENDING",
+            consumed_at=None,
+            overall_status="QUEUED",
+            orchestration_lock=None,
+        )
 
-    async def _dispatch_first_case_if_needed(
+    async def _dispatch_task_if_needed(
             self,
             task_doc: ExecutionTaskDoc,
             should_dispatch_now: bool,
+            dispatch_case_index: int = 0,
     ) -> None:
-        """统一处理首条 case 的实际下发。
-
-        任务创建成功并不等于一定马上下发：
-
-        - 立即任务会立刻触发
-        - 已到触发时间的定时任务也会立刻触发
-        - 尚未到时间的定时任务只落库，不下发
-
-        这样调用方不用重复关心调度策略，只需要交给这里统一判断。
-        """
+        """按需下发指定索引的 case。"""
         if not should_dispatch_now:
             return
-        case_ids = self._extract_case_ids_from_payload(task_doc.request_payload)
-        auto_case_ids = self._extract_auto_case_ids_from_payload(task_doc.request_payload)
-        if not auto_case_ids:
-            auto_case_ids = await self.resolve_auto_case_ids_by_case_ids(case_ids)
         await self._dispatch_existing_task(
             task_doc,
-            self._build_case_dispatch_command(
-                task_doc=task_doc,
-                case_ids=case_ids,
-                auto_case_ids=auto_case_ids,
-                dispatch_case_id=case_ids[0],
-                dispatch_auto_case_id=auto_case_ids[0],
-                dispatch_case_index=0,
-            ),
+            await self._build_task_dispatch_command(task_doc, dispatch_case_index),
         )
 
     async def _dispatch_existing_task(
@@ -787,7 +786,7 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
         task_doc.current_run_no = 0
         await self._create_task_run_docs(task_doc, trigger_type="INITIAL", triggered_by=actor_id)
         await task_doc.save()
-        await self._dispatch_first_case_if_needed(task_doc, should_dispatch_now)
+        await self._dispatch_task_if_needed(task_doc, should_dispatch_now)
 
         return self._serialize_task_doc(task_doc)
 
@@ -931,7 +930,7 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
         await self._replace_task_case_docs(task_doc.task_id, command.case_ids, command.auto_case_ids, doc_map)
         await self._create_task_run_docs(task_doc, trigger_type="INITIAL", triggered_by=actor_id)
         await task_doc.save()
-        await self._dispatch_first_case_if_needed(task_doc, should_dispatch_now)
+        await self._dispatch_task_if_needed(task_doc, should_dispatch_now)
         return self._serialize_task_doc(task_doc)
 
     async def retry_failed_task(self, task_id: str, actor_id: str) -> Dict[str, Any]:
@@ -954,46 +953,37 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
         if task_doc.schedule_type == "SCHEDULED" and task_doc.schedule_status == "PENDING":
             raise ValueError(f"Task {task_id} cannot be retried before scheduled trigger")
 
-        case_ids = self._extract_case_ids_from_payload(task_doc.request_payload)
-        auto_case_ids = self._extract_auto_case_ids_from_payload(task_doc.request_payload)
+        case_ids, auto_case_ids = await self._resolve_task_case_pairs(task_doc)
         if not case_ids:
             raise ValueError(f"Task {task_id} has no cases to retry")
-        if not auto_case_ids:
-            auto_case_ids = await self.resolve_auto_case_ids_by_case_ids(case_ids)
 
         await self._reset_task_case_docs(task_id)
-        # 重试会把任务重新放回可执行态，但不会清掉已有历史轮次。
-        task_doc.schedule_status = "READY"
-        task_doc.dispatch_status = "PENDING"
-        task_doc.dispatch_error = None
-        task_doc.dispatch_response = {}
-        task_doc.consume_status = "PENDING"
-        task_doc.consumed_at = None
-        task_doc.overall_status = "QUEUED"
-        task_doc.reported_case_count = 0
-        task_doc.current_case_id = case_ids[0]
-        task_doc.current_case_index = 0
-        task_doc.stop_mode = STOP_MODE_NONE
-        task_doc.stop_requested_at = None
-        task_doc.stop_requested_by = None
-        task_doc.stop_reason = None
-        task_doc.triggered_at = None
-        task_doc.started_at = None
-        task_doc.finished_at = None
-        task_doc.last_callback_at = None
-        task_doc.orchestration_lock = None
+        ExecutionService._assign_fields(
+            task_doc,
+            schedule_status="READY",
+            dispatch_status="PENDING",
+            dispatch_error=None,
+            dispatch_response={},
+            consume_status="PENDING",
+            consumed_at=None,
+            overall_status="QUEUED",
+            reported_case_count=0,
+            current_case_id=case_ids[0],
+            current_case_index=0,
+            stop_mode=STOP_MODE_NONE,
+            stop_requested_at=None,
+            stop_requested_by=None,
+            stop_reason=None,
+            triggered_at=None,
+            started_at=None,
+            finished_at=None,
+            last_callback_at=None,
+            orchestration_lock=None,
+        )
         await self._create_task_run_docs(task_doc, trigger_type="RETRY", triggered_by=actor_id)
         await task_doc.save()
 
-        command = self._build_case_dispatch_command(
-            task_doc=task_doc,
-            case_ids=case_ids,
-            auto_case_ids=auto_case_ids,
-            dispatch_case_id=case_ids[0],
-            dispatch_auto_case_id=auto_case_ids[0],
-            dispatch_case_index=0,
-        )
-        await self._dispatch_existing_task(task_doc, command)
+        await self._dispatch_existing_task(task_doc, await self._build_task_dispatch_command(task_doc, 0))
 
         if task_doc.dispatch_status == "DISPATCHED":
             logger.info(f"Task {task_id} retried successfully")

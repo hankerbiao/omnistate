@@ -115,7 +115,7 @@ class ExecutionTaskQueryMixin:
 
     async def get_task_status(self, task_id: str) -> Dict[str, Any]:
         """获取任务状态详情。"""
-        task_doc = await ExecutionTaskDoc.find_one({"task_id": task_id})
+        task_doc = await ExecutionTaskDoc.find_one({"task_id": task_id, "is_deleted": False})
         if not task_doc:
             raise KeyError(f"Task not found: {task_id}")
 
