@@ -5,11 +5,18 @@ import type { CreateTestCaseRequest, TestCaseStep } from '../types';
 interface CreateTestCaseFormProps {
   onClose: () => void;
   onSuccess: () => void;
+  defaultRequirementId?: string;
+  lockRequirementId?: boolean;
 }
 
-const CreateTestCaseForm: React.FC<CreateTestCaseFormProps> = ({ onClose, onSuccess }) => {
+const CreateTestCaseForm: React.FC<CreateTestCaseFormProps> = ({
+  onClose,
+  onSuccess,
+  defaultRequirementId = '',
+  lockRequirementId = false,
+}) => {
   const [formData, setFormData] = useState<CreateTestCaseRequest>({
-    ref_req_id: '',
+    ref_req_id: defaultRequirementId,
     title: '',
     version: 1,
     is_active: true,
@@ -184,7 +191,11 @@ const CreateTestCaseForm: React.FC<CreateTestCaseFormProps> = ({ onClose, onSucc
                     style={styles.input}
                     placeholder="REQ-001"
                     required
+                    readOnly={lockRequirementId}
                   />
+                  {lockRequirementId && (
+                    <span style={styles.helperText}>已绑定当前需求，创建后自动关联</span>
+                  )}
                 </div>
 
                 <div style={styles.formGroup}>
@@ -656,6 +667,12 @@ const styles = {
     color: 'var(--text-secondary)',
     marginBottom: '8px',
     letterSpacing: '0.3px',
+  } as const,
+  helperText: {
+    display: 'inline-block',
+    marginTop: '8px',
+    fontSize: '12px',
+    color: 'var(--text-muted)',
   } as const,
   required: {
     color: 'var(--accent-red)',

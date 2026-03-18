@@ -1,14 +1,16 @@
 import { useState } from 'react'
 import { api } from './services/api'
 import LoginPage from './components/LoginPage'
+import RequirementsPage from './components/RequirementsPage'
 import TestCaseList from './components/TestCaseList'
 import AgentList from './components/AgentList'
 import TaskList from './components/TaskList'
 import './App.css'
 
-type PageType = 'testCases' | 'agents' | 'tasks'
+type PageType = 'requirements' | 'testCases' | 'agents' | 'tasks'
 
 const navItems: { key: PageType; label: string; icon: string }[] = [
+  { key: 'requirements', label: '测试需求', icon: '▣' },
   { key: 'testCases', label: '自动化用例', icon: '⚡' },
   { key: 'agents', label: '执行代理', icon: '◉' },
   { key: 'tasks', label: '执行任务', icon: '▸' },
@@ -24,7 +26,7 @@ function App() {
     return false
   })
 
-  const [currentPage, setCurrentPage] = useState<PageType>('testCases')
+  const [currentPage, setCurrentPage] = useState<PageType>('requirements')
 
   const handleLoginSuccess = () => {
     setIsAuthenticated(true)
@@ -74,6 +76,8 @@ function App() {
           <main style={styles.main}>
             {currentPage === 'testCases' ? (
               <TestCaseList />
+            ) : currentPage === 'requirements' ? (
+              <RequirementsPage />
             ) : currentPage === 'agents' ? (
               <AgentList onLogout={handleLogout} />
             ) : (
