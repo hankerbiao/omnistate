@@ -224,6 +224,8 @@ async def link_automation_case(
             ),
         )
         return APIResponse(data=data)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
     except KeyError as e:
         if str(e) == "'automation test case not found'":
             raise HTTPException(status_code=404, detail="automation test case not found")

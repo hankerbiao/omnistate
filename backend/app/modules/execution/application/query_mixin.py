@@ -18,6 +18,22 @@ class ExecutionTaskQueryMixin:
     @staticmethod
     def _serialize_task_doc(task_doc: ExecutionTaskDoc) -> Dict[str, Any]:
         """统一序列化任务摘要字段，避免重复手写响应。"""
+        request_payload = getattr(task_doc, "request_payload", {}) or {}
+        case_items = [
+            case
+            for case in request_payload.get("cases", [])
+            if isinstance(case, dict)
+        ]
+        auto_case_ids = [
+            case["auto_case_id"]
+            for case in case_items
+            if case.get("auto_case_id")
+        ]
+        current_case_index = getattr(task_doc, "current_case_index", 0)
+        current_auto_case_id = None
+        if 0 <= current_case_index < len(case_items):
+            current_auto_case_id = case_items[current_case_index].get("auto_case_id")
+
         return {
             "task_id": task_doc.task_id,
             "external_task_id": task_doc.external_task_id,
@@ -31,10 +47,12 @@ class ExecutionTaskQueryMixin:
             "consume_status": task_doc.consume_status,
             "overall_status": task_doc.overall_status,
             "case_count": task_doc.case_count,
+            "auto_case_ids": auto_case_ids,
             "latest_run_no": getattr(task_doc, "latest_run_no", 0),
             "current_run_no": getattr(task_doc, "current_run_no", 0),
             "current_case_id": getattr(task_doc, "current_case_id", None),
-            "current_case_index": getattr(task_doc, "current_case_index", 0),
+            "current_auto_case_id": current_auto_case_id,
+            "current_case_index": current_case_index,
             "stop_mode": getattr(task_doc, "stop_mode", "NONE"),
             "stop_requested_at": getattr(task_doc, "stop_requested_at", None),
             "stop_requested_by": getattr(task_doc, "stop_requested_by", None),

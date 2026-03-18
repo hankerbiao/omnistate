@@ -88,7 +88,7 @@ const TestCaseList: React.FC = () => {
         framework,
         agent_id: selectedAgentId,
         trigger_source: 'web_ui',
-        cases: Array.from(selectedCases).map(case_id => ({ case_id })),
+        cases: Array.from(selectedCases).map((auto_case_id) => ({ auto_case_id })),
       });
 
       if (response.code === 0 || response.code === 200) {

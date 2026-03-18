@@ -16,9 +16,11 @@ class DispatchExecutionTaskCommand:
     created_by: str
 
     # 测试用例信息
+    auto_case_ids: List[str]
     case_ids: List[str]
     run_no: int = 1
     dispatch_case_id: Optional[str] = None
+    dispatch_auto_case_id: Optional[str] = None
     dispatch_case_index: int = 0
     agent_id: Optional[str] = None
     schedule_type: str = "IMMEDIATE"
@@ -35,12 +37,15 @@ class DispatchExecutionTaskCommand:
         """初始化后处理"""
         if self.dispatch_case_id is None and len(self.case_ids) == 1:
             self.dispatch_case_id = self.case_ids[0]
+        if self.dispatch_auto_case_id is None and len(self.auto_case_ids) == 1:
+            self.dispatch_auto_case_id = self.auto_case_ids[0]
         if self.kafka_task_data is None:
             self.kafka_task_data = self._build_kafka_task_data()
 
     def _build_kafka_task_data(self) -> Dict[str, Any]:
         """构建Kafka任务数据"""
         current_case_id = self.dispatch_case_id or self.case_ids[0]
+        current_auto_case_id = self.dispatch_auto_case_id or self.auto_case_ids[0]
         return {
             "task_id": self.task_id,
             "external_task_id": self.external_task_id,
@@ -51,9 +56,10 @@ class DispatchExecutionTaskCommand:
             "planned_at": self.planned_at.isoformat() if self.planned_at else None,
             "callback_url": self.callback_url,
             "dut": self.dut or {},
-            "cases": [{"case_id": current_case_id}],
+            "cases": [{"case_id": current_case_id, "auto_case_id": current_auto_case_id}],
             "run_no": self.run_no,
             "current_case_id": current_case_id,
+            "current_auto_case_id": current_auto_case_id,
             "current_case_index": self.dispatch_case_index,
             "case_count": len(self.case_ids),
             "created_by": self.created_by,

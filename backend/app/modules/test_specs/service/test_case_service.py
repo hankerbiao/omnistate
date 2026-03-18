@@ -24,7 +24,6 @@ from app.modules.test_specs.repository.models import (
     TestCaseDoc,
     TestRequirementDoc,
     AutomationTestCaseDoc,
-    AutomationCaseRef,
 )
 from app.modules.workflow.service.workflow_service import AsyncWorkflowService
 from app.modules.workflow.repository.models.business import BusWorkItemDoc
@@ -51,11 +50,6 @@ class TestCaseService(BaseService):
         "post_condition",
         "cleanup_steps",
         "steps",
-        "is_need_auto",
-        "is_automated",
-        "automation_type",
-        "script_entity_id",
-        "automation_case_ref",
         "risk_level",
         "failure_analysis",
         "confidentiality",
@@ -309,32 +303,16 @@ class TestCaseService(BaseService):
         if not case_doc:
             raise KeyError("test case not found")
 
-        # 查找自动化测试用例
-        auto_query = AutomationTestCaseDoc.find(
+        # 查找自动化测试用例。当前模型仅保留最新版本，version 参数仅用于兼容接口签名。
+        auto_doc = await AutomationTestCaseDoc.find_one(
             AutomationTestCaseDoc.auto_case_id == auto_case_id,
             {"is_deleted": False},
         )
-        if version:
-            auto_query = auto_query.find(AutomationTestCaseDoc.version == version)
-        auto_doc = await auto_query.sort("-updated_at").first_or_none()
         if not auto_doc:
             raise KeyError("automation test case not found")
 
-        # 关联自动化用例
-        case_doc.automation_case_ref = AutomationCaseRef(
-            auto_case_id=auto_doc.auto_case_id,
-            version=auto_doc.version,
-        )
-        case_doc.is_need_auto = True
-        case_doc.is_automated = True
-        case_doc.automation_type = auto_doc.automation_type or case_doc.automation_type
-        case_doc.script_entity_id = auto_doc.script_entity_id or case_doc.script_entity_id
-
-        if not case_doc.custom_fields:
-            case_doc.custom_fields = {}
-        case_doc.custom_fields["automation_case_id"] = auto_doc.auto_case_id
-        case_doc.custom_fields["automation_case_version"] = auto_doc.version
-
+        if auto_doc.source_case_id != case_doc.case_id:
+            raise ValueError("automation test case source_case_id does not match test case case_id")
         await case_doc.save()
         return self._doc_to_dict(case_doc)
 

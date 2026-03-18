@@ -1,14 +1,24 @@
 """定义层模型模块"""
 from .requirement import TestRequirementDoc, TestRequirementModel
-from .test_case import TestCaseDoc, TestCaseModel, AutomationCaseRef
-from .automation_test_case import AutomationTestCaseDoc, AutomationTestCaseModel
+from .test_case import TestCaseDoc, TestCaseModel
+from .automation_test_case import (
+    AutomationTestCaseDoc,
+    AutomationTestCaseModel,
+    CodeSnapshotModel,
+    ConfigFieldModel,
+    ReportMetaModel,
+    ScriptRefModel,
+)
 
 __all__ = [
     "TestRequirementDoc",
     "TestRequirementModel",
     "TestCaseDoc",
     "TestCaseModel",
-    "AutomationCaseRef",
     "AutomationTestCaseDoc",
     "AutomationTestCaseModel",
+    "ScriptRefModel",
+    "CodeSnapshotModel",
+    "ReportMetaModel",
+    "ConfigFieldModel",
 ]

@@ -32,6 +32,56 @@ export interface User {
   email?: string;
 }
 
+export interface RequirementKeyParameter {
+  name: string;
+  value: string;
+}
+
+export interface CreateRequirementRequest {
+  title: string;
+  description?: string;
+  technical_spec?: string;
+  target_components?: string[];
+  firmware_version?: string;
+  priority?: string;
+  key_parameters?: RequirementKeyParameter[];
+  risk_points?: string;
+  tpm_owner_id?: string;
+  manual_dev_id?: string;
+  auto_dev_id?: string;
+  attachments?: Record<string, unknown>[];
+}
+
+export interface RequirementResponse {
+  id: string;
+  req_id: string;
+  workflow_item_id?: string;
+  title: string;
+  description?: string;
+  technical_spec?: string;
+  target_components: string[];
+  firmware_version?: string;
+  priority: string;
+  key_parameters: RequirementKeyParameter[];
+  risk_points?: string;
+  tpm_owner_id: string;
+  manual_dev_id?: string;
+  auto_dev_id?: string;
+  status: string;
+  attachments: Record<string, unknown>[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ListRequirementsParams {
+  status?: string;
+  tpm_owner_id?: string;
+  manual_dev_id?: string;
+  auto_dev_id?: string;
+  limit?: number;
+  offset?: number;
+}
+
 export interface TestCaseStep {
   step_id: string;
   name: string;
@@ -135,7 +185,7 @@ export interface ListTestCasesParams {
 }
 
 export interface DispatchCaseItem {
-  case_id: string;
+  auto_case_id: string;
 }
 
 export interface DispatchTaskRequest {

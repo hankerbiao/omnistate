@@ -29,9 +29,11 @@
 - 需求：`/api/v1/requirements`
 - 用例：`/api/v1/test-cases`
 - 自动化用例库：`/api/v1/automation-test-cases`
+- 自动化框架元数据上报：`POST /api/v1/automation-test-cases/report`
 - 用例关联自动化：`/api/v1/test-cases/{case_id}/automation-link`
 
 ## 备注
 - 创建或更新用例时会校验 `ref_req_id` 是否存在。
 - 自动化用例库当前已提供创建接口：`POST /api/v1/automation-test-cases`
+- 自动化框架可直接上报单条用例配置元数据，后端会原样保存到 `metadata_payload` 字段。
 - 所有时间字段统一使用 UTC。

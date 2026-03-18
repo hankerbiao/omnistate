@@ -72,8 +72,9 @@ async def dispatch_task(
         task_id = f"ET-{year}-{str(seq).zfill(6)}"
         external_task_id = f"EXT-{task_id}"
 
-        # 构建用例ID列表
-        case_ids = [item.case_id for item in request.cases]
+        # 构建自动化用例ID列表
+        auto_case_ids = [item.auto_case_id for item in request.cases]
+        case_ids = await service.resolve_case_ids_by_auto_case_ids(auto_case_ids)
 
         # 创建显式命令
         command = DispatchExecutionTaskCommand(
@@ -83,6 +84,7 @@ async def dispatch_task(
             agent_id=request.agent_id,
             trigger_source=request.trigger_source or "manual",
             created_by=current_user["user_id"],
+            auto_case_ids=auto_case_ids,
             case_ids=case_ids,
             schedule_type=request.schedule_type,
             planned_at=request.planned_at,

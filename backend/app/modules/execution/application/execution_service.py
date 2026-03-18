@@ -34,7 +34,7 @@ from app.modules.execution.repository.models import (
     ExecutionTaskRunDoc,
 )
 from app.modules.execution.service.task_dispatcher import ExecutionTaskDispatcher
-from app.modules.test_specs.repository.models import TestCaseDoc
+from app.modules.test_specs.repository.models import AutomationTestCaseDoc, TestCaseDoc
 from app.shared.core.logger import log as logger
 
 
@@ -146,6 +146,83 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
         return doc_map
 
     @staticmethod
+    async def resolve_case_ids_by_auto_case_ids(auto_case_ids: List[str]) -> List[str]:
+        """将 auto_case_id 列表解析为平台测试用例 case_id，保留原始顺序。"""
+        auto_docs = await AutomationTestCaseDoc.find({
+            "auto_case_id": {"$in": auto_case_ids},
+            "is_deleted": False,
+        }).to_list()
+        source_mapping = {doc.auto_case_id: doc.source_case_id for doc in auto_docs}
+
+        missing_auto_case_ids = [auto_case_id for auto_case_id in auto_case_ids if auto_case_id not in source_mapping]
+        if missing_auto_case_ids:
+            raise KeyError(f"Automation test cases not found: {missing_auto_case_ids}")
+
+        source_case_ids = [source_mapping[auto_case_id] for auto_case_id in auto_case_ids]
+        docs = await TestCaseDoc.find({
+            "case_id": {"$in": source_case_ids},
+            "is_deleted": False,
+        }).to_list()
+
+        mapping: Dict[str, List[str]] = {}
+        for doc in docs:
+            source_case_id = getattr(doc, "case_id", None)
+            if not source_case_id:
+                continue
+            mapping.setdefault(source_case_id, []).append(doc.case_id)
+
+        missing_source_case_ids = [source_case_id for source_case_id in source_case_ids if source_case_id not in mapping]
+        if missing_source_case_ids:
+            missing_auto_case_ids = [
+                auto_case_id for auto_case_id in auto_case_ids
+                if source_mapping.get(auto_case_id) in missing_source_case_ids
+            ]
+            raise KeyError(
+                "Automation test cases source_case_id not matched to test cases: "
+                f"auto_case_ids={missing_auto_case_ids}, source_case_ids={missing_source_case_ids}"
+            )
+
+        ambiguous = {
+            source_case_id: case_ids
+            for source_case_id, case_ids in mapping.items()
+            if len(case_ids) > 1
+        }
+        if ambiguous:
+            raise ValueError(f"Automation test cases linked to multiple test cases: {ambiguous}")
+
+        return [mapping[source_mapping[auto_case_id]][0] for auto_case_id in auto_case_ids]
+
+    @staticmethod
+    async def resolve_auto_case_ids_by_case_ids(case_ids: List[str]) -> List[str]:
+        """根据平台 case_id 反查 auto_case_id，保留原始顺序。"""
+        docs = await TestCaseDoc.find({
+            "case_id": {"$in": case_ids},
+            "is_deleted": False,
+        }).to_list()
+        source_mapping: Dict[str, str] = {}
+        missing: List[str] = []
+        for doc in docs:
+            source_case_id = getattr(doc, "case_id", None)
+            if source_case_id:
+                source_mapping[doc.case_id] = source_case_id
+        for case_id in case_ids:
+            if case_id not in source_mapping:
+                missing.append(case_id)
+        if missing:
+            raise KeyError(f"Test cases not linked to automation test cases: {missing}")
+
+        auto_docs = await AutomationTestCaseDoc.find({
+            "source_case_id": {"$in": list(source_mapping.values())},
+            "is_deleted": False,
+        }).to_list()
+        auto_mapping = {doc.source_case_id: doc.auto_case_id for doc in auto_docs}
+        missing_sources = [source_case_id for source_case_id in source_mapping.values() if source_case_id not in auto_mapping]
+        if missing_sources:
+            missing_case_ids = [case_id for case_id, source_case_id in source_mapping.items() if source_case_id in missing_sources]
+            raise KeyError(f"Test cases not linked to automation test cases: {missing_case_ids}")
+        return [auto_mapping[source_mapping[case_id]] for case_id in case_ids]
+
+    @staticmethod
     def _build_task_request_payload(command: DispatchExecutionTaskCommand) -> Dict[str, Any]:
         """构建任务级快照，保留完整 case 列表用于后续串行推进。
 
@@ -162,7 +239,10 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
             "planned_at": command.planned_at.isoformat() if command.planned_at else None,
             "callback_url": command.callback_url,
             "dut": command.dut or {},
-            "cases": [{"case_id": cid} for cid in command.case_ids],
+            "cases": [
+                {"case_id": case_id, "auto_case_id": auto_case_id}
+                for case_id, auto_case_id in zip(command.case_ids, command.auto_case_ids)
+            ],
             "created_by": command.created_by,
         }
 
@@ -174,6 +254,11 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
         而不是重新排序后的集合。
         """
         return [case["case_id"] for case in payload.get("cases", [])]
+
+    @staticmethod
+    def _extract_auto_case_ids_from_payload(payload: Dict[str, Any]) -> List[str]:
+        """从任务快照中恢复 auto_case_id 顺序。"""
+        return [case["auto_case_id"] for case in payload.get("cases", []) if "auto_case_id" in case]
 
     @staticmethod
     async def _create_task_run_docs(
@@ -228,6 +313,13 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
                 dispatch_status=case_doc.dispatch_status,
                 dispatch_attempts=case_doc.dispatch_attempts,
                 status=case_doc.status,
+                progress_percent=case_doc.progress_percent,
+                started_at=case_doc.started_at,
+                finished_at=case_doc.finished_at,
+                dispatched_at=case_doc.dispatched_at,
+                last_seq=case_doc.last_seq,
+                last_event_id=case_doc.last_event_id,
+                result_data=dict(case_doc.result_data or {}),
             ).insert()
 
     @staticmethod
@@ -253,7 +345,34 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
             case_doc.started_at = None
             case_doc.finished_at = None
             case_doc.dispatched_at = None
+            case_doc.result_data = {}
             await case_doc.save()
+
+    @staticmethod
+    def _build_case_snapshot(case_doc: TestCaseDoc, auto_case_id: str | None) -> Dict[str, Any]:
+        """构建任务侧静态 case 快照。"""
+        return {
+            "case_id": case_doc.case_id,
+            "auto_case_id": auto_case_id,
+            "ref_req_id": case_doc.ref_req_id,
+            "workflow_item_id": case_doc.workflow_item_id,
+            "title": case_doc.title,
+            "version": case_doc.version,
+            "status": getattr(case_doc, "status", "draft"),
+            "priority": case_doc.priority,
+            "tags": list(case_doc.tags or []),
+            "test_category": case_doc.test_category,
+            "estimated_duration_sec": case_doc.estimated_duration_sec,
+            "target_components": list(case_doc.target_components or []),
+            "required_env": dict(case_doc.required_env or {}),
+            "tooling_req": list(case_doc.tooling_req or []),
+            "is_destructive": case_doc.is_destructive,
+            "pre_condition": case_doc.pre_condition,
+            "post_condition": case_doc.post_condition,
+            "steps": [step.model_dump() for step in case_doc.steps],
+            "cleanup_steps": [step.model_dump() for step in case_doc.cleanup_steps],
+            "custom_fields": dict(case_doc.custom_fields or {}),
+        }
 
     @staticmethod
     async def _delete_task_run_docs(task_id: str) -> None:
@@ -279,7 +398,9 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
             cls,
             task_doc: ExecutionTaskDoc,
             case_ids: List[str],
+            auto_case_ids: List[str],
             dispatch_case_id: str,
+            dispatch_auto_case_id: str,
             dispatch_case_index: int,
     ) -> DispatchExecutionTaskCommand:
         """构建单 case 下发命令。
@@ -297,9 +418,11 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
             agent_id=task_doc.agent_id,
             trigger_source=request_payload.get("trigger_source", "manual"),
             created_by=task_doc.created_by,
+            auto_case_ids=auto_case_ids,
             case_ids=case_ids,
             run_no=task_doc.current_run_no or 1,
             dispatch_case_id=dispatch_case_id,
+            dispatch_auto_case_id=dispatch_auto_case_id,
             dispatch_case_index=dispatch_case_index,
             schedule_type=task_doc.schedule_type,
             planned_at=cls._ensure_utc_datetime(planned_at) if planned_at else None,
@@ -311,6 +434,7 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
     async def _replace_task_case_docs(
             task_id: str,
             case_ids: List[str],
+            auto_case_ids: List[str],
             doc_map: Dict[str, Any],
     ) -> None:
         """重建尚未触发任务的 case 明细快照。
@@ -328,17 +452,17 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
         for existing_doc in existing_docs:
             await existing_doc.delete()
 
+        auto_case_id_map = {
+            case_id: auto_case_id
+            for case_id, auto_case_id in zip(case_ids, auto_case_ids)
+        }
+
         for order_no, case_id in enumerate(case_ids):
             case_doc = doc_map[case_id]
-            # 这里只写入编排必需的轻量快照，而不是完整复制 TestCase 文档，
-            # 避免任务快照随着测试用例模型扩张而无限膨胀。
-            snapshot = {
-                "case_id": case_doc.case_id,
-                "title": case_doc.title,
-                "version": case_doc.version,
-                "priority": case_doc.priority,
-                "status": getattr(case_doc, "status", "待执行"),
-            }
+            snapshot = ExecutionService._build_case_snapshot(
+                case_doc,
+                auto_case_id=auto_case_id_map.get(case_id),
+            )
             await ExecutionTaskCaseDoc(
                 task_id=task_id,
                 case_id=case_id,
@@ -346,7 +470,12 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
                 order_no=order_no,
                 dispatch_status="PENDING",
                 status="QUEUED",
+                step_total=0,
+                step_passed=0,
+                step_failed=0,
+                step_skipped=0,
                 last_seq=0,
+                result_data={},
             ).insert()
 
     @staticmethod
@@ -456,12 +585,17 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
         if not should_dispatch_now:
             return
         case_ids = self._extract_case_ids_from_payload(task_doc.request_payload)
+        auto_case_ids = self._extract_auto_case_ids_from_payload(task_doc.request_payload)
+        if not auto_case_ids:
+            auto_case_ids = await self.resolve_auto_case_ids_by_case_ids(case_ids)
         await self._dispatch_existing_task(
             task_doc,
             self._build_case_dispatch_command(
                 task_doc=task_doc,
                 case_ids=case_ids,
+                auto_case_ids=auto_case_ids,
                 dispatch_case_id=case_ids[0],
+                dispatch_auto_case_id=auto_case_ids[0],
                 dispatch_case_index=0,
             ),
         )
@@ -487,22 +621,30 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
             "case_id": command.dispatch_case_id,
         })
         # 任务主表记录的是“当前正在下发/已下发的 case”对应的全局状态。
+        dispatch_time = datetime.now(timezone.utc)
         task_doc.dispatch_channel = dispatch_result.channel
         task_doc.dispatch_status = "DISPATCHED" if dispatch_result.success else "DISPATCH_FAILED"
         task_doc.dispatch_error = dispatch_result.error
         task_doc.dispatch_response = dispatch_result.response
-        task_doc.schedule_status = "TRIGGERED" if dispatch_result.success else "FAILED"
+        # schedule_status 只表示调度是否已触发，不再混入下发成败语义。
+        task_doc.schedule_status = "TRIGGERED"
         task_doc.current_case_id = command.dispatch_case_id
         task_doc.current_case_index = command.dispatch_case_index
-        if dispatch_result.success and not task_doc.triggered_at:
-            task_doc.triggered_at = datetime.now(timezone.utc)
+        if not task_doc.triggered_at:
+            task_doc.triggered_at = dispatch_time
+        if dispatch_result.success:
+            task_doc.overall_status = "QUEUED"
+            task_doc.finished_at = None
+        else:
+            task_doc.overall_status = "FAILED"
+            task_doc.finished_at = dispatch_time
         await task_doc.save()
 
         if case_doc:
             # case 当前态只反映这条 case 被下发了多少次、最后一次下发结果如何。
             case_doc.dispatch_attempts += 1
             case_doc.dispatch_status = "DISPATCHED" if dispatch_result.success else "DISPATCH_FAILED"
-            case_doc.dispatched_at = datetime.now(timezone.utc)
+            case_doc.dispatched_at = dispatch_time
             await case_doc.save()
 
         if task_doc.current_run_no > 0:
@@ -587,9 +729,15 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
 
         request_payload = dict(task_doc.request_payload or {})
         case_items = payload.get("cases")
-        case_ids = [item["case_id"] for item in case_items] if case_items is not None else [
-            case["case_id"] for case in request_payload.get("cases", [])
-        ]
+        auto_case_ids = [item["auto_case_id"] for item in case_items] if case_items is not None else self._extract_auto_case_ids_from_payload(request_payload)
+        if not auto_case_ids:
+            case_ids = [item["case_id"] for item in case_items] if case_items is not None else [
+                case["case_id"] for case in request_payload.get("cases", [])
+            ]
+            if not case_ids:
+                raise ValueError("cases cannot be empty")
+            auto_case_ids = await self.resolve_auto_case_ids_by_case_ids(case_ids)
+        case_ids = await self.resolve_case_ids_by_auto_case_ids(auto_case_ids)
         if not case_ids:
             raise ValueError("cases cannot be empty")
 
@@ -612,6 +760,7 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
             agent_id=agent_id,
             trigger_source=trigger_source,
             created_by=task_doc.created_by,
+            auto_case_ids=auto_case_ids,
             case_ids=case_ids,
             schedule_type=schedule_type,
             planned_at=normalized_planned_at,
@@ -630,7 +779,7 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
             dispatch_status="DISPATCHING" if should_dispatch_now else "PENDING",
         )
         await task_doc.save()
-        await self._replace_task_case_docs(task_doc.task_id, case_ids, doc_map)
+        await self._replace_task_case_docs(task_doc.task_id, case_ids, auto_case_ids, doc_map)
         await self._delete_task_run_docs(task_doc.task_id)
         # 计划任务在真正触发前的 run 历史是可重建的，因此这里把 run 序号复位后
         # 再创建新的首轮快照。
@@ -779,7 +928,7 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
             dispatch_status="DISPATCHING" if should_dispatch_now else "PENDING",
         )
         await task_doc.insert()
-        await self._replace_task_case_docs(task_doc.task_id, command.case_ids, doc_map)
+        await self._replace_task_case_docs(task_doc.task_id, command.case_ids, command.auto_case_ids, doc_map)
         await self._create_task_run_docs(task_doc, trigger_type="INITIAL", triggered_by=actor_id)
         await task_doc.save()
         await self._dispatch_first_case_if_needed(task_doc, should_dispatch_now)
@@ -806,8 +955,11 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
             raise ValueError(f"Task {task_id} cannot be retried before scheduled trigger")
 
         case_ids = self._extract_case_ids_from_payload(task_doc.request_payload)
+        auto_case_ids = self._extract_auto_case_ids_from_payload(task_doc.request_payload)
         if not case_ids:
             raise ValueError(f"Task {task_id} has no cases to retry")
+        if not auto_case_ids:
+            auto_case_ids = await self.resolve_auto_case_ids_by_case_ids(case_ids)
 
         await self._reset_task_case_docs(task_id)
         # 重试会把任务重新放回可执行态，但不会清掉已有历史轮次。
@@ -836,7 +988,9 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
         command = self._build_case_dispatch_command(
             task_doc=task_doc,
             case_ids=case_ids,
+            auto_case_ids=auto_case_ids,
             dispatch_case_id=case_ids[0],
+            dispatch_auto_case_id=auto_case_ids[0],
             dispatch_case_index=0,
         )
         await self._dispatch_existing_task(task_doc, command)

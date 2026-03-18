@@ -21,6 +21,8 @@
 - 保存任务身份：`task_id`、`external_task_id`
 - 保存任务配置：`framework`、`agent_id`、`request_payload`
 - 保存当前态：`schedule_status`、`dispatch_status`、`overall_status`
+  其中 `schedule_status` 只表示调度生命周期（如 `PENDING/READY/TRIGGERED/CANCELLED`），
+  下发成败只放在 `dispatch_status` 和 `overall_status`
 - 保存串行游标：`current_case_id`、`current_case_index`
 - 保存历史指针：`latest_run_no`、`current_run_no`
 - 保存平台推进锁：`orchestration_lock`

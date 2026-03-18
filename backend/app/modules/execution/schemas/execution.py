@@ -6,7 +6,25 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class DispatchCaseItem(BaseModel):
-    case_id: str = Field(..., description="测试用例业务 ID，用于标识本次任务包含的单条 case")
+    auto_case_id: Optional[str] = Field(
+        None,
+        description="自动化测试用例业务 ID，用于标识本次任务包含的单条 case",
+    )
+    case_id: Optional[str] = Field(
+        None,
+        description="兼容旧版前端的字段名；实际应传 auto_case_id",
+    )
+
+    model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="after")
+    def normalize_case_identifier(self) -> "DispatchCaseItem":
+        if not self.auto_case_id and not self.case_id:
+            raise ValueError("auto_case_id is required")
+        if self.auto_case_id and self.case_id and self.auto_case_id != self.case_id:
+            raise ValueError("case_id and auto_case_id must match when both are provided")
+        self.auto_case_id = self.auto_case_id or self.case_id
+        return self
 
 
 class DispatchTaskRequest(BaseModel):
@@ -23,11 +41,11 @@ class DispatchTaskRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_dispatch_request(self) -> "DispatchTaskRequest":
-        case_ids = [item.case_id for item in self.cases]
-        if not case_ids:
+        auto_case_ids = [item.auto_case_id for item in self.cases]
+        if not auto_case_ids:
             raise ValueError("cases cannot be empty")
-        if len(case_ids) != len(set(case_ids)):
-            raise ValueError("cases must not contain duplicate case_id")
+        if len(auto_case_ids) != len(set(auto_case_ids)):
+            raise ValueError("cases must not contain duplicate auto_case_id")
         if self.schedule_type.upper() not in {"IMMEDIATE", "SCHEDULED"}:
             raise ValueError("schedule_type must be IMMEDIATE or SCHEDULED")
         return self
@@ -40,12 +58,14 @@ class DispatchTaskResponse(BaseModel):
     dispatch_channel: str = Field(..., description="任务实际下发通道，例如 KAFKA、HTTP")
     dedup_key: Optional[str] = Field(None, description="任务去重键，用于识别语义相同的未完成任务")
     schedule_type: str = Field(..., description="调度类型：IMMEDIATE 或 SCHEDULED")
-    schedule_status: str = Field(..., description="调度状态，例如 PENDING、READY、TRIGGERED、CANCELLED")
+    schedule_status: str = Field(..., description="调度状态，例如 PENDING、READY、TRIGGERED、CANCELLED；不表达下发结果")
     dispatch_status: str = Field(..., description="下发状态，例如 PENDING、DISPATCHED、DISPATCH_FAILED、COMPLETED")
     consume_status: str = Field(..., description="消费状态，表示下游执行端是否已确认消费任务")
     overall_status: str = Field(..., description="任务整体状态，例如 QUEUED、RUNNING、PASSED、FAILED")
     case_count: int = Field(..., description="任务包含的测试用例总数")
+    auto_case_ids: List[str] = Field(default_factory=list, description="任务包含的自动化用例 ID 列表")
     current_case_id: Optional[str] = Field(None, description="当前正在执行或最近一次下发的测试用例 ID")
+    current_auto_case_id: Optional[str] = Field(None, description="当前正在执行或最近一次下发的自动化用例 ID")
     current_case_index: int = Field(0, description="当前测试用例在任务内的顺序索引，从 0 开始")
     stop_mode: str = Field(default="NONE", description="停止模式")
     stop_requested_at: Optional[datetime] = Field(None, description="请求停止时间（UTC）")
@@ -64,14 +84,16 @@ class ExecutionTaskListItem(BaseModel):
     dispatch_channel: str = Field(..., description="当前任务使用的下发通道")
     dedup_key: Optional[str] = Field(None, description="任务去重键")
     schedule_type: str = Field(..., description="调度类型")
-    schedule_status: str = Field(..., description="调度状态")
+    schedule_status: str = Field(..., description="调度状态，不表达下发结果")
     dispatch_status: str = Field(..., description="下发状态")
     consume_status: str = Field(..., description="消费状态")
     overall_status: str = Field(..., description="任务整体状态")
     case_count: int = Field(..., description="任务包含的测试用例总数")
+    auto_case_ids: List[str] = Field(default_factory=list, description="任务包含的自动化用例 ID 列表")
     latest_run_no: int = Field(0, description="该任务历史上最新的执行轮次编号")
     current_run_no: int = Field(0, description="当前正在查看或运行中的执行轮次编号")
     current_case_id: Optional[str] = Field(None, description="当前游标指向的测试用例 ID")
+    current_auto_case_id: Optional[str] = Field(None, description="当前游标指向的自动化用例 ID")
     current_case_index: int = Field(0, description="当前游标指向的测试用例顺序索引")
     stop_mode: str = Field(default="NONE", description="停止模式")
     stop_requested_at: Optional[datetime] = Field(None, description="请求停止时间（UTC）")
@@ -214,11 +236,11 @@ class UpdateScheduledTaskRequest(BaseModel):
     def validate_schedule_update(self) -> "UpdateScheduledTaskRequest":
         if self.cases is None:
             return self
-        case_ids = [item.case_id for item in self.cases]
-        if not case_ids:
+        auto_case_ids = [item.auto_case_id for item in self.cases]
+        if not auto_case_ids:
             raise ValueError("cases cannot be empty")
-        if len(case_ids) != len(set(case_ids)):
-            raise ValueError("cases must not contain duplicate case_id")
+        if len(auto_case_ids) != len(set(auto_case_ids)):
+            raise ValueError("cases must not contain duplicate auto_case_id")
         return self
 
 
@@ -229,7 +251,7 @@ class ScheduledTaskMutationResponse(BaseModel):
     dispatch_channel: Optional[str] = Field(None, description="任务当前使用的下发通道")
     dedup_key: Optional[str] = Field(None, description="任务去重键")
     schedule_type: str = Field(..., description="调度类型")
-    schedule_status: str = Field(..., description="调度状态")
+    schedule_status: str = Field(..., description="调度状态，不表达下发结果")
     dispatch_status: str = Field(..., description="下发状态")
     overall_status: str = Field(..., description="任务整体状态")
     consume_status: Optional[str] = Field(None, description="消费状态")

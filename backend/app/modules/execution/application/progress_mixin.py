@@ -184,6 +184,9 @@ class ExecutionProgressMixin:
                 return
 
             case_ids = self._extract_case_ids_from_payload(locked_task_doc.request_payload)
+            auto_case_ids = self._extract_auto_case_ids_from_payload(locked_task_doc.request_payload)
+            if not auto_case_ids:
+                auto_case_ids = await self.resolve_auto_case_ids_by_case_ids(case_ids)
             locked_task_doc.current_case_id = next_case_doc.case_id
             locked_task_doc.current_case_index = next_case_doc.order_no
             locked_task_doc.consume_status = "PENDING"
@@ -192,13 +195,16 @@ class ExecutionProgressMixin:
                 self._build_case_dispatch_command(
                     task_doc=locked_task_doc,
                     case_ids=case_ids,
+                    auto_case_ids=auto_case_ids,
                     dispatch_case_id=next_case_doc.case_id,
+                    dispatch_auto_case_id=auto_case_ids[next_case_doc.order_no],
                     dispatch_case_index=next_case_doc.order_no,
                 ),
             )
         finally:
             if next_case_doc:
                 await self._release_progress_lock(task_doc.task_id)
+
     @staticmethod
     def _normalize_status(value: str, default: str = "UNKNOWN") -> str:
         """统一状态字符串格式。"""
@@ -210,7 +216,6 @@ class ExecutionProgressMixin:
         merged = dict(base or {})
         merged.update(extra or {})
         return merged
-
 
     async def report_task_event(
             self,
@@ -312,8 +317,8 @@ class ExecutionProgressMixin:
         if payload.get("event_id"):
             case_doc.last_event_id = payload["event_id"]
         case_doc.last_seq = payload.get("seq", 0)
-        case_doc.case_snapshot = self._merge_result_payload(
-            case_doc.case_snapshot,
+        case_doc.result_data = self._merge_result_payload(
+            case_doc.result_data,
             payload.get("result_data", {}),
         )
 

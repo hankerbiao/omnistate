@@ -17,7 +17,14 @@
 """
 from typing import Optional, Dict, Any, List
 from datetime import datetime
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, RootModel
+
+from app.modules.test_specs.repository.models import (
+    CodeSnapshotModel,
+    ConfigFieldModel,
+    ReportMetaModel,
+    ScriptRefModel,
+)
 
 
 class TestCaseStepSchema(BaseModel):
@@ -26,12 +33,6 @@ class TestCaseStepSchema(BaseModel):
     name: str = Field(..., description="步骤名称")
     action: str = Field(..., description="执行动作")
     expected: str = Field(..., description="预期结果")
-
-
-class AutomationCaseRefSchema(BaseModel):
-    __test__ = False
-    auto_case_id: str = Field(..., description="自动化用例库 ID")
-    version: Optional[str] = Field(None, description="自动化用例版本")
 
 
 class CreateTestCaseRequest(BaseModel):
@@ -60,11 +61,6 @@ class CreateTestCaseRequest(BaseModel):
     post_condition: Optional[str] = Field(None, description="后置条件")
     cleanup_steps: List[TestCaseStepSchema] = Field(default_factory=list, description="清理步骤列表")
     steps: List[TestCaseStepSchema] = Field(default_factory=list, description="测试执行步骤列表")
-    is_need_auto: bool = Field(False, description="是否需要自动化")
-    is_automated: bool = Field(False, description="是否已实现自动化")
-    automation_type: Optional[str] = Field(None, description="自动化类型")
-    script_entity_id: Optional[str] = Field(None, description="脚本实体 ID")
-    automation_case_ref: Optional[AutomationCaseRefSchema] = Field(None, description="自动化用例引用")
     risk_level: Optional[str] = Field(None, description="风险等级")
     failure_analysis: Optional[str] = Field(None, description="失败分析")
     confidentiality: Optional[str] = Field(None, description="保密等级")
@@ -97,11 +93,6 @@ class UpdateTestCaseRequest(BaseModel):
     post_condition: Optional[str] = Field(None, description="后置条件")
     cleanup_steps: Optional[List[TestCaseStepSchema]] = Field(None, description="清理步骤列表")
     steps: Optional[List[TestCaseStepSchema]] = Field(None, description="测试执行步骤列表")
-    is_need_auto: Optional[bool] = Field(None, description="是否需要自动化")
-    is_automated: Optional[bool] = Field(None, description="是否已实现自动化")
-    automation_type: Optional[str] = Field(None, description="自动化类型")
-    script_entity_id: Optional[str] = Field(None, description="脚本实体 ID")
-    automation_case_ref: Optional[AutomationCaseRefSchema] = Field(None, description="自动化用例引用")
     risk_level: Optional[str] = Field(None, description="风险等级")
     failure_analysis: Optional[str] = Field(None, description="失败分析")
     confidentiality: Optional[str] = Field(None, description="保密等级")
@@ -141,11 +132,6 @@ class TestCaseResponse(BaseModel):
     post_condition: Optional[str] = Field(None, description="后置条件")
     cleanup_steps: List[TestCaseStepSchema] = Field(..., description="清理步骤列表")
     steps: List[TestCaseStepSchema] = Field(..., description="测试执行步骤列表")
-    is_need_auto: bool = Field(..., description="是否需要自动化")
-    is_automated: bool = Field(..., description="是否已实现自动化")
-    automation_type: Optional[str] = Field(None, description="自动化类型")
-    script_entity_id: Optional[str] = Field(None, description="脚本实体 ID")
-    automation_case_ref: Optional[AutomationCaseRefSchema] = Field(None, description="自动化用例引用")
     risk_level: Optional[str] = Field(None, description="风险等级")
     failure_analysis: Optional[str] = Field(None, description="失败分析")
     confidentiality: Optional[str] = Field(None, description="保密等级")
@@ -170,20 +156,25 @@ class CreateAutomationTestCaseRequest(BaseModel):
         None,
         description="自动化用例业务编号（可选，默认由后端生成）",
     )
+    source_case_id: str = Field(..., description="框架侧用例编号")
     name: str = Field(..., description="自动化用例名称")
-    version: str = Field("1.0.0", description="自动化用例版本")
-    status: str = Field("ACTIVE", description="状态（ACTIVE/DEPRECATED）")
-    framework: Optional[str] = Field(None, description="自动化框架")
-    automation_type: Optional[str] = Field(None, description="自动化类型")
-    repo_url: Optional[str] = Field(None, description="脚本仓库地址")
-    repo_branch: Optional[str] = Field(None, description="默认分支")
-    script_entity_id: Optional[str] = Field(None, description="脚本实体 ID")
-    entry_command: Optional[str] = Field(None, description="执行入口命令")
-    runtime_env: Dict[str, Any] = Field(default_factory=dict, description="运行环境信息")
-    tags: List[str] = Field(default_factory=list, description="标签")
-    maintainer_id: Optional[str] = Field(None, description="维护人")
-    reviewer_id: Optional[str] = Field(None, description="评审人")
     description: Optional[str] = Field(None, description="描述")
+    status: str = Field("ACTIVE", description="状态（ACTIVE/DEPRECATED）")
+    framework: str = Field(..., description="自动化框架")
+    automation_type: Optional[str] = Field(None, description="自动化类型")
+    script_ref: ScriptRefModel = Field(..., description="脚本定位信息")
+    code_snapshot: CodeSnapshotModel = Field(..., description="代码版本快照")
+    param_spec: List[ConfigFieldModel] = Field(default_factory=list, description="参数定义")
+    tags: List[str] = Field(default_factory=list, description="标签")
+    report_meta: ReportMetaModel = Field(default_factory=ReportMetaModel, description="上报补充信息")
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class ReportAutomationCaseMetadataRequest(BaseModel):
+    """自动化测试框架批量上报的用例配置元数据请求体。"""
+    cases: List[Dict[str, Any]] = Field(default_factory=list, description="自动化用例元数据列表")
+    summary: Dict[str, Any] = Field(default_factory=dict, description="本次上报汇总信息")
 
     model_config = ConfigDict(extra="forbid")
 
@@ -192,19 +183,34 @@ class AutomationTestCaseResponse(BaseModel):
     """自动化测试用例响应体。"""
     id: str = Field(..., description="自动化用例唯一标识 ID")
     auto_case_id: str = Field(..., description="自动化用例业务编号")
+    source_case_id: str = Field(..., description="外部测试框架用例编号")
     name: str = Field(..., description="自动化用例名称")
-    version: str = Field(..., description="自动化用例版本")
-    status: str = Field(..., description="状态")
-    framework: Optional[str] = Field(None, description="自动化框架")
-    automation_type: Optional[str] = Field(None, description="自动化类型")
-    repo_url: Optional[str] = Field(None, description="脚本仓库地址")
-    repo_branch: Optional[str] = Field(None, description="默认分支")
-    script_entity_id: Optional[str] = Field(None, description="脚本实体 ID")
-    entry_command: Optional[str] = Field(None, description="执行入口命令")
-    runtime_env: Dict[str, Any] = Field(..., description="运行环境信息")
-    tags: List[str] = Field(..., description="标签")
-    maintainer_id: Optional[str] = Field(None, description="维护人")
-    reviewer_id: Optional[str] = Field(None, description="评审人")
     description: Optional[str] = Field(None, description="描述")
+    status: str = Field(..., description="状态")
+    framework: str = Field(..., description="自动化框架")
+    automation_type: Optional[str] = Field(None, description="自动化类型")
+    script_ref: Dict[str, Any] = Field(..., description="脚本定位信息")
+    code_snapshot: Dict[str, Any] = Field(..., description="代码版本快照")
+    param_spec: List[Dict[str, Any]] = Field(default_factory=list, description="参数定义快照")
+    tags: List[str] = Field(..., description="标签")
+    report_meta: Dict[str, Any] = Field(default_factory=dict, description="上报补充信息")
+    linked: Optional[bool] = Field(None, description="本次上报是否自动关联到测试用例")
+    linked_case_id: Optional[str] = Field(None, description="本次自动关联命中的测试用例编号")
+    conflict: Optional[bool] = Field(None, description="本次自动关联是否命中业务冲突")
+    conflict_message: Optional[str] = Field(None, description="冲突原因")
     created_at: datetime = Field(..., description="创建时间")
     updated_at: datetime = Field(..., description="更新时间")
+
+
+class AutomationTestCaseReportItemResponse(AutomationTestCaseResponse):
+    """单条自动化用例上报结果。"""
+
+
+class AutomationTestCaseReportResponse(BaseModel):
+    """自动化测试用例批量上报响应体。"""
+    total_cases: int = Field(..., description="请求中 case 总数")
+    saved_count: int = Field(..., description="成功写入或更新的 case 数量")
+    linked_count: int = Field(..., description="成功自动关联到平台测试用例的数量")
+    conflict_count: int = Field(..., description="自动关联冲突数量")
+    summary: Dict[str, Any] = Field(default_factory=dict, description="原样返回的汇总信息")
+    cases: List[AutomationTestCaseReportItemResponse] = Field(default_factory=list, description="逐条处理结果")

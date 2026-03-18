@@ -1,0 +1,435 @@
+{
+  "cases": [
+    {
+      "__type__": "CaseMetadata",
+      "requirement_id": "suite-power-001",
+      "title": "电源基础功能测试",
+      "project_tag": "universal",
+      "description": "验证 BMC 电源控制的基本功能，包括开机、关机、重启等操作",
+      "tags": ["power", "smoke", "basic"],
+      "timeout": 600,
+      "param_spec": [
+        {
+          "__type__": "ConfigField",
+          "name": "target_ip",
+          "label": "目标 BMC IP 地址",
+          "type": "str",
+          "default": "192.168.1.100",
+          "required": true,
+          "options": null,
+          "extensions": null,
+          "description": "被测 BMC 的 IP 地址",
+          "extra_props": {}
+        },
+        {
+          "__type__": "ConfigField",
+          "name": "bmc_username",
+          "label": "BMC 用户名",
+          "type": "str",
+          "default": "admin",
+          "required": true,
+          "options": null,
+          "extensions": null,
+          "description": "BMC 登录用户名",
+          "extra_props": {}
+        },
+        {
+          "__type__": "ConfigField",
+          "name": "bmc_password",
+          "label": "BMC 密码",
+          "type": "str",
+          "default": "admin",
+          "required": true,
+          "options": null,
+          "extensions": null,
+          "description": "BMC 登录密码",
+          "extra_props": {}
+        },
+        {
+          "__type__": "ConfigField",
+          "name": "power_action",
+          "label": "电源操作",
+          "type": "enum",
+          "default": "Reset",
+          "required": true,
+          "options": ["On", "ForceOn", "Off", "ForceOff", "GracefulShutdown", "ForceRestart", "Reset"],
+          "extensions": null,
+          "description": "电源控制操作类型",
+          "extra_props": {}
+        },
+        {
+          "__type__": "ConfigField",
+          "name": "wait_timeout",
+          "label": "等待超时时间（秒）",
+          "type": "int",
+          "default": 300,
+          "required": false,
+          "options": null,
+          "extensions": null,
+          "description": "等待电源状态变化的超时时间",
+          "extra_props": {}
+        }
+      ],
+      "case_id": "TC-2026-00003",
+      "config_path": "tests/universal/suite/power/001_basic_check/config.py",
+      "module": "universal",
+      "project_scope": "",
+      "git_snapshot": {
+        "commit_id": "798cb08d913688e0bdf5644f9de6f978d7592f6a",
+        "commit_short_id": "798cb08",
+        "commit_author": "测试用户 <test@example.com>",
+        "commit_time": "2026-03-18T05:46:18+00:00",
+        "commit_message": "测试提交",
+        "branch": "dev-bmc-12345"
+      }
+    },
+    {
+      "__type__": "CaseMetadata",
+      "requirement_id": "suite-power-002",
+      "title": "电源状态查询测试",
+      "project_tag": "universal",
+      "description": "验证 BMC 电源状态查询功能，包括当前电源状态、最后一次状态变更时间等",
+      "tags": ["power", "query", "status"],
+      "timeout": 300,
+      "param_spec": [
+        {
+          "__type__": "ConfigField",
+          "name": "target_ip",
+          "label": "目标 BMC IP 地址",
+          "type": "str",
+          "default": "192.168.1.100",
+          "required": true,
+          "options": null,
+          "extensions": null,
+          "description": "被测 BMC 的 IP 地址",
+          "extra_props": {}
+        },
+        {
+          "__type__": "ConfigField",
+          "name": "bmc_username",
+          "label": "BMC 用户名",
+          "type": "str",
+          "default": "admin",
+          "required": true,
+          "options": null,
+          "extensions": null,
+          "description": "BMC 登录用户名",
+          "extra_props": {}
+        },
+        {
+          "__type__": "ConfigField",
+          "name": "bmc_password",
+          "label": "BMC 密码",
+          "type": "str",
+          "default": "admin",
+          "required": true,
+          "options": null,
+          "extensions": null,
+          "description": "BMC 登录密码",
+          "extra_props": {}
+        },
+        {
+          "__type__": "ConfigField",
+          "name": "query_type",
+          "label": "查询类型",
+          "type": "enum",
+          "default": "current_status",
+          "required": true,
+          "options": ["current_status", "power_on_history", "last_state_change"],
+          "extensions": null,
+          "description": "电源状态查询的类型",
+          "extra_props": {}
+        }
+      ],
+      "case_id": "TC-2026-00004",
+      "config_path": "tests/universal/suite/power/002_status_query/config.py",
+      "module": "universal",
+      "project_scope": "",
+      "git_snapshot": {
+        "commit_id": "798cb08d913688e0bdf5644f9de6f978d7592f6a",
+        "commit_short_id": "798cb08",
+        "commit_author": "测试用户 <test@example.com>",
+        "commit_time": "2026-03-18T05:46:18+00:00",
+        "commit_message": "测试提交",
+        "branch": "dev-bmc-12345"
+      }
+    },
+    {
+      "__type__": "CaseMetadata",
+      "requirement_id": "suite-power-003",
+      "title": "电源阈值配置测试",
+      "project_tag": "jdm",
+      "description": "验证 BMC 电源阈值配置功能，包括设置和查询电源告警阈值",
+      "tags": ["power", "threshold", "config"],
+      "timeout": 400,
+      "param_spec": [
+        {
+          "__type__": "ConfigField",
+          "name": "target_ip",
+          "label": "目标 BMC IP 地址",
+          "type": "str",
+          "default": "192.168.1.100",
+          "required": true,
+          "options": null,
+          "extensions": null,
+          "description": "被测 BMC 的 IP 地址",
+          "extra_props": {}
+        },
+        {
+          "__type__": "ConfigField",
+          "name": "bmc_username",
+          "label": "BMC 用户名",
+          "type": "str",
+          "default": "admin",
+          "required": true,
+          "options": null,
+          "extensions": null,
+          "description": "BMC 登录用户名",
+          "extra_props": {}
+        },
+        {
+          "__type__": "ConfigField",
+          "name": "bmc_password",
+          "label": "BMC 密码",
+          "type": "str",
+          "default": "admin",
+          "required": true,
+          "options": null,
+          "extensions": null,
+          "description": "BMC 登录密码",
+          "extra_props": {}
+        },
+        {
+          "__type__": "ConfigField",
+          "name": "threshold_type",
+          "label": "阈值类型",
+          "type": "enum",
+          "default": "power_consumption",
+          "required": true,
+          "options": ["power_consumption", "voltage", "current"],
+          "extensions": null,
+          "description": "电源阈值配置的类型",
+          "extra_props": {}
+        },
+        {
+          "__type__": "ConfigField",
+          "name": "threshold_value",
+          "label": "阈值数值",
+          "type": "int",
+          "default": 500,
+          "required": true,
+          "options": null,
+          "extensions": null,
+          "description": "电源阈值的数值",
+          "extra_props": {}
+        }
+      ],
+      "case_id": "TC-2026-00004",
+      "config_path": "tests/jdm/suite/power/003_threshold_config/config.py",
+      "module": "jdm",
+      "project_scope": "",
+      "git_snapshot": {
+        "commit_id": "798cb08d913688e0bdf5644f9de6f978d7592f6a",
+        "commit_short_id": "798cb08",
+        "commit_author": "测试用户 <test@example.com>",
+        "commit_time": "2026-03-18T05:46:18+00:00",
+        "commit_message": "测试提交",
+        "branch": "dev-bmc-12345"
+      }
+    },
+    {
+      "__type__": "CaseMetadata",
+      "requirement_id": "suite-power-004",
+      "title": "电源事件日志测试",
+      "project_tag": "universal",
+      "description": "验证 BMC 电源相关事件日志的记录和查询功能",
+      "tags": ["power", "log", "event"],
+      "timeout": 350,
+      "param_spec": [
+        {
+          "__type__": "ConfigField",
+          "name": "target_ip",
+          "label": "目标 BMC IP 地址",
+          "type": "str",
+          "default": "192.168.1.100",
+          "required": true,
+          "options": null,
+          "extensions": null,
+          "description": "被测 BMC 的 IP 地址",
+          "extra_props": {}
+        },
+        {
+          "__type__": "ConfigField",
+          "name": "bmc_username",
+          "label": "BMC 用户名",
+          "type": "str",
+          "default": "admin",
+          "required": true,
+          "options": null,
+          "extensions": null,
+          "description": "BMC 登录用户名",
+          "extra_props": {}
+        },
+        {
+          "__type__": "ConfigField",
+          "name": "bmc_password",
+          "label": "BMC 密码",
+          "type": "str",
+          "default": "admin",
+          "required": true,
+          "options": null,
+          "extensions": null,
+          "description": "BMC 登录密码",
+          "extra_props": {}
+        },
+        {
+          "__type__": "ConfigField",
+          "name": "log_level",
+          "label": "日志级别",
+          "type": "enum",
+          "default": "info",
+          "required": false,
+          "options": ["debug", "info", "warning", "error", "critical"],
+          "extensions": null,
+          "description": "日志记录的级别",
+          "extra_props": {}
+        },
+        {
+          "__type__": "ConfigField",
+          "name": "log_count",
+          "label": "查询日志条数",
+          "type": "int",
+          "default": 100,
+          "required": false,
+          "options": null,
+          "extensions": null,
+          "description": "查询电源事件日志的条数",
+          "extra_props": {}
+        }
+      ],
+      "case_id": "TC-2026-00005",
+      "config_path": "tests/universal/suite/power/004_event_log/config.py",
+      "module": "universal",
+      "project_scope": "",
+      "git_snapshot": {
+        "commit_id": "798cb08d913688e0bdf5644f9de6f978d7592f6a",
+        "commit_short_id": "798cb08",
+        "commit_author": "测试用户 <test@example.com>",
+        "commit_time": "2026-03-18T05:46:18+00:00",
+        "commit_message": "测试提交",
+        "branch": "dev-bmc-12345"
+      }
+    },
+    {
+      "__type__": "CaseMetadata",
+      "requirement_id": "suite-power-005",
+      "title": "电源功耗监控测试",
+      "project_tag": "jdm",
+      "description": "验证 BMC 电源功耗实时监控功能，包括瞬时功耗和历史功耗统计",
+      "tags": ["power", "monitor", "consumption"],
+      "timeout": 500,
+      "param_spec": [
+        {
+          "__type__": "ConfigField",
+          "name": "target_ip",
+          "label": "目标 BMC IP 地址",
+          "type": "str",
+          "default": "192.168.1.100",
+          "required": true,
+          "options": null,
+          "extensions": null,
+          "description": "被测 BMC 的 IP 地址",
+          "extra_props": {}
+        },
+        {
+          "__type__": "ConfigField",
+          "name": "bmc_username",
+          "label": "BMC 用户名",
+          "type": "str",
+          "default": "admin",
+          "required": true,
+          "options": null,
+          "extensions": null,
+          "description": "BMC 登录用户名",
+          "extra_props": {}
+        },
+        {
+          "__type__": "ConfigField",
+          "name": "bmc_password",
+          "label": "BMC 密码",
+          "type": "str",
+          "default": "admin",
+          "required": true,
+          "options": null,
+          "extensions": null,
+          "description": "BMC 登录密码",
+          "extra_props": {}
+        },
+        {
+          "__type__": "ConfigField",
+          "name": "monitor_type",
+          "label": "监控类型",
+          "type": "enum",
+          "default": "realtime",
+          "required": true,
+          "options": ["realtime", "historical", "average", "peak"],
+          "extensions": null,
+          "description": "电源功耗监控类型",
+          "extra_props": {}
+        },
+        {
+          "__type__": "ConfigField",
+          "name": "sample_interval",
+          "label": "采样间隔（秒）",
+          "type": "int",
+          "default": 5,
+          "required": false,
+          "options": null,
+          "extensions": null,
+          "description": "功耗采样的时间间隔",
+          "extra_props": {}
+        },
+        {
+          "__type__": "ConfigField",
+          "name": "duration",
+          "label": "监控时长（秒）",
+          "type": "int",
+          "default": 60,
+          "required": false,
+          "options": null,
+          "extensions": null,
+          "description": "功耗监控的总时长",
+          "extra_props": {}
+        }
+      ],
+      "case_id": "TC-2026-00006",
+      "config_path": "tests/jdm/suite/power/005_power_monitor/config.py",
+      "module": "jdm",
+      "project_scope": "",
+      "git_snapshot": {
+        "commit_id": "798cb08d913688e0bdf5644f9de6f978d7592f6a",
+        "commit_short_id": "798cb08",
+        "commit_author": "测试用户 <test@example.com>",
+        "commit_time": "2026-03-18T05:46:18+00:00",
+        "commit_message": "测试提交",
+        "branch": "dev-bmc-12345"
+      }
+    }
+  ],
+  "summary": {
+    "total_cases": 5,
+    "modules": {
+      "universal": 3,
+      "jdm": 2
+    },
+    "generated_at": "2026-03-18T05:46:18.937527+00:00",
+    "git_snapshot": {
+      "commit_id": "798cb08d913688e0bdf5644f9de6f978d7592f6a",
+      "commit_short_id": "798cb08",
+      "commit_author": "测试用户 <test@example.com>",
+      "commit_time": "2026-03-18T05:46:18+00:00",
+      "commit_message": "测试提交",
+      "branch": "dev-bmc-12345"
+    }
+  }
+}

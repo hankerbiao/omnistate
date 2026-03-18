@@ -1,31 +1,74 @@
 """
-需求与用例定义层 - 自动化测试用例模型 (Beanie ODM 版本)
+需求与用例定义层 - 自动化测试用例模型
 """
 from typing import Optional, Dict, Any, List
 from datetime import datetime, timezone
+
 from pydantic import BaseModel, Field, ConfigDict
 from beanie import Document, before_event, Save, Insert
 from pymongo import IndexModel, ASCENDING, DESCENDING
 
 
-class AutomationTestCaseDoc(Document):
-    """自动化测试用例库 - 数据库模型"""
+class ConfigFieldModel(BaseModel):
+    """自动化配置字段定义。"""
     __test__ = False
-    auto_case_id: str = Field(..., description="自动化用例唯一业务 ID（如 AUTO-CASE-10023）")
+
+    type_marker: Optional[str] = Field(default=None, alias="__type__", description="原始类型标记")
+    name: str = Field(..., description="字段名")
+    label: Optional[str] = Field(None, description="字段展示名称")
+    type: str = Field(..., description="字段类型")
+    default: Optional[Any] = Field(None, description="默认值")
+    required: bool = Field(default=False, description="是否必填")
+    options: Optional[List[Any]] = Field(default=None, description="可选项")
+    extensions: Optional[List[Any]] = Field(default=None, description="文件扩展名约束")
+    description: Optional[str] = Field(None, description="字段描述")
+    extra_props: Dict[str, Any] = Field(default_factory=dict, description="额外属性")
+
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+
+class ScriptRefModel(BaseModel):
+    """脚本定位信息。"""
+    entity_id: str = Field(..., description="脚本/配置实体定位")
+    module: Optional[str] = Field(None, description="自动化模块")
+    project_tag: Optional[str] = Field(None, description="项目标签")
+    project_scope: Optional[str] = Field(None, description="项目作用域")
+
+
+class CodeSnapshotModel(BaseModel):
+    """代码版本快照。"""
+    version: str = Field(..., description="脚本版本标识")
+    commit_id: Optional[str] = Field(None, description="完整提交 ID")
+    commit_short_id: Optional[str] = Field(None, description="短提交 ID")
+    branch: Optional[str] = Field(None, description="分支名")
+    author: Optional[str] = Field(None, description="提交作者")
+    commit_time: Optional[datetime] = Field(None, description="提交时间")
+    message: Optional[str] = Field(None, description="提交说明")
+
+
+class ReportMetaModel(BaseModel):
+    """上报补充信息。"""
+    requirement_id: Optional[str] = Field(None, description="框架侧需求标识")
+    author: Optional[str] = Field(None, description="用例作者")
+    timeout: Optional[int] = Field(None, description="默认超时时间（秒）")
+
+
+class AutomationTestCaseDoc(Document):
+    """自动化测试用例库 - 仅保留最新可执行版本。"""
+    __test__ = False
+
+    auto_case_id: str = Field(..., description="平台自动化用例业务 ID")
+    source_case_id: str = Field(..., description="框架侧用例 ID")
     name: str = Field(..., description="自动化用例名称")
-    version: str = Field(default="1.0.0", description="自动化用例版本")
+    description: Optional[str] = Field(None, description="自动化用例描述")
     status: str = Field(default="ACTIVE", description="状态（ACTIVE/DEPRECATED）")
-    framework: Optional[str] = Field(None, description="自动化框架")
+    framework: str = Field(..., description="上报来源框架类型")
     automation_type: Optional[str] = Field(None, description="自动化类型")
-    repo_url: Optional[str] = Field(None, description="脚本仓库地址")
-    repo_branch: Optional[str] = Field(None, description="默认分支")
-    script_entity_id: Optional[str] = Field(None, description="脚本实体 ID")
-    entry_command: Optional[str] = Field(None, description="执行入口命令")
-    runtime_env: Dict[str, Any] = Field(default_factory=dict, description="运行环境信息")
+    script_ref: ScriptRefModel = Field(..., description="脚本定位信息")
+    code_snapshot: CodeSnapshotModel = Field(..., description="代码版本快照")
+    param_spec: List[ConfigFieldModel] = Field(default_factory=list, description="参数定义")
     tags: List[str] = Field(default_factory=list, description="标签")
-    maintainer_id: Optional[str] = Field(None, description="维护人")
-    reviewer_id: Optional[str] = Field(None, description="评审人")
-    description: Optional[str] = Field(None, description="描述")
+    report_meta: ReportMetaModel = Field(default_factory=ReportMetaModel, description="精简后的上报补充信息")
     is_deleted: bool = Field(default=False, description="逻辑删除标志")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -37,12 +80,13 @@ class AutomationTestCaseDoc(Document):
     class Settings:
         name = "automation_test_cases"
         indexes = [
-            IndexModel([("auto_case_id", ASCENDING), ("version", ASCENDING)], unique=True),
+            IndexModel([("auto_case_id", ASCENDING)], unique=True),
+            IndexModel([("source_case_id", ASCENDING)], unique=True),
             IndexModel("status"),
             IndexModel("framework"),
             IndexModel("automation_type"),
-            IndexModel("script_entity_id"),
-            IndexModel("maintainer_id"),
+            IndexModel("script_ref.entity_id"),
+            IndexModel("code_snapshot.version"),
             IndexModel("is_deleted"),
             IndexModel([("auto_case_id", ASCENDING), ("updated_at", DESCENDING)]),
             IndexModel("created_at"),
@@ -51,24 +95,22 @@ class AutomationTestCaseDoc(Document):
 
 
 class AutomationTestCaseModel(BaseModel):
-    """自动化测试用例 API 响应模型"""
+    """自动化测试用例 API 响应模型。"""
     __test__ = False
+
     id: Optional[str] = None
     auto_case_id: str
+    source_case_id: str
     name: str
-    version: str
-    status: str
-    framework: Optional[str] = None
-    automation_type: Optional[str] = None
-    repo_url: Optional[str] = None
-    repo_branch: Optional[str] = None
-    script_entity_id: Optional[str] = None
-    entry_command: Optional[str] = None
-    runtime_env: Dict[str, Any]
-    tags: List[str]
-    maintainer_id: Optional[str] = None
-    reviewer_id: Optional[str] = None
     description: Optional[str] = None
+    status: str
+    framework: str
+    automation_type: Optional[str] = None
+    script_ref: ScriptRefModel
+    code_snapshot: CodeSnapshotModel
+    param_spec: List[ConfigFieldModel] = Field(default_factory=list)
+    tags: List[str] = Field(default_factory=list)
+    report_meta: ReportMetaModel = Field(default_factory=ReportMetaModel)
     created_at: datetime
     updated_at: datetime
 
