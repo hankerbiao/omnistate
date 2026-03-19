@@ -86,12 +86,17 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
         return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
     @staticmethod
-    def _ensure_utc_datetime(value: datetime) -> datetime:
-        """将 naive/aware datetime 统一规范为 UTC aware datetime。
+    def _ensure_utc_datetime(value: datetime | str) -> datetime:
+        """将 naive/aware datetime 或 ISO 时间字符串统一规范为 UTC aware datetime。
 
         execution 模块会把计划时间、触发时间、完成时间都落库；如果这里不统一时区，
         定时调度和状态判断会在不同时区输入下变得不可预测。
         """
+        if isinstance(value, str):
+            normalized = value.strip()
+            if normalized.endswith("Z"):
+                normalized = f"{normalized[:-1]}+00:00"
+            value = datetime.fromisoformat(normalized)
         if value.tzinfo is None or value.tzinfo.utcoffset(value) is None:
             return value.replace(tzinfo=timezone.utc)
         return value.astimezone(timezone.utc)

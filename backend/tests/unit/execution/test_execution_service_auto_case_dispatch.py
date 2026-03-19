@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from datetime import timezone
 
 import pytest
 
@@ -259,6 +260,35 @@ def test_build_case_snapshot_contains_static_execution_context():
     assert snapshot["required_env"] == {"os": "linux"}
     assert snapshot["steps"][0]["step_id"] == "S1"
     assert snapshot["cleanup_steps"][0]["step_id"] == "C1"
+
+
+def test_build_case_dispatch_command_accepts_iso_planned_at():
+    task_doc = SimpleNamespace(
+        task_id="ET-2026-000001",
+        external_task_id="EXT-ET-2026-000001",
+        framework="CaseMetadata",
+        agent_id="fake-framework-agent",
+        created_by="u-admin",
+        current_run_no=1,
+        schedule_type="SCHEDULED",
+        request_payload={
+            "trigger_source": "manual",
+            "planned_at": "2026-03-18T16:49:00+00:00",
+            "callback_url": "http://localhost:8000/callback",
+            "dut": {"device_id": "DUT-001"},
+        },
+    )
+
+    command = ExecutionService._build_case_dispatch_command(
+        task_doc=task_doc,
+        case_ids=["TC-2026-00003"],
+        auto_case_ids=["ATC-2026-00013"],
+        dispatch_case_index=0,
+    )
+
+    assert command.planned_at is not None
+    assert command.planned_at.isoformat() == "2026-03-18T16:49:00+00:00"
+    assert command.planned_at.tzinfo == timezone.utc
 
 
 def test_apply_case_status_payload_keeps_case_snapshot_static():

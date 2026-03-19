@@ -192,6 +192,8 @@ export interface DispatchTaskRequest {
   framework: string;
   agent_id?: string;
   trigger_source?: string;
+  schedule_type?: string;
+  planned_at?: string;
   callback_url?: string;
   dut?: Record<string, unknown>;
   cases: DispatchCaseItem[];

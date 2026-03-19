@@ -1,10 +1,25 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../services/api';
-import type { ExecutionTask, TaskStatus } from '../types';
+import type { ExecutionTask, TaskStatus, AutomationTestCaseResponse, ExecutionAgent, DispatchCaseItem } from '../types';
 
 interface TaskListProps {
   onLogout?: () => void;
 }
+
+interface DispatchModalState {
+  isOpen: boolean;
+  framework: string;
+  agentId: string;
+  scheduleType: 'IMMEDIATE' | 'SCHEDULED';
+  plannedAt: string;
+  selectedCases: string[];
+  loading: boolean;
+  submitting: boolean;
+  error: string | null;
+}
+
+const FRAMEWORKS = ['pytest', 'robot', 'playwright', 'cypress', 'jest'];
+const DEFAULT_FRAMEWORK = 'pytest';
 
 const TaskList: React.FC<TaskListProps> = () => {
   const [tasks, setTasks] = useState<ExecutionTask[]>([]);
@@ -12,6 +27,19 @@ const TaskList: React.FC<TaskListProps> = () => {
   const [error, setError] = useState<string | null>(null);
   const [selectedTask, setSelectedTask] = useState<TaskStatus | null>(null);
   const [modalLoading, setModalLoading] = useState(false);
+  const [dispatchModal, setDispatchModal] = useState<DispatchModalState>({
+    isOpen: false,
+    framework: DEFAULT_FRAMEWORK,
+    agentId: '',
+    scheduleType: 'IMMEDIATE',
+    plannedAt: '',
+    selectedCases: [],
+    loading: false,
+    submitting: false,
+    error: null,
+  });
+  const [autoCases, setAutoCases] = useState<AutomationTestCaseResponse[]>([]);
+  const [agents, setAgents] = useState<ExecutionAgent[]>([]);
 
   const fetchTasks = useCallback(async () => {
     setLoading(true);
@@ -31,6 +59,79 @@ const TaskList: React.FC<TaskListProps> = () => {
   useEffect(() => {
     fetchTasks();
   }, [fetchTasks]);
+
+  const openDispatchModal = async () => {
+    setDispatchModal(prev => ({ ...prev, isOpen: true, loading: true, error: null }));
+    try {
+      const [casesRes, agentsRes] = await Promise.all([
+        api.listAutomationTestCases({ limit: 100 }),
+        api.listAgents({ online_only: true }),
+      ]);
+      setAutoCases(casesRes.data || []);
+      setAgents(agentsRes.data || []);
+    } catch (err) {
+      console.error('Fetch dispatch data error:', err);
+      setDispatchModal(prev => ({ ...prev, error: '获取用例和代理失败' }));
+    } finally {
+      setDispatchModal(prev => ({ ...prev, loading: false }));
+    }
+  };
+
+  const closeDispatchModal = () => {
+    setDispatchModal({
+      isOpen: false,
+      framework: DEFAULT_FRAMEWORK,
+      agentId: '',
+      scheduleType: 'IMMEDIATE',
+      plannedAt: '',
+      selectedCases: [],
+      loading: false,
+      submitting: false,
+      error: null,
+    });
+  };
+
+  const handleDispatchSubmit = async () => {
+    const { framework, agentId, scheduleType, plannedAt, selectedCases } = dispatchModal;
+    if (selectedCases.length === 0) {
+      setDispatchModal(prev => ({ ...prev, error: '请选择至少一个用例' }));
+      return;
+    }
+    if (scheduleType === 'SCHEDULED' && !plannedAt) {
+      setDispatchModal(prev => ({ ...prev, error: '请选择计划执行时间' }));
+      return;
+    }
+
+    setDispatchModal(prev => ({ ...prev, submitting: true, error: null }));
+    try {
+      const cases: DispatchCaseItem[] = selectedCases.map(id => ({ auto_case_id: id }));
+      const requestData = {
+        framework,
+        agent_id: agentId || undefined,
+        trigger_source: 'web_ui',
+        schedule_type: scheduleType,
+        planned_at: scheduleType === 'SCHEDULED' ? plannedAt : undefined,
+        cases,
+      };
+      await api.dispatchTask(requestData);
+      closeDispatchModal();
+      fetchTasks();
+    } catch (err) {
+      console.error('Dispatch task error:', err);
+      setDispatchModal(prev => ({ ...prev, error: '下发任务失败' }));
+    } finally {
+      setDispatchModal(prev => ({ ...prev, submitting: false }));
+    }
+  };
+
+  const toggleCaseSelection = (caseId: string) => {
+    setDispatchModal(prev => ({
+      ...prev,
+      selectedCases: prev.selectedCases.includes(caseId)
+        ? prev.selectedCases.filter(id => id !== caseId)
+        : [...prev.selectedCases, caseId],
+    }));
+  };
 
   const handleTaskClick = async (taskId: string) => {
     setModalLoading(true);
@@ -89,6 +190,10 @@ const TaskList: React.FC<TaskListProps> = () => {
           </div>
         </div>
         <div style={styles.headerActions}>
+          <button style={styles.dispatchBtn} onClick={openDispatchModal}>
+            <span style={styles.btnIcon}>▶</span>
+            下发任务
+          </button>
           <button style={styles.refreshBtn} onClick={fetchTasks} disabled={loading}>
             <span style={styles.btnIcon}>↻</span>
             {loading ? '加载中' : '刷新'}
@@ -324,6 +429,136 @@ const TaskList: React.FC<TaskListProps> = () => {
         </div>
       )}
 
+      {/* Dispatch Task Modal */}
+      {dispatchModal.isOpen && (
+        <div style={styles.modalOverlay} onClick={closeDispatchModal}>
+          <div style={styles.dispatchModal} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.modalHeader}>
+              <h2 style={styles.modalTitle}>
+                <span style={styles.modalIcon}>▶</span>
+                下发任务
+              </h2>
+              <button style={styles.closeBtn} onClick={closeDispatchModal}>×</button>
+            </div>
+
+            <div style={styles.dispatchModalBody}>
+              {dispatchModal.loading ? (
+                <div style={styles.modalLoading}>
+                  <div style={styles.spinner} />
+                </div>
+              ) : (
+                <>
+                  <div style={styles.formSection}>
+                    <label style={styles.formLabel}>执行框架</label>
+                    <select
+                      style={styles.select}
+                      value={dispatchModal.framework}
+                      onChange={(e) => setDispatchModal(prev => ({ ...prev, framework: e.target.value }))}
+                    >
+                      {FRAMEWORKS.map(fw => (
+                        <option key={fw} value={fw}>{fw.toUpperCase()}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div style={styles.formSection}>
+                    <label style={styles.formLabel}>目标代理 (可选)</label>
+                    <select
+                      style={styles.select}
+                      value={dispatchModal.agentId}
+                      onChange={(e) => setDispatchModal(prev => ({ ...prev, agentId: e.target.value }))}
+                    >
+                      <option value="">自动分配</option>
+                      {agents.map(agent => (
+                        <option key={agent.agent_id} value={agent.agent_id}>
+                          {agent.agent_id} ({agent.hostname})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div style={styles.formSection}>
+                    <label style={styles.formLabel}>下发方式</label>
+                    <div style={styles.radioGroup}>
+                      <label style={styles.radioLabel}>
+                        <input
+                          type="radio"
+                          name="scheduleType"
+                          checked={dispatchModal.scheduleType === 'IMMEDIATE'}
+                          onChange={() => setDispatchModal(prev => ({ ...prev, scheduleType: 'IMMEDIATE', plannedAt: '' }))}
+                        />
+                        <span>立即下发</span>
+                      </label>
+                      <label style={styles.radioLabel}>
+                        <input
+                          type="radio"
+                          name="scheduleType"
+                          checked={dispatchModal.scheduleType === 'SCHEDULED'}
+                          onChange={() => setDispatchModal(prev => ({ ...prev, scheduleType: 'SCHEDULED' }))}
+                        />
+                        <span>定时下发</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  {dispatchModal.scheduleType === 'SCHEDULED' && (
+                    <div style={styles.formSection}>
+                      <label style={styles.formLabel}>计划执行时间</label>
+                      <input
+                        type="datetime-local"
+                        style={styles.input}
+                        value={dispatchModal.plannedAt}
+                        onChange={(e) => setDispatchModal(prev => ({ ...prev, plannedAt: e.target.value }))}
+                      />
+                    </div>
+                  )}
+
+                  <div style={styles.formSection}>
+                    <label style={styles.formLabel}>
+                      选择用例 ({dispatchModal.selectedCases.length} 已选)
+                    </label>
+                    <div style={styles.caseList}>
+                      {autoCases.length === 0 ? (
+                        <div style={styles.emptyCases}>暂无可用用例</div>
+                      ) : (
+                        autoCases.map(caseItem => (
+                          <label key={caseItem.auto_case_id} style={styles.caseItem}>
+                            <input
+                              type="checkbox"
+                              checked={dispatchModal.selectedCases.includes(caseItem.auto_case_id)}
+                              onChange={() => toggleCaseSelection(caseItem.auto_case_id)}
+                            />
+                            <span style={styles.caseName}>{caseItem.auto_case_id}</span>
+                            <span style={styles.caseFramework}>{caseItem.framework}</span>
+                          </label>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  {dispatchModal.error && (
+                    <div style={styles.errorBanner}>{dispatchModal.error}</div>
+                  )}
+
+                  <div style={styles.modalActions}>
+                    <button style={styles.cancelBtn} onClick={closeDispatchModal}>
+                      取消
+                    </button>
+                    <button
+                      style={styles.submitBtn}
+                      onClick={handleDispatchSubmit}
+                      disabled={dispatchModal.submitting}
+                    >
+                      {dispatchModal.submitting ? '下发中...' : '确认下发'}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
@@ -389,6 +624,20 @@ const styles = {
     display: 'flex',
     gap: '10px',
   } as const,
+  dispatchBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '10px 16px',
+    fontSize: '13px',
+    fontWeight: 500,
+    color: '#fff',
+    backgroundColor: 'var(--accent-cyan)',
+    border: 'none',
+    borderRadius: 'var(--radius-md)',
+    cursor: 'pointer',
+    transition: 'all var(--transition-fast)',
+  } as const,
   refreshBtn: {
     display: 'flex',
     alignItems: 'center',
@@ -417,6 +666,123 @@ const styles = {
     color: 'var(--accent-red)',
     fontSize: '14px',
     marginBottom: '20px',
+  } as const,
+  dispatchModal: {
+    backgroundColor: 'var(--bg-secondary)',
+    borderRadius: 'var(--radius-lg)',
+    border: '1px solid var(--border-default)',
+    width: '90%',
+    maxWidth: '520px',
+    maxHeight: '85vh',
+    overflow: 'auto',
+    boxShadow: 'var(--shadow-lg)',
+    animation: 'scaleIn 0.3s ease',
+  } as const,
+  dispatchModalBody: {
+    padding: '24px',
+  } as const,
+  formSection: {
+    marginBottom: '20px',
+  } as const,
+  formLabel: {
+    display: 'block',
+    fontSize: '13px',
+    fontWeight: 600,
+    color: 'var(--text-secondary)',
+    marginBottom: '8px',
+  } as const,
+  select: {
+    width: '100%',
+    padding: '10px 14px',
+    fontSize: '14px',
+    color: 'var(--text-primary)',
+    backgroundColor: 'var(--bg-primary)',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+    cursor: 'pointer',
+    outline: 'none',
+  } as const,
+  input: {
+    width: '100%',
+    padding: '10px 14px',
+    fontSize: '14px',
+    color: 'var(--text-primary)',
+    backgroundColor: 'var(--bg-primary)',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+    outline: 'none',
+  } as const,
+  radioGroup: {
+    display: 'flex',
+    gap: '20px',
+  } as const,
+  radioLabel: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    fontSize: '14px',
+    color: 'var(--text-primary)',
+    cursor: 'pointer',
+  } as const,
+  caseList: {
+    maxHeight: '200px',
+    overflowY: 'auto',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+    backgroundColor: 'var(--bg-primary)',
+  } as const,
+  emptyCases: {
+    padding: '20px',
+    textAlign: 'center',
+    color: 'var(--text-muted)',
+    fontSize: '14px',
+  } as const,
+  caseItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    padding: '10px 14px',
+    borderBottom: '1px solid var(--border-muted)',
+    cursor: 'pointer',
+    fontSize: '13px',
+    color: 'var(--text-primary)',
+  } as const,
+  caseName: {
+    flex: 1,
+    fontFamily: "'JetBrains Mono', monospace",
+  } as const,
+  caseFramework: {
+    fontSize: '11px',
+    color: 'var(--accent-purple)',
+    backgroundColor: 'rgba(163, 113, 247, 0.15)',
+    padding: '2px 8px',
+    borderRadius: '4px',
+  } as const,
+  modalActions: {
+    display: 'flex',
+    justifyContent: 'flex-end',
+    gap: '12px',
+    marginTop: '24px',
+  } as const,
+  cancelBtn: {
+    padding: '10px 20px',
+    fontSize: '14px',
+    fontWeight: 500,
+    color: 'var(--text-secondary)',
+    backgroundColor: 'var(--bg-tertiary)',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+    cursor: 'pointer',
+  } as const,
+  submitBtn: {
+    padding: '10px 20px',
+    fontSize: '14px',
+    fontWeight: 500,
+    color: '#fff',
+    backgroundColor: 'var(--accent-cyan)',
+    border: 'none',
+    borderRadius: 'var(--radius-md)',
+    cursor: 'pointer',
   } as const,
   tableWrapper: {
     backgroundColor: 'var(--bg-secondary)',

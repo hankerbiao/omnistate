@@ -4,6 +4,7 @@ from app.modules.workflow.repository.models.business import BusWorkItemDoc
 
 
 async def enrich_projected_status(data: Dict[str, Any]) -> Dict[str, Any]:
+    """用工作流真实状态覆盖业务文档中的投影状态字段。"""
     workflow_item_id = str(data.get("workflow_item_id") or "").strip()
     if not workflow_item_id:
         return data
@@ -15,6 +16,7 @@ async def enrich_projected_status(data: Dict[str, Any]) -> Dict[str, Any]:
 
 
 async def get_workflow_states(docs: Iterable[Any], key_attr: str) -> Dict[str, str]:
+    """批量读取工作流状态，返回业务主键到 current_state 的映射。"""
     workflow_id_map = {
         getattr(doc, key_attr): doc.workflow_item_id
         for doc in docs
@@ -23,6 +25,7 @@ async def get_workflow_states(docs: Iterable[Any], key_attr: str) -> Dict[str, s
     if not workflow_id_map:
         return {}
 
+    # 先按 workflow_item_id 批量查出工作项，再反向映射回业务实体主键。
     work_items = await BusWorkItemDoc.find({
         "id": {"$in": list(workflow_id_map.values())},
         "is_deleted": False,
