@@ -75,15 +75,13 @@ def test_test_event_accepts_assert_payload():
 
 
 @pytest.mark.asyncio
-async def test_ingest_case_finish_event_updates_current_and_history_docs(monkeypatch):
-    """校验 case_finish 会同时更新当前态与历史态的聚合结果。"""
+async def test_ingest_case_finish_event_updates_current_docs(monkeypatch):
+    """校验 case_finish 会更新当前态任务与用例聚合结果。"""
     service = ExecutionEventIngestService()
     event_doc_inserted: list[dict] = []
 
-    # 当前任务主记录：用于断言任务级聚合统计是否被正确回填。
     task_doc = SimpleNamespace(
         task_id="custom_task_28df3852",
-        current_run_no=3,
         case_count=2,
         reported_case_count=0,
         current_case_id="test_fan_basic_control",
@@ -102,23 +100,6 @@ async def test_ingest_case_finish_event_updates_current_and_history_docs(monkeyp
     )
     task_doc.save = _async_noop
 
-    # 当前 run 记录：用于断言 run 级统计是否同步更新。
-    run_doc = SimpleNamespace(
-        task_id="custom_task_28df3852",
-        run_no=3,
-        overall_status="QUEUED",
-        reported_case_count=0,
-        started_case_count=0,
-        finished_case_count=0,
-        passed_case_count=0,
-        failed_case_count=0,
-        progress_percent=None,
-        event_count=0,
-        last_event_at=None,
-    )
-    run_doc.save = _async_noop
-
-    # 当前 case 工作表：用于断言当前态 case 是否正确标记为 FAILED。
     case_doc = SimpleNamespace(
         task_id="custom_task_28df3852",
         case_id="test_fan_basic_control",
@@ -138,28 +119,6 @@ async def test_ingest_case_finish_event_updates_current_and_history_docs(monkeyp
         result_data={},
     )
     case_doc.save = _async_noop
-
-    # 历史 run_case：用于断言历史态 case 是否同步保存结果。
-    run_case_doc = SimpleNamespace(
-        task_id="custom_task_28df3852",
-        run_no=3,
-        case_id="test_fan_basic_control",
-        status="QUEUED",
-        progress_percent=None,
-        started_at=None,
-        finished_at=None,
-        last_seq=0,
-        last_event_id=None,
-        last_event_at=None,
-        event_count=0,
-        failure_message=None,
-        nodeid=None,
-        project_tag=None,
-        case_title_snapshot=None,
-        phase=None,
-        result_data={},
-    )
-    run_case_doc.save = _async_noop
 
     class FakeExecutionEventDoc:
         @staticmethod
@@ -183,23 +142,11 @@ async def test_ingest_case_finish_event_updates_current_and_history_docs(monkeyp
         async def find_one(query):
             return case_doc
 
-    class FakeExecutionTaskRunDoc:
-        @staticmethod
-        async def find_one(query):
-            return run_doc
-
-    class FakeExecutionTaskRunCaseDoc:
-        @staticmethod
-        async def find_one(query):
-            return run_case_doc
-
     import app.modules.execution.application.event_ingest_service as ingest_module
 
     monkeypatch.setattr(ingest_module, "ExecutionEventDoc", FakeExecutionEventDoc)
     monkeypatch.setattr(ingest_module, "ExecutionTaskDoc", FakeExecutionTaskDoc)
     monkeypatch.setattr(ingest_module, "ExecutionTaskCaseDoc", FakeExecutionTaskCaseDoc)
-    monkeypatch.setattr(ingest_module, "ExecutionTaskRunDoc", FakeExecutionTaskRunDoc)
-    monkeypatch.setattr(ingest_module, "ExecutionTaskRunCaseDoc", FakeExecutionTaskRunCaseDoc)
 
     processed = await service.ingest_event(
         topic="test-events",
@@ -207,7 +154,6 @@ async def test_ingest_case_finish_event_updates_current_and_history_docs(monkeyp
             "schema": "test_single_case_c53631b9-test-event@1",
             "event_id": "eccaf0ae65f04bb390be3e062389ae90",
             "task_id": "custom_task_28df3852",
-            "run_no": 3,
             "timestamp": "2026-03-18T01:10:09.837565+00:00",
             "event_type": "progress",
             "phase": "case_finish",
@@ -230,16 +176,11 @@ async def test_ingest_case_finish_event_updates_current_and_history_docs(monkeyp
     assert case_doc.event_count == 1
     assert case_doc.nodeid == "tests/path.py::test_fan_basic_control"
     assert case_doc.project_tag == "universal"
-    assert run_case_doc.status == "FAILED"
-    assert run_case_doc.phase == "case_finish"
     assert task_doc.consume_status == "CONSUMED"
     assert task_doc.failed_case_count == 1
     assert task_doc.finished_case_count == 1
     assert task_doc.reported_case_count == 1
     assert task_doc.overall_status == "RUNNING"
-    assert run_doc.failed_case_count == 1
-    assert run_doc.finished_case_count == 1
-    assert run_doc.reported_case_count == 1
 
 
 @pytest.mark.asyncio
@@ -285,10 +226,8 @@ async def test_ingest_failed_assert_event_updates_step_counters(monkeypatch):
     """校验失败断言会累计步骤统计，并把断言明细写入 result_data。"""
     service = ExecutionEventIngestService()
 
-    # 任务和 run 在 assert 事件里主要验证不会被错误覆盖。
     task_doc = SimpleNamespace(
         task_id="test_single_case_12345",
-        current_run_no=1,
         case_count=5,
         reported_case_count=0,
         current_case_id="001_basic_check",
@@ -310,25 +249,6 @@ async def test_ingest_failed_assert_event_updates_step_counters(monkeypatch):
     )
     task_doc.save = _async_noop
 
-    run_doc = SimpleNamespace(
-        task_id="test_single_case_12345",
-        run_no=1,
-        overall_status="RUNNING",
-        reported_case_count=0,
-        started_case_count=1,
-        finished_case_count=0,
-        passed_case_count=0,
-        failed_case_count=0,
-        progress_percent=0.0,
-        event_count=0,
-        last_event_at=None,
-        started_at=None,
-        finished_at=None,
-        last_callback_at=None,
-    )
-    run_doc.save = _async_noop
-
-    # case 当前态：重点验证 step_total/step_failed/failure_message/assertions。
     case_doc = SimpleNamespace(
         task_id="test_single_case_12345",
         case_id="001_basic_check",
@@ -353,32 +273,6 @@ async def test_ingest_failed_assert_event_updates_step_counters(monkeypatch):
     )
     case_doc.save = _async_noop
 
-    # case 历史态：重点验证历史记录也能保留断言细节。
-    run_case_doc = SimpleNamespace(
-        task_id="test_single_case_12345",
-        run_no=1,
-        case_id="001_basic_check",
-        status="RUNNING",
-        progress_percent=None,
-        started_at=None,
-        finished_at=None,
-        last_seq=0,
-        last_event_id=None,
-        last_event_at=None,
-        event_count=0,
-        failure_message=None,
-        nodeid=None,
-        project_tag=None,
-        case_title_snapshot=None,
-        phase=None,
-        result_data={},
-        step_total=0,
-        step_passed=0,
-        step_failed=0,
-        step_skipped=0,
-    )
-    run_case_doc.save = _async_noop
-
     class FakeExecutionEventDoc:
         @staticmethod
         async def find_one(query):
@@ -400,23 +294,11 @@ async def test_ingest_failed_assert_event_updates_step_counters(monkeypatch):
         async def find_one(query):
             return case_doc
 
-    class FakeExecutionTaskRunDoc:
-        @staticmethod
-        async def find_one(query):
-            return run_doc
-
-    class FakeExecutionTaskRunCaseDoc:
-        @staticmethod
-        async def find_one(query):
-            return run_case_doc
-
     import app.modules.execution.application.event_ingest_service as ingest_module
 
     monkeypatch.setattr(ingest_module, "ExecutionEventDoc", FakeExecutionEventDoc)
     monkeypatch.setattr(ingest_module, "ExecutionTaskDoc", FakeExecutionTaskDoc)
     monkeypatch.setattr(ingest_module, "ExecutionTaskCaseDoc", FakeExecutionTaskCaseDoc)
-    monkeypatch.setattr(ingest_module, "ExecutionTaskRunDoc", FakeExecutionTaskRunDoc)
-    monkeypatch.setattr(ingest_module, "ExecutionTaskRunCaseDoc", FakeExecutionTaskRunCaseDoc)
 
     processed = await service.ingest_event(
         topic="test-events",
@@ -424,7 +306,6 @@ async def test_ingest_failed_assert_event_updates_step_counters(monkeypatch):
             "schema": "bmc-test-event@1",
             "event_id": "b2c3d4e5f6789012345678901234abcd",
             "task_id": "test_single_case_12345",
-            "run_no": 1,
             "timestamp": "2026-03-19T03:16:47.456Z",
             "project_tag": "universal",
             "case_id": "001_basic_check",
@@ -452,9 +333,7 @@ async def test_ingest_failed_assert_event_updates_step_counters(monkeypatch):
     assert case_doc.step_failed == 1
     assert case_doc.failure_message == "BMC连接超时"
     assert case_doc.result_data["assertions"][0]["name"] == "verify_bmc_connection"
-    assert run_case_doc.step_total == 1
-    assert run_case_doc.step_failed == 1
-    assert run_case_doc.result_data["assertions"][0]["status"] == "failed"
+    assert task_doc.consume_status == "CONSUMED"
 
 
 async def _async_noop():

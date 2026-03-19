@@ -15,8 +15,6 @@ from app.modules.execution.repository.models import (
     ExecutionEventDoc,
     ExecutionTaskCaseDoc,
     ExecutionTaskDoc,
-    ExecutionTaskRunCaseDoc,
-    ExecutionTaskRunDoc,
 )
 from app.modules.test_specs.repository.models import (
     AutomationTestCaseDoc,
@@ -48,9 +46,7 @@ DOCUMENT_MODELS = [
     ExecutionAgentDoc,
     ExecutionEventDoc,
     ExecutionTaskDoc,
-    ExecutionTaskRunDoc,
     ExecutionTaskCaseDoc,
-    ExecutionTaskRunCaseDoc,
     UserDoc,
     RoleDoc,
     PermissionDoc,

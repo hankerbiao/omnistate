@@ -25,9 +25,7 @@ from app.modules.execution.repository.models import (
     ExecutionAgentDoc,
     ExecutionEventDoc,
     ExecutionTaskDoc,
-    ExecutionTaskRunDoc,
     ExecutionTaskCaseDoc,
-    ExecutionTaskRunCaseDoc,
 )
 from app.modules.auth.repository.models import UserDoc, RoleDoc, PermissionDoc, NavigationPageDoc
 
@@ -40,7 +38,10 @@ async def validate_workflow_consistency() -> None:
 
     # 对未初始化环境做兼容：仅告警，不阻断服务启动。
     if not work_types and not states and not configs:
-        log.warning("workflow consistency check skipped: workflow configs are empty, run `python app/init_mongodb.py` to initialize")
+        log.warning(
+            "workflow consistency check skipped: workflow configs are empty, "
+            "run `python app/init_mongodb.py` to initialize"
+        )
         return
 
     if not work_types:
@@ -95,9 +96,7 @@ async def lifespan(app: FastAPI):
                 ExecutionAgentDoc,
                 ExecutionEventDoc,
                 ExecutionTaskDoc,
-                ExecutionTaskRunDoc,
                 ExecutionTaskCaseDoc,
-                ExecutionTaskRunCaseDoc,
                 UserDoc,
                 RoleDoc,
                 PermissionDoc,

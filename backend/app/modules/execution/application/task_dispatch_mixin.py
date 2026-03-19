@@ -9,8 +9,6 @@ from app.modules.execution.application.commands import DispatchExecutionTaskComm
 from app.modules.execution.repository.models import (
     ExecutionTaskCaseDoc,
     ExecutionTaskDoc,
-    ExecutionTaskRunCaseDoc,
-    ExecutionTaskRunDoc,
 )
 from app.shared.core.logger import log as logger
 
@@ -38,7 +36,6 @@ class ExecutionTaskDispatchMixin:
             created_by=task_doc.created_by,
             auto_case_ids=auto_case_ids,
             case_ids=case_ids,
-            run_no=task_doc.current_run_no or 1,
             dispatch_case_id=case_ids[dispatch_case_index],
             dispatch_auto_case_id=auto_case_ids[dispatch_case_index],
             dispatch_case_index=dispatch_case_index,
@@ -104,29 +101,6 @@ class ExecutionTaskDispatchMixin:
             case_doc.dispatch_status = "DISPATCHED" if dispatch_result.success else "DISPATCH_FAILED"
             case_doc.dispatched_at = dispatch_time
             await case_doc.save()
-
-        if task_doc.current_run_no > 0:
-            run_doc = await ExecutionTaskRunDoc.find_one({
-                "task_id": task_doc.task_id,
-                "run_no": task_doc.current_run_no,
-            })
-            if run_doc:
-                run_doc.dispatch_channel = dispatch_result.channel
-                run_doc.dispatch_status = task_doc.dispatch_status
-                run_doc.dispatch_response = dispatch_result.response
-                run_doc.dispatch_error = dispatch_result.error
-                await run_doc.save()
-            if case_doc:
-                run_case_doc = await ExecutionTaskRunCaseDoc.find_one({
-                    "task_id": task_doc.task_id,
-                    "run_no": task_doc.current_run_no,
-                    "case_id": case_doc.case_id,
-                })
-                if run_case_doc:
-                    run_case_doc.dispatch_attempts = case_doc.dispatch_attempts
-                    run_case_doc.dispatch_status = case_doc.dispatch_status
-                    run_case_doc.dispatched_at = case_doc.dispatched_at
-                    await run_case_doc.save()
 
         if dispatch_result.success:
             logger.info(f"Successfully dispatched task {command.task_id} via {dispatch_result.channel}")

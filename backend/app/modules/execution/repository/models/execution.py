@@ -36,8 +36,6 @@ class ExecutionTaskDoc(Document):
     passed_case_count: int = Field(default=0, description="已通过的用例数")
     failed_case_count: int = Field(default=0, description="已失败的用例数")
     progress_percent: Optional[float] = Field(default=None, description="任务进度百分比")
-    latest_run_no: int = Field(default=0, description="最近一次执行轮次")
-    current_run_no: int = Field(default=0, description="当前正在执行的轮次")
     current_case_id: Optional[str] = Field(None, description="当前下发中的测试用例 ID")
     current_case_index: int = Field(default=0, description="当前下发中的测试用例序号")
     stop_mode: str = Field(default="NONE", description="停止模式")
@@ -56,8 +54,14 @@ class ExecutionTaskDoc(Document):
     last_event_phase: Optional[str] = Field(None, description="最近一次 Kafka 事件阶段")
     consumed_at: Optional[datetime] = Field(None, description="下游消费者确认消费该任务的时间（UTC）")
     is_deleted: bool = Field(default=False, description="逻辑删除标记")
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="记录创建时间（UTC）")
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="记录最近更新时间（UTC）")
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        description="记录创建时间（UTC）",
+    )
+    updated_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        description="记录最近更新时间（UTC）",
+    )
 
     @before_event([Save, Insert])
     def update_updated_at(self):
@@ -89,54 +93,6 @@ class ExecutionTaskDoc(Document):
         ]
 
 
-class ExecutionTaskRunDoc(Document):
-    """执行任务轮次记录。
-
-    一个 task 可以执行多轮；该表保存某一轮 run 的任务级结果，
-    用于区分“当前态”和“历史态”。
-    """
-
-    task_id: str = Field(..., description="平台任务 ID")
-    run_no: int = Field(..., description="执行轮次，从 1 开始递增")
-    trigger_type: str = Field(default="INITIAL", description="触发类型")
-    triggered_by: str = Field(..., description="触发人 user_id")
-    overall_status: str = Field(default="QUEUED", description="本轮总体状态")
-    dispatch_status: str = Field(default="PENDING", description="本轮下发状态")
-    dispatch_channel: str = Field(default="KAFKA", description="本轮下发通道")
-    dispatch_response: Dict[str, Any] = Field(default_factory=dict, description="本轮最近一次下发响应")
-    dispatch_error: Optional[str] = Field(None, description="本轮下发失败原因")
-    case_count: int = Field(default=0, description="本轮用例数量")
-    reported_case_count: int = Field(default=0, description="本轮已完成回报的用例数量")
-    started_case_count: int = Field(default=0, description="本轮已开始执行的用例数")
-    finished_case_count: int = Field(default=0, description="本轮已完成执行的用例数")
-    passed_case_count: int = Field(default=0, description="本轮已通过的用例数")
-    failed_case_count: int = Field(default=0, description="本轮已失败的用例数")
-    progress_percent: Optional[float] = Field(default=None, description="本轮任务进度百分比")
-    event_count: int = Field(default=0, description="本轮累计事件数")
-    stop_mode: str = Field(default="NONE", description="本轮停止模式")
-    stop_requested_at: Optional[datetime] = Field(None, description="本轮请求停止时间（UTC）")
-    stop_requested_by: Optional[str] = Field(None, description="本轮请求停止的用户 ID")
-    stop_reason: Optional[str] = Field(None, description="本轮停止原因")
-    started_at: Optional[datetime] = Field(None, description="本轮任务开始时间（UTC）")
-    finished_at: Optional[datetime] = Field(None, description="本轮任务结束时间（UTC）")
-    last_callback_at: Optional[datetime] = Field(None, description="本轮最近一次回调时间（UTC）")
-    last_event_at: Optional[datetime] = Field(None, description="本轮最近一次 Kafka 事件时间（UTC）")
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="本轮记录创建时间（UTC）")
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="本轮记录最近更新时间（UTC）")
-
-    @before_event([Save, Insert])
-    def update_updated_at(self):
-        self.updated_at = datetime.now(timezone.utc)
-
-    class Settings:
-        name = "execution_task_runs"
-        indexes = [
-            IndexModel([("task_id", ASCENDING), ("run_no", ASCENDING)], unique=True),
-            IndexModel([("task_id", ASCENDING), ("created_at", DESCENDING)]),
-            IndexModel([("task_id", ASCENDING), ("overall_status", ASCENDING)]),
-        ]
-
-
 class ExecutionTaskCaseDoc(Document):
     """执行任务-用例明细。
 
@@ -150,7 +106,6 @@ class ExecutionTaskCaseDoc(Document):
     order_no: int = Field(default=0, description="用例在任务中的顺序")
     dispatch_status: str = Field(default="PENDING", description="平台下发状态")
     dispatch_attempts: int = Field(default=0, description="平台下发次数")
-    run_no: Optional[int] = Field(default=None, description="当前 case 所属执行轮次")
     status: str = Field(default="QUEUED", description="用例执行状态")
     progress_percent: Optional[float] = Field(None, description="当前 case 执行进度百分比")
     step_total: int = Field(default=0, description="当前 case 总步骤数")
@@ -169,8 +124,14 @@ class ExecutionTaskCaseDoc(Document):
     project_tag: Optional[str] = Field(None, description="项目标签")
     case_title_snapshot: Optional[str] = Field(None, description="用例标题快照")
     result_data: Dict[str, Any] = Field(default_factory=dict, description="当前 case 扩展结果")
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="记录创建时间（UTC）")
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="记录最近更新时间（UTC）")
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        description="记录创建时间（UTC）",
+    )
+    updated_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        description="记录最近更新时间（UTC）",
+    )
 
     @before_event([Save, Insert])
     def update_updated_at(self):
@@ -187,51 +148,6 @@ class ExecutionTaskCaseDoc(Document):
         ]
 
 
-class ExecutionTaskRunCaseDoc(Document):
-    """执行任务轮次-用例结果。
-
-    保存某个 task 在某一轮 run 中，每条 case 的历史执行结果。
-    与 `ExecutionTaskCaseDoc` 不同，这里是历史快照，不承担当前编排职责。
-    """
-
-    task_id: str = Field(..., description="平台任务 ID")
-    run_no: int = Field(..., description="执行轮次")
-    case_id: str = Field(..., description="测试用例业务 ID")
-    order_no: int = Field(default=0, description="用例顺序")
-    case_snapshot: Dict[str, Any] = Field(default_factory=dict, description="用例快照")
-    dispatch_status: str = Field(default="PENDING", description="本轮下发状态")
-    dispatch_attempts: int = Field(default=0, description="本轮下发次数")
-    status: str = Field(default="QUEUED", description="本轮执行状态")
-    progress_percent: Optional[float] = Field(None, description="本轮该 case 的进度百分比")
-    started_at: Optional[datetime] = Field(None, description="本轮该 case 开始时间（UTC）")
-    finished_at: Optional[datetime] = Field(None, description="本轮该 case 结束时间（UTC）")
-    dispatched_at: Optional[datetime] = Field(None, description="本轮该 case 最近一次被下发的时间（UTC）")
-    last_seq: int = Field(default=0, description="本轮最后事件序号")
-    last_event_id: Optional[str] = Field(None, description="本轮最后事件 ID")
-    last_event_at: Optional[datetime] = Field(None, description="本轮最近一次事件时间（UTC）")
-    event_count: int = Field(default=0, description="本轮 case 事件数量")
-    failure_message: Optional[str] = Field(None, description="本轮 case 失败信息")
-    nodeid: Optional[str] = Field(None, description="测试节点标识")
-    project_tag: Optional[str] = Field(None, description="项目标签")
-    case_title_snapshot: Optional[str] = Field(None, description="用例标题快照")
-    phase: Optional[str] = Field(None, description="最近一次事件阶段")
-    result_data: Dict[str, Any] = Field(default_factory=dict, description="本轮扩展结果")
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="本轮 case 结果记录创建时间（UTC）")
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="本轮 case 结果记录最近更新时间（UTC）")
-
-    @before_event([Save, Insert])
-    def update_updated_at(self):
-        self.updated_at = datetime.now(timezone.utc)
-
-    class Settings:
-        name = "execution_task_run_cases"
-        indexes = [
-            IndexModel([("task_id", ASCENDING), ("run_no", ASCENDING), ("case_id", ASCENDING)], unique=True),
-            IndexModel([("task_id", ASCENDING), ("run_no", ASCENDING), ("order_no", ASCENDING)]),
-            IndexModel([("task_id", ASCENDING), ("run_no", ASCENDING), ("status", ASCENDING)]),
-        ]
-
-
 class ExecutionAgentDoc(Document):
     """执行代理注册表。
 
@@ -245,12 +161,24 @@ class ExecutionAgentDoc(Document):
     base_url: Optional[str] = Field(None, description="代理服务基地址")
     region: str = Field(..., description="所属区域")
     status: str = Field(default="ONLINE", description="代理状态")
-    registered_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="首次注册或最近一次注册时间（UTC）")
-    last_heartbeat_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="最近一次心跳时间（UTC）")
+    registered_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        description="首次注册或最近一次注册时间（UTC）",
+    )
+    last_heartbeat_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        description="最近一次心跳时间（UTC）",
+    )
     heartbeat_ttl_seconds: int = Field(default=90, description="心跳过期阈值（秒）")
     is_deleted: bool = Field(default=False, description="逻辑删除标记")
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="记录创建时间（UTC）")
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="记录最近更新时间（UTC）")
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        description="记录创建时间（UTC）",
+    )
+    updated_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        description="记录最近更新时间（UTC）",
+    )
 
     @before_event([Save, Insert])
     def update_updated_at(self):

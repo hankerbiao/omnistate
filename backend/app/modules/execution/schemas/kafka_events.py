@@ -25,7 +25,6 @@ class TestEvent(BaseModel):
     schema_name: str = Field(alias="schema")
     event_id: str
     task_id: str
-    run_no: int | None = None
     timestamp: datetime
     event_type: str
     phase: str | None = None

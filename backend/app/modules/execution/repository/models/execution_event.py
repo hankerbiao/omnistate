@@ -15,7 +15,6 @@ class ExecutionEventDoc(Document):
 
     event_id: str = Field(..., description="事件唯一 ID")
     task_id: str = Field(..., description="任务 ID")
-    run_no: int | None = Field(default=None, description="执行轮次")
     case_id: str | None = Field(default=None, description="测试用例 ID")
     topic: str = Field(..., description="Kafka topic")
     schema_name: str = Field(..., description="事件 schema 名称")
@@ -44,6 +43,6 @@ class ExecutionEventDoc(Document):
         indexes = [
             IndexModel("event_id", unique=True),
             IndexModel([("task_id", ASCENDING), ("event_timestamp", DESCENDING)]),
-            IndexModel([("task_id", ASCENDING), ("run_no", ASCENDING), ("case_id", ASCENDING)]),
+            IndexModel([("task_id", ASCENDING), ("case_id", ASCENDING)]),
             IndexModel([("topic", ASCENDING), ("event_timestamp", DESCENDING)]),
         ]

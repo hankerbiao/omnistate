@@ -16,19 +16,15 @@ from app.modules.execution.application.task_case_mixin import ExecutionTaskCaseM
 from app.modules.execution.application.task_command_mixin import ExecutionTaskCommandMixin
 from app.modules.execution.application.task_dispatch_mixin import ExecutionTaskDispatchMixin
 from app.modules.execution.application.task_query_mixin import ExecutionTaskQueryMixin
-from app.modules.execution.application.task_run_mixin import ExecutionTaskRunMixin
-from app.modules.execution.application.task_status_mixin import ExecutionTaskStatusMixin
 from app.modules.execution.repository.models import ExecutionTaskCaseDoc, ExecutionTaskDoc
 from app.modules.execution.service.task_dispatcher import ExecutionTaskDispatcher
 
 
 class ExecutionService(
     ExecutionTaskDispatchMixin,
-    ExecutionTaskRunMixin,
     ExecutionTaskCaseMixin,
     ExecutionTaskCommandMixin,
     ExecutionTaskQueryMixin,
-    ExecutionTaskStatusMixin,
     ExecutionAgentMixin,
 ):
     """执行任务命令服务门面。"""
@@ -127,7 +123,6 @@ class ExecutionService(
                 task_doc.dispatch_status = "COMPLETED"
 
         await task_doc.save()
-        await self._sync_run_from_task(task_doc)
 
         return {
             "task_id": task_doc.task_id,
@@ -175,7 +170,6 @@ class ExecutionService(
         )
         await task_doc.insert()
         await self._replace_task_case_docs(task_doc.task_id, command.case_ids, command.auto_case_ids, doc_map)
-        await self._create_task_run_docs(task_doc, trigger_type="INITIAL", triggered_by=actor_id)
         await task_doc.save()
         await self._dispatch_task_if_needed(task_doc, should_dispatch_now)
         return self._serialize_task_doc(task_doc)

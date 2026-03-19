@@ -18,7 +18,6 @@ class DispatchExecutionTaskCommand:
     # 测试用例信息
     auto_case_ids: List[str]
     case_ids: List[str]
-    run_no: int = 1
     dispatch_case_id: Optional[str] = None
     dispatch_auto_case_id: Optional[str] = None
     dispatch_case_index: int = 0
@@ -57,7 +56,6 @@ class DispatchExecutionTaskCommand:
             "callback_url": self.callback_url,
             "dut": self.dut or {},
             "cases": [{"case_id": current_case_id, "auto_case_id": current_auto_case_id}],
-            "run_no": self.run_no,
             "current_case_id": current_case_id,
             "current_auto_case_id": current_auto_case_id,
             "current_case_index": self.dispatch_case_index,
