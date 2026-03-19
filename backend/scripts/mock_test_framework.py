@@ -9,9 +9,10 @@ Mock Test Framework Client - 模拟测试框架执行器
 
 功能：
     1. 消费 dmlv4.tasks topic 中的任务消息
-    2. 模拟任务执行（随机延迟）
-    3. 发送执行结果到 dmlv4.results topic
-    4. 发送测试事件到 test-events topic（started/passed/finished 序列）
+    2. 解析任务中的真实 case 列表
+    3. 模拟任务执行（随机延迟）
+    4. 发送执行结果到 dmlv4.results topic
+    5. 发送测试事件到 test-events topic（progress/case_start/case_finish/task_finish）
 
 使用方式：
     # 基本用法
@@ -32,12 +33,16 @@ import argparse
 import json
 import os
 import signal
+import socket
 import sys
+import threading
 import time
+import traceback
 import uuid
 from datetime import datetime, timezone
 from typing import Any
 
+import requests
 from kafka import KafkaConsumer, KafkaProducer
 
 
@@ -55,13 +60,42 @@ DEFAULT_TEST_EVENTS_TOPIC = "test-events"   # 测试事件 topic
 
 # Consumer Group ID
 DEFAULT_GROUP_ID = "dmlv4-mock-executor"
+DEFAULT_PLATFORM_URL = "http://127.0.0.1:8000"
+DEFAULT_AGENT_ID = "mock-framework-agent"
+DEFAULT_HOST = "127.0.0.1"
+DEFAULT_PORT = 19090
+DEFAULT_REGION = "default"
+DEFAULT_HEARTBEAT_INTERVAL = 30
+DEFAULT_HEARTBEAT_TTL = 90
 
 # 执行延迟配置（秒）
 DEFAULT_DELAY_MIN = 0.5   # 最小延迟
 DEFAULT_DELAY_MAX = 2.0   # 最大延迟
 
-# Mock 测试用例数量
-DEFAULT_CASE_COUNT = 2
+
+def pretty_json(data: dict[str, Any]) -> str:
+    """格式化 JSON 输出，方便终端调试。"""
+    return json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True)
+
+
+def summarize_case(case_item: dict[str, Any], index: int, total: int) -> str:
+    """生成单条 case 的调试摘要。"""
+    case_id = case_item.get("case_id", "unknown-case")
+    auto_case_id = case_item.get("auto_case_id", "-")
+    title = case_item.get("case_title") or case_item.get("title") or "-"
+    return f"[{index}/{total}] case_id={case_id}, auto_case_id={auto_case_id}, title={title}"
+
+
+def detect_local_ip() -> str:
+    """探测本机对外可见 IP。"""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        sock.connect(("8.8.8.8", 80))
+        return sock.getsockname()[0]
+    except OSError:
+        return "127.0.0.1"
+    finally:
+        sock.close()
 
 
 def parse_args():
@@ -93,6 +127,44 @@ def parse_args():
         default=DEFAULT_GROUP_ID,
         help="Consumer group ID (default: %(default)s)",
     )
+    parser.add_argument(
+        "--platform-url",
+        default=os.getenv("MOCK_PLATFORM_URL", DEFAULT_PLATFORM_URL),
+        help="平台 API 地址 (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--agent-id",
+        default=os.getenv("MOCK_AGENT_ID", DEFAULT_AGENT_ID),
+        help="执行代理 ID (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--host",
+        default=os.getenv("MOCK_AGENT_HOST", DEFAULT_HOST),
+        help="代理对外主机地址 (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=int(os.getenv("MOCK_AGENT_PORT", str(DEFAULT_PORT))),
+        help="代理端口 (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--region",
+        default=os.getenv("MOCK_AGENT_REGION", DEFAULT_REGION),
+        help="代理所属区域 (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--heartbeat-interval",
+        type=int,
+        default=int(os.getenv("MOCK_HEARTBEAT_INTERVAL", str(DEFAULT_HEARTBEAT_INTERVAL))),
+        help="心跳间隔秒数 (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--heartbeat-ttl",
+        type=int,
+        default=int(os.getenv("MOCK_HEARTBEAT_TTL", str(DEFAULT_HEARTBEAT_TTL))),
+        help="心跳 TTL 秒数 (default: %(default)s)",
+    )
 
     # 执行配置
     parser.add_argument(
@@ -107,14 +179,74 @@ def parse_args():
         default=DEFAULT_DELAY_MAX,
         help="最大执行延迟时间，单位秒 (default: %(default)s)",
     )
-    parser.add_argument(
-        "--case-count",
-        type=int,
-        default=DEFAULT_CASE_COUNT,
-        help="生成的 mock 测试用例数量 (default: %(default)s)",
-    )
-
     return parser.parse_args()
+
+
+class JsonHttpClient:
+    """简单 JSON HTTP 客户端。"""
+
+    def __init__(self, timeout: float = 10.0):
+        self.timeout = timeout
+
+    def post(self, url: str, payload: dict[str, Any]) -> dict[str, Any]:
+        response = requests.post(url, json=payload, timeout=self.timeout)
+        response.raise_for_status()
+        return response.json()
+
+
+class FrameworkClient:
+    """负责向平台注册代理并定期发送心跳。"""
+
+    def __init__(
+        self,
+        platform_url: str,
+        agent_id: str,
+        host: str,
+        port: int,
+        region: str,
+        heartbeat_interval: int,
+        heartbeat_ttl_seconds: int,
+    ) -> None:
+        self.platform_url = platform_url.rstrip("/")
+        self.agent_id = agent_id
+        self.host = host
+        self.port = port
+        self.region = region
+        self.heartbeat_interval = heartbeat_interval
+        self.heartbeat_ttl_seconds = heartbeat_ttl_seconds
+        self.base_url = f"http://{host}:{port}"
+        self.http = JsonHttpClient()
+
+    def build_register_payload(self) -> dict[str, Any]:
+        return {
+            "agent_id": self.agent_id,
+            "hostname": socket.gethostname(),
+            "ip": detect_local_ip(),
+            "port": self.port,
+            "base_url": self.base_url,
+            "region": self.region,
+            "status": "ONLINE",
+            "heartbeat_ttl_seconds": self.heartbeat_ttl_seconds,
+        }
+
+    def register_agent(self) -> None:
+        payload = self.build_register_payload()
+        url = f"{self.platform_url}/api/v1/execution/agents/register"
+        self.http.post(url, payload)
+
+    def send_heartbeat(self) -> dict[str, Any]:
+        url = f"{self.platform_url}/api/v1/execution/agents/{self.agent_id}/heartbeat"
+        payload = {"status": "ONLINE"}
+        return self.http.post(url, payload)
+
+
+def heartbeat_loop(client: FrameworkClient, stop_event: threading.Event) -> None:
+    """后台定时发送心跳。"""
+    while not stop_event.wait(client.heartbeat_interval):
+        try:
+            client.send_heartbeat()
+        except Exception:
+            pass  # 心跳失败静默处理
 
 
 def create_consumer(bootstrap_servers: str, group_id: str) -> KafkaConsumer:
@@ -164,32 +296,37 @@ def create_producer(bootstrap_servers: str) -> KafkaProducer:
 
 def build_test_event(
     task_id: str,
-    event_type: str,
+    phase: str,
     status: str,
     case_count: int,
-    case_seq: int | None = None,
+    started_cases: int,
+    finished_cases: int,
+    failed_cases: int,
     case_id: str | None = None,
     case_title: str | None = None,
 ) -> dict[str, Any]:
     """
     构建测试事件消息。
 
-    测试事件遵循 TestEvent schema，需要包含以下关键字段：
+    测试事件遵循当前 execution 模块消费规则，需要包含以下关键字段：
     - schema: 必须以 "-test-event@1" 结尾
     - event_id: 唯一事件 ID
     - task_id: 关联的任务 ID
     - timestamp: 事件时间戳
-    - event_type: 事件类型 (started/passed/finished)
-    - status: 状态 (running/passed/failed)
+    - event_type: 固定为 progress
+    - phase: case_start / case_finish / task_finish
+    - status: RUNNING / PASSED / FAILED
 
     参数:
         task_id: 任务 ID
-        event_type: 事件类型 ("started" | "passed" | "finished")
-        status: 状态 ("running" | "passed" | "failed")
+        phase: 事件阶段
+        status: 状态
         case_count: 总测试用例数
-        case_seq: 测试用例序号（passed 事件时使用）
-        case_id: 测试用例 ID（passed 事件时使用）
-        case_title: 测试用例标题（passed 事件时使用）
+        started_cases: 已开始用例数
+        finished_cases: 已完成用例数
+        failed_cases: 已失败用例数
+        case_id: 测试用例 ID
+        case_title: 测试用例标题
 
     返回:
         dict: 测试事件字典，可直接序列化为 JSON 发送到 Kafka
@@ -199,36 +336,23 @@ def build_test_event(
 
     # 基础事件结构
     event = {
-        "schema": "mock-test-event@1",  # 必须以 "-test-event@1" 结尾
-        "event_id": str(uuid.uuid4()),   # 唯一事件 ID
-        "task_id": task_id,               # 关联的任务 ID
-        "timestamp": now.isoformat(),    # ISO 格式时间戳
-        "event_type": event_type,         # 事件类型
-        "status": status,                 # 状态
-        "total_cases": case_count,       # 总测试用例数
-        "started_cases": 0,              # 已开始用例数
-        "finished_cases": 0,             # 已完成用例数
-        "failed_cases": 0,               # 失败用例数
+        "schema": "mock-test-event@1",
+        "event_id": str(uuid.uuid4()),
+        "task_id": task_id,
+        "timestamp": now.isoformat(),
+        "event_type": "progress",
+        "phase": phase,
+        "status": status,
+        "total_cases": case_count,
+        "started_cases": started_cases,
+        "finished_cases": finished_cases,
+        "failed_cases": failed_cases,
     }
 
-    # 根据事件类型添加特定字段
-    if event_type == "started":
-        # 任务开始事件
-        event["phase"] = "start"
-
-    elif event_type == "passed":
-        # 测试用例通过事件
-        event["seq"] = case_seq              # 事件序号（JSON 字段名为 seq）
-        event["case_id"] = case_id           # 测试用例 ID
-        event["case_title"] = case_title     # 测试用例标题
-        event["started_cases"] = case_seq    # 已开始用例数
-        event["finished_cases"] = case_seq   # 已完成用例数
-
-    elif event_type == "finished":
-        # 任务完成事件
-        event["phase"] = "end"
-        event["started_cases"] = case_count  # 全部开始
-        event["finished_cases"] = case_count # 全部完成
+    if case_id:
+        event["case_id"] = case_id
+    if case_title:
+        event["case_title"] = case_title
 
     return event
 
@@ -264,7 +388,6 @@ def simulate_execution(
     producer: KafkaProducer,
     delay_min: float,
     delay_max: float,
-    case_count: int,
 ) -> None:
     """
     模拟任务执行的主循环。
@@ -277,13 +400,13 @@ def simulate_execution(
         producer: Kafka 生产者实例
         delay_min: 最小执行延迟
         delay_max: 最大执行延迟
-        case_count: Mock 测试用例数量
     """
     import random
 
     print(f"[*] Mock Test Framework Client 已启动")
     print(f"[*] 监听 Topic: {DEFAULT_TASK_TOPIC}")
-    print(f"[*] 执行延迟范围: {delay_min}-{delay_max}秒, 测试用例数: {case_count}")
+    print(f"[*] 输出 Topic: result={DEFAULT_RESULT_TOPIC}, test_events={DEFAULT_TEST_EVENTS_TOPIC}")
+    print(f"[*] 执行延迟范围: {delay_min}-{delay_max}秒, 按任务真实 case 列表执行")
     print(f"[*] 按 Ctrl+C 退出\n")
 
     while True:
@@ -298,53 +421,105 @@ def simulate_execution(
                     task_data = message.value
                     task_id = task_data.get("task_id", "unknown")
                     task_type = task_data.get("task_type", "unknown")
+                    payload = task_data.get("task_data", {}) or {}
+                    external_task_id = payload.get("external_task_id") or task_data.get("external_task_id")
+                    framework = payload.get("framework") or task_data.get("framework")
+                    agent_id = payload.get("agent_id")
+                    cases = payload.get("cases", []) or []
+                    real_cases = [case for case in cases if isinstance(case, dict) and case.get("case_id")]
+                    case_count = len(real_cases)
 
                     print(f"\n[+] 收到任务: {task_id} (类型: {task_type})")
-
-                    # ---------- 发送 started 事件 ----------
-                    started_event = build_test_event(
-                        task_id=task_id,
-                        event_type="started",
-                        status="running",
-                        case_count=case_count,
+                    print(
+                        f"    [-] topic={topic_partition.topic}, partition={message.partition}, "
+                        f"offset={message.offset}, key={message.key!r}"
                     )
-                    producer.send(DEFAULT_TEST_EVENTS_TOPIC, started_event)
-                    print(f"    [-] 已发送 started 事件")
+                    print(
+                        f"    [-] external_task_id={external_task_id}, framework={framework}, "
+                        f"agent_id={agent_id}, 解析到真实用例数={case_count}"
+                    )
+                    print("    [-] 原始任务消息:")
+                    print(pretty_json(task_data))
 
-                    # ---------- 模拟任务执行 ----------
-                    # 随机延迟模拟真实执行时间
-                    delay = random.uniform(delay_min, delay_max)
-                    time.sleep(delay)
+                    if case_count == 0:
+                        print("    [!] 任务中没有可执行的 cases，跳过")
+                        continue
 
-                    # ---------- 发送 passed 事件 ----------
-                    # 为每个测试用例发送一个 passed 事件
-                    for i in range(1, case_count + 1):
-                        passed_event = build_test_event(
-                            task_id=task_id,
-                            event_type="passed",
-                            status="passed",
-                            case_count=case_count,
-                            case_seq=i,
-                            case_id=f"mock-case-{i}",
-                            case_title=f"Mock Test Case {i}",
+                    print("    [-] 解析后的用例列表:")
+                    for index, case_item in enumerate(real_cases, start=1):
+                        print(f"        {summarize_case(case_item, index, case_count)}")
+
+                    total_delay = 0.0
+                    finished_cases = 0
+                    failed_cases = 0
+
+                    for index, case_item in enumerate(real_cases, start=1):
+                        case_id = case_item.get("case_id")
+                        case_title = (
+                            case_item.get("case_title")
+                            or case_item.get("title")
+                            or case_item.get("auto_case_id")
+                            or case_id
                         )
-                        producer.send(DEFAULT_TEST_EVENTS_TOPIC, passed_event)
-                        print(f"    [-] 已发送 passed 事件: case {i}/{case_count}")
 
-                    # ---------- 发送 finished 事件 ----------
-                    finished_event = build_test_event(
+                        case_start_event = build_test_event(
+                            task_id=task_id,
+                            phase="case_start",
+                            status="RUNNING",
+                            case_count=case_count,
+                            started_cases=index,
+                            finished_cases=finished_cases,
+                            failed_cases=failed_cases,
+                            case_id=case_id,
+                            case_title=case_title,
+                        )
+                        producer.send(DEFAULT_TEST_EVENTS_TOPIC, case_start_event)
+                        print(f"    [-] 已发送 case_start: {case_id}")
+                        print(pretty_json(case_start_event))
+
+                        delay = random.uniform(delay_min, delay_max)
+                        total_delay += delay
+                        print(f"    [-] 模拟执行中: case_id={case_id}, delay={delay:.2f}s")
+                        time.sleep(delay)
+
+                        finished_cases += 1
+                        case_finish_event = build_test_event(
+                            task_id=task_id,
+                            phase="case_finish",
+                            status="PASSED",
+                            case_count=case_count,
+                            started_cases=index,
+                            finished_cases=finished_cases,
+                            failed_cases=failed_cases,
+                            case_id=case_id,
+                            case_title=case_title,
+                        )
+                        producer.send(DEFAULT_TEST_EVENTS_TOPIC, case_finish_event)
+                        print(f"    [-] 已发送 case_finish: {case_id} ({finished_cases}/{case_count})")
+                        print(pretty_json(case_finish_event))
+
+                    task_finish_event = build_test_event(
                         task_id=task_id,
-                        event_type="finished",
-                        status="passed",
+                        phase="task_finish",
+                        status="PASSED",
                         case_count=case_count,
+                        started_cases=case_count,
+                        finished_cases=finished_cases,
+                        failed_cases=failed_cases,
                     )
-                    producer.send(DEFAULT_TEST_EVENTS_TOPIC, finished_event)
-                    print(f"    [-] 已发送 finished 事件")
+                    producer.send(DEFAULT_TEST_EVENTS_TOPIC, task_finish_event)
+                    print("    [-] 已发送 task_finish 事件")
+                    print(pretty_json(task_finish_event))
 
-                    # ---------- 发送结果消息 ----------
-                    result_message = build_result_message(task_id, delay, case_count)
+                    result_message = build_result_message(task_id, total_delay, case_count)
                     producer.send(DEFAULT_RESULT_TOPIC, result_message)
-                    print(f"    [+] 任务完成: {task_id}")
+                    print("    [-] 已发送结果消息")
+                    print(pretty_json(result_message))
+                    print(
+                        f"    [+] 任务完成: {task_id}, case_count={case_count}, "
+                        f"finished_cases={finished_cases}, failed_cases={failed_cases}, "
+                        f"total_delay={total_delay:.2f}s"
+                    )
 
         except KeyboardInterrupt:
             # 用户按下 Ctrl+C
@@ -353,6 +528,7 @@ def simulate_execution(
         except Exception as e:
             # 其他异常，打印错误后继续
             print(f"[!] 错误: {e}")
+            print(traceback.format_exc())
             time.sleep(1)
 
 
@@ -366,6 +542,11 @@ def main():
     args = parse_args()
 
     print(f"[*] 连接 Kafka: {args.bootstrap_servers}")
+    print(f"[*] Consumer Group: {args.group_id}")
+    print(
+        f"[*] 平台注册配置: platform_url={args.platform_url}, agent_id={args.agent_id}, "
+        f"host={args.host}, port={args.port}, region={args.region}"
+    )
 
     # 验证延迟参数
     if args.delay_min > args.delay_max:
@@ -376,17 +557,42 @@ def main():
         print("[!] 错误: 延迟参数不能为负数")
         sys.exit(1)
 
-    if args.case_count < 1:
-        print("[!] 错误: --case-count 至少为 1")
-        sys.exit(1)
-
     # 创建 Kafka 消费者和生产者
     consumer = create_consumer(args.bootstrap_servers, args.group_id)
     producer = create_producer(args.bootstrap_servers)
+    framework_client = FrameworkClient(
+        platform_url=args.platform_url,
+        agent_id=args.agent_id,
+        host=args.host,
+        port=args.port,
+        region=args.region,
+        heartbeat_interval=args.heartbeat_interval,
+        heartbeat_ttl_seconds=args.heartbeat_ttl,
+    )
+    stop_event = threading.Event()
+    heartbeat_thread = None
+
+    try:
+        framework_client.register_agent()
+        framework_client.send_heartbeat()
+        heartbeat_thread = threading.Thread(
+            target=heartbeat_loop,
+            args=(framework_client, stop_event),
+            daemon=True,
+            name="mock-framework-heartbeat",
+        )
+        heartbeat_thread.start()
+    except Exception as exc:
+        print(f"[agent] 注册或初始心跳失败: {exc}")
+        print(traceback.format_exc())
+        consumer.close()
+        producer.close()
+        sys.exit(1)
 
     # 设置信号处理（优雅退出）
     def signal_handler(sig, frame):
         print("\n[*] 收到终止信号")
+        stop_event.set()
         consumer.close()
         producer.close()
         sys.exit(0)
@@ -401,10 +607,12 @@ def main():
             producer=producer,
             delay_min=args.delay_min,
             delay_max=args.delay_max,
-            case_count=args.case_count,
         )
     finally:
         # 清理资源
+        stop_event.set()
+        if heartbeat_thread is not None and heartbeat_thread.is_alive():
+            heartbeat_thread.join(timeout=2)
         consumer.close()
         producer.close()
         print("[*] 资源已释放")
