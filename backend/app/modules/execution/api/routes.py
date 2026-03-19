@@ -93,6 +93,27 @@ async def dispatch_task(
         raise HTTPException(status_code=404, detail=str(exc))
 
 
+@router.delete(
+    "/tasks/{task_id}",
+    response_model=APIResponse[dict],
+    summary="删除执行任务",
+    dependencies=[Depends(require_permission("execution_tasks:write"))],
+)
+async def delete_task(
+        task_id: str,
+        service: ExecutionServiceDep,
+        current_user=Depends(get_current_user),
+):
+    """删除执行任务（逻辑删除）。"""
+    try:
+        data = await service.delete_task(task_id, actor_id=current_user["user_id"])
+        return APIResponse(data=data)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
 @router.post(
     "/tasks/{task_id}/cancel",
     response_model=APIResponse[ScheduledTaskMutationResponse],

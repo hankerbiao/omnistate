@@ -12,6 +12,7 @@ from app.modules.auth.repository.models import NavigationPageDoc, PermissionDoc,
 from app.modules.execution.application.kafka_handlers import register_execution_kafka_handlers
 from app.modules.execution.repository.models import (
     ExecutionAgentDoc,
+    ExecutionEventDoc,
     ExecutionTaskCaseDoc,
     ExecutionTaskDoc,
     ExecutionTaskRunCaseDoc,
@@ -45,6 +46,7 @@ DOCUMENT_MODELS = [
     TestCaseDoc,
     AutomationTestCaseDoc,
     ExecutionAgentDoc,
+    ExecutionEventDoc,
     ExecutionTaskDoc,
     ExecutionTaskRunDoc,
     ExecutionTaskCaseDoc,

@@ -6,6 +6,7 @@ from .execution import (
     ExecutionTaskCaseDoc,
     ExecutionTaskRunCaseDoc,
 )
+from .execution_event import ExecutionEventDoc
 
 
 __all__ = [
@@ -14,4 +15,5 @@ __all__ = [
     "ExecutionTaskCaseDoc",
     "ExecutionTaskRunCaseDoc",
     "ExecutionAgentDoc",
+    "ExecutionEventDoc",
 ]

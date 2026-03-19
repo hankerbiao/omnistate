@@ -10,6 +10,8 @@ DEFAULT_TASK_TOPIC = "dmlv4.tasks"
 DEFAULT_RESULT_TOPIC = "dmlv4.results"
 DEFAULT_DEAD_LETTER_TOPIC = "dmlv4.deadletter"
 DEFAULT_EXECUTION_RESULT_GROUP_ID = "dmlv4-execution-result-consumers"
+DEFAULT_TEST_EVENTS_TOPIC = "test-events"
+DEFAULT_TEST_EVENTS_GROUP_ID = "dmlv4-test-events-consumers"
 
 
 @dataclass(slots=True)
@@ -31,6 +33,7 @@ class KafkaConfig:
     task_topic: str = DEFAULT_TASK_TOPIC
     result_topic: str = DEFAULT_RESULT_TOPIC
     dead_letter_topic: str = DEFAULT_DEAD_LETTER_TOPIC
+    test_events_topic: str = DEFAULT_TEST_EVENTS_TOPIC
     consumer_subscriptions: dict[str, ConsumerSubscription] = field(default_factory=dict)
     producer_options: dict[str, Any] = field(default_factory=lambda: {
         "acks": "all",
@@ -60,6 +63,7 @@ def load_kafka_config() -> KafkaConfig:
     task_topic = os.getenv("KAFKA_TASK_TOPIC", DEFAULT_TASK_TOPIC)
     result_topic = os.getenv("KAFKA_RESULT_TOPIC", DEFAULT_RESULT_TOPIC)
     dead_letter_topic = os.getenv("KAFKA_DEAD_LETTER_TOPIC", DEFAULT_DEAD_LETTER_TOPIC)
+    test_events_topic = os.getenv("KAFKA_TEST_EVENTS_TOPIC", DEFAULT_TEST_EVENTS_TOPIC)
     return KafkaConfig(
         bootstrap_servers=_split_csv(
             os.getenv("KAFKA_BOOTSTRAP_SERVERS"),
@@ -69,12 +73,21 @@ def load_kafka_config() -> KafkaConfig:
         task_topic=task_topic,
         result_topic=result_topic,
         dead_letter_topic=dead_letter_topic,
+        test_events_topic=test_events_topic,
         consumer_subscriptions={
             "execution_result": ConsumerSubscription(
                 topic=result_topic,
                 group_id=os.getenv(
                     "KAFKA_EXECUTION_RESULT_GROUP_ID",
                     DEFAULT_EXECUTION_RESULT_GROUP_ID,
+                ),
+                dead_letter_topic=dead_letter_topic,
+            ),
+            "test_events": ConsumerSubscription(
+                topic=test_events_topic,
+                group_id=os.getenv(
+                    "KAFKA_TEST_EVENTS_GROUP_ID",
+                    DEFAULT_TEST_EVENTS_GROUP_ID,
                 ),
                 dead_letter_topic=dead_letter_topic,
             ),

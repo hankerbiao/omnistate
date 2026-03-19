@@ -202,6 +202,12 @@ class ApiClient {
       method: 'GET',
     });
   }
+
+  async deleteTask(taskId: string): Promise<ApiResponse<{ task_id: string; deleted: boolean }>> {
+    return this.request<{ task_id: string; deleted: boolean }>(`/execution/tasks/${taskId}`, {
+      method: 'DELETE',
+    });
+  }
 }
 
 export const api = new ApiClient(API_BASE_URL);

@@ -1,14 +1,13 @@
 # 测试执行模块
 
-`execution` 模块负责测试任务编排。当前实现不是“整批 case 一次性下发”，而是平台维护任务和执行历史，按 case 串行下发，并保存同一任务的多次执行结果。
+`execution` 模块负责测试任务编排。当前实现不是“整批 case 一次性下发”，而是平台按 case 串行下发，并维护任务当前态与执行过程快照。
 
 当前设计目标：
 
 - 平台主导串行 case 执行
 - 外部执行框架只执行当前 1 条 case
-- 同一个任务可以重复执行
-- 每次执行都保留独立历史
-- 当前态和历史态分开存储，避免完全靠覆盖字段追历史
+- 一个任务只执行一次
+- 任务查询以当前态与当前 case 执行情况为主
 
 ## 核心模型
 
@@ -24,7 +23,6 @@
   其中 `schedule_status` 只表示调度生命周期（如 `PENDING/READY/TRIGGERED/CANCELLED`），
   下发成败只放在 `dispatch_status` 和 `overall_status`
 - 保存串行游标：`current_case_id`、`current_case_index`
-- 保存历史指针：`latest_run_no`、`current_run_no`
 - 保存平台推进锁：`orchestration_lock`
 
 这个表回答的问题是：
@@ -47,28 +45,15 @@
 
 ### 3. `ExecutionTaskRunDoc`
 
-任务执行轮次表。
+任务执行快照表。
 
-每次真正执行一次任务，就生成一条 `run_no` 记录。
-
-职责：
-
-- 标识第几轮执行：`run_no`
-- 记录触发方式：`trigger_type`
-- 记录触发人：`triggered_by`
-- 记录该轮总体结果：`overall_status`
-- 记录该轮下发结果：`dispatch_status`、`dispatch_response`、`dispatch_error`
-- 记录该轮时间：`started_at`、`finished_at`、`last_callback_at`
+当前仍保留 `run_no` 和快照表，主要用于平台内部事件归档与状态聚合，不再对外提供历史轮次查询能力。
 
 ### 4. `ExecutionTaskRunCaseDoc`
 
-任务轮次-case 结果表。
+任务-case 执行快照表。
 
-职责：
-
-- 保存某个 `task_id + run_no + case_id` 的执行结果
-- 保存该 case 在这一轮的状态、进度、步骤统计、结果数据
-- 支持查看历史每次 case 的执行结果
+当前仍保留该表以便平台内部消费执行事件与聚合状态，但不再暴露“按轮次查看历史结果”的接口。
 
 ## 执行模型
 
@@ -84,23 +69,9 @@
 4. 计算 `dedup_key`，阻止相同业务载荷的未完成任务重复创建
 5. 创建 `ExecutionTaskDoc`
 6. 创建当前态 `ExecutionTaskCaseDoc`
-7. 创建首轮执行历史 `ExecutionTaskRunDoc(run_no=1)`
-8. 创建首轮 case 历史 `ExecutionTaskRunCaseDoc`
+7. 创建首轮执行快照 `ExecutionTaskRunDoc(run_no=1)`
+8. 创建首轮 case 快照 `ExecutionTaskRunCaseDoc`
 9. 如果是立即执行，则只下发第 1 条 case
-
-### 多次执行
-
-当前实现已经支持：
-
-- 一个 `task_id` 可以执行多次
-- 每次执行都会新增一个 `run_no`
-- 每次执行的 case 结果都会单独保存
-
-也就是说：
-
-- `ExecutionTaskDoc` 是任务容器
-- `ExecutionTaskRunDoc` 是第 N 次执行
-- `ExecutionTaskRunCaseDoc` 是第 N 次执行中的单条 case 结果
 
 ## 当前态与历史态的关系
 
@@ -117,7 +88,7 @@
 - 当前任务状态展示
 - 平台推进判断
 
-### 历史态
+### 执行快照
 
 保存在：
 
@@ -126,11 +97,9 @@
 
 用途：
 
-- 查看某次执行结果
-- 查看一个任务的历史执行列表
-- 后续扩展结果比对
-
-当前实现仍然会更新任务主表上的最新状态，但历史轮次已经独立持久化，不再只能依赖覆盖字段追历史。
+- 内部事件归档
+- 状态聚合与收口
+- 保留执行过程快照
 
 ## application 层结构
 
@@ -179,19 +148,14 @@
 - `GET /api/v1/execution/agents/{agent_id}`
   查询代理详情
 
-## request_payload 与执行历史
+## request_payload 与执行快照
 
 `request_payload` 仍然保留在任务主表中，但它的职责很明确：
 
 - 保存任务原始完整快照
 - 用于重建命令和继续下发上下文
 
-它不是历史结果表。
-
-历史结果应查看：
-
-- `ExecutionTaskRunDoc`
-- `ExecutionTaskRunCaseDoc`
+它不是执行结果表。
 
 ## 状态说明
 

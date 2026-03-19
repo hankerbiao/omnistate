@@ -1,6 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../services/api';
-import type { ExecutionTask, TaskStatus, AutomationTestCaseResponse, ExecutionAgent, DispatchCaseItem } from '../types';
+import type {
+  ExecutionTask,
+  TaskStatus,
+  AutomationTestCaseResponse,
+  ExecutionAgent,
+  DispatchCaseItem,
+  ExecutionTaskCaseSummary,
+} from '../types';
 
 interface TaskListProps {
   onLogout?: () => void;
@@ -20,6 +27,7 @@ interface DispatchModalState {
 
 const FRAMEWORKS = ['pytest', 'robot', 'playwright', 'cypress', 'jest'];
 const DEFAULT_FRAMEWORK = 'pytest';
+const TASK_TABLE_COLUMNS = 7;
 
 const TaskList: React.FC<TaskListProps> = () => {
   const [tasks, setTasks] = useState<ExecutionTask[]>([]);
@@ -146,6 +154,20 @@ const TaskList: React.FC<TaskListProps> = () => {
     }
   };
 
+  const handleDeleteTask = async (taskId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm(`确定要删除任务 ${taskId} 吗？`)) {
+      return;
+    }
+    try {
+      await api.deleteTask(taskId);
+      fetchTasks();
+    } catch (err) {
+      console.error('Delete task error:', err);
+      alert('删除任务失败');
+    }
+  };
+
   const getStatusStyle = (status: string) => {
     const statusMap: Record<string, { bg: string; color: string; label: string }> = {
       PENDING: { bg: 'var(--status-warning-bg)', color: 'var(--accent-yellow)', label: '待处理' },
@@ -159,6 +181,53 @@ const TaskList: React.FC<TaskListProps> = () => {
       NOT_CONSUMED: { bg: 'var(--bg-tertiary)', color: 'var(--text-muted)', label: '未消费' },
     };
     return statusMap[status] || { bg: 'var(--bg-tertiary)', color: 'var(--text-secondary)', label: status };
+  };
+
+  const renderTaskCases = (cases: ExecutionTaskCaseSummary[] | undefined) => {
+    if (!cases || cases.length === 0) {
+      return <div style={styles.caseSummaryEmpty}>暂无用例执行信息</div>;
+    }
+
+    return (
+      <div style={styles.caseSummaryList}>
+        {cases.map((caseItem) => {
+          const caseStatusStyle = getStatusStyle(caseItem.status);
+          const progressText = typeof caseItem.progress_percent === 'number'
+            ? `${Math.round(caseItem.progress_percent)}%`
+            : '-';
+
+          return (
+            <div key={`${caseItem.task_id}-${caseItem.case_id}`} style={styles.caseSummaryCard}>
+              <div style={styles.caseSummaryHeader}>
+                <div style={styles.caseSummaryTitleBlock}>
+                  <span style={styles.caseSummaryTitle}>{caseItem.title || caseItem.case_id}</span>
+                  <span style={styles.caseSummaryMeta}>
+                    {caseItem.auto_case_id || caseItem.case_id}
+                  </span>
+                </div>
+                <span
+                  style={{
+                    ...styles.caseStatusBadge,
+                    backgroundColor: caseStatusStyle.bg,
+                    color: caseStatusStyle.color,
+                  }}
+                >
+                  {caseStatusStyle.label}
+                </span>
+              </div>
+              <div style={styles.caseSummaryInfoRow}>
+                <span>进度 {progressText}</span>
+                <span>下发 {caseItem.dispatch_status}</span>
+                <span>事件 {caseItem.event_count}</span>
+              </div>
+              {caseItem.failure_message && (
+                <div style={styles.caseFailureText}>{caseItem.failure_message}</div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
   };
 
   const statusCounts = tasks.reduce((acc, task) => {
@@ -228,6 +297,7 @@ const TaskList: React.FC<TaskListProps> = () => {
                 <th style={styles.th}>状态</th>
                 <th style={styles.th}>用例数</th>
                 <th style={styles.th}>创建时间</th>
+                <th style={styles.th}>操作</th>
               </tr>
             </thead>
             <tbody>
@@ -235,56 +305,81 @@ const TaskList: React.FC<TaskListProps> = () => {
                 const statusStyle = getStatusStyle(task.overall_status);
                 const scheduleStyle = getStatusStyle(task.schedule_type);
                 return (
-                  <tr
-                    key={task.task_id}
-                    style={styles.tr}
-                    onClick={() => handleTaskClick(task.task_id)}
-                    className="task-row"
-                  >
-                    <td style={styles.td}>
-                      <span style={styles.taskId}>{task.task_id}</span>
-                    </td>
-                    <td style={styles.td}>
-                      <span style={styles.frameworkBadge}>{task.framework}</span>
-                    </td>
-                    <td style={styles.td}>
-                      <span
-                        style={{
-                          ...styles.statusBadge,
-                          backgroundColor: scheduleStyle.bg,
-                          color: scheduleStyle.color,
-                        }}
-                      >
-                        {task.schedule_type}
-                      </span>
-                    </td>
-                    <td style={styles.td}>
-                      <span
-                        style={{
-                          ...styles.statusBadgeLarge,
-                          backgroundColor: statusStyle.bg,
-                          color: statusStyle.color,
-                        }}
-                      >
+                  <>
+                    <tr
+                      key={task.task_id}
+                      style={styles.tr}
+                      onClick={() => handleTaskClick(task.task_id)}
+                      className="task-row"
+                    >
+                      <td style={styles.td}>
+                        <span style={styles.taskId}>{task.task_id}</span>
+                      </td>
+                      <td style={styles.td}>
+                        <span style={styles.frameworkBadge}>{task.framework}</span>
+                      </td>
+                      <td style={styles.td}>
                         <span
                           style={{
-                            ...styles.statusDot,
-                            backgroundColor: statusStyle.color,
+                            ...styles.statusBadge,
+                            backgroundColor: scheduleStyle.bg,
+                            color: scheduleStyle.color,
                           }}
-                          className={task.overall_status === 'RUNNING' ? 'pulse' : ''}
-                        />
-                        {statusStyle.label}
-                      </span>
-                    </td>
-                    <td style={styles.td}>
-                      <span style={styles.caseCount}>{task.case_count}</span>
-                    </td>
-                    <td style={styles.td}>
-                      <span style={styles.timeText}>
-                        {new Date(task.created_at).toLocaleString('zh-CN')}
-                      </span>
-                    </td>
-                  </tr>
+                        >
+                          {task.schedule_type}
+                        </span>
+                      </td>
+                      <td style={styles.td}>
+                        <span
+                          style={{
+                            ...styles.statusBadgeLarge,
+                            backgroundColor: statusStyle.bg,
+                            color: statusStyle.color,
+                          }}
+                        >
+                          <span
+                            style={{
+                              ...styles.statusDot,
+                              backgroundColor: statusStyle.color,
+                            }}
+                            className={task.overall_status === 'RUNNING' ? 'pulse' : ''}
+                          />
+                          {statusStyle.label}
+                        </span>
+                      </td>
+                      <td style={styles.td}>
+                        <span style={styles.caseCount}>{task.case_count}</span>
+                      </td>
+                      <td style={styles.td}>
+                        <span style={styles.timeText}>
+                          {new Date(task.created_at).toLocaleString('zh-CN')}
+                        </span>
+                      </td>
+                      <td style={styles.td}>
+                        <button
+                          style={styles.deleteBtn}
+                          className="delete-btn"
+                          onClick={(e) => handleDeleteTask(task.task_id, e)}
+                          title="删除任务"
+                        >
+                          🗑
+                        </button>
+                      </td>
+                    </tr>
+                    <tr style={styles.caseSummaryRow}>
+                      <td style={styles.caseSummaryCell} colSpan={TASK_TABLE_COLUMNS}>
+                        <div style={styles.caseSummaryWrap}>
+                          <div style={styles.caseSummaryHeading}>
+                            用例执行情况
+                            <span style={styles.caseSummaryCount}>
+                              {(task.cases || []).length}/{task.case_count}
+                            </span>
+                          </div>
+                          {renderTaskCases(task.cases)}
+                        </div>
+                      </td>
+                    </tr>
+                  </>
                 );
               })}
             </tbody>
@@ -565,6 +660,7 @@ const TaskList: React.FC<TaskListProps> = () => {
         .task-row { cursor: pointer; }
         .task-row:hover { background-color: var(--bg-tertiary) !important; }
         .task-row:hover td { color: var(--accent-cyan); }
+        .delete-btn:hover { background-color: var(--status-error-bg) !important; border-color: var(--accent-red) !important; color: var(--accent-red) !important; }
       `}</style>
     </div>
   );
@@ -811,10 +907,116 @@ const styles = {
     borderBottom: '1px solid var(--border-muted)',
     transition: 'all var(--transition-fast)',
   } as const,
+  caseSummaryRow: {
+    borderBottom: '1px solid var(--border-muted)',
+    backgroundColor: 'rgba(255, 255, 255, 0.02)',
+  } as const,
   td: {
     padding: '16px 20px',
     fontSize: '14px',
     color: 'var(--text-primary)',
+  } as const,
+  caseSummaryCell: {
+    padding: '0 20px 18px',
+  } as const,
+  caseSummaryWrap: {
+    borderRadius: '14px',
+    border: '1px solid var(--border-muted)',
+    backgroundColor: 'var(--bg-primary)',
+    padding: '14px',
+  } as const,
+  caseSummaryHeading: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: '12px',
+    fontSize: '12px',
+    fontWeight: 600,
+    color: 'var(--text-secondary)',
+    letterSpacing: '0.4px',
+  } as const,
+  caseSummaryCount: {
+    fontFamily: "'JetBrains Mono', monospace",
+    color: 'var(--text-muted)',
+  } as const,
+  caseSummaryList: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+    gap: '10px',
+  } as const,
+  caseSummaryCard: {
+    padding: '12px',
+    borderRadius: '12px',
+    border: '1px solid var(--border-muted)',
+    backgroundColor: 'var(--bg-secondary)',
+  } as const,
+  caseSummaryHeader: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: '10px',
+    marginBottom: '8px',
+  } as const,
+  caseSummaryTitleBlock: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: '4px',
+    minWidth: 0,
+  } as const,
+  caseSummaryTitle: {
+    fontSize: '13px',
+    fontWeight: 600,
+    color: 'var(--text-primary)',
+    lineHeight: 1.4,
+  } as const,
+  caseSummaryMeta: {
+    fontSize: '11px',
+    color: 'var(--text-muted)',
+    fontFamily: "'JetBrains Mono', monospace",
+  } as const,
+  caseStatusBadge: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    flexShrink: 0,
+    padding: '4px 8px',
+    borderRadius: '999px',
+    fontSize: '11px',
+    fontWeight: 600,
+  } as const,
+  caseSummaryInfoRow: {
+    display: 'flex',
+    flexWrap: 'wrap' as const,
+    gap: '10px',
+    fontSize: '11px',
+    color: 'var(--text-secondary)',
+  } as const,
+  caseFailureText: {
+    marginTop: '8px',
+    fontSize: '11px',
+    lineHeight: 1.5,
+    color: 'var(--accent-red)',
+  } as const,
+  caseSummaryEmpty: {
+    padding: '12px',
+    borderRadius: '10px',
+    backgroundColor: 'var(--bg-secondary)',
+    color: 'var(--text-muted)',
+    fontSize: '12px',
+    textAlign: 'center' as const,
+  } as const,
+  deleteBtn: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '32px',
+    height: '32px',
+    fontSize: '14px',
+    backgroundColor: 'transparent',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+    cursor: 'pointer',
+    color: 'var(--text-muted)',
+    transition: 'all var(--transition-fast)',
   } as const,
   taskId: {
     fontFamily: "'JetBrains Mono', monospace",

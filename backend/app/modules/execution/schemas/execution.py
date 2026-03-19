@@ -90,8 +90,6 @@ class ExecutionTaskListItem(BaseModel):
     overall_status: str = Field(..., description="任务整体状态")
     case_count: int = Field(..., description="任务包含的测试用例总数")
     auto_case_ids: List[str] = Field(default_factory=list, description="任务包含的自动化用例 ID 列表")
-    latest_run_no: int = Field(0, description="该任务历史上最新的执行轮次编号")
-    current_run_no: int = Field(0, description="当前正在查看或运行中的执行轮次编号")
     current_case_id: Optional[str] = Field(None, description="当前游标指向的测试用例 ID")
     current_auto_case_id: Optional[str] = Field(None, description="当前游标指向的自动化用例 ID")
     current_case_index: int = Field(0, description="当前游标指向的测试用例顺序索引")
@@ -103,6 +101,26 @@ class ExecutionTaskListItem(BaseModel):
     triggered_at: Optional[datetime] = Field(None, description="任务首次被触发执行的时间（UTC）")
     created_at: datetime = Field(..., description="任务创建时间（UTC）")
     updated_at: datetime = Field(..., description="任务最近更新时间（UTC）")
+    cases: List["ExecutionTaskListCaseItem"] = Field(default_factory=list, description="任务关联测试用例当前执行情况")
+
+
+class ExecutionTaskListCaseItem(BaseModel):
+    task_id: str = Field(..., description="任务 ID")
+    case_id: str = Field(..., description="测试用例 ID")
+    auto_case_id: Optional[str] = Field(None, description="自动化测试用例 ID")
+    order_no: int = Field(..., description="任务内顺序")
+    title: Optional[str] = Field(None, description="用例标题快照")
+    status: str = Field(..., description="当前执行状态")
+    progress_percent: Optional[float] = Field(None, description="当前执行进度")
+    dispatch_status: str = Field(..., description="当前下发状态")
+    dispatch_attempts: int = Field(..., description="下发次数")
+    event_count: int = Field(..., description="事件数量")
+    failure_message: Optional[str] = Field(None, description="失败原因")
+    started_at: Optional[datetime] = Field(None, description="开始时间")
+    finished_at: Optional[datetime] = Field(None, description="结束时间")
+    last_event_id: Optional[str] = Field(None, description="最近事件 ID")
+    last_event_at: Optional[datetime] = Field(None, description="最近事件时间")
+    result_data: Dict[str, Any] = Field(default_factory=dict, description="扩展结果")
 
 
 class ScheduledTaskMutationResponse(BaseModel):

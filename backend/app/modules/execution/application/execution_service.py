@@ -46,6 +46,18 @@ class ExecutionService(
                 f"Task {task_doc.task_id} cannot be changed in schedule_status {task_doc.schedule_status}"
             )
 
+    async def delete_task(self, task_id: str, actor_id: str) -> Dict[str, Any]:
+        """删除执行任务（逻辑删除）。"""
+        task_doc = await ExecutionTaskDoc.find_one({"task_id": task_id, "is_deleted": False})
+        if not task_doc:
+            raise KeyError(f"Task not found: {task_id}")
+        self._ensure_actor_identity(actor_id, task_doc.created_by)
+
+        task_doc.is_deleted = True
+        await task_doc.save()
+
+        return {"task_id": task_id, "deleted": True}
+
     async def cancel_scheduled_task(self, task_id: str, actor_id: str) -> Dict[str, Any]:
         """取消未触发的定时任务。"""
         task_doc = await ExecutionTaskDoc.find_one({"task_id": task_id, "is_deleted": False})

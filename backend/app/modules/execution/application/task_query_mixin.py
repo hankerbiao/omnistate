@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any, Dict, List
 
 from app.modules.execution.repository.models import (
+    ExecutionTaskCaseDoc,
     ExecutionTaskDoc,
 )
 
@@ -46,8 +47,6 @@ class ExecutionTaskQueryMixin:
             "overall_status": task_doc.overall_status,
             "case_count": task_doc.case_count,
             "auto_case_ids": auto_case_ids,
-            "latest_run_no": getattr(task_doc, "latest_run_no", 0),
-            "current_run_no": getattr(task_doc, "current_run_no", 0),
             "current_case_id": getattr(task_doc, "current_case_id", None),
             "current_auto_case_id": current_auto_case_id,
             "current_case_index": current_case_index,
@@ -59,6 +58,28 @@ class ExecutionTaskQueryMixin:
             "triggered_at": task_doc.triggered_at,
             "created_at": task_doc.created_at,
             "updated_at": task_doc.updated_at,
+        }
+
+    @staticmethod
+    def _serialize_task_case_doc(case_doc: ExecutionTaskCaseDoc) -> Dict[str, Any]:
+        case_snapshot = dict(case_doc.case_snapshot or {})
+        return {
+            "task_id": case_doc.task_id,
+            "case_id": case_doc.case_id,
+            "auto_case_id": case_snapshot.get("auto_case_id"),
+            "order_no": case_doc.order_no,
+            "title": case_snapshot.get("title"),
+            "status": case_doc.status,
+            "progress_percent": case_doc.progress_percent,
+            "dispatch_status": case_doc.dispatch_status,
+            "dispatch_attempts": case_doc.dispatch_attempts,
+            "event_count": getattr(case_doc, "event_count", 0),
+            "failure_message": getattr(case_doc, "failure_message", None),
+            "started_at": case_doc.started_at,
+            "finished_at": case_doc.finished_at,
+            "last_event_id": case_doc.last_event_id,
+            "last_event_at": getattr(case_doc, "last_event_at", None),
+            "result_data": dict(case_doc.result_data or {}),
         }
 
     async def list_tasks(
@@ -109,7 +130,23 @@ class ExecutionTaskQueryMixin:
             .limit(max(limit, 1))
             .to_list()
         )
-        return [self._serialize_task_doc(task_doc) for task_doc in docs]
+        serialized_tasks = [self._serialize_task_doc(task_doc) for task_doc in docs]
+        task_ids = [task_doc.task_id for task_doc in docs]
+        if not task_ids:
+            return serialized_tasks
+
+        case_docs = await (
+            ExecutionTaskCaseDoc.find({"task_id": {"$in": task_ids}})
+            .sort("order_no")
+            .to_list()
+        )
+        cases_by_task: Dict[str, List[Dict[str, Any]]] = {}
+        for case_doc in case_docs:
+            cases_by_task.setdefault(case_doc.task_id, []).append(self._serialize_task_case_doc(case_doc))
+
+        for task_item in serialized_tasks:
+            task_item["cases"] = cases_by_task.get(task_item["task_id"], [])
+        return serialized_tasks
 
     async def get_task_status(self, task_id: str) -> Dict[str, Any]:
         """获取任务状态详情。"""

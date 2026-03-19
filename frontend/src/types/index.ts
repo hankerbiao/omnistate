@@ -292,10 +292,19 @@ export interface ExecutionTask {
   consume_status: string;
   overall_status: string;
   case_count: number;
+  auto_case_ids?: string[];
+  current_case_id?: string;
+  current_auto_case_id?: string;
+  current_case_index?: number;
+  stop_mode?: string;
+  stop_requested_at?: string;
+  stop_requested_by?: string;
+  stop_reason?: string;
   planned_at?: string;
   triggered_at?: string;
   created_at: string;
   updated_at: string;
+  cases?: ExecutionTaskCaseSummary[];
 }
 
 export interface TaskStatus {
@@ -317,6 +326,25 @@ export interface TaskStatus {
   updated_at: string;
   error_message?: string;
   result_summary?: Record<string, unknown>;
+}
+
+export interface ExecutionTaskCaseSummary {
+  task_id: string;
+  case_id: string;
+  auto_case_id?: string;
+  order_no: number;
+  title?: string;
+  status: string;
+  progress_percent?: number;
+  dispatch_status: string;
+  dispatch_attempts: number;
+  event_count: number;
+  failure_message?: string;
+  started_at?: string;
+  finished_at?: string;
+  last_event_id?: string;
+  last_event_at?: string;
+  result_data?: Record<string, unknown>;
 }
 
 export interface ListTasksParams {
