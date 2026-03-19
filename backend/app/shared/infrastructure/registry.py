@@ -38,6 +38,18 @@ class InfrastructureRegistry:
         self._is_initialized = False
         logger.info("InfrastructureRegistry created")
 
+    def _ensure_kafka_manager_started(self, bootstrap_servers: list[str] | None = None) -> None:
+        kafka_config = load_kafka_config()
+        if bootstrap_servers is not None:
+            kafka_config.bootstrap_servers = bootstrap_servers
+
+        self.kafka_manager = KafkaMessageManager(
+            client_id="dmlv4-infrastructure",
+            config=kafka_config,
+        )
+        self.kafka_manager.start()
+        self._set_component_status(KAFKA_COMPONENT, "RUNNING")
+
     async def initialize(self, bootstrap_servers: list[str] | None = None) -> None:
         async with self._initialization_lock:
             if self._is_initialized:
@@ -61,17 +73,7 @@ class InfrastructureRegistry:
             self._set_component_status(KAFKA_COMPONENT, "INITIALIZING")
 
             try:
-                kafka_config = load_kafka_config()
-                if bootstrap_servers is not None:
-                    kafka_config.bootstrap_servers = bootstrap_servers
-
-                self.kafka_manager = KafkaMessageManager(
-                    client_id="dmlv4-infrastructure",
-                    config=kafka_config,
-                )
-                self.kafka_manager.start()
-
-                self._set_component_status(KAFKA_COMPONENT, "RUNNING")
+                self._ensure_kafka_manager_started(bootstrap_servers)
                 self.execution_scheduler_task = asyncio.create_task(self._run_execution_scheduler_loop())
                 self._set_component_status(EXECUTION_SCHEDULER_COMPONENT, "RUNNING")
                 self._is_initialized = True
@@ -84,6 +86,28 @@ class InfrastructureRegistry:
                 )
                 logger.exception(f"Failed to initialize infrastructure: {e}")
                 await self.shutdown()
+                raise
+
+    async def initialize_kafka_producer_only(self, bootstrap_servers: list[str] | None = None) -> None:
+        async with self._initialization_lock:
+            if self.kafka_manager is not None:
+                logger.warning("Kafka producer already initialized, skipping producer-only init")
+                return
+
+            self._set_component_status(KAFKA_COMPONENT, "INITIALIZING")
+            try:
+                self._ensure_kafka_manager_started(bootstrap_servers)
+                logger.success("Kafka producer-only infrastructure initialized successfully")
+            except Exception as e:
+                self._set_component_status(
+                    KAFKA_COMPONENT,
+                    "ERROR",
+                    error_message=f"Failed to initialize Kafka producer manager: {e}",
+                )
+                logger.exception(f"Failed to initialize Kafka producer-only infrastructure: {e}")
+                if self.kafka_manager:
+                    self.kafka_manager.stop()
+                    self.kafka_manager = None
                 raise
 
     async def shutdown(self) -> None:
@@ -134,7 +158,7 @@ class InfrastructureRegistry:
         )
 
     def get_kafka_manager(self) -> KafkaMessageManager | None:
-        return self.kafka_manager if self._is_initialized else None
+        return self.kafka_manager
 
     async def _run_execution_scheduler_loop(self) -> None:
         interval = max(int(settings.EXECUTION_SCHEDULER_INTERVAL_SEC), 1)
@@ -211,6 +235,11 @@ def get_infrastructure_registry() -> InfrastructureRegistry:
 async def initialize_infrastructure(bootstrap_servers: list[str] | None = None) -> None:
     registry = get_infrastructure_registry()
     await registry.initialize(bootstrap_servers)
+
+
+async def initialize_kafka_producer_only(bootstrap_servers: list[str] | None = None) -> None:
+    registry = get_infrastructure_registry()
+    await registry.initialize_kafka_producer_only(bootstrap_servers)
 
 
 async def shutdown_infrastructure() -> None:

@@ -32,6 +32,12 @@ class ExecutionKafkaHandlers:
         metadata: dict[str, Any],
     ) -> None:
         topic = str(metadata.get("topic") or "test-events")
+        logger.debug(
+            "Received execution test event: "
+            f"topic={topic}, task_id={event.task_id}, case_id={event.case_id}, "
+            f"event_id={event.event_id}, event_type={event.event_type}, "
+            f"phase={event.phase}, offset={metadata.get('offset')}"
+        )
         await self._event_ingest_service.ingest_event(
             topic=topic,
             event_payload=event.model_dump(mode="json", by_alias=True),

@@ -14,6 +14,27 @@ from app.modules.execution.application.event_ingest_service import ExecutionEven
 from app.modules.execution.schemas.kafka_events import TestEvent as ExecutionTestEvent  # noqa: E402
 
 
+class _FakeDispatchService:
+    last_instance = None
+
+    def __init__(self):
+        self.build_calls = []
+        self.dispatch_calls = []
+        _FakeDispatchService.last_instance = self
+
+    async def _build_task_dispatch_command(self, task_doc, dispatch_case_index):
+        self.build_calls.append((task_doc.task_id, dispatch_case_index))
+        return SimpleNamespace(
+            dispatch_case_id=f"case-{dispatch_case_index + 1}",
+            dispatch_case_index=dispatch_case_index,
+        )
+
+    async def _dispatch_existing_task(self, task_doc, command):
+        self.dispatch_calls.append((task_doc.task_id, command.dispatch_case_index))
+        task_doc.current_case_id = command.dispatch_case_id
+        task_doc.current_case_index = command.dispatch_case_index
+
+
 def test_test_event_accepts_single_layer_payload():
     """校验单层 progress 事件可以被新 schema 正常解析。"""
     event = ExecutionTestEvent.model_validate(
@@ -76,7 +97,7 @@ def test_test_event_accepts_assert_payload():
 
 @pytest.mark.asyncio
 async def test_ingest_case_finish_event_updates_current_docs(monkeypatch):
-    """校验 case_finish 会更新当前态任务与用例聚合结果。"""
+    """校验 case_finish 会更新当前态任务与用例聚合结果，并推进下一条。"""
     service = ExecutionEventIngestService()
     event_doc_inserted: list[dict] = []
 
@@ -147,6 +168,7 @@ async def test_ingest_case_finish_event_updates_current_docs(monkeypatch):
     monkeypatch.setattr(ingest_module, "ExecutionEventDoc", FakeExecutionEventDoc)
     monkeypatch.setattr(ingest_module, "ExecutionTaskDoc", FakeExecutionTaskDoc)
     monkeypatch.setattr(ingest_module, "ExecutionTaskCaseDoc", FakeExecutionTaskCaseDoc)
+    monkeypatch.setattr(ingest_module, "ExecutionService", _FakeDispatchService)
 
     processed = await service.ingest_event(
         topic="test-events",
@@ -181,6 +203,213 @@ async def test_ingest_case_finish_event_updates_current_docs(monkeypatch):
     assert task_doc.finished_case_count == 1
     assert task_doc.reported_case_count == 1
     assert task_doc.overall_status == "RUNNING"
+    assert task_doc.current_case_id == "case-2"
+    assert task_doc.current_case_index == 1
+
+
+@pytest.mark.asyncio
+async def test_ingest_case_finish_event_dispatches_next_case(monkeypatch):
+    service = ExecutionEventIngestService()
+
+    task_doc = SimpleNamespace(
+        task_id="task-advance-1",
+        case_count=2,
+        reported_case_count=0,
+        current_case_id="case-1",
+        current_case_index=0,
+        overall_status="RUNNING",
+        consume_status="PENDING",
+        dispatch_status="DISPATCHED",
+        failed_case_count=0,
+        finished_case_count=0,
+        passed_case_count=0,
+        started_case_count=0,
+        progress_percent=None,
+        stop_mode="NONE",
+        last_event_at=None,
+        last_event_id=None,
+        last_event_type=None,
+        last_event_phase=None,
+        finished_at=None,
+        last_callback_at=None,
+    )
+    task_doc.save = _async_noop
+
+    case_doc = SimpleNamespace(
+        task_id="task-advance-1",
+        case_id="case-1",
+        status="RUNNING",
+        progress_percent=None,
+        started_at=None,
+        finished_at=None,
+        last_seq=0,
+        last_event_id=None,
+        last_event_at=None,
+        event_count=0,
+        failure_message=None,
+        nodeid=None,
+        project_tag=None,
+        case_title_snapshot=None,
+        result_data={},
+    )
+    case_doc.save = _async_noop
+
+    class FakeExecutionEventDoc:
+        @staticmethod
+        async def find_one(query):
+            return None
+
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+        async def insert(self):
+            return self
+
+    class FakeExecutionTaskDoc:
+        @staticmethod
+        async def find_one(query):
+            return task_doc
+
+    class FakeExecutionTaskCaseDoc:
+        @staticmethod
+        async def find_one(query):
+            return case_doc
+
+    import app.modules.execution.application.event_ingest_service as ingest_module
+
+    monkeypatch.setattr(ingest_module, "ExecutionEventDoc", FakeExecutionEventDoc)
+    monkeypatch.setattr(ingest_module, "ExecutionTaskDoc", FakeExecutionTaskDoc)
+    monkeypatch.setattr(ingest_module, "ExecutionTaskCaseDoc", FakeExecutionTaskCaseDoc)
+    monkeypatch.setattr(ingest_module, "ExecutionService", _FakeDispatchService)
+
+    processed = await service.ingest_event(
+        topic="test-events",
+        event_payload={
+            "schema": "demo-test-event@1",
+            "event_id": "evt-case-finish-next",
+            "task_id": "task-advance-1",
+            "timestamp": "2026-03-18T01:10:09.837565+00:00",
+            "event_type": "progress",
+            "phase": "case_finish",
+            "status": "PASSED",
+            "total_cases": 2,
+            "started_cases": 1,
+            "finished_cases": 1,
+            "failed_cases": 0,
+            "case_id": "case-1",
+        },
+        metadata={"partition": 0, "offset": 9},
+    )
+
+    assert processed is True
+    assert _FakeDispatchService.last_instance is not None
+    assert _FakeDispatchService.last_instance.build_calls == [("task-advance-1", 1)]
+    assert _FakeDispatchService.last_instance.dispatch_calls == [("task-advance-1", 1)]
+    assert task_doc.current_case_id == "case-2"
+    assert task_doc.current_case_index == 1
+    assert task_doc.overall_status == "RUNNING"
+
+
+@pytest.mark.asyncio
+async def test_ingest_case_finish_event_marks_task_completed_on_last_case(monkeypatch):
+    service = ExecutionEventIngestService()
+
+    task_doc = SimpleNamespace(
+        task_id="task-last-1",
+        case_count=1,
+        reported_case_count=0,
+        current_case_id="case-1",
+        current_case_index=0,
+        overall_status="RUNNING",
+        consume_status="PENDING",
+        dispatch_status="DISPATCHED",
+        failed_case_count=0,
+        finished_case_count=0,
+        passed_case_count=0,
+        started_case_count=0,
+        progress_percent=None,
+        stop_mode="NONE",
+        last_event_at=None,
+        last_event_id=None,
+        last_event_type=None,
+        last_event_phase=None,
+        finished_at=None,
+        last_callback_at=None,
+    )
+    task_doc.save = _async_noop
+
+    case_doc = SimpleNamespace(
+        task_id="task-last-1",
+        case_id="case-1",
+        status="RUNNING",
+        progress_percent=None,
+        started_at=None,
+        finished_at=None,
+        last_seq=0,
+        last_event_id=None,
+        last_event_at=None,
+        event_count=0,
+        failure_message=None,
+        nodeid=None,
+        project_tag=None,
+        case_title_snapshot=None,
+        result_data={},
+    )
+    case_doc.save = _async_noop
+
+    class FakeExecutionEventDoc:
+        @staticmethod
+        async def find_one(query):
+            return None
+
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+        async def insert(self):
+            return self
+
+    class FakeExecutionTaskDoc:
+        @staticmethod
+        async def find_one(query):
+            return task_doc
+
+    class FakeExecutionTaskCaseDoc:
+        @staticmethod
+        async def find_one(query):
+            return case_doc
+
+    import app.modules.execution.application.event_ingest_service as ingest_module
+
+    monkeypatch.setattr(ingest_module, "ExecutionEventDoc", FakeExecutionEventDoc)
+    monkeypatch.setattr(ingest_module, "ExecutionTaskDoc", FakeExecutionTaskDoc)
+    monkeypatch.setattr(ingest_module, "ExecutionTaskCaseDoc", FakeExecutionTaskCaseDoc)
+    monkeypatch.setattr(ingest_module, "ExecutionService", _FakeDispatchService)
+
+    processed = await service.ingest_event(
+        topic="test-events",
+        event_payload={
+            "schema": "demo-test-event@1",
+            "event_id": "evt-case-finish-final",
+            "task_id": "task-last-1",
+            "timestamp": "2026-03-18T01:10:09.837565+00:00",
+            "event_type": "progress",
+            "phase": "case_finish",
+            "status": "PASSED",
+            "total_cases": 1,
+            "started_cases": 1,
+            "finished_cases": 1,
+            "failed_cases": 0,
+            "case_id": "case-1",
+        },
+        metadata={"partition": 0, "offset": 10},
+    )
+
+    assert processed is True
+    assert task_doc.current_case_id is None
+    assert task_doc.current_case_index == 1
+    assert task_doc.overall_status == "PASSED"
+    assert task_doc.dispatch_status == "COMPLETED"
+    assert task_doc.finished_at is not None
 
 
 @pytest.mark.asyncio

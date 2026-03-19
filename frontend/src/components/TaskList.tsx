@@ -7,6 +7,7 @@ import type {
   ExecutionAgent,
   DispatchCaseItem,
   ExecutionTaskCaseSummary,
+  ExecutionAssertionItem,
 } from '../types';
 
 interface TaskListProps {
@@ -28,6 +29,27 @@ interface DispatchModalState {
 const FRAMEWORKS = ['pytest', 'robot', 'playwright', 'cypress', 'jest'];
 const DEFAULT_FRAMEWORK = 'pytest';
 const TASK_TABLE_COLUMNS = 7;
+type StatusAppearance = {
+  bg: string;
+  color: string;
+  label: string;
+  border?: string;
+  glow?: string;
+};
+
+const formatJsonPreview = (value: Record<string, unknown> | undefined) => {
+  if (!value || Object.keys(value).length === 0) {
+    return '';
+  }
+  return JSON.stringify(value, null, 2);
+};
+
+const getAssertionStatusText = (status?: string) => {
+  if (!status) {
+    return '未上报';
+  }
+  return getStatusAppearance(status).label;
+};
 
 const TaskList: React.FC<TaskListProps> = () => {
   const [tasks, setTasks] = useState<ExecutionTask[]>([]);
@@ -48,6 +70,7 @@ const TaskList: React.FC<TaskListProps> = () => {
   });
   const [autoCases, setAutoCases] = useState<AutomationTestCaseResponse[]>([]);
   const [agents, setAgents] = useState<ExecutionAgent[]>([]);
+  const [expandedCaseKeys, setExpandedCaseKeys] = useState<string[]>([]);
 
   const fetchTasks = useCallback(async () => {
     setLoading(true);
@@ -168,19 +191,12 @@ const TaskList: React.FC<TaskListProps> = () => {
     }
   };
 
-  const getStatusStyle = (status: string) => {
-    const statusMap: Record<string, { bg: string; color: string; label: string }> = {
-      PENDING: { bg: 'var(--status-warning-bg)', color: 'var(--accent-yellow)', label: '待处理' },
-      RUNNING: { bg: 'var(--status-info-bg)', color: 'var(--accent-blue)', label: '运行中' },
-      SUCCESS: { bg: 'var(--status-success-bg)', color: 'var(--accent-green)', label: '成功' },
-      FAILED: { bg: 'var(--status-error-bg)', color: 'var(--accent-red)', label: '失败' },
-      CANCELLED: { bg: 'var(--bg-tertiary)', color: 'var(--text-muted)', label: '已取消' },
-      SCHEDULED: { bg: 'rgba(163, 113, 247, 0.15)', color: 'var(--accent-purple)', label: '已调度' },
-      DISPATCHED: { bg: 'rgba(57, 208, 214, 0.15)', color: 'var(--accent-cyan)', label: '已下发' },
-      CONSUMED: { bg: 'var(--status-success-bg)', color: 'var(--accent-green)', label: '已消费' },
-      NOT_CONSUMED: { bg: 'var(--bg-tertiary)', color: 'var(--text-muted)', label: '未消费' },
-    };
-    return statusMap[status] || { bg: 'var(--bg-tertiary)', color: 'var(--text-secondary)', label: status };
+  const toggleCaseDetails = (caseKey: string) => {
+    setExpandedCaseKeys(prev => (
+      prev.includes(caseKey)
+        ? prev.filter(key => key !== caseKey)
+        : [...prev, caseKey]
+    ));
   };
 
   const renderTaskCases = (cases: ExecutionTaskCaseSummary[] | undefined) => {
@@ -191,13 +207,26 @@ const TaskList: React.FC<TaskListProps> = () => {
     return (
       <div style={styles.caseSummaryList}>
         {cases.map((caseItem) => {
-          const caseStatusStyle = getStatusStyle(caseItem.status);
+          const caseKey = `${caseItem.task_id}-${caseItem.case_id}`;
+          const caseStatusStyle = getStatusAppearance(caseItem.status);
+          const dispatchStatusStyle = getStatusAppearance(caseItem.dispatch_status);
+          const latestEventStyle = getStatusAppearance(caseItem.result_data?.status || caseItem.status);
+          const assertions = caseItem.result_data?.assertions || [];
+          const isExpanded = expandedCaseKeys.includes(caseKey);
+          const resultDataPreview = formatJsonPreview(caseItem.result_data?.data);
+          const resultErrorPreview = formatJsonPreview(caseItem.result_data?.error);
+          const hasDetail =
+            Boolean(caseItem.result_data?.event_type) ||
+            Boolean(caseItem.result_data?.phase) ||
+            assertions.length > 0 ||
+            Boolean(caseItem.result_data?.error && Object.keys(caseItem.result_data.error).length > 0) ||
+            Boolean(caseItem.result_data?.data && Object.keys(caseItem.result_data.data).length > 0);
           const progressText = typeof caseItem.progress_percent === 'number'
             ? `${Math.round(caseItem.progress_percent)}%`
             : '-';
 
           return (
-            <div key={`${caseItem.task_id}-${caseItem.case_id}`} style={styles.caseSummaryCard}>
+            <div key={caseKey} style={styles.caseSummaryCard}>
               <div style={styles.caseSummaryHeader}>
                 <div style={styles.caseSummaryTitleBlock}>
                   <span style={styles.caseSummaryTitle}>{caseItem.title || caseItem.case_id}</span>
@@ -210,18 +239,179 @@ const TaskList: React.FC<TaskListProps> = () => {
                     ...styles.caseStatusBadge,
                     backgroundColor: caseStatusStyle.bg,
                     color: caseStatusStyle.color,
+                    border: caseStatusStyle.border,
+                    boxShadow: caseStatusStyle.glow,
                   }}
                 >
                   {caseStatusStyle.label}
                 </span>
               </div>
+              <div style={styles.caseSummaryMetrics}>
+                <div style={styles.caseMetricPill}>
+                  <span style={styles.caseMetricLabel}>进度</span>
+                  <span style={styles.caseMetricValue}>{progressText}</span>
+                </div>
+                <div style={styles.caseMetricPill}>
+                  <span style={styles.caseMetricLabel}>下发次数</span>
+                  <span style={styles.caseMetricValue}>{caseItem.dispatch_attempts}</span>
+                </div>
+                <div style={styles.caseMetricPill}>
+                  <span style={styles.caseMetricLabel}>事件数</span>
+                  <span style={styles.caseMetricValue}>{caseItem.event_count}</span>
+                </div>
+                <div style={styles.caseMetricPill}>
+                  <span style={styles.caseMetricLabel}>断言数</span>
+                  <span style={styles.caseMetricValue}>{assertions.length}</span>
+                </div>
+              </div>
               <div style={styles.caseSummaryInfoRow}>
-                <span>进度 {progressText}</span>
-                <span>下发 {caseItem.dispatch_status}</span>
-                <span>事件 {caseItem.event_count}</span>
+                <span
+                  style={{
+                    ...styles.inlineStatusBadge,
+                    backgroundColor: dispatchStatusStyle.bg,
+                    color: dispatchStatusStyle.color,
+                    border: dispatchStatusStyle.border,
+                    boxShadow: dispatchStatusStyle.glow,
+                  }}
+                >
+                  下发 {dispatchStatusStyle.label}
+                </span>
+                {caseItem.last_event_at && (
+                  <span style={styles.caseMetricItem}>
+                    最近回报 {new Date(caseItem.last_event_at).toLocaleString('zh-CN')}
+                  </span>
+                )}
               </div>
               {caseItem.failure_message && (
                 <div style={styles.caseFailureText}>{caseItem.failure_message}</div>
+              )}
+              {hasDetail && (
+                <div style={styles.caseDetailSection}>
+                  <button
+                    type="button"
+                    style={styles.caseDetailToggle}
+                    onClick={() => toggleCaseDetails(caseKey)}
+                  >
+                    <span style={styles.caseDetailTitle}>当前执行细节</span>
+                    <span style={styles.caseDetailToggleText}>{isExpanded ? '收起' : '展开'}</span>
+                  </button>
+                  {isExpanded && (
+                    <>
+                      <div style={styles.caseDetailGrid}>
+                        <div style={styles.caseDetailBlock}>
+                          <span style={styles.caseDetailBlockLabel}>开始时间</span>
+                          <span style={styles.caseDetailBlockValue}>
+                            {caseItem.started_at ? new Date(caseItem.started_at).toLocaleString('zh-CN') : '-'}
+                          </span>
+                        </div>
+                        <div style={styles.caseDetailBlock}>
+                          <span style={styles.caseDetailBlockLabel}>结束时间</span>
+                          <span style={styles.caseDetailBlockValue}>
+                            {caseItem.finished_at ? new Date(caseItem.finished_at).toLocaleString('zh-CN') : '-'}
+                          </span>
+                        </div>
+                        <div style={styles.caseDetailBlock}>
+                          <span style={styles.caseDetailBlockLabel}>最近事件ID</span>
+                          <span style={styles.caseDetailBlockValueMono}>{caseItem.last_event_id || '-'}</span>
+                        </div>
+                        <div style={styles.caseDetailBlock}>
+                          <span style={styles.caseDetailBlockLabel}>最近事件时间</span>
+                          <span style={styles.caseDetailBlockValue}>
+                            {caseItem.last_event_at ? new Date(caseItem.last_event_at).toLocaleString('zh-CN') : '-'}
+                          </span>
+                        </div>
+                      </div>
+                      <div style={styles.caseDetailMetaRow}>
+                        {caseItem.result_data?.event_type && (
+                          <span style={styles.caseDetailText}>
+                            事件 {caseItem.result_data.event_type}
+                          </span>
+                        )}
+                        {caseItem.result_data?.phase && (
+                          <span style={styles.caseDetailText}>
+                            阶段 {caseItem.result_data.phase}
+                          </span>
+                        )}
+                        {caseItem.result_data?.status && (
+                          <span
+                            style={{
+                              ...styles.inlineStatusBadge,
+                              backgroundColor: latestEventStyle.bg,
+                              color: latestEventStyle.color,
+                              border: latestEventStyle.border,
+                              boxShadow: latestEventStyle.glow,
+                            }}
+                          >
+                            回报 {latestEventStyle.label}
+                          </span>
+                        )}
+                      </div>
+
+                      {assertions.length > 0 && (
+                        <div style={styles.caseSectionGroup}>
+                          <div style={styles.caseSectionTitle}>断言步骤</div>
+                          <div style={styles.assertionList}>
+                            {assertions.map((assertion: ExecutionAssertionItem, index) => {
+                              const assertionStyle = getStatusAppearance(assertion.status || '');
+                              const assertionMessage = typeof assertion.error?.message === 'string'
+                                ? assertion.error.message
+                                : '';
+                              const assertionDataPreview = formatJsonPreview(assertion.data);
+                              const assertionErrorPreview = formatJsonPreview(assertion.error);
+                              return (
+                                <div key={`${caseItem.case_id}-assert-${index}`} style={styles.assertionItem}>
+                                  <div style={styles.assertionHeader}>
+                                    <span style={styles.assertionName}>
+                                      {assertion.seq ? `#${assertion.seq} ` : ''}{assertion.name || '未命名断言'}
+                                    </span>
+                                    <span
+                                      style={{
+                                        ...styles.inlineStatusBadge,
+                                        backgroundColor: assertionStyle.bg,
+                                        color: assertionStyle.color,
+                                        border: assertionStyle.border,
+                                      }}
+                                    >
+                                      {getAssertionStatusText(assertion.status)}
+                                    </span>
+                                  </div>
+                                  {assertion.timestamp && (
+                                    <div style={styles.assertionMeta}>
+                                      {new Date(assertion.timestamp).toLocaleString('zh-CN')}
+                                    </div>
+                                  )}
+                                  {assertionMessage && (
+                                    <div style={styles.assertionError}>{assertionMessage}</div>
+                                  )}
+                                  {assertionDataPreview && (
+                                    <pre style={styles.caseDetailCode}>{assertionDataPreview}</pre>
+                                  )}
+                                  {!assertionDataPreview && assertionErrorPreview && (
+                                    <pre style={styles.caseDetailCode}>{assertionErrorPreview}</pre>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {resultDataPreview && (
+                        <div style={styles.caseSectionGroup}>
+                          <div style={styles.caseSectionTitle}>最近结果数据</div>
+                          <pre style={styles.caseDetailCode}>{resultDataPreview}</pre>
+                        </div>
+                      )}
+
+                      {!resultDataPreview && resultErrorPreview && (
+                        <div style={styles.caseSectionGroup}>
+                          <div style={styles.caseSectionTitle}>最近错误数据</div>
+                          <pre style={styles.caseDetailCode}>{resultErrorPreview}</pre>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
               )}
             </div>
           );
@@ -242,7 +432,7 @@ const TaskList: React.FC<TaskListProps> = () => {
           <h1 style={styles.title}>执行任务</h1>
           <div style={styles.statsRow}>
             {Object.entries(statusCounts).slice(0, 4).map(([status, count]) => {
-              const s = getStatusStyle(status);
+              const s = getStatusAppearance(status);
               return (
                 <span
                   key={status}
@@ -250,6 +440,8 @@ const TaskList: React.FC<TaskListProps> = () => {
                     ...styles.statBadge,
                     backgroundColor: s.bg,
                     color: s.color,
+                    border: s.border,
+                    boxShadow: s.glow,
                   }}
                 >
                   {s.label} {count}
@@ -302,8 +494,8 @@ const TaskList: React.FC<TaskListProps> = () => {
             </thead>
             <tbody>
               {tasks.map((task) => {
-                const statusStyle = getStatusStyle(task.overall_status);
-                const scheduleStyle = getStatusStyle(task.schedule_type);
+                const statusStyle = getStatusAppearance(task.overall_status);
+                const scheduleStyle = getStatusAppearance(task.schedule_type);
                 return (
                   <>
                     <tr
@@ -324,9 +516,10 @@ const TaskList: React.FC<TaskListProps> = () => {
                             ...styles.statusBadge,
                             backgroundColor: scheduleStyle.bg,
                             color: scheduleStyle.color,
+                            border: scheduleStyle.border,
                           }}
                         >
-                          {task.schedule_type}
+                          {scheduleStyle.label}
                         </span>
                       </td>
                       <td style={styles.td}>
@@ -335,6 +528,8 @@ const TaskList: React.FC<TaskListProps> = () => {
                             ...styles.statusBadgeLarge,
                             backgroundColor: statusStyle.bg,
                             color: statusStyle.color,
+                            border: statusStyle.border,
+                            boxShadow: statusStyle.glow,
                           }}
                         >
                           <span
@@ -667,18 +862,123 @@ const TaskList: React.FC<TaskListProps> = () => {
 };
 
 function getStatusStyleStyle(status: string) {
-  const s = {
-    PENDING: { bg: 'var(--status-warning-bg)', color: 'var(--accent-yellow)' },
-    RUNNING: { bg: 'var(--status-info-bg)', color: 'var(--accent-blue)' },
-    SUCCESS: { bg: 'var(--status-success-bg)', color: 'var(--accent-green)' },
-    FAILED: { bg: 'var(--status-error-bg)', color: 'var(--accent-red)' },
-    CANCELLED: { bg: 'var(--bg-tertiary)', color: 'var(--text-muted)' },
-    SCHEDULED: { bg: 'rgba(163, 113, 247, 0.15)', color: 'var(--accent-purple)' },
-    DISPATCHED: { bg: 'rgba(57, 208, 214, 0.15)', color: 'var(--accent-cyan)' },
-    CONSUMED: { bg: 'var(--status-success-bg)', color: 'var(--accent-green)' },
-    NOT_CONSUMED: { bg: 'var(--bg-tertiary)', color: 'var(--text-muted)' },
-  }[status] || { bg: 'var(--bg-tertiary)', color: 'var(--text-secondary)' };
-  return { backgroundColor: s.bg, color: s.color };
+  const s = getStatusAppearance(status);
+  return {
+    backgroundColor: s.bg,
+    color: s.color,
+    border: s.border,
+    boxShadow: s.glow,
+  };
+}
+
+function getStatusAppearance(status: string): StatusAppearance {
+  const normalizedStatus = (status || '').toUpperCase();
+  const statusMap: Record<string, StatusAppearance> = {
+    PENDING: {
+      bg: 'rgba(250, 204, 21, 0.12)',
+      color: '#facc15',
+      label: '待处理',
+      border: '1px solid rgba(250, 204, 21, 0.28)',
+    },
+    QUEUED: {
+      bg: 'rgba(245, 158, 11, 0.14)',
+      color: '#f59e0b',
+      label: '排队中',
+      border: '1px solid rgba(245, 158, 11, 0.28)',
+    },
+    READY: {
+      bg: 'rgba(59, 130, 246, 0.12)',
+      color: '#60a5fa',
+      label: '就绪',
+      border: '1px solid rgba(96, 165, 250, 0.24)',
+    },
+    RUNNING: {
+      bg: 'rgba(59, 130, 246, 0.14)',
+      color: '#38bdf8',
+      label: '运行中',
+      border: '1px solid rgba(56, 189, 248, 0.28)',
+      glow: '0 0 0 1px rgba(56, 189, 248, 0.08) inset',
+    },
+    SUCCESS: {
+      bg: 'rgba(34, 197, 94, 0.12)',
+      color: '#22c55e',
+      label: '成功',
+      border: '1px solid rgba(34, 197, 94, 0.24)',
+    },
+    PASSED: {
+      bg: 'rgba(34, 197, 94, 0.14)',
+      color: '#22c55e',
+      label: '已通过',
+      border: '1px solid rgba(34, 197, 94, 0.28)',
+      glow: '0 0 0 1px rgba(34, 197, 94, 0.08) inset',
+    },
+    FAILED: {
+      bg: 'rgba(239, 68, 68, 0.14)',
+      color: '#f87171',
+      label: '失败',
+      border: '1px solid rgba(248, 113, 113, 0.28)',
+    },
+    DISPATCH_FAILED: {
+      bg: 'rgba(239, 68, 68, 0.14)',
+      color: '#f87171',
+      label: '下发失败',
+      border: '1px solid rgba(248, 113, 113, 0.28)',
+    },
+    STOPPED: {
+      bg: 'rgba(148, 163, 184, 0.16)',
+      color: '#cbd5e1',
+      label: '已停止',
+      border: '1px solid rgba(148, 163, 184, 0.28)',
+    },
+    CANCELLED: {
+      bg: 'rgba(100, 116, 139, 0.16)',
+      color: '#94a3b8',
+      label: '已取消',
+      border: '1px solid rgba(148, 163, 184, 0.2)',
+    },
+    SCHEDULED: {
+      bg: 'rgba(163, 113, 247, 0.15)',
+      color: 'var(--accent-purple)',
+      label: '定时',
+      border: '1px solid rgba(163, 113, 247, 0.26)',
+    },
+    IMMEDIATE: {
+      bg: 'rgba(57, 208, 214, 0.12)',
+      color: 'var(--accent-cyan)',
+      label: '立即',
+      border: '1px solid rgba(57, 208, 214, 0.22)',
+    },
+    DISPATCHED: {
+      bg: 'rgba(57, 208, 214, 0.15)',
+      color: 'var(--accent-cyan)',
+      label: '已下发',
+      border: '1px solid rgba(57, 208, 214, 0.24)',
+    },
+    COMPLETED: {
+      bg: 'rgba(34, 197, 94, 0.12)',
+      color: '#22c55e',
+      label: '已完成',
+      border: '1px solid rgba(34, 197, 94, 0.24)',
+    },
+    CONSUMED: {
+      bg: 'rgba(16, 185, 129, 0.12)',
+      color: '#34d399',
+      label: '已消费',
+      border: '1px solid rgba(52, 211, 153, 0.24)',
+    },
+    NOT_CONSUMED: {
+      bg: 'rgba(100, 116, 139, 0.16)',
+      color: '#94a3b8',
+      label: '未消费',
+      border: '1px solid rgba(148, 163, 184, 0.2)',
+    },
+  };
+  return statusMap[normalizedStatus] || {
+    bg: 'rgba(100, 116, 139, 0.16)',
+    color: 'var(--text-secondary)',
+    label: status || '-',
+    border: '1px solid rgba(148, 163, 184, 0.2)',
+  };
 }
 
 const styles = {
@@ -715,6 +1015,7 @@ const styles = {
     fontSize: '12px',
     fontWeight: 500,
     borderRadius: '12px',
+    border: '1px solid transparent',
   } as const,
   headerActions: {
     display: 'flex',
@@ -982,6 +1283,7 @@ const styles = {
     borderRadius: '999px',
     fontSize: '11px',
     fontWeight: 600,
+    border: '1px solid transparent',
   } as const,
   caseSummaryInfoRow: {
     display: 'flex',
@@ -990,11 +1292,176 @@ const styles = {
     fontSize: '11px',
     color: 'var(--text-secondary)',
   } as const,
+  caseSummaryMetrics: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+    gap: '8px',
+    marginBottom: '10px',
+  } as const,
+  caseMetricPill: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: '3px',
+    padding: '8px 10px',
+    borderRadius: '10px',
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    border: '1px solid var(--border-muted)',
+  } as const,
+  caseMetricLabel: {
+    fontSize: '10px',
+    color: 'var(--text-muted)',
+    letterSpacing: '0.2px',
+  } as const,
+  caseMetricValue: {
+    fontSize: '12px',
+    fontWeight: 700,
+    color: 'var(--text-primary)',
+    fontFamily: "'JetBrains Mono', monospace",
+  } as const,
+  inlineStatusBadge: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    padding: '3px 8px',
+    borderRadius: '999px',
+    fontSize: '11px',
+    fontWeight: 600,
+    border: '1px solid transparent',
+  } as const,
+  caseMetricItem: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    padding: '3px 0',
+  } as const,
   caseFailureText: {
     marginTop: '8px',
     fontSize: '11px',
     lineHeight: 1.5,
     color: 'var(--accent-red)',
+  } as const,
+  caseDetailSection: {
+    marginTop: '10px',
+    paddingTop: '10px',
+    borderTop: '1px dashed var(--border-muted)',
+  } as const,
+  caseDetailToggle: {
+    width: '100%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 0,
+    backgroundColor: 'transparent',
+    border: 'none',
+    cursor: 'pointer',
+    marginBottom: '8px',
+  } as const,
+  caseDetailTitle: {
+    fontSize: '11px',
+    fontWeight: 700,
+    color: 'var(--text-secondary)',
+    letterSpacing: '0.3px',
+  } as const,
+  caseDetailToggleText: {
+    fontSize: '11px',
+    color: 'var(--accent-cyan)',
+    fontWeight: 600,
+  } as const,
+  caseDetailGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+    gap: '8px',
+    marginBottom: '10px',
+  } as const,
+  caseDetailBlock: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: '3px',
+    padding: '8px 10px',
+    borderRadius: '10px',
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    border: '1px solid var(--border-muted)',
+  } as const,
+  caseDetailBlockLabel: {
+    fontSize: '10px',
+    color: 'var(--text-muted)',
+  } as const,
+  caseDetailBlockValue: {
+    fontSize: '11px',
+    color: 'var(--text-primary)',
+    lineHeight: 1.4,
+  } as const,
+  caseDetailBlockValueMono: {
+    fontSize: '11px',
+    color: 'var(--text-primary)',
+    lineHeight: 1.4,
+    fontFamily: "'JetBrains Mono', monospace",
+    wordBreak: 'break-all' as const,
+  } as const,
+  caseDetailMetaRow: {
+    display: 'flex',
+    flexWrap: 'wrap' as const,
+    gap: '8px',
+    marginBottom: '8px',
+  } as const,
+  caseSectionGroup: {
+    marginTop: '10px',
+  } as const,
+  caseSectionTitle: {
+    marginBottom: '6px',
+    fontSize: '11px',
+    color: 'var(--text-secondary)',
+    fontWeight: 600,
+  } as const,
+  caseDetailText: {
+    fontSize: '11px',
+    color: 'var(--text-secondary)',
+  } as const,
+  assertionList: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: '8px',
+  } as const,
+  assertionItem: {
+    padding: '8px 10px',
+    borderRadius: '10px',
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    border: '1px solid var(--border-muted)',
+  } as const,
+  assertionHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '8px',
+  } as const,
+  assertionName: {
+    fontSize: '11px',
+    fontWeight: 600,
+    color: 'var(--text-primary)',
+    lineHeight: 1.4,
+  } as const,
+  assertionError: {
+    marginTop: '6px',
+    fontSize: '11px',
+    lineHeight: 1.5,
+    color: 'var(--accent-red)',
+  } as const,
+  assertionMeta: {
+    marginTop: '4px',
+    fontSize: '10px',
+    color: 'var(--text-muted)',
+    fontFamily: "'JetBrains Mono', monospace",
+  } as const,
+  caseDetailCode: {
+    marginTop: '8px',
+    marginBottom: 0,
+    padding: '10px',
+    borderRadius: '10px',
+    backgroundColor: 'rgba(15, 23, 42, 0.55)',
+    color: '#dbeafe',
+    fontSize: '11px',
+    lineHeight: 1.5,
+    fontFamily: "'JetBrains Mono', monospace",
+    whiteSpace: 'pre-wrap' as const,
+    wordBreak: 'break-word' as const,
   } as const,
   caseSummaryEmpty: {
     padding: '12px',
@@ -1039,6 +1506,7 @@ const styles = {
     fontWeight: 600,
     borderRadius: '10px',
     textTransform: 'uppercase' as const,
+    border: '1px solid transparent',
   } as const,
   statusBadgeLarge: {
     display: 'inline-flex',
@@ -1048,6 +1516,7 @@ const styles = {
     fontSize: '12px',
     fontWeight: 600,
     borderRadius: '14px',
+    border: '1px solid transparent',
   } as const,
   statusDot: {
     width: '6px',

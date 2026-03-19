@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 
 from app.modules.execution.application.execution_service import ExecutionService
 from app.modules.execution.repository.models import ExecutionTaskDoc
+from app.shared.core.logger import log as logger
 
 
 class ExecutionTaskScheduler:
@@ -22,10 +23,18 @@ class ExecutionTaskScheduler:
             "planned_at": {"$lte": now},
             "is_deleted": False,
         }).sort("planned_at").limit(limit).to_list()
+        logger.debug(
+            f"Scanned scheduled execution tasks: due_count={len(docs)}, limit={limit}, now={now.isoformat()}"
+        )
 
         dispatched_count = 0
         for task_doc in docs:
             command = await self._service._build_task_dispatch_command(task_doc, 0)
+            logger.info(
+                "Dispatching due scheduled execution task: "
+                f"task_id={task_doc.task_id}, planned_at={task_doc.planned_at}, "
+                f"case_id={command.dispatch_case_id}"
+            )
             task_doc.current_case_id = command.dispatch_case_id
             task_doc.current_case_index = 0
             task_doc.schedule_status = "READY"
@@ -33,4 +42,6 @@ class ExecutionTaskScheduler:
             await self._service._dispatch_existing_task(task_doc, command)
             dispatched_count += 1
 
+        if dispatched_count:
+            logger.info(f"Dispatched scheduled execution tasks: count={dispatched_count}")
         return dispatched_count

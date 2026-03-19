@@ -73,6 +73,12 @@ class ExecutionTaskDispatchMixin:
         command: DispatchExecutionTaskCommand,
     ) -> None:
         """对已有任务执行真正下发。"""
+        logger.debug(
+            "Dispatching execution task case: "
+            f"task_id={command.task_id}, case_id={command.dispatch_case_id}, "
+            f"case_index={command.dispatch_case_index}, framework={command.framework}, "
+            f"agent_id={command.agent_id}"
+        )
         dispatch_result = await self._dispatcher.dispatch(command)
         case_doc = await ExecutionTaskCaseDoc.find_one({
             "task_id": task_doc.task_id,
@@ -101,8 +107,26 @@ class ExecutionTaskDispatchMixin:
             case_doc.dispatch_status = "DISPATCHED" if dispatch_result.success else "DISPATCH_FAILED"
             case_doc.dispatched_at = dispatch_time
             await case_doc.save()
+            logger.debug(
+                "Updated execution case dispatch state: "
+                f"task_id={case_doc.task_id}, case_id={case_doc.case_id}, "
+                f"dispatch_status={case_doc.dispatch_status}, attempts={case_doc.dispatch_attempts}"
+            )
+        else:
+            logger.warning(
+                "Execution case doc missing during dispatch: "
+                f"task_id={task_doc.task_id}, case_id={command.dispatch_case_id}"
+            )
 
         if dispatch_result.success:
-            logger.info(f"Successfully dispatched task {command.task_id} via {dispatch_result.channel}")
+            logger.info(
+                "Successfully dispatched execution task case: "
+                f"task_id={command.task_id}, case_id={command.dispatch_case_id}, "
+                f"channel={dispatch_result.channel}"
+            )
         else:
-            logger.warning(f"Failed to dispatch task {command.task_id} via {dispatch_result.channel}")
+            logger.warning(
+                "Failed to dispatch execution task case: "
+                f"task_id={command.task_id}, case_id={command.dispatch_case_id}, "
+                f"channel={dispatch_result.channel}, error={dispatch_result.error}"
+            )

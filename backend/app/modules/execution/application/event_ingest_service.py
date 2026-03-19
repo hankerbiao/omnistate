@@ -3,6 +3,11 @@ from __future__ import annotations
 from datetime import timezone
 from typing import Any
 
+from app.modules.execution.application.constants import (
+    FINAL_CASE_STATUSES,
+    STOP_MODE_AFTER_CURRENT_CASE,
+)
+from app.modules.execution.application.execution_service import ExecutionService
 from app.modules.execution.domain.status_rules import resolve_case_status
 from app.modules.execution.repository.models import (
     ExecutionEventDoc,
@@ -10,6 +15,7 @@ from app.modules.execution.repository.models import (
     ExecutionTaskDoc,
 )
 from app.modules.execution.schemas.kafka_events import TestEvent
+from app.shared.core.logger import log as logger
 
 
 class ExecutionEventIngestService:
@@ -29,15 +35,27 @@ class ExecutionEventIngestService:
         4. 更新当前态 case / task
         """
         event = TestEvent.model_validate(event_payload)
+        logger.debug(
+            "Ingesting execution event: "
+            f"topic={topic}, task_id={event.task_id}, case_id={event.case_id}, "
+            f"event_id={event.event_id}, event_type={event.event_type}, "
+            f"phase={event.phase}, offset={metadata.get('offset')}"
+        )
         existing = await ExecutionEventDoc.find_one({"event_id": event.event_id})
         if existing is not None:
             # 重复事件直接跳过，避免 Kafka 重投导致重复累计。
+            logger.debug(
+                f"Skipping duplicate execution event: event_id={event.event_id}, task_id={event.task_id}"
+            )
             return False
 
         event_time = event.timestamp.astimezone(timezone.utc)
         task_doc = await ExecutionTaskDoc.find_one({"task_id": event.task_id, "is_deleted": False})
         if task_doc is None:
             # 任务不存在时仍归档事件，方便后续排查来源或做补偿处理。
+            logger.warning(
+                f"Execution task not found for event: task_id={event.task_id}, event_id={event.event_id}"
+            )
             await self._archive_event(
                 topic=topic,
                 event=event,
@@ -61,6 +79,11 @@ class ExecutionEventIngestService:
                 "task_id": event.task_id,
                 "case_id": event.case_id,
             })
+            if case_doc is None:
+                logger.warning(
+                    "Execution case not found for event: "
+                    f"task_id={event.task_id}, case_id={event.case_id}, event_id={event.event_id}"
+                )
 
         case_status = resolve_case_status(
             event_type=event.event_type,
@@ -76,9 +99,31 @@ class ExecutionEventIngestService:
                 resolved_status=case_status,
             )
             await case_doc.save()
+            logger.debug(
+                "Updated execution case from event: "
+                f"task_id={case_doc.task_id}, case_id={case_doc.case_id}, "
+                f"status={case_doc.status}, progress={case_doc.progress_percent}, "
+                f"event_count={case_doc.event_count}"
+            )
 
         self._apply_task_aggregate(task_doc, event, event_time)
         await task_doc.save()
+        logger.debug(
+            "Updated execution task aggregate from event: "
+            f"task_id={task_doc.task_id}, overall_status={task_doc.overall_status}, "
+            f"current_case_id={getattr(task_doc, 'current_case_id', None)}, "
+            f"current_case_index={getattr(task_doc, 'current_case_index', None)}, "
+            f"finished_case_count={task_doc.finished_case_count}, "
+            f"failed_case_count={task_doc.failed_case_count}, "
+            f"progress={task_doc.progress_percent}"
+        )
+        await self._advance_task_after_case_finish(
+            task_doc=task_doc,
+            case_doc=case_doc,
+            event=event,
+            event_time=event_time,
+            resolved_case_status=case_status,
+        )
 
         return True
 
@@ -233,3 +278,71 @@ class ExecutionEventIngestService:
         elif event.phase in {"collection_start", "case_start", "collection_finish", "case_finish"}:
             task_doc.overall_status = "RUNNING"
         task_doc.last_callback_at = event_time
+
+    async def _advance_task_after_case_finish(
+        self,
+        task_doc: Any,
+        case_doc: Any,
+        event: TestEvent,
+        event_time,
+        resolved_case_status: str | None,
+    ) -> None:
+        """在当前 case 完成后决定是否推进下一条，或直接收口任务。"""
+        if event.event_type != "progress" or event.phase != "case_finish":
+            return
+        if case_doc is None or resolved_case_status not in FINAL_CASE_STATUSES:
+            logger.debug(
+                "Skipping task auto-advance because case is not final: "
+                f"task_id={task_doc.task_id}, case_id={event.case_id}, "
+                f"resolved_case_status={resolved_case_status}"
+            )
+            return
+        if event.case_id != getattr(task_doc, "current_case_id", None):
+            logger.debug(
+                "Skipping task auto-advance because event case is not current: "
+                f"task_id={task_doc.task_id}, event_case_id={event.case_id}, "
+                f"current_case_id={task_doc.current_case_id}"
+            )
+            return
+
+        next_case_index = getattr(task_doc, "current_case_index", 0) + 1
+        if getattr(task_doc, "stop_mode", None) == STOP_MODE_AFTER_CURRENT_CASE:
+            task_doc.current_case_id = None
+            task_doc.current_case_index = min(next_case_index, task_doc.case_count)
+            task_doc.finished_at = event_time
+            task_doc.last_callback_at = event_time
+            task_doc.overall_status = "STOPPED"
+            if task_doc.dispatch_status != "DISPATCH_FAILED":
+                task_doc.dispatch_status = "COMPLETED"
+            await task_doc.save()
+            logger.info(
+                "Execution task stopped after current case: "
+                f"task_id={task_doc.task_id}, stopped_case_id={event.case_id}, "
+                f"next_case_index={next_case_index}"
+            )
+            return
+
+        if next_case_index >= task_doc.case_count:
+            task_doc.current_case_id = None
+            task_doc.current_case_index = task_doc.case_count
+            task_doc.finished_at = event_time
+            task_doc.last_callback_at = event_time
+            task_doc.overall_status = "FAILED" if task_doc.failed_case_count > 0 else "PASSED"
+            if task_doc.dispatch_status != "DISPATCH_FAILED":
+                task_doc.dispatch_status = "COMPLETED"
+            await task_doc.save()
+            logger.info(
+                "Execution task completed after final case: "
+                f"task_id={task_doc.task_id}, final_case_id={event.case_id}, "
+                f"overall_status={task_doc.overall_status}"
+            )
+            return
+
+        service = ExecutionService()
+        command = await service._build_task_dispatch_command(task_doc, next_case_index)
+        logger.info(
+            "Auto-dispatching next execution case: "
+            f"task_id={task_doc.task_id}, finished_case_id={event.case_id}, "
+            f"next_case_id={command.dispatch_case_id}, next_case_index={next_case_index}"
+        )
+        await service._dispatch_existing_task(task_doc, command)

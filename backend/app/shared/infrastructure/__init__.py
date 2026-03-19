@@ -5,6 +5,7 @@ from .registry import (
     InfrastructureStatus,
     get_infrastructure_registry,
     initialize_infrastructure,
+    initialize_kafka_producer_only,
     shutdown_infrastructure,
     get_kafka_manager,
 )
@@ -14,6 +15,7 @@ __all__ = [
     "InfrastructureStatus",
     "get_infrastructure_registry",
     "initialize_infrastructure",
+    "initialize_kafka_producer_only",
     "shutdown_infrastructure",
     "get_kafka_manager",
 ]

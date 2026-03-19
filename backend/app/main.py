@@ -27,6 +27,7 @@ from app.modules.execution.repository.models import (
     ExecutionTaskDoc,
     ExecutionTaskCaseDoc,
 )
+from app.modules.execution.application.worker_presence import ensure_kafka_worker_available
 from app.modules.auth.repository.models import UserDoc, RoleDoc, PermissionDoc, NavigationPageDoc
 
 
@@ -65,6 +66,28 @@ async def validate_workflow_consistency() -> None:
         raise RuntimeError(
             "workflow consistency check failed: " + "; ".join(sorted(set(errors)))
         )
+
+
+async def validate_execution_worker_startup_gate() -> None:
+    """在启动 HTTP 服务前预检 execution Kafka worker 是否在线。"""
+    dispatch_mode = (settings.EXECUTION_DISPATCH_MODE or "kafka").strip().lower()
+    if dispatch_mode != "kafka":
+        return
+
+    client = AsyncMongoClient(settings.MONGO_URI)
+    try:
+        await client.admin.command("ping")
+        set_mongo_client(client)
+        await init_beanie(
+            database=client[settings.MONGO_DB_NAME],
+            document_models=[ExecutionAgentDoc],
+        )
+        await ensure_kafka_worker_available()
+    finally:
+        close_result = client.close()
+        if hasattr(close_result, "__await__"):
+            await close_result
+        set_mongo_client(None)
 
 
 @asynccontextmanager
@@ -113,6 +136,9 @@ async def lifespan(app: FastAPI):
         log.info("正在初始化应用级基础设施...")
         await initialize_infrastructure()
         log.success("应用级基础设施初始化完成")
+        dispatch_mode = (settings.EXECUTION_DISPATCH_MODE or "kafka").strip().lower()
+        if dispatch_mode == "kafka":
+            log.success("Execution Kafka worker 就绪校验通过")
 
         yield
     finally:
@@ -154,7 +180,16 @@ app.include_router(api_router)
 
 def main() -> None:
     """Python 3.13 runtime entrypoint."""
+    import asyncio
     import uvicorn
+
+    try:
+        asyncio.run(validate_execution_worker_startup_gate())
+    except Exception as exc:
+        log.error("FastAPI 服务启动被拒绝")
+        log.error(f"原因: {exc}")
+        log.error("处理建议: 先启动 `python -m app.workers.kafka_worker_main`，再启动主服务")
+        return
 
     uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=False)
 

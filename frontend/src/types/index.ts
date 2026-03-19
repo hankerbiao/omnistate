@@ -328,6 +328,28 @@ export interface TaskStatus {
   result_summary?: Record<string, unknown>;
 }
 
+export interface ExecutionAssertionItem {
+  seq?: number;
+  name?: string;
+  status?: string;
+  data?: Record<string, unknown>;
+  error?: Record<string, unknown>;
+  timestamp?: string;
+}
+
+export interface ExecutionCaseResultData {
+  event_type?: string;
+  phase?: string;
+  status?: string;
+  total_cases?: number;
+  started_cases?: number;
+  finished_cases?: number;
+  failed_cases?: number;
+  assertions?: ExecutionAssertionItem[];
+  data?: Record<string, unknown>;
+  error?: Record<string, unknown>;
+}
+
 export interface ExecutionTaskCaseSummary {
   task_id: string;
   case_id: string;
@@ -344,7 +366,7 @@ export interface ExecutionTaskCaseSummary {
   finished_at?: string;
   last_event_id?: string;
   last_event_at?: string;
-  result_data?: Record<string, unknown>;
+  result_data?: ExecutionCaseResultData;
 }
 
 export interface ListTasksParams {

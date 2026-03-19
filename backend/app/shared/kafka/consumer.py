@@ -46,14 +46,15 @@ class KafkaConsumerRunner:
         subscription_name: str,
         subscription: ConsumerSubscription,
     ) -> None:
+        consumer_options = dict(self.config.consumer_options)
+        consumer_options["enable_auto_commit"] = False
         consumer = KafkaConsumer(
             bootstrap_servers=self.config.bootstrap_servers,
             client_id=f"{self.config.client_id}-{subscription_name}",
             group_id=subscription.group_id,
             value_deserializer=lambda raw: raw.decode("utf-8") if raw else None,
             key_deserializer=lambda raw: raw.decode("utf-8") if raw else None,
-            enable_auto_commit=False,
-            **self.config.consumer_options,
+            **consumer_options,
         )
         consumer.subscribe([subscription.topic])
         self._runtimes.append(

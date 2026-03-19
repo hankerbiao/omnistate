@@ -18,6 +18,7 @@ from app.modules.execution.application.task_dispatch_mixin import ExecutionTaskD
 from app.modules.execution.application.task_query_mixin import ExecutionTaskQueryMixin
 from app.modules.execution.repository.models import ExecutionTaskCaseDoc, ExecutionTaskDoc
 from app.modules.execution.service.task_dispatcher import ExecutionTaskDispatcher
+from app.shared.core.logger import log as logger
 
 
 class ExecutionService(
@@ -51,6 +52,7 @@ class ExecutionService(
 
         task_doc.is_deleted = True
         await task_doc.save()
+        logger.info(f"Execution task marked deleted: task_id={task_id}, actor_id={actor_id}")
 
         return {"task_id": task_id, "deleted": True}
 
@@ -66,6 +68,7 @@ class ExecutionService(
         task_doc.dispatch_status = "CANCELLED"
         task_doc.overall_status = "CANCELLED"
         await task_doc.save()
+        logger.info(f"Scheduled execution task cancelled: task_id={task_id}, actor_id={actor_id}")
 
         return self._serialize_task_doc(task_doc)
 
@@ -88,6 +91,10 @@ class ExecutionService(
             raise ValueError(f"Task {task_id} has not started yet; use cancel instead")
 
         if task_doc.stop_mode == STOP_MODE_AFTER_CURRENT_CASE:
+            logger.debug(
+                "Execution task stop already requested: "
+                f"task_id={task_doc.task_id}, actor_id={actor_id}, current_case_id={task_doc.current_case_id}"
+            )
             return {
                 "task_id": task_doc.task_id,
                 "stop_mode": task_doc.stop_mode,
@@ -123,6 +130,11 @@ class ExecutionService(
                 task_doc.dispatch_status = "COMPLETED"
 
         await task_doc.save()
+        logger.info(
+            "Execution task stop requested: "
+            f"task_id={task_doc.task_id}, actor_id={actor_id}, "
+            f"current_case_id={task_doc.current_case_id}, stop_reason={reason}"
+        )
 
         return {
             "task_id": task_doc.task_id,
@@ -143,6 +155,11 @@ class ExecutionService(
     ) -> Dict[str, Any]:
         """创建任务并启动首轮执行。"""
         self._ensure_actor_identity(actor_id, command.created_by)
+        logger.info(
+            "Creating execution task: "
+            f"task_id={command.task_id}, framework={command.framework}, agent_id={command.agent_id}, "
+            f"case_count={len(command.case_ids)}, schedule_type={command.schedule_type}"
+        )
         doc_map = await self._load_case_docs(command.case_ids)
         schedule_type, planned_at, schedule_status, should_dispatch_now = self._normalize_schedule(
             command.schedule_type,
@@ -172,4 +189,9 @@ class ExecutionService(
         await self._replace_task_case_docs(task_doc.task_id, command.case_ids, command.auto_case_ids, doc_map)
         await task_doc.save()
         await self._dispatch_task_if_needed(task_doc, should_dispatch_now)
+        logger.info(
+            "Execution task created: "
+            f"task_id={task_doc.task_id}, schedule_status={task_doc.schedule_status}, "
+            f"dispatch_status={task_doc.dispatch_status}, should_dispatch_now={should_dispatch_now}"
+        )
         return self._serialize_task_doc(task_doc)
