@@ -9,16 +9,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.modules.execution.schemas import (
     AgentHeartbeatRequest,
     AgentRegisterRequest,
-    ConsumeAckRequest,
     DispatchTaskRequest,
     DispatchTaskResponse,
     ExecutionAgentResponse,
-    ExecutionCaseStatusReportRequest,
-    ExecutionCaseStatusReportResponse,
-    ExecutionEventReportRequest,
-    ExecutionEventReportResponse,
-    ExecutionTaskCompleteRequest,
-    ExecutionTaskCompleteResponse,
     ExecutionTaskListItem,
     ExecutionTaskRunDetail,
     ExecutionTaskRunSummary,
@@ -101,86 +94,6 @@ async def dispatch_task(
         raise HTTPException(status_code=400, detail=str(exc))
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
-
-
-@router.post(
-    "/tasks/{task_id}/consume-ack",
-    response_model=APIResponse[dict],
-    summary="确认任务已被消费",
-    dependencies=[Depends(require_permission("execution_tasks:write"))],
-)
-async def ack_task_consumed(
-        task_id: str,
-        request: ConsumeAckRequest,
-        service: ExecutionServiceDep,
-        current_user=Depends(get_current_user),
-):
-    """消费者确认已接收到任务。"""
-    try:
-        data = await service.ack_task_consumed(
-            task_id,
-            consumer_id=request.consumer_id or current_user["user_id"],
-        )
-        return APIResponse(data=data)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
-
-
-@router.post(
-    "/tasks/{task_id}/events",
-    response_model=APIResponse[ExecutionEventReportResponse],
-    summary="接收任务事件上报",
-)
-async def report_task_event(
-        task_id: str,
-        request: ExecutionEventReportRequest,
-        service: ExecutionServiceDep,
-):
-    """接收代理端上报的任务事件。"""
-    try:
-        data = await service.report_task_event(task_id, request.model_dump())
-        return APIResponse(data=data)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
-
-
-@router.post(
-    "/tasks/{task_id}/cases/{case_id}/status",
-    response_model=APIResponse[ExecutionCaseStatusReportResponse],
-    summary="接收用例执行状态上报",
-)
-async def report_case_status(
-        task_id: str,
-        case_id: str,
-        request: ExecutionCaseStatusReportRequest,
-        service: ExecutionServiceDep,
-):
-    """接收代理端上报的用例状态和进度。"""
-    try:
-        data = await service.report_case_status(task_id, case_id, request.model_dump())
-        return APIResponse(data=data)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
-
-
-@router.post(
-    "/tasks/{task_id}/complete",
-    response_model=APIResponse[ExecutionTaskCompleteResponse],
-    summary="接收任务完成结果上报",
-)
-async def complete_task(
-        task_id: str,
-        request: ExecutionTaskCompleteRequest,
-        service: ExecutionServiceDep,
-):
-    """接收代理端上报的任务最终状态。"""
-    try:
-        data = await service.complete_task(task_id, request.model_dump())
-        return APIResponse(data=data)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @router.post(

@@ -7,8 +7,8 @@
 - 重试已有任务
 - 触发首条 case 的真实下发
 
-这里不直接承接所有进度回调和查询逻辑，那部分分别由
-`ExecutionProgressMixin` 和 `ExecutionTaskQueryMixin` 负责。
+这里不直接承接任务查询逻辑，那部分由
+`ExecutionTaskQueryMixin` 负责。
 当前类更像 execution 模块的命令门面，负责把用户输入的命令
 映射为任务主表、当前态明细表和历史轮次表上的一致更新。
 """
@@ -861,29 +861,6 @@ class ExecutionService(ExecutionProgressMixin, ExecutionTaskQueryMixin, Executio
             "current_case_id": task_doc.current_case_id,
             "current_case_index": task_doc.current_case_index,
             "updated_at": task_doc.updated_at,
-        }
-
-    async def ack_task_consumed(self, task_id: str, consumer_id: str | None = None) -> Dict[str, Any]:
-        """标记任务已被消费者消费。
-
-        这是任务投递链路上的补充状态，不代表 case 已执行完成。
-        它只说明下游消费者已经显式确认收到了该任务。
-        """
-        task_doc = await ExecutionTaskDoc.find_one({"task_id": task_id, "is_deleted": False})
-        if not task_doc:
-            raise KeyError(f"Task not found: {task_id}")
-
-        now = datetime.now(timezone.utc)
-        task_doc.consume_status = "CONSUMED"
-        task_doc.consumed_at = now
-        if consumer_id:
-            task_doc.dispatch_response["consumer_id"] = consumer_id
-        await task_doc.save()
-
-        return {
-            "task_id": task_doc.task_id,
-            "consume_status": task_doc.consume_status,
-            "consumed_at": task_doc.consumed_at,
         }
 
     async def dispatch_execution_task(

@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import uuid
-from typing import Any, Dict
-
 from pymongo import ReturnDocument
 
 from app.modules.execution.application.constants import (
@@ -14,10 +12,8 @@ from app.modules.execution.application.constants import (
     STOP_MODE_NONE,
 )
 from app.modules.execution.repository.models import (
-    ExecutionEventDoc,
     ExecutionTaskCaseDoc,
     ExecutionTaskDoc,
-    ExecutionTaskRunCaseDoc,
     ExecutionTaskRunDoc,
 )
 from app.shared.core.mongo_client import get_mongo_client
@@ -25,7 +21,7 @@ from app.shared.db.config import settings
 
 
 class ExecutionProgressMixin:
-    """处理任务事件、case 回报、平台推进与任务收口。"""
+    """处理任务串行推进与轮次同步能力。"""
 
     @classmethod
     async def _get_case_doc_by_order(
@@ -34,14 +30,6 @@ class ExecutionProgressMixin:
             order_no: int,
     ) -> ExecutionTaskCaseDoc | None:
         return await ExecutionTaskCaseDoc.find_one({"task_id": task_id, "order_no": order_no})
-
-    @staticmethod
-    async def _count_non_terminal_cases(task_id: str) -> int:
-        """统计仍未到终态的用例数量。"""
-        return await ExecutionTaskCaseDoc.find({
-            "task_id": task_id,
-            "status": {"$nin": list(FINAL_CASE_STATUSES)},
-        }).count()
 
     @staticmethod
     async def _acquire_progress_lock(
@@ -196,275 +184,3 @@ class ExecutionProgressMixin:
         finally:
             if next_case_doc:
                 await self._release_progress_lock(task_doc.task_id)
-
-    @staticmethod
-    def _normalize_status(value: str, default: str = "UNKNOWN") -> str:
-        """统一状态字符串格式。"""
-        return (value or default).strip().upper()
-
-    @staticmethod
-    def _merge_result_payload(base: Dict[str, Any], extra: Dict[str, Any]) -> Dict[str, Any]:
-        """合并执行结果扩展信息。"""
-        merged = dict(base or {})
-        merged.update(extra or {})
-        return merged
-
-    async def report_task_event(
-            self,
-            task_id: str,
-            payload: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        """记录代理上报的原始任务事件。"""
-        task_doc = await ExecutionTaskDoc.find_one({"task_id": task_id, "is_deleted": False})
-        if not task_doc:
-            raise KeyError(f"Task not found: {task_id}")
-
-        existing_event = await ExecutionEventDoc.find_one({
-            "task_id": task_id,
-            "event_id": payload["event_id"],
-        })
-        if existing_event:
-            return {
-                "task_id": existing_event.task_id,
-                "event_id": existing_event.event_id,
-                "event_type": existing_event.event_type,
-                "seq": existing_event.seq,
-                "received_at": existing_event.received_at,
-                "processed": existing_event.processed,
-            }
-
-        source_time = payload.get("source_time")
-        event_doc = ExecutionEventDoc(
-            task_id=task_id,
-            event_id=payload["event_id"],
-            event_type=self._normalize_status(payload["event_type"], default="UNKNOWN"),
-            seq=payload.get("seq", 0),
-            source_time=self._ensure_utc_datetime(source_time) if source_time else None,
-            raw_payload=payload.get("payload", {}),
-            processed=True,
-        )
-        await event_doc.insert()
-
-        task_doc.last_callback_at = datetime.now(timezone.utc)
-        if event_doc.event_type in {"TASK_STARTED", "STARTED"} and not task_doc.started_at:
-            task_doc.started_at = task_doc.last_callback_at
-            task_doc.overall_status = "RUNNING"
-        await task_doc.save()
-        await self._sync_run_from_task(task_doc)
-
-        return {
-            "task_id": event_doc.task_id,
-            "event_id": event_doc.event_id,
-            "event_type": event_doc.event_type,
-            "seq": event_doc.seq,
-            "received_at": event_doc.received_at,
-            "processed": event_doc.processed,
-        }
-
-    @staticmethod
-    def _build_case_status_response(task_id: str, case_id: str, case_doc: ExecutionTaskCaseDoc, accepted: bool) -> Dict[str, Any]:
-        """统一构造用例状态回包。"""
-        return {
-            "task_id": task_id,
-            "case_id": case_id,
-            "status": case_doc.status,
-            "progress_percent": case_doc.progress_percent,
-            "step_total": case_doc.step_total,
-            "step_passed": case_doc.step_passed,
-            "step_failed": case_doc.step_failed,
-            "step_skipped": case_doc.step_skipped,
-            "last_seq": case_doc.last_seq,
-            "accepted": accepted,
-            "started_at": case_doc.started_at,
-            "finished_at": case_doc.finished_at,
-            "updated_at": case_doc.updated_at,
-        }
-
-    def _apply_case_status_payload(
-        self,
-        case_doc: ExecutionTaskCaseDoc,
-        payload: Dict[str, Any],
-        normalized_status: str,
-    ) -> None:
-        """把回调载荷映射到 case 文档。"""
-        case_doc.status = normalized_status
-        if payload.get("progress_percent") is not None:
-            case_doc.progress_percent = payload["progress_percent"]
-        if payload.get("step_total") is not None:
-            case_doc.step_total = payload["step_total"]
-        if payload.get("step_passed") is not None:
-            case_doc.step_passed = payload["step_passed"]
-        if payload.get("step_failed") is not None:
-            case_doc.step_failed = payload["step_failed"]
-        if payload.get("step_skipped") is not None:
-            case_doc.step_skipped = payload["step_skipped"]
-        if payload.get("started_at"):
-            case_doc.started_at = self._ensure_utc_datetime(payload["started_at"])
-        elif not case_doc.started_at and normalized_status in {"RUNNING", *FINAL_CASE_STATUSES}:
-            case_doc.started_at = datetime.now(timezone.utc)
-        if payload.get("finished_at"):
-            case_doc.finished_at = self._ensure_utc_datetime(payload["finished_at"])
-        elif normalized_status in FINAL_CASE_STATUSES and not case_doc.finished_at:
-            case_doc.finished_at = datetime.now(timezone.utc)
-        if payload.get("event_id"):
-            case_doc.last_event_id = payload["event_id"]
-        case_doc.last_seq = payload.get("seq", 0)
-        case_doc.result_data = self._merge_result_payload(
-            case_doc.result_data,
-            payload.get("result_data", {}),
-        )
-
-    async def _sync_run_case_from_case(
-        self,
-        task_doc: ExecutionTaskDoc,
-        case_doc: ExecutionTaskCaseDoc,
-        payload: Dict[str, Any],
-    ) -> None:
-        """把当前 case 结果同步到本轮历史记录。"""
-        if task_doc.current_run_no <= 0:
-            return
-
-        run_case_doc = await ExecutionTaskRunCaseDoc.find_one({
-            "task_id": task_doc.task_id,
-            "run_no": task_doc.current_run_no,
-            "case_id": case_doc.case_id,
-        })
-        if not run_case_doc:
-            return
-
-        self._assign_fields(
-            run_case_doc,
-            dispatch_status=case_doc.dispatch_status,
-            dispatch_attempts=case_doc.dispatch_attempts,
-            status=case_doc.status,
-            progress_percent=case_doc.progress_percent,
-            step_total=case_doc.step_total,
-            step_passed=case_doc.step_passed,
-            step_failed=case_doc.step_failed,
-            step_skipped=case_doc.step_skipped,
-            started_at=case_doc.started_at,
-            finished_at=case_doc.finished_at,
-            dispatched_at=case_doc.dispatched_at,
-            last_seq=case_doc.last_seq,
-            last_event_id=case_doc.last_event_id,
-            result_data=self._merge_result_payload(
-                run_case_doc.result_data,
-                payload.get("result_data", {}),
-            ),
-        )
-        await run_case_doc.save()
-
-    async def _update_task_progress_from_case(self, task_doc: ExecutionTaskDoc, task_id: str) -> None:
-        """根据 case 更新任务进度统计。"""
-        task_doc.last_callback_at = datetime.now(timezone.utc)
-        if not task_doc.started_at:
-            task_doc.started_at = task_doc.last_callback_at
-        if task_doc.overall_status in {"QUEUED", "DISPATCHED"}:
-            task_doc.overall_status = "RUNNING"
-        finished_case_count = await ExecutionTaskCaseDoc.find({
-            "task_id": task_id,
-            "status": {"$in": list(FINAL_CASE_STATUSES)},
-        }).count()
-        task_doc.reported_case_count = finished_case_count
-        await task_doc.save()
-
-    async def report_case_status(
-            self,
-            task_id: str,
-            case_id: str,
-            payload: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        """更新单个测试用例执行状态。"""
-        task_doc = await ExecutionTaskDoc.find_one({"task_id": task_id, "is_deleted": False})
-        if not task_doc:
-            raise KeyError(f"Task not found: {task_id}")
-
-        case_doc = await ExecutionTaskCaseDoc.find_one({"task_id": task_id, "case_id": case_id})
-        if not case_doc:
-            raise KeyError(f"Task case not found: {task_id}/{case_id}")
-
-        seq = payload.get("seq", 0)
-        accepted = seq >= case_doc.last_seq
-        if accepted:
-            status = self._normalize_status(payload["status"], default=case_doc.status)
-            self._apply_case_status_payload(case_doc, payload, status)
-            await case_doc.save()
-            await self._update_task_progress_from_case(task_doc, task_id)
-            await self._sync_run_case_from_case(task_doc, case_doc, payload)
-            await self._sync_run_from_task(task_doc)
-
-            if status in FINAL_CASE_STATUSES:
-                await self._dispatch_next_case_if_needed(task_doc, case_id)
-
-        return self._build_case_status_response(task_id, case_id, case_doc, accepted)
-
-    async def complete_task(
-            self,
-            task_id: str,
-            payload: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        """接收任务最终完成结果。"""
-        task_doc = await ExecutionTaskDoc.find_one({"task_id": task_id, "is_deleted": False})
-        if not task_doc:
-            raise KeyError(f"Task not found: {task_id}")
-
-        remaining_case_count = await self._count_non_terminal_cases(task_id)
-        if remaining_case_count > 0:
-            raise ValueError("Task cannot be completed before all cases reach terminal status")
-
-        normalized_status = self._normalize_status(payload["status"], default=task_doc.overall_status)
-        now = datetime.now(timezone.utc)
-        finished_at = self._ensure_utc_datetime(payload["finished_at"]) if payload.get("finished_at") else now
-        task_doc.overall_status = normalized_status
-        task_doc.finished_at = finished_at
-        task_doc.last_callback_at = now
-        if not task_doc.started_at:
-            task_doc.started_at = now
-        if task_doc.dispatch_status != "DISPATCH_FAILED":
-            task_doc.dispatch_status = "COMPLETED"
-        task_doc.dispatch_response = self._merge_result_payload(task_doc.dispatch_response, payload.get("summary", {}))
-        if payload.get("error_message"):
-            task_doc.dispatch_error = payload["error_message"]
-        if payload.get("executor"):
-            task_doc.dispatch_response["executor"] = payload["executor"]
-        if payload.get("event_id"):
-            existing_event = await ExecutionEventDoc.find_one({
-                "task_id": task_id,
-                "event_id": payload["event_id"],
-            })
-            if not existing_event:
-                await ExecutionEventDoc(
-                    task_id=task_id,
-                    event_id=payload["event_id"],
-                    event_type="TASK_COMPLETED",
-                    seq=payload.get("seq", 0),
-                    source_time=finished_at,
-                    raw_payload={
-                        "status": normalized_status,
-                        "summary": payload.get("summary", {}),
-                        "error_message": payload.get("error_message"),
-                    },
-                    processed=True,
-                ).insert()
-
-        completed_case_count = await ExecutionTaskCaseDoc.find({
-            "task_id": task_id,
-            "status": {"$in": list(FINAL_CASE_STATUSES)},
-        }).count()
-        task_doc.reported_case_count = completed_case_count
-        task_doc.current_case_id = None
-        task_doc.current_case_index = task_doc.case_count
-        await task_doc.save()
-        await self._sync_run_from_task(task_doc)
-
-        return {
-            "task_id": task_doc.task_id,
-            "overall_status": task_doc.overall_status,
-            "dispatch_status": task_doc.dispatch_status,
-            "consume_status": task_doc.consume_status,
-            "reported_case_count": task_doc.reported_case_count,
-            "started_at": task_doc.started_at,
-            "finished_at": task_doc.finished_at,
-            "last_callback_at": task_doc.last_callback_at,
-            "updated_at": task_doc.updated_at,
-        }

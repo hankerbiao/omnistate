@@ -105,81 +105,6 @@ class ExecutionTaskListItem(BaseModel):
     updated_at: datetime = Field(..., description="任务最近更新时间（UTC）")
 
 
-class ExecutionEventReportRequest(BaseModel):
-    event_id: str = Field(..., min_length=1, description="事件唯一标识")
-    event_type: str = Field(..., min_length=1, description="事件类型")
-    seq: int = Field(default=0, ge=0, description="事件序号")
-    source_time: Optional[datetime] = Field(None, description="事件源时间（UTC）")
-    payload: Dict[str, Any] = Field(default_factory=dict, description="原始事件载荷")
-
-    model_config = ConfigDict(extra="forbid")
-
-
-class ExecutionEventReportResponse(BaseModel):
-    task_id: str = Field(..., description="事件归属的任务 ID")
-    event_id: str = Field(..., description="事件唯一标识")
-    event_type: str = Field(..., description="事件类型，已做标准化处理")
-    seq: int = Field(..., description="事件序号")
-    received_at: datetime = Field(..., description="平台接收事件的时间（UTC）")
-    processed: bool = Field(..., description="该事件是否已被平台处理")
-
-
-class ExecutionCaseStatusReportRequest(BaseModel):
-    status: str = Field(..., min_length=1, description="用例执行状态")
-    event_id: Optional[str] = Field(None, description="事件唯一标识")
-    seq: int = Field(default=0, ge=0, description="事件序号")
-    progress_percent: Optional[float] = Field(None, ge=0, le=100, description="进度百分比")
-    step_total: Optional[int] = Field(None, ge=0, description="当前 case 总步骤数")
-    step_passed: Optional[int] = Field(None, ge=0, description="当前 case 已通过步骤数")
-    step_failed: Optional[int] = Field(None, ge=0, description="当前 case 已失败步骤数")
-    step_skipped: Optional[int] = Field(None, ge=0, description="当前 case 已跳过步骤数")
-    started_at: Optional[datetime] = Field(None, description="用例开始时间（UTC）")
-    finished_at: Optional[datetime] = Field(None, description="用例结束时间（UTC）")
-    result_data: Dict[str, Any] = Field(default_factory=dict, description="执行结果扩展信息")
-
-    model_config = ConfigDict(extra="forbid")
-
-
-class ExecutionCaseStatusReportResponse(BaseModel):
-    task_id: str = Field(..., description="任务 ID")
-    case_id: str = Field(..., description="测试用例 ID")
-    status: str = Field(..., description="平台当前记录的用例状态")
-    progress_percent: Optional[float] = Field(None, description="当前记录的进度百分比")
-    step_total: int = Field(..., description="当前记录的总步骤数")
-    step_passed: int = Field(..., description="当前记录的通过步骤数")
-    step_failed: int = Field(..., description="当前记录的失败步骤数")
-    step_skipped: int = Field(..., description="当前记录的跳过步骤数")
-    last_seq: int = Field(..., description="平台已接受的最后一个事件序号")
-    accepted: bool = Field(..., description="本次上报是否被接受；旧序号事件会被拒绝覆盖")
-    started_at: Optional[datetime] = Field(None, description="用例开始时间（UTC）")
-    finished_at: Optional[datetime] = Field(None, description="用例结束时间（UTC）")
-    updated_at: datetime = Field(..., description="当前状态最近更新时间（UTC）")
-
-
-class ExecutionTaskCompleteRequest(BaseModel):
-    status: str = Field(..., min_length=1, description="任务最终状态")
-    event_id: Optional[str] = Field(None, description="完成事件ID")
-    seq: int = Field(default=0, ge=0, description="完成事件序号")
-    finished_at: Optional[datetime] = Field(None, description="任务结束时间（UTC）")
-    summary: Dict[str, Any] = Field(default_factory=dict, description="任务结果摘要")
-    error_message: Optional[str] = Field(None, description="失败原因")
-    executor: Optional[str] = Field(None, description="执行器标识")
-
-    model_config = ConfigDict(extra="forbid")
-
-
-class ExecutionTaskCompleteResponse(BaseModel):
-    task_id: str = Field(..., description="任务 ID")
-    overall_status: str = Field(..., description="任务最终整体状态")
-    dispatch_status: str = Field(..., description="任务最终下发状态")
-    consume_status: str = Field(..., description="任务最终消费状态")
-    reported_case_count: int = Field(..., description="已进入终态并被平台统计到的 case 数量")
-    started_at: Optional[datetime] = Field(None, description="任务开始时间（UTC）")
-    finished_at: Optional[datetime] = Field(None, description="任务结束时间（UTC）")
-    last_callback_at: Optional[datetime] = Field(None, description="最近一次回调到达平台的时间（UTC）")
-    updated_at: datetime = Field(..., description="任务记录最近更新时间（UTC）")
-
-
 class ExecutionTaskRunSummary(BaseModel):
     task_id: str = Field(..., description="任务 ID")
     run_no: int = Field(..., description="执行轮次编号，从 1 开始递增")
@@ -266,12 +191,6 @@ class ScheduledTaskMutationResponse(BaseModel):
     triggered_at: Optional[datetime] = Field(None, description="任务实际触发时间（UTC）")
     created_at: Optional[datetime] = Field(None, description="任务创建时间（UTC）")
     updated_at: datetime = Field(..., description="任务最近更新时间（UTC）")
-
-
-class ConsumeAckRequest(BaseModel):
-    consumer_id: Optional[str] = Field(None, description="消费者标识")
-
-    model_config = ConfigDict(extra="forbid")
 
 
 class StopTaskRequest(BaseModel):

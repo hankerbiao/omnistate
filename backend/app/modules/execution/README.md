@@ -193,14 +193,6 @@
 
 - `POST /api/v1/execution/tasks/dispatch`
   创建任务并启动首轮执行
-- `POST /api/v1/execution/tasks/{task_id}/events`
-  接收任务事件
-- `POST /api/v1/execution/tasks/{task_id}/cases/{case_id}/status`
-  接收 case 状态回报
-- `POST /api/v1/execution/tasks/{task_id}/complete`
-  收口任务
-- `POST /api/v1/execution/tasks/{task_id}/consume-ack`
-  标记任务已被消费者消费
 - `POST /api/v1/execution/tasks/{task_id}/retry`
   重新执行任务并保留历史轮次
 
