@@ -202,37 +202,6 @@ class ExecutionTaskRunCaseDoc(Document):
         ]
 
 
-class ExecutionEventDoc(Document):
-    """回调事件审计表。
-
-    保存执行端回调的原始事件，用于审计、排障和幂等处理。
-    """
-
-    task_id: str = Field(..., description="平台任务 ID")
-    event_id: str = Field(..., description="事件唯一 ID")
-    event_type: str = Field(..., description="事件类型")
-    seq: int = Field(..., description="事件序号")
-    source_time: Optional[datetime] = Field(None, description="事件在源端产生的时间（UTC）")
-    received_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="平台接收到该事件的时间（UTC）")
-    raw_payload: Dict[str, Any] = Field(default_factory=dict, description="事件原始载荷")
-    processed: bool = Field(default=False, description="该事件是否已被平台处理")
-    process_error: Optional[str] = Field(None, description="事件处理失败时记录的错误信息")
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="事件记录创建时间（UTC）")
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="事件记录最近更新时间（UTC）")
-
-    @before_event([Save, Insert])
-    def update_updated_at(self):
-        self.updated_at = datetime.now(timezone.utc)
-
-    class Settings:
-        name = "execution_events"
-        indexes = [
-            IndexModel([("task_id", ASCENDING), ("event_id", ASCENDING)], unique=True),
-            IndexModel([("task_id", ASCENDING), ("seq", ASCENDING)]),
-            IndexModel("received_at"),
-        ]
-
-
 class ExecutionAgentDoc(Document):
     """执行代理注册表。
 

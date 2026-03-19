@@ -13,12 +13,9 @@ from app.modules.execution.schemas import (
     DispatchTaskResponse,
     ExecutionAgentResponse,
     ExecutionTaskListItem,
-    ExecutionTaskRunDetail,
-    ExecutionTaskRunSummary,
     ScheduledTaskMutationResponse,
     StopTaskRequest,
     StopTaskResponse,
-    UpdateScheduledTaskRequest,
 )
 from app.modules.execution.application.execution_service import ExecutionService
 from app.modules.execution.application.commands import DispatchExecutionTaskCommand
@@ -110,32 +107,6 @@ async def cancel_scheduled_task(
     """取消未触发的定时执行任务。"""
     try:
         data = await service.cancel_scheduled_task(task_id, actor_id=current_user["user_id"])
-        return APIResponse(data=data)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-
-
-@router.put(
-    "/tasks/{task_id}/schedule",
-    response_model=APIResponse[ScheduledTaskMutationResponse],
-    summary="修改未触发的定时任务",
-    dependencies=[Depends(require_permission("execution_tasks:write"))],
-)
-async def update_scheduled_task(
-        task_id: str,
-        request: UpdateScheduledTaskRequest,
-        service: ExecutionServiceDep,
-        current_user=Depends(get_current_user),
-):
-    """修改未触发的定时执行任务。"""
-    try:
-        data = await service.update_scheduled_task(
-            task_id,
-            actor_id=current_user["user_id"],
-            payload=request.model_dump(exclude_none=True),
-        )
         return APIResponse(data=data)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
@@ -300,63 +271,3 @@ async def get_task_status(
         return APIResponse(data=data)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
-
-
-@router.get(
-    "/tasks/{task_id}/runs",
-    response_model=APIResponse[list[ExecutionTaskRunSummary]],
-    summary="查询任务执行历史",
-    dependencies=[Depends(require_permission("execution_tasks:read"))],
-)
-async def list_task_runs(
-        task_id: str,
-        service: ExecutionServiceDep,
-        current_user=Depends(get_current_user),
-):
-    """查询任务历史执行轮次。"""
-    try:
-        data = await service.list_task_runs(task_id)
-        return APIResponse(data=data)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
-
-
-@router.get(
-    "/tasks/{task_id}/runs/{run_no}",
-    response_model=APIResponse[ExecutionTaskRunDetail],
-    summary="查询单次执行结果",
-    dependencies=[Depends(require_permission("execution_tasks:read"))],
-)
-async def get_task_run_detail(
-        task_id: str,
-        run_no: int,
-        service: ExecutionServiceDep,
-        current_user=Depends(get_current_user),
-):
-    """查询任务指定轮次的执行结果。"""
-    try:
-        data = await service.get_task_run_detail(task_id, run_no)
-        return APIResponse(data=data)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
-
-
-@router.post(
-    "/tasks/{task_id}/retry",
-    response_model=APIResponse[dict],
-    summary="重试失败的任务",
-    dependencies=[Depends(require_permission("execution_tasks:write"))],
-)
-async def retry_task(
-        task_id: str,
-        service: ExecutionServiceDep,
-        current_user=Depends(get_current_user),
-):
-    """重试失败的任务"""
-    try:
-        data = await service.retry_failed_task(task_id, actor_id=current_user["user_id"])
-        return APIResponse(data=data)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))

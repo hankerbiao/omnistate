@@ -27,7 +27,6 @@ from app.modules.execution.repository.models import (
     ExecutionTaskRunDoc,
     ExecutionTaskCaseDoc,
     ExecutionTaskRunCaseDoc,
-    ExecutionEventDoc,
 )
 from app.modules.auth.repository.models import UserDoc, RoleDoc, PermissionDoc, NavigationPageDoc
 
@@ -97,7 +96,6 @@ async def lifespan(app: FastAPI):
                 ExecutionTaskRunDoc,
                 ExecutionTaskCaseDoc,
                 ExecutionTaskRunCaseDoc,
-                ExecutionEventDoc,
                 UserDoc,
                 RoleDoc,
                 PermissionDoc,

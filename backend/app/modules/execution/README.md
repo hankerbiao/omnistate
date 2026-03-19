@@ -70,16 +70,6 @@
 - 保存该 case 在这一轮的状态、进度、步骤统计、结果数据
 - 支持查看历史每次 case 的执行结果
 
-### 5. `ExecutionEventDoc`
-
-原始回调事件审计表。
-
-职责：
-
-- 保存外部上报的事件原文
-- 作为排障和幂等辅助
-- 不承担“历史结果查询模型”的职责
-
 ## 执行模型
 
 ### 创建任务
@@ -98,21 +88,6 @@
 8. 创建首轮 case 历史 `ExecutionTaskRunCaseDoc`
 9. 如果是立即执行，则只下发第 1 条 case
 
-### 串行推进
-
-平台推进规则：
-
-1. 当前只下发 1 条 case
-2. 外部框架回报该 case 的状态
-3. 若 case 进入终态 `PASSED/FAILED/SKIPPED`
-4. 平台尝试获取 `orchestration_lock`
-5. 获取成功后下发下一条 case
-6. 没有下一条时，平台自动完成任务
-
-锁的目的很直接：
-
-- 防止同一条 case 的重复回报把下一条下发多次
-
 ### 多次执行
 
 当前实现已经支持：
@@ -126,19 +101,6 @@
 - `ExecutionTaskDoc` 是任务容器
 - `ExecutionTaskRunDoc` 是第 N 次执行
 - `ExecutionTaskRunCaseDoc` 是第 N 次执行中的单条 case 结果
-
-## `/retry` 的真实语义
-
-入口：`POST /api/v1/execution/tasks/{task_id}/retry`
-
-当前不是“只重试当前失败 case”，而是：
-
-- 重新执行整个任务
-- 重置当前态 `ExecutionTaskCaseDoc`
-- 新建一轮执行历史
-- 从第 1 条 case 开始重新串行执行
-
-这条接口更准确的语义其实是“重新执行任务并保留历史轮次”。
 
 ## 当前态与历史态的关系
 
@@ -175,11 +137,11 @@
 当前 `application` 采用“门面 + mixin”结构：
 
 - `execution_service.py`
-  命令入口，负责创建任务、修改定时任务、重跑任务、真实下发
+  命令入口，负责创建任务、取消定时任务、真实下发
 - `progress_mixin.py`
-  负责任务事件、case 状态回报、平台推进、任务收口、轮次同步
+  负责任务停止收口和轮次同步
 - `query_mixin.py`
-  负责任务查询、轮次历史查询和序列化
+  负责任务查询和序列化
 - `agent_mixin.py`
   负责代理注册、心跳和查询
 - `commands.py`
@@ -193,15 +155,11 @@
 
 - `POST /api/v1/execution/tasks/dispatch`
   创建任务并启动首轮执行
-- `POST /api/v1/execution/tasks/{task_id}/retry`
-  重新执行任务并保留历史轮次
 
 ### 定时任务
 
 - `POST /api/v1/execution/tasks/{task_id}/cancel`
   取消未触发的定时任务
-- `PUT /api/v1/execution/tasks/{task_id}/schedule`
-  修改未触发的定时任务
 
 ### 查询
 
@@ -209,10 +167,6 @@
   查询任务列表
 - `GET /api/v1/execution/tasks/{task_id}/status`
   查询任务当前状态
-- `GET /api/v1/execution/tasks/{task_id}/runs`
-  查询任务执行历史
-- `GET /api/v1/execution/tasks/{task_id}/runs/{run_no}`
-  查询某一轮执行详情
 
 ### 代理
 
@@ -225,49 +179,12 @@
 - `GET /api/v1/execution/agents/{agent_id}`
   查询代理详情
 
-## 查询能力
-
-当前已经支持两类历史查询：
-
-1. 任务有哪些执行轮次  
-通过 `GET /tasks/{task_id}/runs`
-
-2. 某一轮里每条 case 的结果是什么  
-通过 `GET /tasks/{task_id}/runs/{run_no}`
-
-这已经能满足：
-
-- 同一个任务多次执行
-- 每次结果单独查看
-- 追溯某条 case 在不同执行轮次中的表现
-
-当前还没有做专门的“轮次 diff”接口，但数据模型已经具备后续扩展基础。
-
-## 通道适配
-
-`ExecutionTaskDispatcher` 负责选择真实下发通道：
-
-- `kafka`
-  构造 `TaskMessage` 投递到 Kafka
-- `http`
-  调用执行代理 HTTP 接口
-
-外部始终收到的是“当前 1 条 case 的请求”，而不是整批 case。
-
-下发 payload 中会带：
-
-- `task_id`
-- `run_no`
-- `current_case_id`
-- `current_case_index`
-- `case_count`
-
 ## request_payload 与执行历史
 
 `request_payload` 仍然保留在任务主表中，但它的职责很明确：
 
 - 保存任务原始完整快照
-- 用于重建命令和重新执行
+- 用于重建命令和继续下发上下文
 
 它不是历史结果表。
 
@@ -322,14 +239,11 @@
 - 外部任务 ID 格式仍为 `EXT-ET-...`
 - 当前不依赖 MongoDB 事务
 - 去重规则仍然是：相同 `dedup_key` 的未完成任务不能重复创建
-- `/complete` 不允许在 case 未全部终态时提前结束任务
-- `/retry` 会重跑整任务，不是只跑失败 case
-- 定时任务在未真正触发前，如果被修改，会重建预创建的首轮历史
+- 当前模块不再接收执行端事件回调，任务状态主要反映平台下发侧状态
 
 ## 维护建议
 
 - 改串行推进逻辑，优先看 `progress_mixin.py`
-- 改任务创建、重跑和定时修改，优先看 `execution_service.py`
-- 改任务/轮次查询返回，优先看 `query_mixin.py`
+- 改任务创建和定时取消，优先看 `execution_service.py`
+- 改任务查询返回，优先看 `query_mixin.py`
 - 改下发通道，优先看 `task_dispatcher.py`
-- 如果后续要做历史结果比对接口，建议直接基于 `ExecutionTaskRunCaseDoc` 做，不要再从当前态表反推
