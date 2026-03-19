@@ -1,4 +1,4 @@
-"""执行任务轮次同步与停止收口能力。"""
+"""执行任务状态同步与停止收口能力。"""
 
 from __future__ import annotations
 
@@ -15,8 +15,8 @@ from app.modules.execution.repository.models import (
 )
 
 
-class ExecutionProgressMixin:
-    """处理任务停止后的收口与 run 同步。"""
+class ExecutionTaskStatusMixin:
+    """处理任务停止后的状态收口与 run 同步。"""
 
     async def _mark_task_stopped_after_current_case(self, task_doc: ExecutionTaskDoc) -> None:
         """在当前 case 完成后执行优雅停止，不再继续下发下一条。"""

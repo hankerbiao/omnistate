@@ -1,10 +1,11 @@
 # Kafka 模块
 
-`app/shared/kafka` 现在只保留三类职责：
+`app/shared/kafka` 现在拆成四层职责：
 
-- `TaskMessage` 和 `ResultMessage`：Kafka 消息载体
-- `KafkaConfig`：运行时配置对象
-- `KafkaMessageManager`：生产、消费、健康检查和生命周期管理
+- `config.py`：Kafka 连接、topic、consumer group 配置
+- `producer.py`：producer 生命周期和消息发送
+- `consumer.py` / `router.py` / `dead_letter.py`：consumer runtime、topic 分发、死信
+- `KafkaMessageManager`：兼容旧调用的 producer-only 包装类
 
 ## 配置来源
 
@@ -17,6 +18,7 @@
 - `KAFKA_TASK_TOPIC`
 - `KAFKA_RESULT_TOPIC`
 - `KAFKA_DEAD_LETTER_TOPIC`
+- `KAFKA_EXECUTION_RESULT_GROUP_ID`
 
 其中 `KAFKA_BOOTSTRAP_SERVERS` 支持逗号分隔多个地址。
 
@@ -51,4 +53,10 @@ manager = KafkaMessageManager(
         client_id="local-dev",
     )
 )
+```
+
+独立 consumer worker 启动方式：
+
+```bash
+python -m app.workers.kafka_worker_main
 ```

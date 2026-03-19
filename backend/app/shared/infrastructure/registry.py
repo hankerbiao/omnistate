@@ -11,7 +11,7 @@ from app.shared.db.config import settings
 from app.shared.kafka import KafkaMessageManager, load_kafka_config
 
 
-KAFKA_COMPONENT = "kafka_manager"
+KAFKA_COMPONENT = "kafka_producer"
 EXECUTION_SCHEDULER_COMPONENT = "execution_task_scheduler"
 
 
@@ -27,7 +27,7 @@ class InfrastructureStatus:
 
 
 class InfrastructureRegistry:
-    """统一管理应用级基础设施生命周期。"""
+    """统一管理 API 进程内的应用级基础设施生命周期。"""
 
     def __init__(self) -> None:
         self.kafka_manager: KafkaMessageManager | None = None
@@ -55,7 +55,7 @@ class InfrastructureRegistry:
                 self.execution_scheduler_task = asyncio.create_task(self._run_execution_scheduler_loop())
                 self._set_component_status(EXECUTION_SCHEDULER_COMPONENT, "RUNNING")
                 self._is_initialized = True
-                logger.info(f"Skipping Kafka initialization because dispatch mode is {dispatch_mode}")
+                logger.info(f"Skipping Kafka producer initialization because dispatch mode is {dispatch_mode}")
                 return
 
             self._set_component_status(KAFKA_COMPONENT, "INITIALIZING")
@@ -80,7 +80,7 @@ class InfrastructureRegistry:
                 self._set_component_status(
                     KAFKA_COMPONENT,
                     "ERROR",
-                    error_message=f"Failed to initialize Kafka manager: {e}",
+                    error_message=f"Failed to initialize Kafka producer manager: {e}",
                 )
                 logger.exception(f"Failed to initialize infrastructure: {e}")
                 await self.shutdown()
@@ -112,9 +112,9 @@ class InfrastructureRegistry:
             self._set_component_status(
                 KAFKA_COMPONENT,
                 "ERROR",
-                error_message=f"Error stopping Kafka manager: {e}",
+                error_message=f"Error stopping Kafka producer manager: {e}",
             )
-            logger.exception(f"Error stopping Kafka manager: {e}")
+            logger.exception(f"Error stopping Kafka producer manager: {e}")
         finally:
             self._is_initialized = False
 
@@ -158,7 +158,7 @@ class InfrastructureRegistry:
         if not self.kafka_manager:
             kafka_health = {
                 "status": "NOT_INITIALIZED",
-                "message": "Kafka manager not initialized",
+                "message": "Kafka producer manager not initialized",
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             }
         else:

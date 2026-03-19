@@ -9,6 +9,17 @@ DEFAULT_BOOTSTRAP_SERVERS = ["10.17.154.252:9092"]
 DEFAULT_TASK_TOPIC = "dmlv4.tasks"
 DEFAULT_RESULT_TOPIC = "dmlv4.results"
 DEFAULT_DEAD_LETTER_TOPIC = "dmlv4.deadletter"
+DEFAULT_EXECUTION_RESULT_GROUP_ID = "dmlv4-execution-result-consumers"
+
+
+@dataclass(slots=True)
+class ConsumerSubscription:
+    """单个 consumer 订阅配置。"""
+
+    topic: str
+    group_id: str
+    parser: str = "json"
+    dead_letter_topic: str | None = DEFAULT_DEAD_LETTER_TOPIC
 
 
 @dataclass(slots=True)
@@ -20,6 +31,7 @@ class KafkaConfig:
     task_topic: str = DEFAULT_TASK_TOPIC
     result_topic: str = DEFAULT_RESULT_TOPIC
     dead_letter_topic: str = DEFAULT_DEAD_LETTER_TOPIC
+    consumer_subscriptions: dict[str, ConsumerSubscription] = field(default_factory=dict)
     producer_options: dict[str, Any] = field(default_factory=lambda: {
         "acks": "all",
         "retries": 3,
@@ -45,13 +57,26 @@ def _split_csv(value: str | None, default: list[str]) -> list[str]:
 
 def load_kafka_config() -> KafkaConfig:
     """从环境变量加载 Kafka 配置。"""
+    task_topic = os.getenv("KAFKA_TASK_TOPIC", DEFAULT_TASK_TOPIC)
+    result_topic = os.getenv("KAFKA_RESULT_TOPIC", DEFAULT_RESULT_TOPIC)
+    dead_letter_topic = os.getenv("KAFKA_DEAD_LETTER_TOPIC", DEFAULT_DEAD_LETTER_TOPIC)
     return KafkaConfig(
         bootstrap_servers=_split_csv(
             os.getenv("KAFKA_BOOTSTRAP_SERVERS"),
             DEFAULT_BOOTSTRAP_SERVERS,
         ),
         client_id=os.getenv("KAFKA_CLIENT_ID", "dmlv4-shard"),
-        task_topic=os.getenv("KAFKA_TASK_TOPIC", DEFAULT_TASK_TOPIC),
-        result_topic=os.getenv("KAFKA_RESULT_TOPIC", DEFAULT_RESULT_TOPIC),
-        dead_letter_topic=os.getenv("KAFKA_DEAD_LETTER_TOPIC", DEFAULT_DEAD_LETTER_TOPIC),
+        task_topic=task_topic,
+        result_topic=result_topic,
+        dead_letter_topic=dead_letter_topic,
+        consumer_subscriptions={
+            "execution_result": ConsumerSubscription(
+                topic=result_topic,
+                group_id=os.getenv(
+                    "KAFKA_EXECUTION_RESULT_GROUP_ID",
+                    DEFAULT_EXECUTION_RESULT_GROUP_ID,
+                ),
+                dead_letter_topic=dead_letter_topic,
+            ),
+        },
     )

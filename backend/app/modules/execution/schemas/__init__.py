@@ -11,6 +11,7 @@ from .execution import (
     StopTaskRequest,
     StopTaskResponse,
 )
+from .kafka_events import ExecutionResultEvent
 
 
 __all__ = [
@@ -20,6 +21,7 @@ __all__ = [
     "DispatchTaskRequest",
     "DispatchTaskResponse",
     "ExecutionAgentResponse",
+    "ExecutionResultEvent",
     "ExecutionTaskListItem",
     "ScheduledTaskMutationResponse",
     "StopTaskRequest",

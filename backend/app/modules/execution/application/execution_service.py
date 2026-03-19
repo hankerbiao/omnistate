@@ -12,12 +12,12 @@ from app.modules.execution.application.constants import (
     FINAL_TASK_STATUSES,
     STOP_MODE_AFTER_CURRENT_CASE,
 )
-from app.modules.execution.application.progress_mixin import ExecutionProgressMixin
-from app.modules.execution.application.query_mixin import ExecutionTaskQueryMixin
 from app.modules.execution.application.task_case_mixin import ExecutionTaskCaseMixin
 from app.modules.execution.application.task_command_mixin import ExecutionTaskCommandMixin
 from app.modules.execution.application.task_dispatch_mixin import ExecutionTaskDispatchMixin
+from app.modules.execution.application.task_query_mixin import ExecutionTaskQueryMixin
 from app.modules.execution.application.task_run_mixin import ExecutionTaskRunMixin
+from app.modules.execution.application.task_status_mixin import ExecutionTaskStatusMixin
 from app.modules.execution.repository.models import ExecutionTaskCaseDoc, ExecutionTaskDoc
 from app.modules.execution.service.task_dispatcher import ExecutionTaskDispatcher
 
@@ -27,8 +27,8 @@ class ExecutionService(
     ExecutionTaskRunMixin,
     ExecutionTaskCaseMixin,
     ExecutionTaskCommandMixin,
-    ExecutionProgressMixin,
     ExecutionTaskQueryMixin,
+    ExecutionTaskStatusMixin,
     ExecutionAgentMixin,
 ):
     """执行任务命令服务门面。"""

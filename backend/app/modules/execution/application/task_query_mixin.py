@@ -1,4 +1,4 @@
-"""执行任务查询相关服务能力。"""
+"""执行任务查询相关能力。"""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from app.modules.execution.repository.models import (
 
 
 class ExecutionTaskQueryMixin:
-    """任务查询与统一序列化能力。"""
+    """提供任务查询与统一序列化能力。"""
 
     @staticmethod
     def _serialize_task_doc(task_doc: ExecutionTaskDoc) -> Dict[str, Any]:

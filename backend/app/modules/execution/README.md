@@ -138,9 +138,9 @@
 
 - `execution_service.py`
   命令入口，负责创建任务、取消定时任务、真实下发
-- `progress_mixin.py`
+- `task_status_mixin.py`
   负责任务停止收口和轮次同步
-- `query_mixin.py`
+- `task_query_mixin.py`
   负责任务查询和序列化
 - `agent_mixin.py`
   负责代理注册、心跳和查询
@@ -243,7 +243,7 @@
 
 ## 维护建议
 
-- 改串行推进逻辑，优先看 `progress_mixin.py`
+- 改任务停止收口与状态同步，优先看 `task_status_mixin.py`
 - 改任务创建和定时取消，优先看 `execution_service.py`
-- 改任务查询返回，优先看 `query_mixin.py`
+- 改任务查询返回，优先看 `task_query_mixin.py`
 - 改下发通道，优先看 `task_dispatcher.py`
