@@ -31,7 +31,7 @@ class ExecutionTaskCaseMixin:
             "auto_case_id": {"$in": auto_case_ids},
             "is_deleted": False,
         }).to_list()
-        source_mapping = {doc.auto_case_id: doc.source_case_id for doc in auto_docs}
+        source_mapping = {doc.auto_case_id: doc.dml_manual_case_id for doc in auto_docs}
 
         missing_auto_case_ids = [auto_case_id for auto_case_id in auto_case_ids if auto_case_id not in source_mapping]
         if missing_auto_case_ids:
@@ -57,8 +57,8 @@ class ExecutionTaskCaseMixin:
                 if source_mapping.get(auto_case_id) in missing_source_case_ids
             ]
             raise KeyError(
-                "Automation test cases source_case_id not matched to test cases: "
-                f"auto_case_ids={missing_auto_case_ids}, source_case_ids={missing_source_case_ids}"
+                "Automation test cases dml_manual_case_id not matched to test cases: "
+                f"auto_case_ids={missing_auto_case_ids}, dml_manual_case_ids={missing_source_case_ids}"
             )
 
         ambiguous = {
@@ -91,10 +91,10 @@ class ExecutionTaskCaseMixin:
             raise KeyError(f"Test cases not linked to automation test cases: {missing}")
 
         auto_docs = await AutomationTestCaseDoc.find({
-            "source_case_id": {"$in": list(source_mapping.values())},
+            "dml_manual_case_id": {"$in": list(source_mapping.values())},
             "is_deleted": False,
         }).to_list()
-        auto_mapping = {doc.source_case_id: doc.auto_case_id for doc in auto_docs}
+        auto_mapping = {doc.dml_manual_case_id: doc.auto_case_id for doc in auto_docs}
         missing_sources = [source_case_id for source_case_id in source_mapping.values() if source_case_id not in auto_mapping]
         if missing_sources:
             missing_case_ids = [case_id for case_id, source_case_id in source_mapping.items() if source_case_id in missing_sources]

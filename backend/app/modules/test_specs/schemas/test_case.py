@@ -156,7 +156,7 @@ class CreateAutomationTestCaseRequest(BaseModel):
         None,
         description="自动化用例业务编号（可选，默认由后端生成）",
     )
-    source_case_id: str = Field(..., description="框架侧用例编号")
+    dml_manual_case_id: str = Field(..., description="关联的平台手工测试用例编号")
     name: str = Field(..., description="自动化用例名称")
     description: Optional[str] = Field(None, description="描述")
     status: str = Field("ACTIVE", description="状态（ACTIVE/DEPRECATED）")
@@ -183,7 +183,7 @@ class AutomationTestCaseResponse(BaseModel):
     """自动化测试用例响应体。"""
     id: str = Field(..., description="自动化用例唯一标识 ID")
     auto_case_id: str = Field(..., description="自动化用例业务编号")
-    source_case_id: str = Field(..., description="外部测试框架用例编号")
+    dml_manual_case_id: str = Field(..., description="关联的平台手工测试用例编号")
     name: str = Field(..., description="自动化用例名称")
     description: Optional[str] = Field(None, description="描述")
     status: str = Field(..., description="状态")

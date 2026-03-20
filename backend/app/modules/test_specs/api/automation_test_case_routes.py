@@ -75,7 +75,7 @@ async def list_automation_test_cases(
     automation_type: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
     maintainer_id: Optional[str] = Query(None),
-    source_case_id: Optional[str] = Query(None),
+    dml_manual_case_id: Optional[str] = Query(None),
     limit: int = Query(20, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ):
@@ -85,7 +85,7 @@ async def list_automation_test_cases(
         automation_type=automation_type,
         status=status,
         maintainer_id=maintainer_id,
-        source_case_id=source_case_id,
+        dml_manual_case_id=dml_manual_case_id,
         limit=limit,
         offset=offset,
     )
@@ -111,18 +111,18 @@ async def get_automation_test_case(
 
 
 @router.get(
-    "/by-case-id/{source_case_id}",
+    "/by-manual-case-id/{dml_manual_case_id}",
     response_model=APIResponse[AutomationTestCaseResponse],
     summary="按外部测试框架用例编号获取自动化测试用例详情",
     dependencies=[Depends(require_permission("test_cases:read"))],
 )
-async def get_automation_test_case_by_source_case_id(
-    source_case_id: str,
+async def get_automation_test_case_by_manual_case_id(
+    dml_manual_case_id: str,
     service: AutomationTestCaseServiceDep,
 ):
-    """按 source_case_id 查询最新一条上报记录。"""
+    """按 dml_manual_case_id 查询最新一条上报记录。"""
     try:
-        data = await service.get_automation_test_case_by_source_case_id(source_case_id)
+        data = await service.get_automation_test_case_by_manual_case_id(dml_manual_case_id)
         return APIResponse(data=data)
     except KeyError:
         raise HTTPException(status_code=404, detail="automation test case not found")

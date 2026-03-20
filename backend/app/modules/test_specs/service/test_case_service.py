@@ -264,8 +264,8 @@ class TestCaseService(BaseService):
         if not auto_doc:
             raise KeyError("automation test case not found")
 
-        if auto_doc.source_case_id != case_doc.case_id:
-            raise ValueError("automation test case source_case_id does not match test case case_id")
+        if auto_doc.dml_manual_case_id != case_doc.case_id:
+            raise ValueError("automation test case dml_manual_case_id does not match test case case_id")
         await case_doc.save()
         return self._doc_to_dict(case_doc)
 

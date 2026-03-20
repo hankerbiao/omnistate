@@ -58,7 +58,7 @@ class AutomationTestCaseDoc(Document):
     __test__ = False
 
     auto_case_id: str = Field(..., description="平台自动化用例业务 ID")
-    source_case_id: str = Field(..., description="框架侧用例 ID")
+    dml_manual_case_id: str = Field(..., description="关联的平台手工测试用例 ID")
     name: str = Field(..., description="自动化用例名称")
     description: Optional[str] = Field(None, description="自动化用例描述")
     status: str = Field(default="ACTIVE", description="状态（ACTIVE/DEPRECATED）")
@@ -84,7 +84,7 @@ class AutomationTestCaseDoc(Document):
         name = "automation_test_cases"
         indexes = [
             IndexModel([("auto_case_id", ASCENDING)], unique=True),
-            IndexModel([("source_case_id", ASCENDING)], unique=True),
+            IndexModel([("dml_manual_case_id", ASCENDING)], unique=True),
             IndexModel("status"),
             IndexModel("framework"),
             IndexModel("automation_type"),
@@ -104,7 +104,7 @@ class AutomationTestCaseModel(BaseModel):
 
     id: Optional[str] = None
     auto_case_id: str
-    source_case_id: str
+    dml_manual_case_id: str
     name: str
     description: Optional[str] = None
     status: str
