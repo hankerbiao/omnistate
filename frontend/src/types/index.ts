@@ -231,9 +231,18 @@ export interface DispatchTaskRequest {
   cases: DispatchCaseItem[];
 }
 
+export interface RerunTaskRequest {
+  dispatch_channel?: 'KAFKA' | 'HTTP';
+  agent_id?: string;
+  trigger_source?: string;
+  schedule_type?: string;
+  planned_at?: string;
+}
+
 export interface DispatchTaskResponse {
   task_id: string;
   external_task_id?: string;
+  source_task_id?: string;
   dispatch_status: string;
   overall_status: string;
   case_count: number;
@@ -335,6 +344,7 @@ export interface ListAutomationTestCasesParams {
 export interface ExecutionTask {
   task_id: string;
   external_task_id?: string;
+  source_task_id?: string;
   framework: string;
   agent_id?: string;
   dispatch_channel: string;
@@ -363,6 +373,7 @@ export interface ExecutionTask {
 export interface TaskStatus {
   task_id: string;
   external_task_id?: string;
+  source_task_id?: string;
   framework: string;
   agent_id?: string;
   dispatch_channel: string;

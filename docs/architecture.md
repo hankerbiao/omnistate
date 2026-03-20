@@ -78,8 +78,9 @@ dmlv4/
 1. 连接 MongoDB。
 2. 初始化全部 Beanie 文档模型。
 3. 校验 workflow 基础配置一致性。
-4. 初始化应用级基础设施。
-5. 挂载异常处理器和统一 API 路由。
+4. 若 `EXECUTION_DISPATCH_MODE=kafka`，预检 Kafka worker 心跳。
+5. 初始化应用级基础设施。
+6. 挂载异常处理器和统一 API 路由。
 
 关闭时会：
 
@@ -91,6 +92,7 @@ dmlv4/
 
 - 若 workflow 配置尚未初始化，启动时会告警，但不会直接阻断服务。
 - `init_beanie(...)` 会注册文档模型并确保索引。
+- `execution` 在 Kafka 分发模式下要求独立启动 `backend/app/workers/kafka_worker_main.py`；API 进程不会代替 worker 消费 `test-events`。
 
 ## 6. 模块说明
 
@@ -150,21 +152,29 @@ dmlv4/
 
 - 一个任务可包含多条 case。
 - 平台每次只推进当前 1 条 case。
-- 外部执行端持续回传事件、case 状态和任务完成结果。
-- 同一任务支持重试，并保留独立轮次历史。
+- 外部执行端通过 Kafka `test-events` 持续回传事件。
+- 平台只维护当前任务态和当前 case 态。
+- 当前任务不再保留历史轮次模型和 `/runs` 查询接口。
+- 支持 Kafka 和 HTTP 两种下发通道，但真实业务 payload 结构一致。
+
+`execution` 当前由两个后端进程共同完成：
+
+- `backend/app/main.py`
+  提供任务创建、任务查询、任务控制和 agent 管理 API。
+- `backend/app/workers/kafka_worker_main.py`
+  消费 `test-events`、写入事件归档、聚合任务当前态、自动推进下一条 case，并维护 worker 自身心跳。
 
 核心文档模型：
 
 - `ExecutionAgentDoc`
 - `ExecutionTaskDoc`
 - `ExecutionTaskCaseDoc`
-- `ExecutionTaskRunDoc`
-- `ExecutionTaskRunCaseDoc`
 - `ExecutionEventDoc`
 
 核心路由前缀：
 
 - `/api/v1/execution`
+- Kafka worker 入口：`backend/app/workers/kafka_worker_main.py`
 
 ### 6.4 auth
 

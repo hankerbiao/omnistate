@@ -9,6 +9,7 @@ import type {
   DispatchCaseItem,
   ExecutionTaskCaseSummary,
   ExecutionAssertionItem,
+  DispatchTaskResponse,
 } from '../types';
 
 interface TaskListProps {
@@ -117,8 +118,10 @@ const TaskList: React.FC<TaskListProps> = () => {
   const [tasks, setTasks] = useState<ExecutionTask[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [selectedTask, setSelectedTask] = useState<TaskStatus | null>(null);
   const [modalLoading, setModalLoading] = useState(false);
+  const [rerunningTaskId, setRerunningTaskId] = useState<string | null>(null);
   const [dispatchModal, setDispatchModal] = useState<DispatchModalState>({
     isOpen: false,
     framework: DEFAULT_FRAMEWORK,
@@ -313,6 +316,35 @@ const TaskList: React.FC<TaskListProps> = () => {
       alert('获取任务详情失败');
     } finally {
       setModalLoading(false);
+    }
+  };
+
+  const handleRerunTask = async (
+    task: Pick<ExecutionTask, 'task_id' | 'dispatch_channel' | 'agent_id'>,
+    e?: React.MouseEvent,
+  ) => {
+    e?.stopPropagation();
+    setError(null);
+    setSuccessMessage(null);
+    setRerunningTaskId(task.task_id);
+    try {
+      const response = await api.rerunTask(task.task_id, {
+        dispatch_channel: task.dispatch_channel === 'HTTP' ? 'HTTP' : 'KAFKA',
+        agent_id: task.agent_id || undefined,
+      });
+      const payload = response.data as DispatchTaskResponse | undefined;
+      const newTaskId = payload?.task_id || '';
+      setSuccessMessage(newTaskId ? `已创建重跑任务 ${newTaskId}` : `任务 ${task.task_id} 已重新运行`);
+      await fetchTasks();
+      if (selectedTask?.task_id === task.task_id) {
+        const statusResponse = await api.getTaskStatus(task.task_id);
+        setSelectedTask(statusResponse.data);
+      }
+    } catch (err) {
+      console.error('Rerun task error:', err);
+      setError(`重新运行任务 ${task.task_id} 失败`);
+    } finally {
+      setRerunningTaskId(null);
     }
   };
 
@@ -607,6 +639,12 @@ const TaskList: React.FC<TaskListProps> = () => {
         </div>
       )}
 
+      {successMessage && (
+        <div style={styles.successBanner}>
+          <span>✓</span> {successMessage}
+        </div>
+      )}
+
       <div style={styles.tableWrapper}>
         {loading ? (
           <div style={styles.loadingState}>
@@ -644,7 +682,12 @@ const TaskList: React.FC<TaskListProps> = () => {
                       className="task-row"
                     >
                       <td style={styles.td}>
-                        <span style={styles.taskId}>{task.task_id}</span>
+                        <div style={styles.taskIdBlock}>
+                          <span style={styles.taskId}>{task.task_id}</span>
+                          {task.source_task_id && (
+                            <span style={styles.sourceTaskTag}>来源 {task.source_task_id}</span>
+                          )}
+                        </div>
                       </td>
                       <td style={styles.td}>
                         <span style={styles.frameworkBadge}>{task.framework}</span>
@@ -690,6 +733,15 @@ const TaskList: React.FC<TaskListProps> = () => {
                         </span>
                       </td>
                       <td style={styles.td}>
+                        <button
+                          style={styles.rerunBtn}
+                          className="rerun-btn"
+                          onClick={(e) => handleRerunTask(task, e)}
+                          title="重新运行任务"
+                          disabled={rerunningTaskId === task.task_id}
+                        >
+                          {rerunningTaskId === task.task_id ? '…' : '↻'}
+                        </button>
                         <button
                           style={styles.deleteBtn}
                           className="delete-btn"
@@ -747,6 +799,10 @@ const TaskList: React.FC<TaskListProps> = () => {
                   <div style={styles.detailItem}>
                     <span style={styles.detailLabel}>外部ID</span>
                     <span style={styles.detailValue}>{selectedTask.external_task_id || '-'}</span>
+                  </div>
+                  <div style={styles.detailItem}>
+                    <span style={styles.detailLabel}>重跑来源</span>
+                    <span style={styles.detailValue}>{selectedTask.source_task_id || '-'}</span>
                   </div>
                   <div style={styles.detailItem}>
                     <span style={styles.detailLabel}>执行框架</span>
@@ -844,6 +900,16 @@ const TaskList: React.FC<TaskListProps> = () => {
                       </span>
                     </div>
                   </div>
+                </div>
+
+                <div style={styles.detailActions}>
+                  <button
+                    style={styles.secondaryActionBtn}
+                    onClick={(e) => handleRerunTask(selectedTask, e)}
+                    disabled={rerunningTaskId === selectedTask.task_id}
+                  >
+                    {rerunningTaskId === selectedTask.task_id ? '重新运行中...' : '重新运行'}
+                  </button>
                 </div>
 
                 {selectedTask.error_message && (
@@ -1212,6 +1278,7 @@ const TaskList: React.FC<TaskListProps> = () => {
         .task-row { cursor: pointer; }
         .task-row:hover { background-color: var(--bg-tertiary) !important; }
         .task-row:hover td { color: var(--accent-cyan); }
+        .rerun-btn:hover { background-color: rgba(57, 208, 214, 0.12) !important; border-color: rgba(57, 208, 214, 0.28) !important; color: var(--accent-cyan) !important; }
         .delete-btn:hover { background-color: var(--status-error-bg) !important; border-color: var(--accent-red) !important; color: var(--accent-red) !important; }
       `}</style>
     </div>
@@ -1418,6 +1485,18 @@ const styles = {
     border: '1px solid var(--status-error)',
     borderRadius: 'var(--radius-md)',
     color: 'var(--accent-red)',
+    fontSize: '14px',
+    marginBottom: '20px',
+  } as const,
+  successBanner: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    padding: '14px 18px',
+    backgroundColor: 'rgba(34, 197, 94, 0.12)',
+    border: '1px solid rgba(34, 197, 94, 0.28)',
+    borderRadius: 'var(--radius-md)',
+    color: '#4ade80',
     fontSize: '14px',
     marginBottom: '20px',
   } as const,
@@ -1842,11 +1921,43 @@ const styles = {
     color: 'var(--text-muted)',
     transition: 'all var(--transition-fast)',
   } as const,
+  rerunBtn: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '32px',
+    height: '32px',
+    marginRight: '8px',
+    fontSize: '14px',
+    backgroundColor: 'transparent',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+    cursor: 'pointer',
+    color: 'var(--text-muted)',
+    transition: 'all var(--transition-fast)',
+  } as const,
   taskId: {
     fontFamily: "'JetBrains Mono', monospace",
     fontSize: '13px',
     fontWeight: 600,
     color: 'var(--accent-cyan)',
+  } as const,
+  taskIdBlock: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: '6px',
+  } as const,
+  sourceTaskTag: {
+    display: 'inline-flex',
+    alignSelf: 'flex-start',
+    padding: '3px 8px',
+    borderRadius: '999px',
+    fontSize: '10px',
+    fontWeight: 600,
+    color: 'var(--accent-cyan)',
+    backgroundColor: 'rgba(57, 208, 214, 0.12)',
+    border: '1px solid rgba(57, 208, 214, 0.22)',
+    fontFamily: "'JetBrains Mono', monospace",
   } as const,
   frameworkBadge: {
     fontFamily: "'JetBrains Mono', monospace",
@@ -2166,6 +2277,21 @@ const styles = {
   } as const,
   errorSection: {
     marginTop: '8px',
+  } as const,
+  detailActions: {
+    display: 'flex',
+    justifyContent: 'flex-end',
+    marginBottom: '20px',
+  } as const,
+  secondaryActionBtn: {
+    padding: '10px 16px',
+    fontSize: '13px',
+    fontWeight: 600,
+    color: 'var(--accent-cyan)',
+    backgroundColor: 'rgba(57, 208, 214, 0.08)',
+    border: '1px solid rgba(57, 208, 214, 0.24)',
+    borderRadius: 'var(--radius-md)',
+    cursor: 'pointer',
   } as const,
   errorMessage: {
     margin: 0,

@@ -19,7 +19,7 @@ features:
   - title: Test Specs
     details: 测试需求、测试用例、自动化测试用例库管理
   - title: Execution
-    details: 平台主导的串行 Case 执行编排与执行历史追踪
+    details: 平台主导的串行 Case 执行编排、双通道下发与当前态追踪
   - title: Auth
     details: JWT 认证、RBAC 权限控制和导航访问管理
 ---

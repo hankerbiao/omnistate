@@ -164,41 +164,70 @@
 | 方法 | 路径 | 权限 | 说明 |
 |------|------|------|------|
 | POST | `/api/v1/automation-test-cases` | `test_cases:write` | 创建自动化用例 |
+| POST | `/api/v1/automation-test-cases/report` | 无 | 批量上报自动化用例配置元数据 |
 | GET | `/api/v1/automation-test-cases` | `test_cases:read` | 查询自动化用例列表 |
 | GET | `/api/v1/automation-test-cases/{auto_case_id}` | `test_cases:read` | 查询自动化用例详情 |
+| GET | `/api/v1/automation-test-cases/by-manual-case-id/{dml_manual_case_id}` | `test_cases:read` | 按平台手工用例编号查询自动化用例 |
 
 ### 4.2 创建请求字段
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
+| `dml_manual_case_id` | string | 是 | 关联的平台手工测试用例编号 |
 | `name` | string | 是 | 自动化用例名称 |
-| `version` | string | 否 | 默认 `1.0.0` |
-| `status` | string | 否 | 默认 `ACTIVE` |
-| `framework` | string | 否 | 自动化框架 |
-| `automation_type` | string | 否 | 自动化类型 |
-| `repo_url` | string | 否 | 仓库地址 |
-| `repo_branch` | string | 否 | 默认分支 |
-| `script_entity_id` | string | 否 | 脚本实体 ID |
-| `entry_command` | string | 否 | 执行入口命令 |
-| `runtime_env` | object | 否 | 运行环境 |
-| `tags` | string[] | 否 | 标签 |
-| `maintainer_id` | string | 否 | 维护人 |
-| `reviewer_id` | string | 否 | 审核人 |
 | `description` | string | 否 | 描述 |
+| `status` | string | 否 | 默认 `ACTIVE` |
+| `framework` | string | 是 | 自动化框架 |
+| `automation_type` | string | 否 | 自动化类型 |
+| `script_ref` | object | 是 | 脚本定位信息 |
+| `config_path` | string | 否 | 配置文件路径 |
+| `script_name` | string | 否 | 脚本文件名 |
+| `script_path` | string | 否 | 脚本文件路径 |
+| `code_snapshot` | object | 是 | 代码版本快照 |
+| `param_spec` | object[] | 否 | 参数定义列表 |
+| `tags` | string[] | 否 | 标签 |
+| `report_meta` | object | 否 | 上报补充信息 |
 
 说明：
 
-- `auto_case_id` 可在请求中出现，但当前用法仍建议由后端生成。
-- `GET /{auto_case_id}` 返回的是该业务编号的最新版本。
+- `auto_case_id` 可在请求中出现，但仍建议由后端生成。
+- `script_ref.entity_id` 是执行端最常使用的脚本定位字段。
+- `code_snapshot.branch` 是当前自动化用例记录中的代码分支来源。
 
-### 4.3 列表查询参数
+### 4.3 元数据上报结构
+
+`POST /api/v1/automation-test-cases/report` 当前接收：
+
+- `cases: object[]`
+- `summary: object`
+
+其中单条 `cases[]` 元数据的当前常用字段包括：
+
+- `requirement_id`
+- `title`
+- `project_tag`
+- `description`
+- `tags`
+- `timeout`
+- `param_spec`
+- `case_id` 或 `dml_manual_case_id`
+- `config_path`
+- `module`
+- `project_scope`
+- `script_name`
+- `script_path`
+- `git_snapshot`
+
+服务会将这批字段规范化为自动化用例库记录，并以 `dml_manual_case_id` 为关联键尝试回链平台手工测试用例。
+
+### 4.4 列表查询参数
 
 | 参数 | 类型 | 说明 |
 |------|------|------|
 | `framework` | string | 按框架过滤 |
 | `automation_type` | string | 按类型过滤 |
 | `status` | string | 按状态过滤 |
-| `maintainer_id` | string | 按维护人过滤 |
+| `dml_manual_case_id` | string | 按平台手工用例编号过滤 |
 | `limit` | int | 默认 20，最大 200 |
 | `offset` | int | 默认 0 |
 
@@ -520,20 +549,47 @@ Authorization: Bearer <token>
 Content-Type: application/json
 
 {
-  "name": "DDR5 内存容量自动化测试",
-  "version": "1.0.0",
+  "dml_manual_case_id": "TC-2026-00018",
+  "name": "风扇基础检查自动化测试",
   "framework": "pytest",
-  "automation_type": "functional",
-  "repo_url": "https://git.example.com/qa/ddr5-tests.git",
-  "repo_branch": "main",
-  "entry_command": "pytest tests/test_ddr5_capacity.py -v",
-  "runtime_env": {
-    "python": "3.11",
-    "os": "linux"
+  "automation_type": "bmc",
+  "script_ref": {
+    "entity_id": "tests/universal/suite/fan/001_basic_check/test_fan_basic.py",
+    "module": "universal",
+    "project_tag": "universal",
+    "project_scope": ""
   },
-  "tags": ["ddr5", "memory"],
-  "maintainer_id": "auto_qa_01",
-  "description": "DDR5 容量识别自动化脚本"
+  "config_path": "tests/universal/suite/fan/001_basic_check/config.py",
+  "script_name": "test_fan_basic.py",
+  "script_path": "tests/universal/suite/fan/001_basic_check/test_fan_basic.py",
+  "code_snapshot": {
+    "version": "f8a26e1",
+    "commit_id": "f8a26e1e118af0cb247daf097cdc8f167848f456",
+    "commit_short_id": "f8a26e1",
+    "branch": "master",
+    "author": "测试用户 <test@example.com>",
+    "commit_time": "2026-03-18T03:07:18+00:00",
+    "message": "测试提交"
+  },
+  "param_spec": [
+    {
+      "__type__": "ConfigField",
+      "name": "target_ip",
+      "label": "目标 BMC IP 地址",
+      "type": "str",
+      "default": "192.168.1.100",
+      "required": true,
+      "description": "被测 BMC 的 IP 地址",
+      "extra_props": {}
+    }
+  ],
+  "tags": ["fan", "demo"],
+  "report_meta": {
+    "requirement_id": "suite-fan-001",
+    "author": "auto_qa_01",
+    "timeout": 300
+  },
+  "description": "风扇基础检查自动化脚本"
 }
 ```
 
@@ -544,23 +600,50 @@ Content-Type: application/json
   "data": {
     "id": "507f1f77bcf86cd799439401",
     "auto_case_id": "ATC-20260317-0001",
-    "name": "DDR5 内存容量自动化测试",
-    "version": "1.0.0",
+    "dml_manual_case_id": "TC-2026-00018",
+    "name": "风扇基础检查自动化测试",
     "status": "ACTIVE",
     "framework": "pytest",
-    "automation_type": "functional",
-    "repo_url": "https://git.example.com/qa/ddr5-tests.git",
-    "repo_branch": "main",
-    "script_entity_id": null,
-    "entry_command": "pytest tests/test_ddr5_capacity.py -v",
-    "runtime_env": {
-      "python": "3.11",
-      "os": "linux"
+    "automation_type": "bmc",
+    "script_ref": {
+      "entity_id": "tests/universal/suite/fan/001_basic_check/test_fan_basic.py",
+      "module": "universal",
+      "project_tag": "universal",
+      "project_scope": ""
     },
-    "tags": ["ddr5", "memory"],
-    "maintainer_id": "auto_qa_01",
-    "reviewer_id": null,
-    "description": "DDR5 容量识别自动化脚本",
+    "config_path": "tests/universal/suite/fan/001_basic_check/config.py",
+    "script_name": "test_fan_basic.py",
+    "script_path": "tests/universal/suite/fan/001_basic_check/test_fan_basic.py",
+    "code_snapshot": {
+      "version": "f8a26e1",
+      "commit_id": "f8a26e1e118af0cb247daf097cdc8f167848f456",
+      "commit_short_id": "f8a26e1",
+      "branch": "master",
+      "author": "测试用户 <test@example.com>",
+      "commit_time": "2026-03-18T03:07:18+00:00",
+      "message": "测试提交"
+    },
+    "param_spec": [
+      {
+        "type_marker": "ConfigField",
+        "name": "target_ip",
+        "label": "目标 BMC IP 地址",
+        "type": "str",
+        "default": "192.168.1.100",
+        "required": true,
+        "options": null,
+        "extensions": null,
+        "description": "被测 BMC 的 IP 地址",
+        "extra_props": {}
+      }
+    ],
+    "tags": ["fan", "demo"],
+    "report_meta": {
+      "requirement_id": "suite-fan-001",
+      "author": "auto_qa_01",
+      "timeout": 300
+    },
+    "description": "风扇基础检查自动化脚本",
     "created_at": "2026-03-17T12:28:00Z",
     "updated_at": "2026-03-17T12:28:00Z"
   }
