@@ -70,7 +70,7 @@
           "extra_props": {}
         }
       ],
-      "case_id": "TC-2026-00003",
+      "case_id": "TC-2026-00001",
       "config_path": "tests/universal/suite/power/001_basic_check/config.py",
       "module": "universal",
       "project_scope": "",
@@ -224,7 +224,7 @@
           "extra_props": {}
         }
       ],
-      "case_id": "TC-2026-00004",
+      "case_id": "TC-2026-00002",
       "config_path": "tests/jdm/suite/power/003_threshold_config/config.py",
       "module": "jdm",
       "project_scope": "",
@@ -307,7 +307,7 @@
           "extra_props": {}
         }
       ],
-      "case_id": "TC-2026-00005",
+      "case_id": "TC-2026-00003",
       "config_path": "tests/universal/suite/power/004_event_log/config.py",
       "module": "universal",
       "project_scope": "",
@@ -402,7 +402,7 @@
           "extra_props": {}
         }
       ],
-      "case_id": "TC-2026-00006",
+      "case_id": "TC-2026-00005",
       "config_path": "tests/jdm/suite/power/005_power_monitor/config.py",
       "module": "jdm",
       "project_scope": "",

@@ -65,6 +65,9 @@ class AutomationTestCaseDoc(Document):
     framework: str = Field(..., description="上报来源框架类型")
     automation_type: Optional[str] = Field(None, description="自动化类型")
     script_ref: ScriptRefModel = Field(..., description="脚本定位信息")
+    config_path: Optional[str] = Field(None, description="配置文件路径")
+    script_name: Optional[str] = Field(None, description="脚本文件名")
+    script_path: Optional[str] = Field(None, description="脚本文件路径")
     code_snapshot: CodeSnapshotModel = Field(..., description="代码版本快照")
     param_spec: List[ConfigFieldModel] = Field(default_factory=list, description="参数定义")
     tags: List[str] = Field(default_factory=list, description="标签")
@@ -86,6 +89,7 @@ class AutomationTestCaseDoc(Document):
             IndexModel("framework"),
             IndexModel("automation_type"),
             IndexModel("script_ref.entity_id"),
+            IndexModel("script_path"),
             IndexModel("code_snapshot.version"),
             IndexModel("is_deleted"),
             IndexModel([("auto_case_id", ASCENDING), ("updated_at", DESCENDING)]),
@@ -107,6 +111,9 @@ class AutomationTestCaseModel(BaseModel):
     framework: str
     automation_type: Optional[str] = None
     script_ref: ScriptRefModel
+    config_path: Optional[str] = None
+    script_name: Optional[str] = None
+    script_path: Optional[str] = None
     code_snapshot: CodeSnapshotModel
     param_spec: List[ConfigFieldModel] = Field(default_factory=list)
     tags: List[str] = Field(default_factory=list)

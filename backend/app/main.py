@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pymongo import AsyncMongoClient
 from beanie import init_beanie
 
+from app.shared.api.middleware.debug_http import DebugHttpLoggingMiddleware
 from app.shared.api.errors.handlers import setup_exception_handlers
 from app.shared.api.main import api_router
 from app.shared.db.config import settings
@@ -172,6 +173,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+if settings.APP_DEBUG:
+    app.add_middleware(DebugHttpLoggingMiddleware)
 
 setup_exception_handlers(app)
 

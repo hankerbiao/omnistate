@@ -2,6 +2,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    APP_DEBUG: bool = False
+
     # MongoDB 配置
     MONGO_URI: str = "mongodb://10.17.154.252:27019?replicaSet=rs0"
     MONGO_DB_NAME: str = "workflow_db"

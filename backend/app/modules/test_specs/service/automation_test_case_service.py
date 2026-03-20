@@ -82,6 +82,7 @@ class AutomationTestCaseService(BaseService):
         payload: Dict[str, Any],
     ) -> Dict[str, Any]:
         """接收自动化测试框架批量上报的用例配置元数据并逐条 upsert。"""
+        print(payload)
         cases, summary = self._extract_report_payload(payload)
 
         results: List[Dict[str, Any]] = []
@@ -93,7 +94,7 @@ class AutomationTestCaseService(BaseService):
             existing = await AutomationTestCaseDoc.find_one(
                 {"source_case_id": source_case_id, "is_deleted": False},
             )
-            doc_data = self._build_report_doc_data(source_case_id, metadata)
+            doc_data = self._build_report_doc_data(source_case_id, metadata, summary)
 
             if existing:
                 self._apply_updates(existing, doc_data, doc_data.keys())
@@ -121,24 +122,40 @@ class AutomationTestCaseService(BaseService):
         }
 
     @staticmethod
-    def _build_report_doc_data(source_case_id: str, metadata: Dict[str, Any]) -> Dict[str, Any]:
+    def _build_report_doc_data(
+        source_case_id: str,
+        metadata: Dict[str, Any],
+        summary: Dict[str, Any] | None = None,
+    ) -> Dict[str, Any]:
         """将框架上报载荷转换为规范化自动化用例文档。"""
-        git_snapshot = metadata.get("git_snapshot") or {}
+        summary = summary or {}
+        git_snapshot = metadata.get("git_snapshot") or summary.get("git_snapshot") or {}
         param_spec = AutomationTestCaseService._normalize_param_spec(metadata.get("param_spec") or [])
+        framework = str(
+            metadata.get("framework")
+            or metadata.get("test_framework")
+            or metadata.get("runner")
+            or "reported"
+        )
+        script_path = metadata.get("script_path")
+        config_path = metadata.get("config_path")
 
         return {
             "name": metadata.get("title") or source_case_id,
             "source_case_id": source_case_id,
             "description": metadata.get("description"),
             "status": "ACTIVE",
-            "framework": str(metadata.get("__type__") or "unknown"),
+            "framework": framework,
             "automation_type": metadata.get("module"),
             "script_ref": ScriptRefModel(
-                entity_id=metadata.get("config_path") or source_case_id,
+                entity_id=script_path or config_path or source_case_id,
                 module=metadata.get("module"),
                 project_tag=metadata.get("project_tag"),
                 project_scope=metadata.get("project_scope"),
             ),
+            "config_path": config_path,
+            "script_name": metadata.get("script_name"),
+            "script_path": script_path,
             "code_snapshot": CodeSnapshotModel(
                 version=str(git_snapshot.get("commit_short_id") or "reported"),
                 commit_id=git_snapshot.get("commit_id"),
@@ -171,6 +188,18 @@ class AutomationTestCaseService(BaseService):
         summary = payload.get("summary") or {}
         if not isinstance(summary, dict):
             raise ValueError("report payload.summary must be an object")
+        total_cases = summary.get("total_cases")
+        if total_cases is not None:
+            if not isinstance(total_cases, int):
+                raise ValueError("report payload.summary.total_cases must be an integer")
+            # if total_cases != len(case_items):
+            #     raise ValueError("report payload.summary.total_cases must match cases length")
+        modules = summary.get("modules")
+        if modules is not None and not isinstance(modules, dict):
+            raise ValueError("report payload.summary.modules must be an object")
+        git_snapshot = summary.get("git_snapshot")
+        if git_snapshot is not None and not isinstance(git_snapshot, dict):
+            raise ValueError("report payload.summary.git_snapshot must be an object")
         return case_items, summary
 
     @staticmethod
