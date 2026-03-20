@@ -10,6 +10,7 @@ from typing import Any, Dict
 from app.modules.execution.application.commands import DispatchExecutionTaskCommand
 from app.modules.execution.application.constants import FINAL_TASK_STATUSES, STOP_MODE_NONE
 from app.modules.execution.repository.models import ExecutionTaskDoc
+from app.shared.db.config import settings
 from app.shared.core.logger import log as logger
 
 
@@ -26,13 +27,42 @@ class ExecutionTaskCommandMixin:
         """基于业务载荷构建稳定去重键。"""
         payload = {
             "framework": command.framework,
+            "dispatch_channel": command.dispatch_channel,
             "agent_id": command.agent_id,
             "trigger_source": command.trigger_source,
             "schedule_type": command.schedule_type,
             "planned_at": command.planned_at.isoformat() if command.planned_at else None,
             "callback_url": command.callback_url,
+            "category": command.category,
+            "project_tag": command.project_tag,
+            "repo_url": command.repo_url,
+            "branch": command.branch,
+            "common_parameters": command.common_parameters or {},
+            "pytest_options": command.pytest_options or {},
+            "timeout": command.timeout,
             "dut": command.dut or {},
-            "case_ids": sorted(command.case_ids),
+            "cases": sorted(
+                [
+                    {
+                        "case_id": case_id,
+                        "case_path": case_payload.get("case_path"),
+                        "case_name": case_payload.get("case_name"),
+                        "parameters": case_payload.get("parameters") or {},
+                        "config": case_config or {},
+                    }
+                    for case_id, case_config, case_payload in zip(
+                        command.case_ids,
+                        command.case_configs or [{} for _ in command.case_ids],
+                        command.case_payloads or [{} for _ in command.case_ids],
+                    )
+                ],
+                key=lambda item: (
+                    item["case_id"],
+                    item.get("case_path") or "",
+                    item.get("case_name") or "",
+                    json.dumps(item.get("parameters") or {}, ensure_ascii=True, sort_keys=True, separators=(",", ":")),
+                ),
+            ),
         }
         normalized = json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
@@ -77,18 +107,48 @@ class ExecutionTaskCommandMixin:
             "task_id": command.task_id,
             "external_task_id": command.external_task_id,
             "framework": command.framework,
+            "dispatch_channel": command.dispatch_channel,
             "trigger_source": command.trigger_source,
             "agent_id": command.agent_id,
             "schedule_type": command.schedule_type,
             "planned_at": command.planned_at.isoformat() if command.planned_at else None,
             "callback_url": command.callback_url,
+            "category": command.category,
+            "project_tag": command.project_tag,
+            "repo_url": command.repo_url,
+            "branch": command.branch,
+            "common_parameters": command.common_parameters or {},
+            "pytest_options": command.pytest_options or {},
+            "timeout": command.timeout,
             "dut": command.dut or {},
             "cases": [
-                {"case_id": case_id, "auto_case_id": auto_case_id}
-                for case_id, auto_case_id in zip(command.case_ids, command.auto_case_ids)
+                {
+                    "case_id": case_id,
+                    "auto_case_id": auto_case_id,
+                    "script_entity_id": script_entity_id,
+                    "config": case_config or {},
+                    "payload_case_id": case_payload.get("case_id"),
+                    "case_path": case_payload.get("case_path"),
+                    "case_name": case_payload.get("case_name"),
+                    "parameters": case_payload.get("parameters") or {},
+                }
+                for case_id, auto_case_id, script_entity_id, case_config, case_payload in zip(
+                    command.case_ids,
+                    command.auto_case_ids,
+                    command.script_entity_ids or [None] * len(command.case_ids),
+                    command.case_configs or [{} for _ in command.case_ids],
+                    command.case_payloads or [{} for _ in command.case_ids],
+                )
             ],
             "created_by": command.created_by,
         }
+
+    @staticmethod
+    def _normalize_dispatch_channel(dispatch_channel: str | None) -> str:
+        normalized = (dispatch_channel or settings.EXECUTION_DISPATCH_MODE or "kafka").strip().upper()
+        if normalized not in {"KAFKA", "HTTP"}:
+            raise ValueError("dispatch_channel must be KAFKA or HTTP")
+        return normalized
 
     @staticmethod
     def _ensure_actor_identity(actual_actor_id: str, expected_actor_id: str) -> None:
@@ -127,6 +187,7 @@ class ExecutionTaskCommandMixin:
         cls._assign_fields(
             task_doc,
             agent_id=command.agent_id,
+            dispatch_channel=command.dispatch_channel,
             dedup_key=dedup_key,
             case_count=len(command.case_ids),
             reported_case_count=0,

@@ -43,6 +43,8 @@ from datetime import datetime, timezone
 from typing import Any
 
 import requests
+import uvicorn
+from fastapi import BackgroundTasks, FastAPI
 from kafka import KafkaConsumer, KafkaProducer
 
 
@@ -67,6 +69,7 @@ DEFAULT_PORT = 19090
 DEFAULT_REGION = "default"
 DEFAULT_HEARTBEAT_INTERVAL = 30
 DEFAULT_HEARTBEAT_TTL = 90
+DEFAULT_HTTP_DISPATCH_PATH = "/api/v1/tasks"
 
 # 执行延迟配置（秒）
 DEFAULT_DELAY_MIN = 0.5   # 最小延迟
@@ -383,9 +386,164 @@ def build_result_message(task_id: str, duration: float, case_count: int) -> dict
     }
 
 
+class MockFrameworkRuntime:
+    """统一处理 Kafka/HTTP 两种入口的任务执行。"""
+
+    def __init__(self, producer: KafkaProducer, delay_min: float, delay_max: float):
+        self.producer = producer
+        self.delay_min = delay_min
+        self.delay_max = delay_max
+
+    def process_task_payload(
+        self,
+        payload: dict[str, Any],
+        source_label: str,
+        source_meta: dict[str, Any] | None = None,
+    ) -> None:
+        import random
+
+        task_id = payload.get("task_id", "unknown")
+        external_task_id = payload.get("external_task_id")
+        framework = payload.get("framework")
+        agent_id = payload.get("agent_id")
+        cases = payload.get("cases", []) or []
+        real_cases = [case for case in cases if isinstance(case, dict) and case.get("case_id")]
+        case_count = len(real_cases)
+
+        print(f"\n[+] 收到任务: {task_id} (来源: {source_label})")
+        if source_meta:
+            print(f"    [-] 来源元信息: {pretty_json(source_meta)}")
+        print(
+            f"    [-] external_task_id={external_task_id}, framework={framework}, "
+            f"agent_id={agent_id}, 解析到真实用例数={case_count}"
+        )
+        print("    [-] 原始任务 payload:")
+        print(pretty_json(payload))
+
+        if case_count == 0:
+            print("    [!] 任务中没有可执行的 cases，跳过")
+            return
+
+        print("    [-] 解析后的用例列表:")
+        for index, case_item in enumerate(real_cases, start=1):
+            print(f"        {summarize_case(case_item, index, case_count)}")
+
+        total_delay = 0.0
+        finished_cases = 0
+        failed_cases = 0
+
+        for index, case_item in enumerate(real_cases, start=1):
+            case_id = case_item.get("case_id")
+            case_title = (
+                case_item.get("case_name")
+                or case_item.get("case_title")
+                or case_item.get("title")
+                or case_item.get("auto_case_id")
+                or case_id
+            )
+
+            case_start_event = build_test_event(
+                task_id=task_id,
+                phase="case_start",
+                status="RUNNING",
+                case_count=case_count,
+                started_cases=index,
+                finished_cases=finished_cases,
+                failed_cases=failed_cases,
+                case_id=case_id,
+                case_title=case_title,
+            )
+            self.producer.send(DEFAULT_TEST_EVENTS_TOPIC, case_start_event)
+            print(f"    [-] 已发送 case_start: {case_id}")
+            print(pretty_json(case_start_event))
+
+            delay = random.uniform(self.delay_min, self.delay_max)
+            total_delay += delay
+            print(
+                f"    [-] 模拟执行中: case_id={case_id}, case_path={case_item.get('case_path')}, "
+                f"parameters={pretty_json(case_item.get('parameters') or {})}, delay={delay:.2f}s"
+            )
+            time.sleep(delay)
+
+            finished_cases += 1
+            case_finish_event = build_test_event(
+                task_id=task_id,
+                phase="case_finish",
+                status="PASSED",
+                case_count=case_count,
+                started_cases=index,
+                finished_cases=finished_cases,
+                failed_cases=failed_cases,
+                case_id=case_id,
+                case_title=case_title,
+            )
+            self.producer.send(DEFAULT_TEST_EVENTS_TOPIC, case_finish_event)
+            print(f"    [-] 已发送 case_finish: {case_id} ({finished_cases}/{case_count})")
+            print(pretty_json(case_finish_event))
+
+        task_finish_event = build_test_event(
+            task_id=task_id,
+            phase="task_finish",
+            status="PASSED",
+            case_count=case_count,
+            started_cases=case_count,
+            finished_cases=finished_cases,
+            failed_cases=failed_cases,
+        )
+        self.producer.send(DEFAULT_TEST_EVENTS_TOPIC, task_finish_event)
+        print("    [-] 已发送 task_finish 事件")
+        print(pretty_json(task_finish_event))
+
+        result_message = build_result_message(task_id, total_delay, case_count)
+        self.producer.send(DEFAULT_RESULT_TOPIC, result_message)
+        print("    [-] 已发送结果消息")
+        print(pretty_json(result_message))
+        print(
+            f"    [+] 任务完成: {task_id}, case_count={case_count}, "
+            f"finished_cases={finished_cases}, failed_cases={failed_cases}, "
+            f"total_delay={total_delay:.2f}s"
+        )
+
+
+def create_http_app(runtime: MockFrameworkRuntime, agent_id: str) -> FastAPI:
+    app = FastAPI(title="Mock Test Framework")
+
+    @app.get("/health")
+    async def health() -> dict[str, Any]:
+        return {"ok": True, "agent_id": agent_id, "dispatch_path": DEFAULT_HTTP_DISPATCH_PATH}
+
+    @app.post(DEFAULT_HTTP_DISPATCH_PATH)
+    async def receive_dispatch(payload: dict[str, Any], background_tasks: BackgroundTasks) -> dict[str, Any]:
+        print("\n[http] 收到后端 HTTP 下发请求")
+        print(pretty_json(payload))
+        background_tasks.add_task(
+            runtime.process_task_payload,
+            payload,
+            "HTTP",
+            {"path": DEFAULT_HTTP_DISPATCH_PATH},
+        )
+        return {
+            "accepted": True,
+            "message": "Mock framework accepted HTTP dispatch",
+            "task_id": payload.get("task_id"),
+            "agent_id": agent_id,
+        }
+
+    return app
+
+
+def start_http_server(app: FastAPI, host: str, port: int) -> threading.Thread:
+    def run() -> None:
+        uvicorn.run(app, host=host, port=port, log_level="info")
+
+    thread = threading.Thread(target=run, daemon=True, name="mock-framework-http")
+    thread.start()
+    return thread
+
+
 def simulate_execution(
+    runtime: MockFrameworkRuntime,
     consumer: KafkaConsumer,
-    producer: KafkaProducer,
     delay_min: float,
     delay_max: float,
 ) -> None:
@@ -401,13 +559,11 @@ def simulate_execution(
         delay_min: 最小执行延迟
         delay_max: 最大执行延迟
     """
-    import random
-
-    print(f"[*] Mock Test Framework Client 已启动")
+    print("[*] Mock Test Framework Client 已启动")
     print(f"[*] 监听 Topic: {DEFAULT_TASK_TOPIC}")
     print(f"[*] 输出 Topic: result={DEFAULT_RESULT_TOPIC}, test_events={DEFAULT_TEST_EVENTS_TOPIC}")
     print(f"[*] 执行延迟范围: {delay_min}-{delay_max}秒, 按任务真实 case 列表执行")
-    print(f"[*] 按 Ctrl+C 退出\n")
+    print("[*] 按 Ctrl+C 退出\n")
 
     while True:
         try:
@@ -417,108 +573,21 @@ def simulate_execution(
             # 处理每个消息
             for topic_partition, messages in records.items():
                 for message in messages:
-                    # 解析任务数据
                     task_data = message.value
                     task_id = task_data.get("task_id", "unknown")
                     task_type = task_data.get("task_type", "unknown")
                     payload = task_data.get("task_data", {}) or {}
-                    external_task_id = payload.get("external_task_id") or task_data.get("external_task_id")
-                    framework = payload.get("framework") or task_data.get("framework")
-                    agent_id = payload.get("agent_id")
-                    cases = payload.get("cases", []) or []
-                    real_cases = [case for case in cases if isinstance(case, dict) and case.get("case_id")]
-                    case_count = len(real_cases)
-
-                    print(f"\n[+] 收到任务: {task_id} (类型: {task_type})")
-                    print(
-                        f"    [-] topic={topic_partition.topic}, partition={message.partition}, "
-                        f"offset={message.offset}, key={message.key!r}"
-                    )
-                    print(
-                        f"    [-] external_task_id={external_task_id}, framework={framework}, "
-                        f"agent_id={agent_id}, 解析到真实用例数={case_count}"
-                    )
-                    print("    [-] 原始任务消息:")
-                    print(pretty_json(task_data))
-
-                    if case_count == 0:
-                        print("    [!] 任务中没有可执行的 cases，跳过")
-                        continue
-
-                    print("    [-] 解析后的用例列表:")
-                    for index, case_item in enumerate(real_cases, start=1):
-                        print(f"        {summarize_case(case_item, index, case_count)}")
-
-                    total_delay = 0.0
-                    finished_cases = 0
-                    failed_cases = 0
-
-                    for index, case_item in enumerate(real_cases, start=1):
-                        case_id = case_item.get("case_id")
-                        case_title = (
-                            case_item.get("case_title")
-                            or case_item.get("title")
-                            or case_item.get("auto_case_id")
-                            or case_id
-                        )
-
-                        case_start_event = build_test_event(
-                            task_id=task_id,
-                            phase="case_start",
-                            status="RUNNING",
-                            case_count=case_count,
-                            started_cases=index,
-                            finished_cases=finished_cases,
-                            failed_cases=failed_cases,
-                            case_id=case_id,
-                            case_title=case_title,
-                        )
-                        producer.send(DEFAULT_TEST_EVENTS_TOPIC, case_start_event)
-                        print(f"    [-] 已发送 case_start: {case_id}")
-                        print(pretty_json(case_start_event))
-
-                        delay = random.uniform(delay_min, delay_max)
-                        total_delay += delay
-                        print(f"    [-] 模拟执行中: case_id={case_id}, delay={delay:.2f}s")
-                        time.sleep(delay)
-
-                        finished_cases += 1
-                        case_finish_event = build_test_event(
-                            task_id=task_id,
-                            phase="case_finish",
-                            status="PASSED",
-                            case_count=case_count,
-                            started_cases=index,
-                            finished_cases=finished_cases,
-                            failed_cases=failed_cases,
-                            case_id=case_id,
-                            case_title=case_title,
-                        )
-                        producer.send(DEFAULT_TEST_EVENTS_TOPIC, case_finish_event)
-                        print(f"    [-] 已发送 case_finish: {case_id} ({finished_cases}/{case_count})")
-                        print(pretty_json(case_finish_event))
-
-                    task_finish_event = build_test_event(
-                        task_id=task_id,
-                        phase="task_finish",
-                        status="PASSED",
-                        case_count=case_count,
-                        started_cases=case_count,
-                        finished_cases=finished_cases,
-                        failed_cases=failed_cases,
-                    )
-                    producer.send(DEFAULT_TEST_EVENTS_TOPIC, task_finish_event)
-                    print("    [-] 已发送 task_finish 事件")
-                    print(pretty_json(task_finish_event))
-
-                    result_message = build_result_message(task_id, total_delay, case_count)
-                    producer.send(DEFAULT_RESULT_TOPIC, result_message)
-                    print("    [-] 已发送结果消息")
-                    print(pretty_json(result_message))
-                    print(
-                        f"    [+] 任务完成: {task_id}, case_count={case_count}, "
-                        f"finished_cases={finished_cases}, failed_cases={failed_cases}, "
-                        f"total_delay={total_delay:.2f}s"
+                    runtime.process_task_payload(
+                        payload,
+                        "KAFKA",
+                        {
+                            "topic": topic_partition.topic,
+                            "partition": message.partition,
+                            "offset": message.offset,
+                            "key": repr(message.key),
+                            "task_type": task_type,
+                            "wrapper_task_id": task_id,
+                        },
                     )
 
         except KeyboardInterrupt:
@@ -560,6 +629,14 @@ def main():
     # 创建 Kafka 消费者和生产者
     consumer = create_consumer(args.bootstrap_servers, args.group_id)
     producer = create_producer(args.bootstrap_servers)
+    runtime = MockFrameworkRuntime(
+        producer=producer,
+        delay_min=args.delay_min,
+        delay_max=args.delay_max,
+    )
+    http_app = create_http_app(runtime, args.agent_id)
+    http_thread = start_http_server(http_app, args.host, args.port)
+    print(f"[*] HTTP 下发接口: http://{args.host}:{args.port}{DEFAULT_HTTP_DISPATCH_PATH}")
     framework_client = FrameworkClient(
         platform_url=args.platform_url,
         agent_id=args.agent_id,
@@ -603,8 +680,8 @@ def main():
     try:
         # 启动模拟执行循环
         simulate_execution(
+            runtime=runtime,
             consumer=consumer,
-            producer=producer,
             delay_min=args.delay_min,
             delay_max=args.delay_max,
         )
@@ -613,6 +690,8 @@ def main():
         stop_event.set()
         if heartbeat_thread is not None and heartbeat_thread.is_alive():
             heartbeat_thread.join(timeout=2)
+        if http_thread.is_alive():
+            print("[*] HTTP 服务线程随进程退出")
         consumer.close()
         producer.close()
         print("[*] 资源已释放")

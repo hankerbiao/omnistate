@@ -165,8 +165,10 @@ class ExecutionService(
             command.schedule_type,
             command.planned_at,
         )
+        dispatch_channel = self._normalize_dispatch_channel(command.dispatch_channel)
         command.schedule_type = schedule_type
         command.planned_at = planned_at
+        command.dispatch_channel = dispatch_channel
         dedup_key = self._build_dedup_key(command)
         await self._ensure_no_active_duplicate(dedup_key)
 
@@ -175,7 +177,7 @@ class ExecutionService(
             external_task_id=command.external_task_id,
             framework=command.framework,
             created_by=command.created_by,
-            dispatch_channel="KAFKA",
+            dispatch_channel=dispatch_channel,
         )
         self._apply_task_command_to_doc(
             task_doc=task_doc,
@@ -186,7 +188,13 @@ class ExecutionService(
             dispatch_status="DISPATCHING" if should_dispatch_now else "PENDING",
         )
         await task_doc.insert()
-        await self._replace_task_case_docs(task_doc.task_id, command.case_ids, command.auto_case_ids, doc_map)
+        await self._replace_task_case_docs(
+            task_doc.task_id,
+            command.case_ids,
+            command.auto_case_ids,
+            command.case_configs or [{} for _ in command.case_ids],
+            doc_map,
+        )
         await task_doc.save()
         await self._dispatch_task_if_needed(task_doc, should_dispatch_now)
         logger.info(

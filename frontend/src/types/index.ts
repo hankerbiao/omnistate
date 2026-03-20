@@ -186,15 +186,47 @@ export interface ListTestCasesParams {
 
 export interface DispatchCaseItem {
   auto_case_id: string;
+  script_entity_id?: string;
+  config?: Record<string, unknown>;
+  case_path?: string;
+  case_name?: string;
+  parameters?: Record<string, unknown>;
+}
+
+export interface AutomationConfigFieldOption {
+  label?: string;
+  value: string | number | boolean;
+}
+
+export interface AutomationConfigField {
+  type_marker?: string;
+  __type__?: string;
+  name: string;
+  label?: string;
+  type?: string;
+  default?: unknown;
+  required?: boolean;
+  options?: AutomationConfigFieldOption[] | null;
+  extensions?: Record<string, unknown> | null;
+  description?: string;
+  extra_props?: Record<string, unknown>;
 }
 
 export interface DispatchTaskRequest {
   framework: string;
+  dispatch_channel?: 'KAFKA' | 'HTTP';
   agent_id?: string;
   trigger_source?: string;
   schedule_type?: string;
   planned_at?: string;
   callback_url?: string;
+  category?: string;
+  project_tag?: string;
+  repo_url?: string;
+  branch?: string;
+  common_parameters?: Record<string, unknown>;
+  pytest_options?: Record<string, unknown>;
+  timeout?: number;
   dut?: Record<string, unknown>;
   cases: DispatchCaseItem[];
 }
@@ -240,6 +272,7 @@ export interface CreateAutomationTestCaseRequest {
   automation_type?: string;
   repo_url?: string;
   repo_branch?: string;
+  script_path?: string;
   script_entity_id?: string;
   entry_command?: string;
   runtime_env?: Record<string, unknown>;
@@ -252,6 +285,7 @@ export interface CreateAutomationTestCaseRequest {
 export interface AutomationTestCaseResponse {
   id: string;
   auto_case_id: string;
+  dml_manual_case_id?: string;
   name: string;
   version: string;
   status: string;
@@ -259,6 +293,7 @@ export interface AutomationTestCaseResponse {
   automation_type?: string;
   repo_url?: string;
   repo_branch?: string;
+  script_path?: string;
   script_entity_id?: string;
   entry_command?: string;
   runtime_env: Record<string, unknown>;
@@ -266,6 +301,24 @@ export interface AutomationTestCaseResponse {
   maintainer_id?: string;
   reviewer_id?: string;
   description?: string;
+  param_spec?: AutomationConfigField[];
+  report_meta?: {
+    timeout?: number;
+  };
+  code_snapshot?: {
+    branch?: string;
+    commit_id?: string;
+    commit_short_id?: string;
+    author?: string;
+    commit_time?: string;
+    message?: string;
+  };
+  script_ref?: {
+    entity_id?: string;
+    module?: string;
+    project_tag?: string;
+    project_scope?: string;
+  };
   created_at: string;
   updated_at: string;
 }

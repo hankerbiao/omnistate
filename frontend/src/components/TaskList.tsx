@@ -4,6 +4,7 @@ import type {
   ExecutionTask,
   TaskStatus,
   AutomationTestCaseResponse,
+  AutomationConfigField,
   ExecutionAgent,
   DispatchCaseItem,
   ExecutionTaskCaseSummary,
@@ -17,10 +18,13 @@ interface TaskListProps {
 interface DispatchModalState {
   isOpen: boolean;
   framework: string;
+  dispatchChannel: 'KAFKA' | 'HTTP';
   agentId: string;
   scheduleType: 'IMMEDIATE' | 'SCHEDULED';
   plannedAt: string;
   selectedCases: string[];
+  category: string;
+  projectTag: string;
   loading: boolean;
   submitting: boolean;
   error: string | null;
@@ -51,6 +55,64 @@ const getAssertionStatusText = (status?: string) => {
   return getStatusAppearance(status).label;
 };
 
+const getConfigFieldInputType = (fieldType?: string) => {
+  const normalizedType = (fieldType || 'str').toLowerCase();
+  if (normalizedType === 'int' || normalizedType === 'float' || normalizedType === 'number') {
+    return 'number';
+  }
+  return 'text';
+};
+
+const normalizeConfigValue = (
+  rawValue: string | boolean,
+  field: AutomationConfigField,
+): string | number | boolean => {
+  const normalizedType = (field.type || 'str').toLowerCase();
+  if (normalizedType === 'bool' || normalizedType === 'boolean') {
+    return Boolean(rawValue);
+  }
+  if (rawValue === '') {
+    return '';
+  }
+  if (normalizedType === 'int' || normalizedType === 'number') {
+    return Number.parseInt(String(rawValue), 10);
+  }
+  if (normalizedType === 'float') {
+    return Number.parseFloat(String(rawValue));
+  }
+  return String(rawValue);
+};
+
+const buildDefaultCaseConfig = (caseItem?: AutomationTestCaseResponse): Record<string, unknown> => {
+  return (caseItem?.param_spec || []).reduce<Record<string, unknown>>((acc, field) => {
+    acc[field.name] = field.default ?? '';
+    return acc;
+  }, {});
+};
+
+const getFieldDisplayLabel = (field: AutomationConfigField) => {
+  return field.label || field.name;
+};
+
+const buildDispatchCaseItems = (
+  selectedCaseIds: string[],
+  autoCases: AutomationTestCaseResponse[],
+  caseConfigs: Record<string, Record<string, unknown>>,
+): DispatchCaseItem[] => {
+  const autoCaseMap = new Map(autoCases.map(caseItem => [caseItem.auto_case_id, caseItem]));
+  return selectedCaseIds.map((autoCaseId) => {
+    const matchedCase = autoCaseMap.get(autoCaseId);
+    return {
+      auto_case_id: autoCaseId,
+      script_entity_id: matchedCase?.script_ref?.entity_id,
+      config: caseConfigs[autoCaseId] || buildDefaultCaseConfig(matchedCase),
+      case_path: matchedCase?.script_ref?.entity_id || matchedCase?.script_path || '',
+      case_name: matchedCase?.name || autoCaseId,
+      parameters: caseConfigs[autoCaseId] || buildDefaultCaseConfig(matchedCase),
+    };
+  });
+};
+
 const TaskList: React.FC<TaskListProps> = () => {
   const [tasks, setTasks] = useState<ExecutionTask[]>([]);
   const [loading, setLoading] = useState(false);
@@ -60,10 +122,13 @@ const TaskList: React.FC<TaskListProps> = () => {
   const [dispatchModal, setDispatchModal] = useState<DispatchModalState>({
     isOpen: false,
     framework: DEFAULT_FRAMEWORK,
+    dispatchChannel: 'KAFKA',
     agentId: '',
     scheduleType: 'IMMEDIATE',
     plannedAt: '',
     selectedCases: [],
+    category: 'bmc',
+    projectTag: 'universal',
     loading: false,
     submitting: false,
     error: null,
@@ -71,6 +136,8 @@ const TaskList: React.FC<TaskListProps> = () => {
   const [autoCases, setAutoCases] = useState<AutomationTestCaseResponse[]>([]);
   const [agents, setAgents] = useState<ExecutionAgent[]>([]);
   const [expandedCaseKeys, setExpandedCaseKeys] = useState<string[]>([]);
+  const [caseConfigs, setCaseConfigs] = useState<Record<string, Record<string, unknown>>>({});
+  const [configEditorCaseId, setConfigEditorCaseId] = useState<string | null>(null);
 
   const fetchTasks = useCallback(async () => {
     setLoading(true);
@@ -100,6 +167,8 @@ const TaskList: React.FC<TaskListProps> = () => {
       ]);
       setAutoCases(casesRes.data || []);
       setAgents(agentsRes.data || []);
+      setCaseConfigs({});
+      setConfigEditorCaseId(null);
     } catch (err) {
       console.error('Fetch dispatch data error:', err);
       setDispatchModal(prev => ({ ...prev, error: '获取用例和代理失败' }));
@@ -112,36 +181,74 @@ const TaskList: React.FC<TaskListProps> = () => {
     setDispatchModal({
       isOpen: false,
       framework: DEFAULT_FRAMEWORK,
+      dispatchChannel: 'KAFKA',
       agentId: '',
       scheduleType: 'IMMEDIATE',
       plannedAt: '',
       selectedCases: [],
+      category: 'bmc',
+      projectTag: 'universal',
       loading: false,
       submitting: false,
       error: null,
     });
+    setCaseConfigs({});
+    setConfigEditorCaseId(null);
   };
 
   const handleDispatchSubmit = async () => {
-    const { framework, agentId, scheduleType, plannedAt, selectedCases } = dispatchModal;
+    const { framework, dispatchChannel, agentId, scheduleType, plannedAt, selectedCases, category, projectTag } = dispatchModal;
     if (selectedCases.length === 0) {
       setDispatchModal(prev => ({ ...prev, error: '请选择至少一个用例' }));
+      return;
+    }
+    if (dispatchChannel === 'HTTP' && !agentId) {
+      setDispatchModal(prev => ({ ...prev, error: 'HTTP 下发必须选择目标代理' }));
       return;
     }
     if (scheduleType === 'SCHEDULED' && !plannedAt) {
       setDispatchModal(prev => ({ ...prev, error: '请选择计划执行时间' }));
       return;
     }
+    const autoCaseMap = new Map(autoCases.map(caseItem => [caseItem.auto_case_id, caseItem]));
+    for (const autoCaseId of selectedCases) {
+      const caseItem = autoCaseMap.get(autoCaseId);
+      if (!caseItem) {
+        setDispatchModal(prev => ({ ...prev, error: `未找到用例信息：${autoCaseId}` }));
+        return;
+      }
+      const configValues = caseConfigs[autoCaseId] || buildDefaultCaseConfig(caseItem);
+      for (const field of caseItem.param_spec || []) {
+        const value = configValues[field.name];
+        const isEmptyString = typeof value === 'string' && value.trim() === '';
+        if (field.required && (value === undefined || value === null || isEmptyString)) {
+          setDispatchModal(prev => ({
+            ...prev,
+            error: `请填写 ${caseItem.auto_case_id} 的配置项：${getFieldDisplayLabel(field)}`,
+          }));
+          return;
+        }
+      }
+    }
 
     setDispatchModal(prev => ({ ...prev, submitting: true, error: null }));
     try {
-      const cases: DispatchCaseItem[] = selectedCases.map(id => ({ auto_case_id: id }));
+      const cases = buildDispatchCaseItems(selectedCases, autoCases, caseConfigs);
+      const firstSelectedCase = autoCases.find(caseItem => caseItem.auto_case_id === selectedCases[0]);
       const requestData = {
         framework,
+        dispatch_channel: dispatchChannel,
         agent_id: agentId || undefined,
         trigger_source: 'web_ui',
         schedule_type: scheduleType,
         planned_at: scheduleType === 'SCHEDULED' ? plannedAt : undefined,
+        category,
+        project_tag: projectTag,
+        repo_url: firstSelectedCase?.repo_url || '',
+        branch: firstSelectedCase?.code_snapshot?.branch || '',
+        common_parameters: {},
+        pytest_options: {},
+        timeout: firstSelectedCase?.report_meta?.timeout || 0,
         cases,
       };
       await api.dispatchTask(requestData);
@@ -156,13 +263,45 @@ const TaskList: React.FC<TaskListProps> = () => {
   };
 
   const toggleCaseSelection = (caseId: string) => {
+    const isSelected = dispatchModal.selectedCases.includes(caseId);
     setDispatchModal(prev => ({
       ...prev,
       selectedCases: prev.selectedCases.includes(caseId)
         ? prev.selectedCases.filter(id => id !== caseId)
         : [...prev.selectedCases, caseId],
     }));
+    setCaseConfigs(prev => {
+      if (prev[caseId]) {
+        const next = { ...prev };
+        delete next[caseId];
+        return next;
+      }
+      const caseItem = autoCases.find(item => item.auto_case_id === caseId);
+      return {
+        ...prev,
+        [caseId]: buildDefaultCaseConfig(caseItem),
+      };
+    });
+    setConfigEditorCaseId(isSelected ? null : caseId);
   };
+
+  const handleCaseConfigChange = (
+    autoCaseId: string,
+    field: AutomationConfigField,
+    rawValue: string | boolean,
+  ) => {
+    setCaseConfigs(prev => ({
+      ...prev,
+      [autoCaseId]: {
+        ...(prev[autoCaseId] || {}),
+        [field.name]: normalizeConfigValue(rawValue, field),
+      },
+    }));
+  };
+
+  const editingCase = configEditorCaseId
+    ? autoCases.find(item => item.auto_case_id === configEditorCaseId) || null
+    : null;
 
   const handleTaskClick = async (taskId: string) => {
     setModalLoading(true);
@@ -752,13 +891,41 @@ const TaskList: React.FC<TaskListProps> = () => {
                   </div>
 
                   <div style={styles.formSection}>
-                    <label style={styles.formLabel}>目标代理 (可选)</label>
+                    <label style={styles.formLabel}>下发通道</label>
+                    <div style={styles.radioGroup}>
+                      <label style={styles.radioLabel}>
+                        <input
+                          type="radio"
+                          name="dispatchChannel"
+                          checked={dispatchModal.dispatchChannel === 'KAFKA'}
+                          onChange={() => setDispatchModal(prev => ({ ...prev, dispatchChannel: 'KAFKA' }))}
+                        />
+                        <span>Kafka 下发</span>
+                      </label>
+                      <label style={styles.radioLabel}>
+                        <input
+                          type="radio"
+                          name="dispatchChannel"
+                          checked={dispatchModal.dispatchChannel === 'HTTP'}
+                          onChange={() => setDispatchModal(prev => ({ ...prev, dispatchChannel: 'HTTP' }))}
+                        />
+                        <span>HTTP 下发</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  <div style={styles.formSection}>
+                    <label style={styles.formLabel}>
+                      目标代理 {dispatchModal.dispatchChannel === 'HTTP' ? '(必选)' : '(可选)'}
+                    </label>
                     <select
                       style={styles.select}
                       value={dispatchModal.agentId}
                       onChange={(e) => setDispatchModal(prev => ({ ...prev, agentId: e.target.value }))}
                     >
-                      <option value="">自动分配</option>
+                      <option value="">
+                        {dispatchModal.dispatchChannel === 'HTTP' ? '请选择代理' : '自动分配'}
+                      </option>
                       {agents.map(agent => (
                         <option key={agent.agent_id} value={agent.agent_id}>
                           {agent.agent_id} ({agent.hostname})
@@ -804,6 +971,31 @@ const TaskList: React.FC<TaskListProps> = () => {
                   )}
 
                   <div style={styles.formSection}>
+                    <label style={styles.formLabel}>Category</label>
+                    <select
+                      style={styles.select}
+                      value={dispatchModal.category}
+                      onChange={(e) => setDispatchModal(prev => ({ ...prev, category: e.target.value }))}
+                    >
+                      <option value="bmc">BMC</option>
+                      <option value="bios">BIOS</option>
+                      <option value="os">OS</option>
+                    </select>
+                  </div>
+
+                  <div style={styles.formSection}>
+                    <label style={styles.formLabel}>Project Tag</label>
+                    <select
+                      style={styles.select}
+                      value={dispatchModal.projectTag}
+                      onChange={(e) => setDispatchModal(prev => ({ ...prev, projectTag: e.target.value }))}
+                    >
+                      <option value="universal">Universal</option>
+                      <option value="specific">Specific</option>
+                    </select>
+                  </div>
+
+                  <div style={styles.formSection}>
                     <label style={styles.formLabel}>
                       选择用例 ({dispatchModal.selectedCases.length} 已选)
                     </label>
@@ -826,6 +1018,88 @@ const TaskList: React.FC<TaskListProps> = () => {
                     </div>
                   </div>
 
+                  {dispatchModal.selectedCases.length > 0 && (
+                    <div style={styles.formSection}>
+                      <label style={styles.formLabel}>用例配置</label>
+                      <div style={styles.caseConfigList}>
+                        {dispatchModal.selectedCases.map((autoCaseId) => {
+                          const caseItem = autoCases.find(item => item.auto_case_id === autoCaseId);
+                          if (!caseItem) {
+                            return null;
+                          }
+                          const fields = caseItem.param_spec || [];
+                          const configValues = caseConfigs[autoCaseId] || buildDefaultCaseConfig(caseItem);
+                          return (
+                            <div key={autoCaseId} style={styles.caseConfigCard}>
+                              <div style={styles.caseConfigHeader}>
+                                <div style={styles.caseConfigTitleBlock}>
+                                  <span style={styles.caseConfigTitle}>{caseItem.auto_case_id}</span>
+                                  <span style={styles.caseConfigSubtitle}>{caseItem.name}</span>
+                                </div>
+                                <span style={styles.caseConfigCount}>{fields.length} 项配置</span>
+                              </div>
+                              {fields.length === 0 ? (
+                                <div style={styles.caseConfigEmpty}>该用例没有配置项</div>
+                              ) : (
+                                <div style={styles.caseConfigFields}>
+                                  {fields.map((field) => {
+                                    const currentValue = configValues[field.name];
+                                    const normalizedType = (field.type || 'str').toLowerCase();
+                                    return (
+                                      <div key={`${autoCaseId}-${field.name}`} style={styles.caseConfigField}>
+                                        <div style={styles.caseConfigFieldHeader}>
+                                          <label style={styles.caseConfigLabel}>
+                                            {getFieldDisplayLabel(field)}
+                                            {field.required && <span style={styles.requiredMark}>*</span>}
+                                          </label>
+                                          <span style={styles.caseConfigType}>{field.type || 'str'}</span>
+                                        </div>
+                                        {field.description && (
+                                          <div style={styles.caseConfigDescription}>{field.description}</div>
+                                        )}
+                                        {field.options && field.options.length > 0 ? (
+                                          <select
+                                            style={styles.select}
+                                            value={String(currentValue ?? '')}
+                                            onChange={(e) => handleCaseConfigChange(autoCaseId, field, e.target.value)}
+                                          >
+                                            <option value="">请选择</option>
+                                            {field.options.map((option, index) => (
+                                              <option key={`${field.name}-${index}`} value={String(option.value)}>
+                                                {option.label || String(option.value)}
+                                              </option>
+                                            ))}
+                                          </select>
+                                        ) : normalizedType === 'bool' || normalizedType === 'boolean' ? (
+                                          <label style={styles.checkboxLabel}>
+                                            <input
+                                              type="checkbox"
+                                              checked={Boolean(currentValue)}
+                                              onChange={(e) => handleCaseConfigChange(autoCaseId, field, e.target.checked)}
+                                            />
+                                            <span>启用</span>
+                                          </label>
+                                        ) : (
+                                          <input
+                                            type={getConfigFieldInputType(field.type)}
+                                            style={styles.input}
+                                            value={String(currentValue ?? '')}
+                                            onChange={(e) => handleCaseConfigChange(autoCaseId, field, e.target.value)}
+                                            placeholder={field.default !== undefined ? String(field.default) : field.name}
+                                          />
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
                   {dispatchModal.error && (
                     <div style={styles.errorBanner}>{dispatchModal.error}</div>
                   )}
@@ -844,6 +1118,89 @@ const TaskList: React.FC<TaskListProps> = () => {
                   </div>
                 </>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {dispatchModal.isOpen && editingCase && (
+        <div style={styles.modalOverlay} onClick={() => setConfigEditorCaseId(null)}>
+          <div style={styles.caseConfigEditorModal} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.modalHeader}>
+              <h3 style={styles.modalTitle}>
+                <span style={styles.modalIcon}>⚙</span>
+                用例配置
+              </h3>
+              <button style={styles.closeBtn} onClick={() => setConfigEditorCaseId(null)}>×</button>
+            </div>
+            <div style={styles.dispatchModalBody}>
+              <div style={styles.caseConfigHeader}>
+                <div style={styles.caseConfigTitleBlock}>
+                  <span style={styles.caseConfigTitle}>{editingCase.auto_case_id}</span>
+                  <span style={styles.caseConfigSubtitle}>{editingCase.name}</span>
+                </div>
+                <span style={styles.caseConfigCount}>{(editingCase.param_spec || []).length} 项配置</span>
+              </div>
+              {(editingCase.param_spec || []).length === 0 ? (
+                <div style={styles.caseConfigEmpty}>该用例没有配置项</div>
+              ) : (
+                <div style={styles.caseConfigFields}>
+                  {(editingCase.param_spec || []).map((field) => {
+                    const currentValue = (caseConfigs[editingCase.auto_case_id] || buildDefaultCaseConfig(editingCase))[field.name];
+                    const normalizedType = (field.type || 'str').toLowerCase();
+                    return (
+                      <div key={`${editingCase.auto_case_id}-${field.name}`} style={styles.caseConfigField}>
+                        <div style={styles.caseConfigFieldHeader}>
+                          <label style={styles.caseConfigLabel}>
+                            {getFieldDisplayLabel(field)}
+                            {field.required && <span style={styles.requiredMark}>*</span>}
+                          </label>
+                          <span style={styles.caseConfigType}>{field.type || 'str'}</span>
+                        </div>
+                        {field.description && (
+                          <div style={styles.caseConfigDescription}>{field.description}</div>
+                        )}
+                        {field.options && field.options.length > 0 ? (
+                          <select
+                            style={styles.select}
+                            value={String(currentValue ?? '')}
+                            onChange={(e) => handleCaseConfigChange(editingCase.auto_case_id, field, e.target.value)}
+                          >
+                            <option value="">请选择</option>
+                            {field.options.map((option, index) => (
+                              <option key={`${field.name}-${index}`} value={String(option.value)}>
+                                {option.label || String(option.value)}
+                              </option>
+                            ))}
+                          </select>
+                        ) : normalizedType === 'bool' || normalizedType === 'boolean' ? (
+                          <label style={styles.checkboxLabel}>
+                            <input
+                              type="checkbox"
+                              checked={Boolean(currentValue)}
+                              onChange={(e) => handleCaseConfigChange(editingCase.auto_case_id, field, e.target.checked)}
+                            />
+                            <span>启用</span>
+                          </label>
+                        ) : (
+                          <input
+                            type={getConfigFieldInputType(field.type)}
+                            style={styles.input}
+                            value={String(currentValue ?? '')}
+                            onChange={(e) => handleCaseConfigChange(editingCase.auto_case_id, field, e.target.value)}
+                            placeholder={field.default !== undefined ? String(field.default) : field.name}
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              <div style={styles.modalActions}>
+                <button style={styles.cancelBtn} onClick={() => setConfigEditorCaseId(null)}>
+                  完成
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -1623,6 +1980,121 @@ const styles = {
   } as const,
   modalBody: {
     padding: '24px',
+  } as const,
+  caseConfigEditorModal: {
+    backgroundColor: 'var(--bg-secondary)',
+    borderRadius: 'var(--radius-lg)',
+    border: '1px solid var(--border-default)',
+    width: '92%',
+    maxWidth: '680px',
+    maxHeight: '85vh',
+    overflow: 'auto',
+    boxShadow: 'var(--shadow-lg)',
+    animation: 'scaleIn 0.3s ease',
+  } as const,
+  caseConfigList: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: '12px',
+  } as const,
+  caseConfigCard: {
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+    backgroundColor: 'var(--bg-primary)',
+    padding: '14px',
+  } as const,
+  caseConfigHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '12px',
+    marginBottom: '14px',
+  } as const,
+  caseConfigTitleBlock: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: '4px',
+    minWidth: 0,
+  } as const,
+  caseConfigTitle: {
+    fontSize: '14px',
+    fontWeight: 700,
+    color: 'var(--text-primary)',
+    fontFamily: "'JetBrains Mono', monospace",
+  } as const,
+  caseConfigSubtitle: {
+    fontSize: '12px',
+    color: 'var(--text-secondary)',
+    lineHeight: 1.5,
+  } as const,
+  caseConfigCount: {
+    flexShrink: 0,
+    fontSize: '11px',
+    color: 'var(--accent-cyan)',
+    backgroundColor: 'rgba(57, 208, 214, 0.12)',
+    border: '1px solid rgba(57, 208, 214, 0.24)',
+    borderRadius: '999px',
+    padding: '4px 8px',
+  } as const,
+  caseConfigEmpty: {
+    padding: '12px 0 4px',
+    color: 'var(--text-muted)',
+    fontSize: '13px',
+  } as const,
+  caseConfigFields: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+    gap: '12px',
+  } as const,
+  caseConfigField: {
+    border: '1px solid var(--border-muted)',
+    borderRadius: 'var(--radius-md)',
+    backgroundColor: 'var(--bg-secondary)',
+    padding: '12px',
+  } as const,
+  caseConfigFieldHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '8px',
+    marginBottom: '6px',
+  } as const,
+  caseConfigLabel: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    fontSize: '13px',
+    fontWeight: 600,
+    color: 'var(--text-primary)',
+  } as const,
+  requiredMark: {
+    color: 'var(--accent-red)',
+    fontSize: '12px',
+    fontWeight: 700,
+  } as const,
+  caseConfigType: {
+    flexShrink: 0,
+    fontSize: '10px',
+    color: 'var(--accent-purple)',
+    backgroundColor: 'rgba(163, 113, 247, 0.12)',
+    border: '1px solid rgba(163, 113, 247, 0.24)',
+    borderRadius: '999px',
+    padding: '3px 7px',
+    textTransform: 'uppercase' as const,
+  } as const,
+  caseConfigDescription: {
+    fontSize: '12px',
+    color: 'var(--text-muted)',
+    lineHeight: 1.5,
+    marginBottom: '10px',
+  } as const,
+  checkboxLabel: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    fontSize: '13px',
+    color: 'var(--text-primary)',
+    cursor: 'pointer',
   } as const,
   detailGrid: {
     display: 'grid',

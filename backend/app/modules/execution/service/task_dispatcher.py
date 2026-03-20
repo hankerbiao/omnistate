@@ -30,7 +30,7 @@ class ExecutionTaskDispatcher:
     """根据配置选择 Kafka 或 HTTP 分发任务。"""
 
     async def dispatch(self, command: DispatchExecutionTaskCommand) -> DispatchResult:
-        mode = (settings.EXECUTION_DISPATCH_MODE or "kafka").strip().lower()
+        mode = (command.dispatch_channel or settings.EXECUTION_DISPATCH_MODE or "kafka").strip().lower()
         if mode == "http":
             return await self._dispatch_via_http(command)
         return self._dispatch_via_kafka(command)
@@ -55,14 +55,30 @@ class ExecutionTaskDispatcher:
             source="dmlv4-execution-api",
             priority=1,
         )
+        logger.info(
+            "Dispatching execution task via Kafka: "
+            f"task_id={command.task_id}, topic=default-task-topic, agent_id={command.agent_id or '-'}"
+        )
+        logger.debug(
+            "Kafka execution dispatch payload: "
+            f"task_id={command.task_id}, payload={command.kafka_task_data}"
+        )
         success = kafka_manager.send_task(task_message)
         if success:
+            logger.info(
+                "Kafka execution dispatch accepted: "
+                f"task_id={command.task_id}, agent_id={command.agent_id or '-'}"
+            )
             return DispatchResult(
                 success=True,
                 channel="KAFKA",
                 message="Task dispatched to Kafka successfully",
                 response={"accepted": True, "message": "Task dispatched to Kafka successfully"},
             )
+        logger.warning(
+            "Kafka execution dispatch rejected: "
+            f"task_id={command.task_id}, agent_id={command.agent_id or '-'}"
+        )
         return DispatchResult(
             success=False,
             channel="KAFKA",
@@ -106,11 +122,24 @@ class ExecutionTaskDispatcher:
                 success=False,
                 channel="HTTP",
                 message=f"Execution agent base_url is empty: {command.agent_id}",
-                response={"accepted": False, "message": f"Execution agent base_url is empty: {command.agent_id}"},
+                response={
+                    "accepted": False,
+                    "message": f"Execution agent base_url is empty: {command.agent_id}",
+                },
                 error=f"Execution agent base_url is empty: {command.agent_id}",
             )
 
         url = f"{agent_doc.base_url.rstrip('/')}{settings.EXECUTION_AGENT_DISPATCH_PATH}"
+        logger.info(
+            "Dispatching execution task via HTTP: "
+            f"task_id={command.task_id}, agent_id={agent_doc.agent_id}, hostname={agent_doc.hostname}, "
+            f"ip={agent_doc.ip}, port={agent_doc.port}, region={agent_doc.region}, "
+            f"base_url={agent_doc.base_url}"
+        )
+        logger.debug(
+            "HTTP execution dispatch payload: "
+            f"task_id={command.task_id}, target_url={url}, payload={command.kafka_task_data}"
+        )
         try:
             response = await asyncio.to_thread(
                 requests.post,
@@ -120,6 +149,15 @@ class ExecutionTaskDispatcher:
             )
             accepted = response.status_code in {200, 201, 202}
             payload = self._build_http_response_payload(response, accepted)
+            logger.info(
+                "HTTP execution dispatch completed: "
+                f"task_id={command.task_id}, agent_id={agent_doc.agent_id}, "
+                f"status_code={response.status_code}, accepted={accepted}"
+            )
+            logger.debug(
+                "HTTP execution dispatch response: "
+                f"task_id={command.task_id}, agent_id={agent_doc.agent_id}, response={payload}"
+            )
             return DispatchResult(
                 success=accepted,
                 channel="HTTP",

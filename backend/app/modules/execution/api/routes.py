@@ -19,9 +19,11 @@ from app.modules.execution.schemas import (
 )
 from app.modules.execution.application.execution_service import ExecutionService
 from app.modules.execution.application.commands import DispatchExecutionTaskCommand
+from app.modules.execution.application.constants import DEFAULT_EXECUTION_BRANCH, DEFAULT_EXECUTION_REPO_URL
 from app.shared.service import SequenceIdService
 from app.shared.api.schemas.base import APIResponse
 from app.shared.auth import get_current_user, require_permission
+from app.shared.core.logger import log as logger
 
 router = APIRouter(prefix="/execution", tags=["Execution"])
 
@@ -56,6 +58,24 @@ async def dispatch_task(
 ):
     """分发测试任务。"""
     try:
+        request_case_payload = [
+            {
+                "auto_case_id": item.auto_case_id,
+                "case_path": item.case_path,
+                "case_name": item.case_name,
+                "script_entity_id": item.script_entity_id,
+                "parameters": dict(item.parameters or item.config or {}),
+            }
+            for item in request.cases
+        ]
+        logger.info(
+            "Dispatch task request received: "
+            f"user_id={current_user['user_id']}, framework={request.framework}, "
+            f"dispatch_channel={request.dispatch_channel or 'DEFAULT'}, agent_id={request.agent_id or '-'}, "
+            f"schedule_type={request.schedule_type}, planned_at={request.planned_at}, "
+            f"cases={request_case_payload}"
+        )
+
         # 生成任务ID
         year = datetime.now().year
         seq = await sequence_service.next(f"execution_task:{year}")
@@ -64,33 +84,91 @@ async def dispatch_task(
 
         # 构建自动化用例ID列表
         auto_case_ids = [item.auto_case_id for item in request.cases]
-        case_ids = await service.resolve_case_ids_by_auto_case_ids(auto_case_ids)
+        case_configs = [dict(item.config or {}) for item in request.cases]
+        case_payloads = [
+            {
+                "case_id": "",
+                "case_path": item.case_path,
+                "case_name": item.case_name,
+                "parameters": dict(item.parameters or item.config or {}),
+            }
+            for item in request.cases
+        ]
+        case_ids, script_entity_ids = await service.resolve_case_bindings_by_auto_case_ids(auto_case_ids)
+        case_payloads = [
+            {
+                **case_payload,
+                "case_id": case_id,
+            }
+            for case_payload, case_id in zip(case_payloads, case_ids)
+        ]
+        logger.debug(
+            "Dispatch task case bindings resolved: "
+            f"task_id={task_id}, auto_case_ids={auto_case_ids}, case_ids={case_ids}, "
+            f"script_entity_ids={script_entity_ids}, case_configs={case_configs}, "
+            f"case_payloads={case_payloads}"
+        )
 
         # 创建显式命令
         command = DispatchExecutionTaskCommand(
             task_id=task_id,
             external_task_id=external_task_id,
             framework=request.framework,
+            dispatch_channel=request.dispatch_channel,
             agent_id=request.agent_id,
             trigger_source=request.trigger_source or "manual",
             created_by=current_user["user_id"],
             auto_case_ids=auto_case_ids,
             case_ids=case_ids,
+            script_entity_ids=script_entity_ids,
+            case_configs=case_configs,
+            case_payloads=case_payloads,
             schedule_type=request.schedule_type,
             planned_at=request.planned_at,
             callback_url=request.callback_url,
+            category=request.category,
+            project_tag=request.project_tag,
+            repo_url=request.repo_url or DEFAULT_EXECUTION_REPO_URL,
+            branch=request.branch or DEFAULT_EXECUTION_BRANCH,
+            common_parameters=request.common_parameters,
+            pytest_options=request.pytest_options,
+            timeout=request.timeout,
             dut=request.dut,
         )
 
         # 使用执行服务处理任务分发
         data = await service.dispatch_execution_task(command, actor_id=current_user["user_id"])
+        logger.info(
+            "Dispatch task request handled successfully: "
+            f"task_id={task_id}, external_task_id={external_task_id}, "
+            f"dispatch_status={data.get('dispatch_status')}, overall_status={data.get('overall_status')}, "
+            f"case_count={data.get('case_count')}"
+        )
 
         return APIResponse(data=data)
 
     except ValueError as exc:
+        logger.warning(
+            "Dispatch task request rejected with validation error: "
+            f"user_id={current_user['user_id']}, framework={request.framework}, "
+            f"dispatch_channel={request.dispatch_channel or 'DEFAULT'}, detail={exc}"
+        )
         raise HTTPException(status_code=400, detail=str(exc))
     except KeyError as exc:
+        logger.warning(
+            "Dispatch task request rejected with missing dependency: "
+            f"user_id={current_user['user_id']}, framework={request.framework}, "
+            f"dispatch_channel={request.dispatch_channel or 'DEFAULT'}, "
+            f"auto_case_ids={[item.auto_case_id for item in request.cases]}, detail={exc}"
+        )
         raise HTTPException(status_code=404, detail=str(exc))
+    except Exception:
+        logger.exception(
+            "Dispatch task request failed unexpectedly: "
+            f"user_id={current_user['user_id']}, framework={request.framework}, "
+            f"dispatch_channel={request.dispatch_channel or 'DEFAULT'}"
+        )
+        raise
 
 
 @router.delete(

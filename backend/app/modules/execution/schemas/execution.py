@@ -6,34 +6,40 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class DispatchCaseItem(BaseModel):
-    auto_case_id: Optional[str] = Field(
-        None,
+    auto_case_id: str = Field(
+        ...,
         description="自动化测试用例业务 ID，用于标识本次任务包含的单条 case",
     )
-    case_id: Optional[str] = Field(
+    script_entity_id: Optional[str] = Field(
         None,
-        description="兼容旧版前端的字段名；实际应传 auto_case_id",
+        description="自动化脚本实体 ID，可由前端显式透传；平台也会在后端二次校准",
     )
+    config: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="该测试用例本次执行的参数配置",
+    )
+    case_path: Optional[str] = Field(None, description="执行端识别的用例路径")
+    case_name: Optional[str] = Field(None, description="执行端展示的用例名称")
+    parameters: Dict[str, Any] = Field(default_factory=dict, description="执行端用例参数")
 
     model_config = ConfigDict(extra="forbid")
-
-    @model_validator(mode="after")
-    def normalize_case_identifier(self) -> "DispatchCaseItem":
-        if not self.auto_case_id and not self.case_id:
-            raise ValueError("auto_case_id is required")
-        if self.auto_case_id and self.case_id and self.auto_case_id != self.case_id:
-            raise ValueError("case_id and auto_case_id must match when both are provided")
-        self.auto_case_id = self.auto_case_id or self.case_id
-        return self
 
 
 class DispatchTaskRequest(BaseModel):
     framework: str = Field(..., description="执行框架标识，例如 pytest、robot 等")
+    dispatch_channel: Optional[str] = Field(None, description="下发通道，可选 KAFKA 或 HTTP")
     agent_id: Optional[str] = Field(None, description="目标执行代理 ID；由平台路由到指定 agent 时使用")
     trigger_source: Optional[str] = Field(default="manual", description="触发来源，例如 manual、web_ui、schedule")
     schedule_type: str = Field(default="IMMEDIATE", description="调度类型，只允许 IMMEDIATE 或 SCHEDULED")
     planned_at: Optional[datetime] = Field(None, description="计划执行时间（UTC）；schedule_type 为 SCHEDULED 时必填")
     callback_url: Optional[str] = Field(None, description="执行端回调地址，用于上报任务/用例执行结果")
+    category: Optional[str] = Field(None, description="任务分类，例如 bmc")
+    project_tag: Optional[str] = Field(None, description="项目标签，例如 universal")
+    repo_url: Optional[str] = Field(None, description="代码仓库地址")
+    branch: Optional[str] = Field(None, description="代码分支")
+    common_parameters: Dict[str, Any] = Field(default_factory=dict, description="任务公共参数")
+    pytest_options: Dict[str, Any] = Field(default_factory=dict, description="pytest 扩展选项")
+    timeout: Optional[int] = Field(None, description="任务超时时间，单位秒")
     dut: Dict[str, Any] = Field(default_factory=dict, description="被测对象信息快照，例如设备、环境、版本等")
     cases: List[DispatchCaseItem] = Field(default_factory=list, description="本次任务需要按顺序执行的测试用例列表")
 
@@ -48,6 +54,10 @@ class DispatchTaskRequest(BaseModel):
             raise ValueError("cases must not contain duplicate auto_case_id")
         if self.schedule_type.upper() not in {"IMMEDIATE", "SCHEDULED"}:
             raise ValueError("schedule_type must be IMMEDIATE or SCHEDULED")
+        if self.dispatch_channel and self.dispatch_channel.upper() not in {"KAFKA", "HTTP"}:
+            raise ValueError("dispatch_channel must be KAFKA or HTTP")
+        if (self.dispatch_channel or "").upper() == "HTTP" and not self.agent_id:
+            raise ValueError("agent_id is required when dispatch_channel is HTTP")
         return self
 
 

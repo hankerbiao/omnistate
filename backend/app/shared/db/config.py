@@ -20,9 +20,9 @@ class Settings(BaseSettings):
 
     # 执行任务分发配置
     EXECUTION_DISPATCH_MODE: str = "kafka"  # kafka | http
-    EXECUTION_AGENT_DISPATCH_PATH: str = "/api/v1/execution/tasks/dispatch"
+    EXECUTION_AGENT_DISPATCH_PATH: str = "/api/v1/tasks"
     EXECUTION_HTTP_TIMEOUT_SEC: int = 10
-    EXECUTION_SCHEDULER_INTERVAL_SEC: int = 5
+    EXECUTION_SCHEDULER_INTERVAL_SEC: int = 60
     EXECUTION_KAFKA_WORKER_AGENT_ID: str = "execution-kafka-worker"
     EXECUTION_KAFKA_WORKER_HEARTBEAT_TTL_SEC: int = 30
     EXECUTION_KAFKA_WORKER_HEARTBEAT_INTERVAL_SEC: int = 10

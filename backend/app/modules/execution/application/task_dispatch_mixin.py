@@ -22,6 +22,9 @@ class ExecutionTaskDispatchMixin:
         task_doc: ExecutionTaskDoc,
         case_ids: List[str],
         auto_case_ids: List[str],
+        script_entity_ids: List[str | None],
+        case_configs: List[dict],
+        case_payloads: List[dict],
         dispatch_case_index: int,
     ) -> DispatchExecutionTaskCommand:
         """构建单 case 下发命令。"""
@@ -31,17 +34,30 @@ class ExecutionTaskDispatchMixin:
             task_id=task_doc.task_id,
             external_task_id=task_doc.external_task_id or f"EXT-{task_doc.task_id}",
             framework=task_doc.framework,
+            dispatch_channel=task_doc.dispatch_channel,
             agent_id=task_doc.agent_id,
             trigger_source=request_payload.get("trigger_source", "manual"),
             created_by=task_doc.created_by,
             auto_case_ids=auto_case_ids,
             case_ids=case_ids,
+            script_entity_ids=script_entity_ids,
+            case_configs=case_configs,
+            case_payloads=case_payloads,
             dispatch_case_id=case_ids[dispatch_case_index],
             dispatch_auto_case_id=auto_case_ids[dispatch_case_index],
+            dispatch_script_entity_id=script_entity_ids[dispatch_case_index],
+            dispatch_case_config=case_configs[dispatch_case_index],
             dispatch_case_index=dispatch_case_index,
             schedule_type=task_doc.schedule_type,
             planned_at=cls._ensure_utc_datetime(planned_at) if planned_at else None,
             callback_url=request_payload.get("callback_url"),
+            category=request_payload.get("category"),
+            project_tag=request_payload.get("project_tag"),
+            repo_url=request_payload.get("repo_url"),
+            branch=request_payload.get("branch"),
+            common_parameters=request_payload.get("common_parameters"),
+            pytest_options=request_payload.get("pytest_options"),
+            timeout=request_payload.get("timeout"),
             dut=request_payload.get("dut"),
         )
 
@@ -50,8 +66,22 @@ class ExecutionTaskDispatchMixin:
         task_doc: ExecutionTaskDoc,
         dispatch_case_index: int,
     ) -> DispatchExecutionTaskCommand:
-        case_ids, auto_case_ids = await self._resolve_task_case_pairs(task_doc)
-        return self._build_case_dispatch_command(task_doc, case_ids, auto_case_ids, dispatch_case_index)
+        (
+            case_ids,
+            auto_case_ids,
+            script_entity_ids,
+            case_configs,
+            case_payloads,
+        ) = await self._resolve_task_case_pairs(task_doc)
+        return self._build_case_dispatch_command(
+            task_doc,
+            case_ids,
+            auto_case_ids,
+            script_entity_ids,
+            case_configs,
+            case_payloads,
+            dispatch_case_index,
+        )
 
     async def _dispatch_task_if_needed(
         self,
