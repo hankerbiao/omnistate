@@ -55,14 +55,38 @@ class DispatchExecutionTaskCommand:
             self.case_configs = [{} for _ in self.case_ids]
         if self.case_payloads is None:
             self.case_payloads = [{} for _ in self.case_ids]
-        if self.dispatch_case_id is None and len(self.case_ids) == 1:
-            self.dispatch_case_id = self.case_ids[0]
-        if self.dispatch_auto_case_id is None and len(self.auto_case_ids) == 1:
-            self.dispatch_auto_case_id = self.auto_case_ids[0]
-        if self.dispatch_script_entity_id is None and len(self.script_entity_ids) == 1:
-            self.dispatch_script_entity_id = self.script_entity_ids[0]
-        if self.dispatch_case_config is None and len(self.case_configs) == 1:
-            self.dispatch_case_config = self.case_configs[0]
+        if len(self.auto_case_ids) != len(self.case_ids):
+            raise ValueError("auto_case_ids length must match case_ids length")
+        if len(self.script_entity_ids) != len(self.case_ids):
+            raise ValueError("script_entity_ids length must match case_ids length")
+        if len(self.case_configs) != len(self.case_ids):
+            raise ValueError("case_configs length must match case_ids length")
+        if len(self.case_payloads) != len(self.case_ids):
+            raise ValueError("case_payloads length must match case_ids length")
+        if self.dispatch_channel is None:
+            raise ValueError("dispatch_channel is required")
+        if self.repo_url is None:
+            self.repo_url = DEFAULT_EXECUTION_REPO_URL
+        if self.branch is None:
+            self.branch = DEFAULT_EXECUTION_BRANCH
+        if self.category is None:
+            self.category = ""
+        if self.project_tag is None:
+            self.project_tag = ""
+        if self.common_parameters is None:
+            self.common_parameters = {}
+        if self.pytest_options is None:
+            self.pytest_options = {}
+        if self.timeout is None:
+            self.timeout = 0
+        if self.dispatch_case_id is None:
+            self.dispatch_case_id = self.case_ids[self.dispatch_case_index]
+        if self.dispatch_auto_case_id is None:
+            self.dispatch_auto_case_id = self.auto_case_ids[self.dispatch_case_index]
+        if self.dispatch_script_entity_id is None:
+            self.dispatch_script_entity_id = self.script_entity_ids[self.dispatch_case_index]
+        if self.dispatch_case_config is None:
+            self.dispatch_case_config = self.case_configs[self.dispatch_case_index]
 
     @property
     def kafka_task_data(self) -> Dict[str, Any]:
@@ -71,15 +95,9 @@ class DispatchExecutionTaskCommand:
 
     def _build_kafka_task_data(self) -> Dict[str, Any]:
         """构建Kafka任务数据"""
-        current_case_id = self.dispatch_case_id or self.case_ids[0]
-        current_auto_case_id = self.dispatch_auto_case_id or self.auto_case_ids[0]
-        current_script_entity_id = self.dispatch_script_entity_id
+        current_case_id = self.dispatch_case_id
         current_case_config = self.dispatch_case_config
-        current_case_payload = self.case_payloads[self.dispatch_case_index] if self.case_payloads else {}
-        if current_script_entity_id is None and self.script_entity_ids:
-            current_script_entity_id = self.script_entity_ids[self.dispatch_case_index]
-        if current_case_config is None and self.case_configs:
-            current_case_config = self.case_configs[self.dispatch_case_index]
+        current_case_payload = self.case_payloads[self.dispatch_case_index]
         pytest_defaults = {
             "log_debug": False,
             "kafka_servers": "10.17.154.252:9092",
@@ -88,21 +106,30 @@ class DispatchExecutionTaskCommand:
             "maxfail": "3",
             "task_id": self.task_id,
         }
-        pytest_options = {**pytest_defaults, **(self.pytest_options or {})}
+        pytest_options = {**pytest_defaults, **self.pytest_options}
+        case_path = current_case_payload.get("case_path")
+        case_name = current_case_payload.get("case_name")
+        case_parameters = current_case_payload.get("parameters")
+        if not case_path:
+            raise ValueError(f"case_path is required for dispatch case: {current_case_id}")
+        if not case_name:
+            raise ValueError(f"case_name is required for dispatch case: {current_case_id}")
+        if case_parameters is None:
+            case_parameters = current_case_config
         return {
             "task_id": self.task_id,
-            "category": self.category or "",
-            "project_tag": self.project_tag or "",
-            "repo_url": self.repo_url or DEFAULT_EXECUTION_REPO_URL,
-            "branch": self.branch or DEFAULT_EXECUTION_BRANCH,
+            "category": self.category,
+            "project_tag": self.project_tag,
+            "repo_url": self.repo_url,
+            "branch": self.branch,
             "cases": [{
-                "case_id": current_case_payload.get("case_id") or current_case_id,
-                "case_path": current_case_payload.get("case_path") or current_script_entity_id or "",
-                "case_name": current_case_payload.get("case_name") or current_auto_case_id or current_case_id,
-                "parameters": current_case_payload.get("parameters") or current_case_config or {},
+                "case_id": current_case_payload["case_id"],
+                "case_path": case_path,
+                "case_name": case_name,
+                "parameters": case_parameters,
             }],
-            "common_parameters": self.common_parameters or {},
+            "common_parameters": self.common_parameters,
             "pytest_options": pytest_options,
-            "timeout": self.timeout or 0,
+            "timeout": self.timeout,
             "created_at": datetime.now(timezone.utc).isoformat(),
         }

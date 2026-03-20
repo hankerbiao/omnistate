@@ -30,7 +30,7 @@ class ExecutionTaskDispatcher:
     """根据配置选择 Kafka 或 HTTP 分发任务。"""
 
     async def dispatch(self, command: DispatchExecutionTaskCommand) -> DispatchResult:
-        mode = (command.dispatch_channel or settings.EXECUTION_DISPATCH_MODE or "kafka").strip().lower()
+        mode = command.dispatch_channel.strip().lower()
         if mode == "http":
             return await self._dispatch_via_http(command)
         return self._dispatch_via_kafka(command)
@@ -57,7 +57,7 @@ class ExecutionTaskDispatcher:
         )
         logger.info(
             "Dispatching execution task via Kafka: "
-            f"task_id={command.task_id}, topic=default-task-topic, agent_id={command.agent_id or '-'}"
+            f"task_id={command.task_id}, topic=default-task-topic, agent_id={command.agent_id}"
         )
         logger.debug(
             "Kafka execution dispatch payload: "
@@ -67,7 +67,7 @@ class ExecutionTaskDispatcher:
         if success:
             logger.info(
                 "Kafka execution dispatch accepted: "
-                f"task_id={command.task_id}, agent_id={command.agent_id or '-'}"
+                f"task_id={command.task_id}, agent_id={command.agent_id}"
             )
             return DispatchResult(
                 success=True,
@@ -77,7 +77,7 @@ class ExecutionTaskDispatcher:
             )
         logger.warning(
             "Kafka execution dispatch rejected: "
-            f"task_id={command.task_id}, agent_id={command.agent_id or '-'}"
+            f"task_id={command.task_id}, agent_id={command.agent_id}"
         )
         return DispatchResult(
             success=False,

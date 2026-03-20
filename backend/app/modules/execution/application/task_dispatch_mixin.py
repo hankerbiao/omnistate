@@ -28,15 +28,15 @@ class ExecutionTaskDispatchMixin:
         dispatch_case_index: int,
     ) -> DispatchExecutionTaskCommand:
         """构建单 case 下发命令。"""
-        request_payload = dict(task_doc.request_payload or {})
-        planned_at = request_payload.get("planned_at")
+        request_payload = dict(task_doc.request_payload)
+        planned_at = request_payload["planned_at"]
         return DispatchExecutionTaskCommand(
             task_id=task_doc.task_id,
-            external_task_id=task_doc.external_task_id or f"EXT-{task_doc.task_id}",
+            external_task_id=task_doc.external_task_id,
             framework=task_doc.framework,
             dispatch_channel=task_doc.dispatch_channel,
             agent_id=task_doc.agent_id,
-            trigger_source=request_payload.get("trigger_source", "manual"),
+            trigger_source=request_payload["trigger_source"],
             created_by=task_doc.created_by,
             auto_case_ids=auto_case_ids,
             case_ids=case_ids,
@@ -50,15 +50,15 @@ class ExecutionTaskDispatchMixin:
             dispatch_case_index=dispatch_case_index,
             schedule_type=task_doc.schedule_type,
             planned_at=cls._ensure_utc_datetime(planned_at) if planned_at else None,
-            callback_url=request_payload.get("callback_url"),
-            category=request_payload.get("category"),
-            project_tag=request_payload.get("project_tag"),
-            repo_url=request_payload.get("repo_url"),
-            branch=request_payload.get("branch"),
-            common_parameters=request_payload.get("common_parameters"),
-            pytest_options=request_payload.get("pytest_options"),
-            timeout=request_payload.get("timeout"),
-            dut=request_payload.get("dut"),
+            callback_url=request_payload["callback_url"],
+            category=request_payload["category"],
+            project_tag=request_payload["project_tag"],
+            repo_url=request_payload["repo_url"],
+            branch=request_payload["branch"],
+            common_parameters=request_payload["common_parameters"],
+            pytest_options=request_payload["pytest_options"],
+            timeout=request_payload["timeout"],
+            dut=request_payload["dut"],
         )
 
     async def _build_task_dispatch_command(

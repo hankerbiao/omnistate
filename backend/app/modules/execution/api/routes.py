@@ -19,7 +19,6 @@ from app.modules.execution.schemas import (
 )
 from app.modules.execution.application.execution_service import ExecutionService
 from app.modules.execution.application.commands import DispatchExecutionTaskCommand
-from app.modules.execution.application.constants import DEFAULT_EXECUTION_BRANCH, DEFAULT_EXECUTION_REPO_URL
 from app.shared.service import SequenceIdService
 from app.shared.api.schemas.base import APIResponse
 from app.shared.auth import get_current_user, require_permission
@@ -64,14 +63,14 @@ async def dispatch_task(
                 "case_path": item.case_path,
                 "case_name": item.case_name,
                 "script_entity_id": item.script_entity_id,
-                "parameters": dict(item.parameters or item.config or {}),
+                "parameters": dict(item.parameters),
             }
             for item in request.cases
         ]
         logger.info(
             "Dispatch task request received: "
             f"user_id={current_user['user_id']}, framework={request.framework}, "
-            f"dispatch_channel={request.dispatch_channel or 'DEFAULT'}, agent_id={request.agent_id or '-'}, "
+            f"dispatch_channel={request.dispatch_channel}, agent_id={request.agent_id}, "
             f"schedule_type={request.schedule_type}, planned_at={request.planned_at}, "
             f"cases={request_case_payload}"
         )
@@ -84,13 +83,13 @@ async def dispatch_task(
 
         # 构建自动化用例ID列表
         auto_case_ids = [item.auto_case_id for item in request.cases]
-        case_configs = [dict(item.config or {}) for item in request.cases]
+        case_configs = [dict(item.config) for item in request.cases]
         case_payloads = [
             {
                 "case_id": "",
                 "case_path": item.case_path,
                 "case_name": item.case_name,
-                "parameters": dict(item.parameters or item.config or {}),
+                "parameters": dict(item.parameters),
             }
             for item in request.cases
         ]
@@ -116,7 +115,7 @@ async def dispatch_task(
             framework=request.framework,
             dispatch_channel=request.dispatch_channel,
             agent_id=request.agent_id,
-            trigger_source=request.trigger_source or "manual",
+            trigger_source=request.trigger_source,
             created_by=current_user["user_id"],
             auto_case_ids=auto_case_ids,
             case_ids=case_ids,
@@ -128,8 +127,8 @@ async def dispatch_task(
             callback_url=request.callback_url,
             category=request.category,
             project_tag=request.project_tag,
-            repo_url=request.repo_url or DEFAULT_EXECUTION_REPO_URL,
-            branch=request.branch or DEFAULT_EXECUTION_BRANCH,
+            repo_url=request.repo_url,
+            branch=request.branch,
             common_parameters=request.common_parameters,
             pytest_options=request.pytest_options,
             timeout=request.timeout,
@@ -151,14 +150,14 @@ async def dispatch_task(
         logger.warning(
             "Dispatch task request rejected with validation error: "
             f"user_id={current_user['user_id']}, framework={request.framework}, "
-            f"dispatch_channel={request.dispatch_channel or 'DEFAULT'}, detail={exc}"
+            f"dispatch_channel={request.dispatch_channel}, detail={exc}"
         )
         raise HTTPException(status_code=400, detail=str(exc))
     except KeyError as exc:
         logger.warning(
             "Dispatch task request rejected with missing dependency: "
             f"user_id={current_user['user_id']}, framework={request.framework}, "
-            f"dispatch_channel={request.dispatch_channel or 'DEFAULT'}, "
+            f"dispatch_channel={request.dispatch_channel}, "
             f"auto_case_ids={[item.auto_case_id for item in request.cases]}, detail={exc}"
         )
         raise HTTPException(status_code=404, detail=str(exc))
@@ -166,7 +165,7 @@ async def dispatch_task(
         logger.exception(
             "Dispatch task request failed unexpectedly: "
             f"user_id={current_user['user_id']}, framework={request.framework}, "
-            f"dispatch_channel={request.dispatch_channel or 'DEFAULT'}"
+            f"dispatch_channel={request.dispatch_channel}"
         )
         raise
 
