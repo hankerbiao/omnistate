@@ -18,8 +18,8 @@ class DispatchCaseItem(BaseModel):
         default_factory=dict,
         description="该测试用例本次执行的参数配置",
     )
-    case_path: Optional[str] = Field(None, description="执行端识别的用例路径")
-    case_name: Optional[str] = Field(None, description="执行端展示的用例名称")
+    script_path: Optional[str] = Field(None, description="执行端识别的脚本路径")
+    script_name: Optional[str] = Field(None, description="执行端展示的脚本名称")
     parameters: Dict[str, Any] = Field(default_factory=dict, description="执行端用例参数")
 
     model_config = ConfigDict(extra="forbid")
@@ -37,7 +37,6 @@ class DispatchTaskRequest(BaseModel):
     project_tag: Optional[str] = Field(None, description="项目标签，例如 universal")
     repo_url: Optional[str] = Field(None, description="代码仓库地址")
     branch: Optional[str] = Field(None, description="代码分支")
-    common_parameters: Dict[str, Any] = Field(default_factory=dict, description="任务公共参数")
     pytest_options: Dict[str, Any] = Field(default_factory=dict, description="pytest 扩展选项")
     timeout: Optional[int] = Field(None, description="任务超时时间，单位秒")
     dut: Dict[str, Any] = Field(default_factory=dict, description="被测对象信息快照，例如设备、环境、版本等")
@@ -61,9 +60,46 @@ class DispatchTaskRequest(BaseModel):
         return self
 
 
+class RerunTaskRequest(BaseModel):
+    framework: Optional[str] = Field(None, description="重跑任务使用的执行框架")
+    dispatch_channel: Optional[str] = Field(None, description="重跑任务使用的下发通道")
+    agent_id: Optional[str] = Field(None, description="重跑任务使用的目标代理 ID")
+    trigger_source: Optional[str] = Field(None, description="触发来源")
+    schedule_type: Optional[str] = Field(None, description="重跑调度类型")
+    planned_at: Optional[datetime] = Field(None, description="重跑计划时间（UTC）")
+    callback_url: Optional[str] = Field(None, description="执行端回调地址")
+    category: Optional[str] = Field(None, description="任务分类")
+    project_tag: Optional[str] = Field(None, description="项目标签")
+    repo_url: Optional[str] = Field(None, description="代码仓库地址")
+    branch: Optional[str] = Field(None, description="代码分支")
+    pytest_options: Optional[Dict[str, Any]] = Field(None, description="pytest 扩展选项")
+    timeout: Optional[int] = Field(None, description="任务超时时间，单位秒")
+    dut: Optional[Dict[str, Any]] = Field(None, description="被测对象信息快照")
+    cases: Optional[List[DispatchCaseItem]] = Field(None, description="重跑时覆盖的测试用例列表")
+
+    model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="after")
+    def validate_rerun_request(self) -> "RerunTaskRequest":
+        if self.schedule_type and self.schedule_type.upper() not in {"IMMEDIATE", "SCHEDULED"}:
+            raise ValueError("schedule_type must be IMMEDIATE or SCHEDULED")
+        if self.dispatch_channel and self.dispatch_channel.upper() not in {"KAFKA", "HTTP"}:
+            raise ValueError("dispatch_channel must be KAFKA or HTTP")
+        if (self.dispatch_channel or "").upper() == "HTTP" and not self.agent_id:
+            raise ValueError("agent_id is required when dispatch_channel is HTTP")
+        if self.cases is not None:
+            auto_case_ids = [item.auto_case_id for item in self.cases]
+            if not auto_case_ids:
+                raise ValueError("cases cannot be empty")
+            if len(auto_case_ids) != len(set(auto_case_ids)):
+                raise ValueError("cases must not contain duplicate auto_case_id")
+        return self
+
+
 class DispatchTaskResponse(BaseModel):
     task_id: str = Field(..., description="平台内部任务 ID")
     external_task_id: Optional[str] = Field(None, description="对外暴露的任务 ID，供外部系统关联")
+    source_task_id: Optional[str] = Field(None, description="重跑来源任务 ID")
     agent_id: Optional[str] = Field(None, description="当前绑定的目标代理 ID")
     dispatch_channel: str = Field(..., description="任务实际下发通道，例如 KAFKA、HTTP")
     dedup_key: Optional[str] = Field(None, description="任务去重键，用于识别语义相同的未完成任务")
@@ -89,6 +125,7 @@ class DispatchTaskResponse(BaseModel):
 class ExecutionTaskListItem(BaseModel):
     task_id: str = Field(..., description="平台内部任务 ID")
     external_task_id: Optional[str] = Field(None, description="对外暴露的任务 ID")
+    source_task_id: Optional[str] = Field(None, description="重跑来源任务 ID")
     framework: str = Field(..., description="执行框架标识")
     agent_id: Optional[str] = Field(None, description="目标代理 ID")
     dispatch_channel: str = Field(..., description="当前任务使用的下发通道")
@@ -136,6 +173,7 @@ class ExecutionTaskListCaseItem(BaseModel):
 class ScheduledTaskMutationResponse(BaseModel):
     task_id: str = Field(..., description="任务 ID")
     external_task_id: Optional[str] = Field(None, description="外部任务 ID")
+    source_task_id: Optional[str] = Field(None, description="重跑来源任务 ID")
     agent_id: Optional[str] = Field(None, description="目标代理 ID")
     dispatch_channel: Optional[str] = Field(None, description="任务当前使用的下发通道")
     dedup_key: Optional[str] = Field(None, description="任务去重键")

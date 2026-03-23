@@ -15,6 +15,63 @@ class ExecutionTaskQueryMixin:
     """提供任务查询与统一序列化能力。"""
 
     @staticmethod
+    def _build_list_tasks_query(
+        schedule_type: str | None,
+        schedule_status: str | None,
+        dispatch_status: str | None,
+        consume_status: str | None,
+        overall_status: str | None,
+        created_by: str | None,
+        agent_id: str | None,
+        framework: str | None,
+        date_from: datetime | None,
+        date_to: datetime | None,
+        ensure_utc_datetime,
+    ) -> Dict[str, Any]:
+        query: Dict[str, Any] = {"is_deleted": False}
+        if schedule_type:
+            query["schedule_type"] = schedule_type.upper()
+        if schedule_status:
+            query["schedule_status"] = schedule_status.upper()
+        if dispatch_status:
+            query["dispatch_status"] = dispatch_status.upper()
+        if consume_status:
+            query["consume_status"] = consume_status.upper()
+        if overall_status:
+            query["overall_status"] = overall_status.upper()
+        if created_by:
+            query["created_by"] = created_by
+        if agent_id:
+            query["agent_id"] = agent_id
+        if framework:
+            query["framework"] = framework
+        if date_from or date_to:
+            created_at_query: Dict[str, datetime] = {}
+            if date_from:
+                created_at_query["$gte"] = ensure_utc_datetime(date_from)
+            if date_to:
+                created_at_query["$lte"] = ensure_utc_datetime(date_to)
+            query["created_at"] = created_at_query
+        return query
+
+    @staticmethod
+    async def _load_task_case_map(task_ids: List[str]) -> Dict[str, List[Dict[str, Any]]]:
+        if not task_ids:
+            return {}
+
+        case_docs = await (
+            ExecutionTaskCaseDoc.find({"task_id": {"$in": task_ids}})
+            .sort("order_no")
+            .to_list()
+        )
+        cases_by_task: Dict[str, List[Dict[str, Any]]] = {}
+        for case_doc in case_docs:
+            cases_by_task.setdefault(case_doc.task_id, []).append(
+                ExecutionTaskQueryMixin._serialize_task_case_doc(case_doc)
+            )
+        return cases_by_task
+
+    @staticmethod
     def _serialize_task_doc(task_doc: ExecutionTaskDoc) -> Dict[str, Any]:
         """统一序列化任务摘要字段，避免重复手写响应。"""
         request_payload = getattr(task_doc, "request_payload", {}) or {}
@@ -36,6 +93,7 @@ class ExecutionTaskQueryMixin:
         return {
             "task_id": task_doc.task_id,
             "external_task_id": task_doc.external_task_id,
+            "source_task_id": getattr(task_doc, "source_task_id", None),
             "framework": task_doc.framework,
             "agent_id": task_doc.agent_id,
             "dispatch_channel": task_doc.dispatch_channel,
@@ -98,31 +156,19 @@ class ExecutionTaskQueryMixin:
         offset: int = 0,
     ) -> List[Dict[str, Any]]:
         """列出执行任务，支持按状态和时间窗口过滤。"""
-        query: Dict[str, Any] = {"is_deleted": False}
-        if schedule_type:
-            query["schedule_type"] = schedule_type.upper()
-        if schedule_status:
-            query["schedule_status"] = schedule_status.upper()
-        if dispatch_status:
-            query["dispatch_status"] = dispatch_status.upper()
-        if consume_status:
-            query["consume_status"] = consume_status.upper()
-        if overall_status:
-            query["overall_status"] = overall_status.upper()
-        if created_by:
-            query["created_by"] = created_by
-        if agent_id:
-            query["agent_id"] = agent_id
-        if framework:
-            query["framework"] = framework
-        if date_from or date_to:
-            created_at_query: Dict[str, datetime] = {}
-            if date_from:
-                created_at_query["$gte"] = self._ensure_utc_datetime(date_from)
-            if date_to:
-                created_at_query["$lte"] = self._ensure_utc_datetime(date_to)
-            query["created_at"] = created_at_query
-
+        query = self._build_list_tasks_query(
+            schedule_type=schedule_type,
+            schedule_status=schedule_status,
+            dispatch_status=dispatch_status,
+            consume_status=consume_status,
+            overall_status=overall_status,
+            created_by=created_by,
+            agent_id=agent_id,
+            framework=framework,
+            date_from=date_from,
+            date_to=date_to,
+            ensure_utc_datetime=self._ensure_utc_datetime,
+        )
         docs = await (
             ExecutionTaskDoc.find(query)
             .sort("-created_at")
@@ -132,17 +178,7 @@ class ExecutionTaskQueryMixin:
         )
         serialized_tasks = [self._serialize_task_doc(task_doc) for task_doc in docs]
         task_ids = [task_doc.task_id for task_doc in docs]
-        if not task_ids:
-            return serialized_tasks
-
-        case_docs = await (
-            ExecutionTaskCaseDoc.find({"task_id": {"$in": task_ids}})
-            .sort("order_no")
-            .to_list()
-        )
-        cases_by_task: Dict[str, List[Dict[str, Any]]] = {}
-        for case_doc in case_docs:
-            cases_by_task.setdefault(case_doc.task_id, []).append(self._serialize_task_case_doc(case_doc))
+        cases_by_task = await self._load_task_case_map(task_ids)
 
         for task_item in serialized_tasks:
             task_item["cases"] = cases_by_task.get(task_item["task_id"], [])
@@ -158,4 +194,5 @@ class ExecutionTaskQueryMixin:
         result["consumed_at"] = task_doc.consumed_at
         result["dispatch_response"] = task_doc.dispatch_response
         result["dispatch_error"] = task_doc.dispatch_error
+        result["request_payload"] = task_doc.request_payload
         return result

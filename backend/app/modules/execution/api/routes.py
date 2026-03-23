@@ -13,6 +13,7 @@ from app.modules.execution.schemas import (
     DispatchTaskResponse,
     ExecutionAgentResponse,
     ExecutionTaskListItem,
+    RerunTaskRequest,
     ScheduledTaskMutationResponse,
     StopTaskRequest,
     StopTaskResponse,
@@ -60,8 +61,8 @@ async def dispatch_task(
         request_case_payload = [
             {
                 "auto_case_id": item.auto_case_id,
-                "case_path": item.case_path,
-                "case_name": item.case_name,
+                "script_path": item.script_path,
+                "script_name": item.script_name,
                 "script_entity_id": item.script_entity_id,
                 "parameters": dict(item.parameters),
             }
@@ -87,8 +88,8 @@ async def dispatch_task(
         case_payloads = [
             {
                 "case_id": "",
-                "case_path": item.case_path,
-                "case_name": item.case_name,
+                "script_path": item.script_path,
+                "script_name": item.script_name,
                 "parameters": dict(item.parameters),
             }
             for item in request.cases
@@ -129,7 +130,6 @@ async def dispatch_task(
             project_tag=request.project_tag,
             repo_url=request.repo_url,
             branch=request.branch,
-            common_parameters=request.common_parameters,
             pytest_options=request.pytest_options,
             timeout=request.timeout,
             dut=request.dut,
@@ -236,6 +236,40 @@ async def stop_task(
         raise HTTPException(status_code=404, detail=str(exc))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post(
+    "/tasks/{task_id}/rerun",
+    response_model=APIResponse[DispatchTaskResponse],
+    status_code=201,
+    summary="重新运行测试任务",
+    dependencies=[Depends(require_permission("execution_tasks:write"))],
+)
+async def rerun_task(
+        task_id: str,
+        request: RerunTaskRequest,
+        service: ExecutionServiceDep,
+        sequence_service: SequenceIdServiceDep,
+        current_user=Depends(get_current_user),
+):
+    """基于已有任务快照创建一个新的执行任务。"""
+    try:
+        year = datetime.now().year
+        seq = await sequence_service.next(f"execution_task:{year}")
+        new_task_id = f"ET-{year}-{str(seq).zfill(6)}"
+        external_task_id = f"EXT-{new_task_id}"
+        data = await service.rerun_task(
+            source_task_id=task_id,
+            new_task_id=new_task_id,
+            external_task_id=external_task_id,
+            actor_id=current_user["user_id"],
+            request=request,
+        )
+        return APIResponse(data=data)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
 
 
 @router.post(

@@ -188,8 +188,8 @@ export interface DispatchCaseItem {
   auto_case_id: string;
   script_entity_id?: string;
   config?: Record<string, unknown>;
-  case_path?: string;
-  case_name?: string;
+  script_path?: string;
+  script_name?: string;
   parameters?: Record<string, unknown>;
 }
 
@@ -224,7 +224,6 @@ export interface DispatchTaskRequest {
   project_tag?: string;
   repo_url?: string;
   branch?: string;
-  common_parameters?: Record<string, unknown>;
   pytest_options?: Record<string, unknown>;
   timeout?: number;
   dut?: Record<string, unknown>;
@@ -232,11 +231,21 @@ export interface DispatchTaskRequest {
 }
 
 export interface RerunTaskRequest {
+  framework?: string;
   dispatch_channel?: 'KAFKA' | 'HTTP';
   agent_id?: string;
   trigger_source?: string;
   schedule_type?: string;
   planned_at?: string;
+  callback_url?: string;
+  category?: string;
+  project_tag?: string;
+  repo_url?: string;
+  branch?: string;
+  pytest_options?: Record<string, unknown>;
+  timeout?: number;
+  dut?: Record<string, unknown>;
+  cases?: DispatchCaseItem[];
 }
 
 export interface DispatchTaskResponse {
@@ -390,6 +399,29 @@ export interface TaskStatus {
   updated_at: string;
   error_message?: string;
   result_summary?: Record<string, unknown>;
+  request_payload?: {
+    framework?: string;
+    dispatch_channel?: 'KAFKA' | 'HTTP' | string;
+    agent_id?: string;
+    schedule_type?: string;
+    planned_at?: string;
+    callback_url?: string;
+    category?: string;
+    project_tag?: string;
+    repo_url?: string;
+    branch?: string;
+    pytest_options?: Record<string, unknown>;
+    timeout?: number;
+    dut?: Record<string, unknown>;
+    cases?: Array<{
+      auto_case_id?: string;
+      script_entity_id?: string;
+      config?: Record<string, unknown>;
+      script_path?: string;
+      script_name?: string;
+      parameters?: Record<string, unknown>;
+    }>;
+  };
 }
 
 export interface ExecutionAssertionItem {

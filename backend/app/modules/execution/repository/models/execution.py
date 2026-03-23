@@ -16,6 +16,7 @@ class ExecutionTaskDoc(Document):
 
     task_id: str = Field(..., description="平台任务唯一 ID")
     external_task_id: Optional[str] = Field(None, description="外部框架任务 ID")
+    source_task_id: Optional[str] = Field(None, description="重跑来源任务 ID")
     framework: str = Field(..., description="外部框架标识")
     agent_id: Optional[str] = Field(None, description="目标代理 ID")
     dispatch_channel: str = Field(default="KAFKA", description="下发通道")
@@ -72,6 +73,7 @@ class ExecutionTaskDoc(Document):
         indexes = [
             IndexModel("task_id", unique=True),
             IndexModel("external_task_id"),
+            IndexModel("source_task_id"),
             IndexModel("framework"),
             IndexModel("agent_id"),
             IndexModel("dispatch_channel"),

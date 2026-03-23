@@ -55,7 +55,6 @@ class ExecutionTaskDispatchMixin:
             project_tag=request_payload["project_tag"],
             repo_url=request_payload["repo_url"],
             branch=request_payload["branch"],
-            common_parameters=request_payload["common_parameters"],
             pytest_options=request_payload["pytest_options"],
             timeout=request_payload["timeout"],
             dut=request_payload["dut"],

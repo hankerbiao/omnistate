@@ -10,6 +10,7 @@ import type {
   ExecutionTaskCaseSummary,
   ExecutionAssertionItem,
   DispatchTaskResponse,
+  RerunTaskRequest,
 } from '../types';
 
 interface TaskListProps {
@@ -29,6 +30,13 @@ interface DispatchModalState {
   loading: boolean;
   submitting: boolean;
   error: string | null;
+}
+
+interface RerunEditModalState extends DispatchModalState {
+  sourceTaskId: string | null;
+  repoUrl: string;
+  branch: string;
+  timeout: string;
 }
 
 const FRAMEWORKS = ['pytest', 'robot', 'playwright', 'cypress', 'jest'];
@@ -107,8 +115,8 @@ const buildDispatchCaseItems = (
       auto_case_id: autoCaseId,
       script_entity_id: matchedCase?.script_ref?.entity_id,
       config: caseConfigs[autoCaseId] || buildDefaultCaseConfig(matchedCase),
-      case_path: matchedCase?.script_ref?.entity_id || matchedCase?.script_path || '',
-      case_name: matchedCase?.name || autoCaseId,
+      script_path: matchedCase?.script_ref?.entity_id || matchedCase?.script_path || '',
+      script_name: matchedCase?.name || autoCaseId,
       parameters: caseConfigs[autoCaseId] || buildDefaultCaseConfig(matchedCase),
     };
   });
@@ -132,6 +140,24 @@ const TaskList: React.FC<TaskListProps> = () => {
     selectedCases: [],
     category: 'bmc',
     projectTag: 'universal',
+    loading: false,
+    submitting: false,
+    error: null,
+  });
+  const [rerunEditModal, setRerunEditModal] = useState<RerunEditModalState>({
+    isOpen: false,
+    sourceTaskId: null,
+    framework: DEFAULT_FRAMEWORK,
+    dispatchChannel: 'KAFKA',
+    agentId: '',
+    scheduleType: 'IMMEDIATE',
+    plannedAt: '',
+    selectedCases: [],
+    category: 'bmc',
+    projectTag: 'universal',
+    repoUrl: '',
+    branch: '',
+    timeout: '',
     loading: false,
     submitting: false,
     error: null,
@@ -180,6 +206,15 @@ const TaskList: React.FC<TaskListProps> = () => {
     }
   };
 
+  const loadRerunResources = useCallback(async () => {
+    const [casesRes, agentsRes] = await Promise.all([
+      api.listAutomationTestCases({ limit: 100 }),
+      api.listAgents({ online_only: true }),
+    ]);
+    setAutoCases(casesRes.data || []);
+    setAgents(agentsRes.data || []);
+  }, []);
+
   const closeDispatchModal = () => {
     setDispatchModal({
       isOpen: false,
@@ -191,6 +226,29 @@ const TaskList: React.FC<TaskListProps> = () => {
       selectedCases: [],
       category: 'bmc',
       projectTag: 'universal',
+      loading: false,
+      submitting: false,
+      error: null,
+    });
+    setCaseConfigs({});
+    setConfigEditorCaseId(null);
+  };
+
+  const closeRerunEditModal = () => {
+    setRerunEditModal({
+      isOpen: false,
+      sourceTaskId: null,
+      framework: DEFAULT_FRAMEWORK,
+      dispatchChannel: 'KAFKA',
+      agentId: '',
+      scheduleType: 'IMMEDIATE',
+      plannedAt: '',
+      selectedCases: [],
+      category: 'bmc',
+      projectTag: 'universal',
+      repoUrl: '',
+      branch: '',
+      timeout: '',
       loading: false,
       submitting: false,
       error: null,
@@ -247,9 +305,8 @@ const TaskList: React.FC<TaskListProps> = () => {
         planned_at: scheduleType === 'SCHEDULED' ? plannedAt : undefined,
         category,
         project_tag: projectTag,
-        repo_url: firstSelectedCase?.repo_url || '',
-        branch: firstSelectedCase?.code_snapshot?.branch || '',
-        common_parameters: {},
+        repo_url: firstSelectedCase?.repo_url || undefined,
+        branch: firstSelectedCase?.code_snapshot?.branch || undefined,
         pytest_options: {},
         timeout: firstSelectedCase?.report_meta?.timeout || 0,
         cases,
@@ -262,6 +319,123 @@ const TaskList: React.FC<TaskListProps> = () => {
       setDispatchModal(prev => ({ ...prev, error: '下发任务失败' }));
     } finally {
       setDispatchModal(prev => ({ ...prev, submitting: false }));
+    }
+  };
+
+  const openEditRerunModal = async () => {
+    if (!selectedTask?.request_payload) {
+      setError('当前任务缺少可编辑的重跑配置');
+      return;
+    }
+    setRerunEditModal(prev => ({ ...prev, isOpen: true, loading: true, error: null, sourceTaskId: selectedTask.task_id }));
+    try {
+      await loadRerunResources();
+      const payload = selectedTask.request_payload;
+      const payloadCases = payload.cases || [];
+      const selectedCases = payloadCases
+        .map(caseItem => caseItem.auto_case_id)
+        .filter((value): value is string => Boolean(value));
+      const nextCaseConfigs = payloadCases.reduce<Record<string, Record<string, unknown>>>((acc, caseItem) => {
+        if (caseItem.auto_case_id) {
+          acc[caseItem.auto_case_id] = { ...(caseItem.config || {}) };
+        }
+        return acc;
+      }, {});
+      setCaseConfigs(nextCaseConfigs);
+      setRerunEditModal({
+        isOpen: true,
+        sourceTaskId: selectedTask.task_id,
+        framework: payload.framework || selectedTask.framework || DEFAULT_FRAMEWORK,
+        dispatchChannel: payload.dispatch_channel === 'HTTP' ? 'HTTP' : 'KAFKA',
+        agentId: payload.agent_id || selectedTask.agent_id || '',
+        scheduleType: payload.schedule_type === 'SCHEDULED' ? 'SCHEDULED' : 'IMMEDIATE',
+        plannedAt: payload.planned_at ? payload.planned_at.slice(0, 16) : '',
+        selectedCases,
+        category: payload.category || 'bmc',
+        projectTag: payload.project_tag || 'universal',
+        repoUrl: payload.repo_url || '',
+        branch: payload.branch || '',
+        timeout: payload.timeout ? String(payload.timeout) : '',
+        loading: false,
+        submitting: false,
+        error: null,
+      });
+    } catch (err) {
+      console.error('Open edit rerun modal error:', err);
+      setRerunEditModal(prev => ({ ...prev, loading: false, error: '加载重跑配置失败' }));
+    }
+  };
+
+  const handleEditRerunSubmit = async () => {
+    const { sourceTaskId, framework, dispatchChannel, agentId, scheduleType, plannedAt, selectedCases, category, projectTag, repoUrl, branch, timeout } = rerunEditModal;
+    if (!sourceTaskId) {
+      setRerunEditModal(prev => ({ ...prev, error: '缺少来源任务 ID' }));
+      return;
+    }
+    if (selectedCases.length === 0) {
+      setRerunEditModal(prev => ({ ...prev, error: '请选择至少一个用例' }));
+      return;
+    }
+    if (dispatchChannel === 'HTTP' && !agentId) {
+      setRerunEditModal(prev => ({ ...prev, error: 'HTTP 下发必须选择目标代理' }));
+      return;
+    }
+    if (scheduleType === 'SCHEDULED' && !plannedAt) {
+      setRerunEditModal(prev => ({ ...prev, error: '请选择计划执行时间' }));
+      return;
+    }
+    const autoCaseMap = new Map(autoCases.map(caseItem => [caseItem.auto_case_id, caseItem]));
+    for (const autoCaseId of selectedCases) {
+      const caseItem = autoCaseMap.get(autoCaseId);
+      if (!caseItem) {
+        setRerunEditModal(prev => ({ ...prev, error: `未找到用例信息：${autoCaseId}` }));
+        return;
+      }
+      const configValues = caseConfigs[autoCaseId] || buildDefaultCaseConfig(caseItem);
+      for (const field of caseItem.param_spec || []) {
+        const value = configValues[field.name];
+        const isEmptyString = typeof value === 'string' && value.trim() === '';
+        if (field.required && (value === undefined || value === null || isEmptyString)) {
+          setRerunEditModal(prev => ({
+            ...prev,
+            error: `请填写 ${caseItem.auto_case_id} 的配置项：${getFieldDisplayLabel(field)}`,
+          }));
+          return;
+        }
+      }
+    }
+
+    setRerunEditModal(prev => ({ ...prev, submitting: true, error: null }));
+    setError(null);
+    setSuccessMessage(null);
+    setRerunningTaskId(sourceTaskId);
+    try {
+      const cases = buildDispatchCaseItems(selectedCases, autoCases, caseConfigs);
+      const requestData: RerunTaskRequest = {
+        framework,
+        dispatch_channel: dispatchChannel,
+        agent_id: agentId || undefined,
+        trigger_source: 'rerun_edit',
+        schedule_type: scheduleType,
+        planned_at: scheduleType === 'SCHEDULED' ? plannedAt : undefined,
+        category,
+        project_tag: projectTag,
+        repo_url: repoUrl || undefined,
+        branch: branch || undefined,
+        timeout: timeout ? Number(timeout) : undefined,
+        cases,
+      };
+      const response = await api.rerunTask(sourceTaskId, requestData);
+      const payload = response.data as DispatchTaskResponse | undefined;
+      setSuccessMessage(payload?.task_id ? `已创建编辑后重跑任务 ${payload.task_id}` : `任务 ${sourceTaskId} 已重新运行`);
+      closeRerunEditModal();
+      await fetchTasks();
+    } catch (err) {
+      console.error('Edit rerun task error:', err);
+      setRerunEditModal(prev => ({ ...prev, error: `编辑后重跑任务 ${sourceTaskId} 失败` }));
+    } finally {
+      setRerunningTaskId(null);
+      setRerunEditModal(prev => ({ ...prev, submitting: false }));
     }
   };
 
@@ -910,6 +1084,13 @@ const TaskList: React.FC<TaskListProps> = () => {
                   >
                     {rerunningTaskId === selectedTask.task_id ? '重新运行中...' : '重新运行'}
                   </button>
+                  <button
+                    style={styles.secondaryGhostBtn}
+                    onClick={openEditRerunModal}
+                    disabled={rerunningTaskId === selectedTask.task_id}
+                  >
+                    编辑后重跑
+                  </button>
                 </div>
 
                 {selectedTask.error_message && (
@@ -1267,6 +1448,308 @@ const TaskList: React.FC<TaskListProps> = () => {
                   完成
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {rerunEditModal.isOpen && (
+        <div style={styles.modalOverlay} onClick={closeRerunEditModal}>
+          <div style={styles.dispatchModal} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.modalHeader}>
+              <h2 style={styles.modalTitle}>
+                <span style={styles.modalIcon}>↻</span>
+                编辑后重跑
+              </h2>
+              <button style={styles.closeBtn} onClick={closeRerunEditModal}>×</button>
+            </div>
+            <div style={styles.dispatchModalBody}>
+              {rerunEditModal.loading ? (
+                <div style={styles.modalLoading}>
+                  <div style={styles.spinner} />
+                </div>
+              ) : (
+                <>
+                  <div style={styles.formSection}>
+                    <label style={styles.formLabel}>执行框架</label>
+                    <select
+                      style={styles.select}
+                      value={rerunEditModal.framework}
+                      onChange={(e) => setRerunEditModal(prev => ({ ...prev, framework: e.target.value }))}
+                    >
+                      {FRAMEWORKS.map(fw => (
+                        <option key={fw} value={fw}>{fw.toUpperCase()}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div style={styles.formSection}>
+                    <label style={styles.formLabel}>下发通道</label>
+                    <div style={styles.radioGroup}>
+                      <label style={styles.radioLabel}>
+                        <input
+                          type="radio"
+                          name="rerunDispatchChannel"
+                          checked={rerunEditModal.dispatchChannel === 'KAFKA'}
+                          onChange={() => setRerunEditModal(prev => ({ ...prev, dispatchChannel: 'KAFKA' }))}
+                        />
+                        <span>Kafka 下发</span>
+                      </label>
+                      <label style={styles.radioLabel}>
+                        <input
+                          type="radio"
+                          name="rerunDispatchChannel"
+                          checked={rerunEditModal.dispatchChannel === 'HTTP'}
+                          onChange={() => setRerunEditModal(prev => ({ ...prev, dispatchChannel: 'HTTP' }))}
+                        />
+                        <span>HTTP 下发</span>
+                      </label>
+                    </div>
+                  </div>
+                  <div style={styles.formSection}>
+                    <label style={styles.formLabel}>
+                      目标代理 {rerunEditModal.dispatchChannel === 'HTTP' ? '(必选)' : '(可选)'}
+                    </label>
+                    <select
+                      style={styles.select}
+                      value={rerunEditModal.agentId}
+                      onChange={(e) => setRerunEditModal(prev => ({ ...prev, agentId: e.target.value }))}
+                    >
+                      <option value="">
+                        {rerunEditModal.dispatchChannel === 'HTTP' ? '请选择代理' : '自动分配'}
+                      </option>
+                      {agents.map(agent => (
+                        <option key={agent.agent_id} value={agent.agent_id}>
+                          {agent.agent_id} ({agent.hostname})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div style={styles.formSection}>
+                    <label style={styles.formLabel}>下发方式</label>
+                    <div style={styles.radioGroup}>
+                      <label style={styles.radioLabel}>
+                        <input
+                          type="radio"
+                          name="rerunScheduleType"
+                          checked={rerunEditModal.scheduleType === 'IMMEDIATE'}
+                          onChange={() => setRerunEditModal(prev => ({ ...prev, scheduleType: 'IMMEDIATE', plannedAt: '' }))}
+                        />
+                        <span>立即下发</span>
+                      </label>
+                      <label style={styles.radioLabel}>
+                        <input
+                          type="radio"
+                          name="rerunScheduleType"
+                          checked={rerunEditModal.scheduleType === 'SCHEDULED'}
+                          onChange={() => setRerunEditModal(prev => ({ ...prev, scheduleType: 'SCHEDULED' }))}
+                        />
+                        <span>定时下发</span>
+                      </label>
+                    </div>
+                  </div>
+                  {rerunEditModal.scheduleType === 'SCHEDULED' && (
+                    <div style={styles.formSection}>
+                      <label style={styles.formLabel}>计划执行时间</label>
+                      <input
+                        type="datetime-local"
+                        style={styles.input}
+                        value={rerunEditModal.plannedAt}
+                        onChange={(e) => setRerunEditModal(prev => ({ ...prev, plannedAt: e.target.value }))}
+                      />
+                    </div>
+                  )}
+                  <div style={styles.formSection}>
+                    <label style={styles.formLabel}>Category</label>
+                    <select
+                      style={styles.select}
+                      value={rerunEditModal.category}
+                      onChange={(e) => setRerunEditModal(prev => ({ ...prev, category: e.target.value }))}
+                    >
+                      <option value="bmc">BMC</option>
+                      <option value="bios">BIOS</option>
+                      <option value="os">OS</option>
+                    </select>
+                  </div>
+                  <div style={styles.formSection}>
+                    <label style={styles.formLabel}>Project Tag</label>
+                    <select
+                      style={styles.select}
+                      value={rerunEditModal.projectTag}
+                      onChange={(e) => setRerunEditModal(prev => ({ ...prev, projectTag: e.target.value }))}
+                    >
+                      <option value="universal">Universal</option>
+                      <option value="specific">Specific</option>
+                    </select>
+                  </div>
+                  <div style={styles.formSection}>
+                    <label style={styles.formLabel}>Repo URL</label>
+                    <input
+                      type="text"
+                      style={styles.input}
+                      value={rerunEditModal.repoUrl}
+                      onChange={(e) => setRerunEditModal(prev => ({ ...prev, repoUrl: e.target.value }))}
+                    />
+                  </div>
+                  <div style={styles.formSection}>
+                    <label style={styles.formLabel}>Branch</label>
+                    <input
+                      type="text"
+                      style={styles.input}
+                      value={rerunEditModal.branch}
+                      onChange={(e) => setRerunEditModal(prev => ({ ...prev, branch: e.target.value }))}
+                    />
+                  </div>
+                  <div style={styles.formSection}>
+                    <label style={styles.formLabel}>Timeout (秒)</label>
+                    <input
+                      type="number"
+                      style={styles.input}
+                      value={rerunEditModal.timeout}
+                      onChange={(e) => setRerunEditModal(prev => ({ ...prev, timeout: e.target.value }))}
+                    />
+                  </div>
+
+                  <div style={styles.formSection}>
+                    <label style={styles.formLabel}>
+                      选择用例 ({rerunEditModal.selectedCases.length} 已选)
+                    </label>
+                    <div style={styles.caseList}>
+                      {autoCases.length === 0 ? (
+                        <div style={styles.emptyCases}>暂无可用用例</div>
+                      ) : (
+                        autoCases.map(caseItem => (
+                          <label key={`rerun-${caseItem.auto_case_id}`} style={styles.caseItem}>
+                            <input
+                              type="checkbox"
+                              checked={rerunEditModal.selectedCases.includes(caseItem.auto_case_id)}
+                              onChange={() => {
+                                const isSelected = rerunEditModal.selectedCases.includes(caseItem.auto_case_id);
+                                setRerunEditModal(prev => ({
+                                  ...prev,
+                                  selectedCases: isSelected
+                                    ? prev.selectedCases.filter(id => id !== caseItem.auto_case_id)
+                                    : [...prev.selectedCases, caseItem.auto_case_id],
+                                }));
+                                setCaseConfigs(prev => {
+                                  if (prev[caseItem.auto_case_id]) {
+                                    const next = { ...prev };
+                                    delete next[caseItem.auto_case_id];
+                                    return next;
+                                  }
+                                  return {
+                                    ...prev,
+                                    [caseItem.auto_case_id]: buildDefaultCaseConfig(caseItem),
+                                  };
+                                });
+                              }}
+                            />
+                            <span style={styles.caseName}>{caseItem.auto_case_id}</span>
+                            <span style={styles.caseFramework}>{caseItem.framework}</span>
+                          </label>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  {rerunEditModal.selectedCases.length > 0 && (
+                    <div style={styles.formSection}>
+                      <label style={styles.formLabel}>用例配置</label>
+                      <div style={styles.caseConfigList}>
+                        {rerunEditModal.selectedCases.map((autoCaseId) => {
+                          const caseItem = autoCases.find(item => item.auto_case_id === autoCaseId);
+                          if (!caseItem) {
+                            return null;
+                          }
+                          const fields = caseItem.param_spec || [];
+                          const configValues = caseConfigs[autoCaseId] || buildDefaultCaseConfig(caseItem);
+                          return (
+                            <div key={`rerun-config-${autoCaseId}`} style={styles.caseConfigCard}>
+                              <div style={styles.caseConfigHeader}>
+                                <div style={styles.caseConfigTitleBlock}>
+                                  <span style={styles.caseConfigTitle}>{caseItem.auto_case_id}</span>
+                                  <span style={styles.caseConfigSubtitle}>{caseItem.name}</span>
+                                </div>
+                                <span style={styles.caseConfigCount}>{fields.length} 项配置</span>
+                              </div>
+                              {fields.length === 0 ? (
+                                <div style={styles.caseConfigEmpty}>该用例没有配置项</div>
+                              ) : (
+                                <div style={styles.caseConfigFields}>
+                                  {fields.map((field) => {
+                                    const currentValue = configValues[field.name];
+                                    const normalizedType = (field.type || 'str').toLowerCase();
+                                    return (
+                                      <div key={`rerun-${autoCaseId}-${field.name}`} style={styles.caseConfigField}>
+                                        <div style={styles.caseConfigFieldHeader}>
+                                          <label style={styles.caseConfigLabel}>
+                                            {getFieldDisplayLabel(field)}
+                                            {field.required && <span style={styles.requiredMark}>*</span>}
+                                          </label>
+                                          <span style={styles.caseConfigType}>{field.type || 'str'}</span>
+                                        </div>
+                                        {field.description && (
+                                          <div style={styles.caseConfigDescription}>{field.description}</div>
+                                        )}
+                                        {field.options && field.options.length > 0 ? (
+                                          <select
+                                            style={styles.select}
+                                            value={String(currentValue ?? '')}
+                                            onChange={(e) => handleCaseConfigChange(autoCaseId, field, e.target.value)}
+                                          >
+                                            <option value="">请选择</option>
+                                            {field.options.map((option, index) => (
+                                              <option key={`${field.name}-${index}`} value={String(option.value)}>
+                                                {option.label || String(option.value)}
+                                              </option>
+                                            ))}
+                                          </select>
+                                        ) : normalizedType === 'bool' || normalizedType === 'boolean' ? (
+                                          <label style={styles.checkboxLabel}>
+                                            <input
+                                              type="checkbox"
+                                              checked={Boolean(currentValue)}
+                                              onChange={(e) => handleCaseConfigChange(autoCaseId, field, e.target.checked)}
+                                            />
+                                            <span>启用</span>
+                                          </label>
+                                        ) : (
+                                          <input
+                                            type={getConfigFieldInputType(field.type)}
+                                            style={styles.input}
+                                            value={String(currentValue ?? '')}
+                                            onChange={(e) => handleCaseConfigChange(autoCaseId, field, e.target.value)}
+                                            placeholder={field.default !== undefined ? String(field.default) : field.name}
+                                          />
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {rerunEditModal.error && (
+                    <div style={styles.errorBanner}>{rerunEditModal.error}</div>
+                  )}
+                  <div style={styles.modalActions}>
+                    <button style={styles.cancelBtn} onClick={closeRerunEditModal}>
+                      取消
+                    </button>
+                    <button
+                      style={styles.submitBtn}
+                      onClick={handleEditRerunSubmit}
+                      disabled={rerunEditModal.submitting}
+                    >
+                      {rerunEditModal.submitting ? '提交中...' : '确认重跑'}
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -2281,6 +2764,7 @@ const styles = {
   detailActions: {
     display: 'flex',
     justifyContent: 'flex-end',
+    gap: '10px',
     marginBottom: '20px',
   } as const,
   secondaryActionBtn: {
@@ -2290,6 +2774,16 @@ const styles = {
     color: 'var(--accent-cyan)',
     backgroundColor: 'rgba(57, 208, 214, 0.08)',
     border: '1px solid rgba(57, 208, 214, 0.24)',
+    borderRadius: 'var(--radius-md)',
+    cursor: 'pointer',
+  } as const,
+  secondaryGhostBtn: {
+    padding: '10px 16px',
+    fontSize: '13px',
+    fontWeight: 600,
+    color: 'var(--text-secondary)',
+    backgroundColor: 'var(--bg-tertiary)',
+    border: '1px solid var(--border-default)',
     borderRadius: 'var(--radius-md)',
     cursor: 'pointer',
   } as const,

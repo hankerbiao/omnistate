@@ -17,6 +17,7 @@ from app.modules.execution.application.task_command_mixin import ExecutionTaskCo
 from app.modules.execution.application.task_dispatch_mixin import ExecutionTaskDispatchMixin
 from app.modules.execution.application.task_query_mixin import ExecutionTaskQueryMixin
 from app.modules.execution.repository.models import ExecutionTaskCaseDoc, ExecutionTaskDoc
+from app.modules.execution.schemas import RerunTaskRequest
 from app.modules.execution.service.task_dispatcher import ExecutionTaskDispatcher
 from app.shared.core.logger import log as logger
 
@@ -203,3 +204,38 @@ class ExecutionService(
             f"dispatch_status={task_doc.dispatch_status}, should_dispatch_now={should_dispatch_now}"
         )
         return self._serialize_task_doc(task_doc)
+
+    async def rerun_task(
+        self,
+        source_task_id: str,
+        new_task_id: str,
+        external_task_id: str,
+        actor_id: str,
+        request: RerunTaskRequest,
+    ) -> Dict[str, Any]:
+        """基于已有任务快照创建一个新的执行任务。"""
+        source_task_doc = await ExecutionTaskDoc.find_one({"task_id": source_task_id, "is_deleted": False})
+        if not source_task_doc:
+            raise KeyError(f"Task not found: {source_task_id}")
+
+        self._ensure_actor_identity(actor_id, source_task_doc.created_by)
+        if request.cases is not None:
+            auto_case_ids = [case.auto_case_id for case in request.cases]
+        else:
+            payload_cases = list(dict(source_task_doc.request_payload or {}).get("cases", []))
+            auto_case_ids = [case["auto_case_id"] for case in payload_cases]
+        case_ids, script_entity_ids = await self.resolve_case_bindings_by_auto_case_ids(auto_case_ids)
+        command = self._build_rerun_command_from_payload(
+            source_task_doc=source_task_doc,
+            request=request,
+            new_task_id=new_task_id,
+            external_task_id=external_task_id,
+            actor_id=actor_id,
+            case_ids=case_ids,
+            script_entity_ids=script_entity_ids,
+        )
+        logger.info(
+            "Rerunning execution task as new task: "
+            f"source_task_id={source_task_id}, new_task_id={new_task_id}, actor_id={actor_id}"
+        )
+        return await self.dispatch_execution_task(command, actor_id=actor_id)

@@ -10,6 +10,7 @@ from typing import Any, Dict
 from app.modules.execution.application.commands import DispatchExecutionTaskCommand
 from app.modules.execution.application.constants import FINAL_TASK_STATUSES, STOP_MODE_NONE
 from app.modules.execution.repository.models import ExecutionTaskDoc
+from app.modules.execution.schemas import RerunTaskRequest
 from app.shared.core.logger import log as logger
 
 
@@ -36,7 +37,6 @@ class ExecutionTaskCommandMixin:
             "project_tag": command.project_tag,
             "repo_url": command.repo_url,
             "branch": command.branch,
-            "common_parameters": command.common_parameters,
             "pytest_options": command.pytest_options,
             "timeout": command.timeout,
             "dut": command.dut,
@@ -44,8 +44,8 @@ class ExecutionTaskCommandMixin:
                 [
                     {
                         "case_id": case_id,
-                        "case_path": case_payload.get("case_path"),
-                        "case_name": case_payload.get("case_name"),
+                        "script_path": case_payload.get("script_path"),
+                        "script_name": case_payload.get("script_name"),
                         "parameters": case_payload.get("parameters"),
                         "config": case_config,
                     }
@@ -57,8 +57,8 @@ class ExecutionTaskCommandMixin:
                 ],
                 key=lambda item: (
                     item["case_id"],
-                    item.get("case_path") or "",
-                    item.get("case_name") or "",
+                    item.get("script_path") or "",
+                    item.get("script_name") or "",
                     json.dumps(
                         item.get("parameters") or {},
                         ensure_ascii=True,
@@ -121,7 +121,6 @@ class ExecutionTaskCommandMixin:
             "project_tag": command.project_tag,
             "repo_url": command.repo_url,
             "branch": command.branch,
-            "common_parameters": command.common_parameters,
             "pytest_options": command.pytest_options,
             "timeout": command.timeout,
             "dut": command.dut,
@@ -132,8 +131,8 @@ class ExecutionTaskCommandMixin:
                     "script_entity_id": script_entity_id,
                     "config": case_config,
                     "payload_case_id": case_payload.get("case_id"),
-                    "case_path": case_payload.get("case_path"),
-                    "case_name": case_payload.get("case_name"),
+                    "script_path": case_payload.get("script_path"),
+                    "script_name": case_payload.get("script_name"),
                     "parameters": case_payload.get("parameters"),
                 }
                 for case_id, auto_case_id, script_entity_id, case_config, case_payload in zip(
@@ -180,6 +179,88 @@ class ExecutionTaskCommandMixin:
             )
 
     @classmethod
+    def _build_rerun_command_from_payload(
+        cls,
+        source_task_doc: Any,
+        request: RerunTaskRequest,
+        new_task_id: str,
+        external_task_id: str,
+        actor_id: str,
+        case_ids: list[str],
+        script_entity_ids: list[str | None],
+    ) -> DispatchExecutionTaskCommand:
+        payload = dict(getattr(source_task_doc, "request_payload", {}) or {})
+        cases = cls._extract_rerun_cases(payload, request)
+        auto_case_ids = [case["auto_case_id"] for case in cases]
+        case_configs = [dict(case.get("config") or {}) for case in cases]
+        case_payloads = [
+            {
+                "case_id": case_id,
+                "script_path": case.get("script_path"),
+                "script_name": case.get("script_name"),
+                "parameters": dict(case.get("parameters") or {}),
+            }
+            for case, case_id in zip(cases, case_ids)
+        ]
+        dispatch_channel = request.dispatch_channel or payload.get("dispatch_channel")
+        agent_id = request.agent_id if request.agent_id is not None else payload.get("agent_id")
+        trigger_source = request.trigger_source or "rerun"
+        schedule_type = request.schedule_type or "IMMEDIATE"
+        planned_at = request.planned_at if request.schedule_type else None
+        return DispatchExecutionTaskCommand(
+            task_id=new_task_id,
+            external_task_id=external_task_id,
+            source_task_id=getattr(source_task_doc, "task_id", None),
+            framework=request.framework or payload["framework"],
+            dispatch_channel=dispatch_channel,
+            agent_id=agent_id,
+            trigger_source=trigger_source,
+            created_by=actor_id,
+            auto_case_ids=auto_case_ids,
+            case_ids=case_ids,
+            script_entity_ids=script_entity_ids,
+            case_configs=case_configs,
+            case_payloads=case_payloads,
+            schedule_type=schedule_type,
+            planned_at=planned_at,
+            callback_url=request.callback_url if request.callback_url is not None else payload.get("callback_url"),
+            category=request.category if request.category is not None else payload.get("category"),
+            project_tag=request.project_tag if request.project_tag is not None else payload.get("project_tag"),
+            repo_url=request.repo_url if request.repo_url is not None else payload.get("repo_url"),
+            branch=request.branch if request.branch is not None else payload.get("branch"),
+            pytest_options=cls._resolve_override_dict(request.pytest_options, payload, "pytest_options"),
+            timeout=request.timeout if request.timeout is not None else payload.get("timeout"),
+            dut=cls._resolve_override_dict(request.dut, payload, "dut"),
+        )
+
+    @staticmethod
+    def _extract_rerun_cases(payload: Dict[str, Any], request: RerunTaskRequest) -> list[dict[str, Any]]:
+        if request.cases is None:
+            return list(payload.get("cases", []))
+        return [
+            {
+                "auto_case_id": item.auto_case_id,
+                "script_entity_id": item.script_entity_id,
+                "config": dict(item.config),
+                "payload_case_id": "",
+                "script_path": item.script_path,
+                "script_name": item.script_name,
+                "parameters": dict(item.parameters),
+            }
+            for item in request.cases
+        ]
+
+    @staticmethod
+    def _resolve_override_dict(
+        override_value: dict[str, Any] | None,
+        payload: Dict[str, Any],
+        field_name: str,
+    ) -> dict[str, Any]:
+        if override_value is not None:
+            return dict(override_value)
+        return dict(payload.get(field_name) or {})
+
+    @classmethod
     def _apply_task_command_to_doc(
         cls,
         task_doc: ExecutionTaskDoc,
@@ -193,6 +274,7 @@ class ExecutionTaskCommandMixin:
         cls._assign_fields(
             task_doc,
             agent_id=command.agent_id,
+            source_task_id=command.source_task_id,
             dispatch_channel=command.dispatch_channel,
             dedup_key=dedup_key,
             case_count=len(command.case_ids),

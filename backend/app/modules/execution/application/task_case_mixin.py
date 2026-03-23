@@ -133,8 +133,8 @@ class ExecutionTaskCaseMixin:
         return [
             {
                 "case_id": case["payload_case_id"],
-                "case_path": case["case_path"],
-                "case_name": case["case_name"],
+                "script_path": case["script_path"],
+                "script_name": case["script_name"],
                 "parameters": dict(case["parameters"]),
             }
             for case in payload["cases"]
