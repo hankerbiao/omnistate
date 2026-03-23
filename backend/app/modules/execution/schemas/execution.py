@@ -27,7 +27,7 @@ class DispatchCaseItem(BaseModel):
 
 class DispatchTaskRequest(BaseModel):
     framework: str = Field(..., description="执行框架标识，例如 pytest、robot 等")
-    dispatch_channel: Optional[str] = Field(None, description="下发通道，可选 KAFKA 或 HTTP")
+    dispatch_channel: Optional[str] = Field(None, description="下发通道，可选 KAFKA、RABBITMQ 或 HTTP")
     agent_id: Optional[str] = Field(None, description="目标执行代理 ID；由平台路由到指定 agent 时使用")
     trigger_source: Optional[str] = Field(default="manual", description="触发来源，例如 manual、web_ui、schedule")
     schedule_type: str = Field(default="IMMEDIATE", description="调度类型，只允许 IMMEDIATE 或 SCHEDULED")
@@ -53,8 +53,8 @@ class DispatchTaskRequest(BaseModel):
             raise ValueError("cases must not contain duplicate auto_case_id")
         if self.schedule_type.upper() not in {"IMMEDIATE", "SCHEDULED"}:
             raise ValueError("schedule_type must be IMMEDIATE or SCHEDULED")
-        if self.dispatch_channel and self.dispatch_channel.upper() not in {"KAFKA", "HTTP"}:
-            raise ValueError("dispatch_channel must be KAFKA or HTTP")
+        if self.dispatch_channel and self.dispatch_channel.upper() not in {"KAFKA", "RABBITMQ", "HTTP"}:
+            raise ValueError("dispatch_channel must be KAFKA, RABBITMQ or HTTP")
         if (self.dispatch_channel or "").upper() == "HTTP" and not self.agent_id:
             raise ValueError("agent_id is required when dispatch_channel is HTTP")
         return self
@@ -83,8 +83,8 @@ class RerunTaskRequest(BaseModel):
     def validate_rerun_request(self) -> "RerunTaskRequest":
         if self.schedule_type and self.schedule_type.upper() not in {"IMMEDIATE", "SCHEDULED"}:
             raise ValueError("schedule_type must be IMMEDIATE or SCHEDULED")
-        if self.dispatch_channel and self.dispatch_channel.upper() not in {"KAFKA", "HTTP"}:
-            raise ValueError("dispatch_channel must be KAFKA or HTTP")
+        if self.dispatch_channel and self.dispatch_channel.upper() not in {"KAFKA", "RABBITMQ", "HTTP"}:
+            raise ValueError("dispatch_channel must be KAFKA, RABBITMQ or HTTP")
         if (self.dispatch_channel or "").upper() == "HTTP" and not self.agent_id:
             raise ValueError("agent_id is required when dispatch_channel is HTTP")
         if self.cases is not None:

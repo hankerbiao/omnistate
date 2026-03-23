@@ -151,8 +151,8 @@ class ExecutionTaskCommandMixin:
         if dispatch_channel is None:
             raise ValueError("dispatch_channel is required")
         normalized = dispatch_channel.strip().upper()
-        if normalized not in {"KAFKA", "HTTP"}:
-            raise ValueError("dispatch_channel must be KAFKA or HTTP")
+        if normalized not in {"KAFKA", "RABBITMQ", "HTTP"}:
+            raise ValueError("dispatch_channel must be KAFKA, RABBITMQ or HTTP")
         return normalized
 
     @staticmethod
@@ -186,21 +186,22 @@ class ExecutionTaskCommandMixin:
         new_task_id: str,
         external_task_id: str,
         actor_id: str,
-        case_ids: list[str],
-        script_entity_ids: list[str | None],
+        dispatch_bindings: list[Any],
     ) -> DispatchExecutionTaskCommand:
         payload = dict(getattr(source_task_doc, "request_payload", {}) or {})
         cases = cls._extract_rerun_cases(payload, request)
+        case_ids = [binding.case_id for binding in dispatch_bindings]
+        script_entity_ids = [binding.script_entity_id for binding in dispatch_bindings]
         auto_case_ids = [case["auto_case_id"] for case in cases]
         case_configs = [dict(case.get("config") or {}) for case in cases]
         case_payloads = [
             {
-                "case_id": case_id,
-                "script_path": case.get("script_path"),
-                "script_name": case.get("script_name"),
+                "case_id": binding.case_id,
+                "script_path": binding.script_path,
+                "script_name": binding.script_name,
                 "parameters": dict(case.get("parameters") or {}),
             }
-            for case, case_id in zip(cases, case_ids)
+            for case, binding in zip(cases, dispatch_bindings)
         ]
         dispatch_channel = request.dispatch_channel or payload.get("dispatch_channel")
         agent_id = request.agent_id if request.agent_id is not None else payload.get("agent_id")
@@ -240,11 +241,7 @@ class ExecutionTaskCommandMixin:
         return [
             {
                 "auto_case_id": item.auto_case_id,
-                "script_entity_id": item.script_entity_id,
                 "config": dict(item.config),
-                "payload_case_id": "",
-                "script_path": item.script_path,
-                "script_name": item.script_name,
                 "parameters": dict(item.parameters),
             }
             for item in request.cases

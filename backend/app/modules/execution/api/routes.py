@@ -61,9 +61,6 @@ async def dispatch_task(
         request_case_payload = [
             {
                 "auto_case_id": item.auto_case_id,
-                "script_path": item.script_path,
-                "script_name": item.script_name,
-                "script_entity_id": item.script_entity_id,
                 "parameters": dict(item.parameters),
             }
             for item in request.cases
@@ -85,22 +82,17 @@ async def dispatch_task(
         # 构建自动化用例ID列表
         auto_case_ids = [item.auto_case_id for item in request.cases]
         case_configs = [dict(item.config) for item in request.cases]
+        dispatch_bindings = await service.resolve_case_dispatch_bindings_by_auto_case_ids(auto_case_ids)
+        case_ids = [binding.case_id for binding in dispatch_bindings]
+        script_entity_ids = [binding.script_entity_id for binding in dispatch_bindings]
         case_payloads = [
             {
-                "case_id": "",
-                "script_path": item.script_path,
-                "script_name": item.script_name,
+                "case_id": binding.case_id,
+                "script_path": binding.script_path,
+                "script_name": binding.script_name,
                 "parameters": dict(item.parameters),
             }
-            for item in request.cases
-        ]
-        case_ids, script_entity_ids = await service.resolve_case_bindings_by_auto_case_ids(auto_case_ids)
-        case_payloads = [
-            {
-                **case_payload,
-                "case_id": case_id,
-            }
-            for case_payload, case_id in zip(case_payloads, case_ids)
+            for item, binding in zip(request.cases, dispatch_bindings)
         ]
         logger.debug(
             "Dispatch task case bindings resolved: "

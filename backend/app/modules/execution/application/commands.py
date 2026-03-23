@@ -130,11 +130,7 @@ class DispatchExecutionTaskCommand:
             raise ValueError(f"script_name is required for dispatch case: {current_case_id}")
         if case_parameters is None:
             case_parameters = current_case_config
-        case_parameters = {
-            **dict(case_parameters or {}),
-            "script_path": script_path,
-            "script_name": script_name,
-        }
+        case_parameters = dict(case_parameters or {})
         return {
             "task_id": self.task_id,
             "category": self.category,

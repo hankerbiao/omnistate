@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class ExecutionResultEvent(BaseModel):
@@ -50,3 +50,17 @@ class TestEvent(BaseModel):
         if not value.endswith("-test-event@1"):
             raise ValueError("test event schema must end with -test-event@1")
         return value
+
+
+class RawTestEventEnvelope(BaseModel):
+    """Raw Kafka payload for test-events topic, supporting single and batch envelopes."""
+
+    payload: dict[str, Any]
+    model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="before")
+    @classmethod
+    def wrap_raw_payload(cls, value: Any) -> dict[str, Any]:
+        if not isinstance(value, dict):
+            raise ValueError("Kafka test event payload must be a JSON object")
+        return {"payload": value}

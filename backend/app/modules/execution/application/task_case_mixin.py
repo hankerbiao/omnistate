@@ -2,10 +2,22 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Dict, List
 
 from app.modules.execution.repository.models import ExecutionTaskCaseDoc, ExecutionTaskDoc
 from app.modules.test_specs.repository.models import AutomationTestCaseDoc, TestCaseDoc
+
+
+@dataclass(frozen=True)
+class AutoCaseDispatchBinding:
+    """自动化用例到执行下发字段的解析结果。"""
+
+    auto_case_id: str
+    case_id: str
+    script_entity_id: str | None
+    script_path: str
+    script_name: str
 
 
 class ExecutionTaskCaseMixin:
@@ -31,27 +43,23 @@ class ExecutionTaskCaseMixin:
         return case_ids
 
     @staticmethod
-    async def resolve_case_bindings_by_auto_case_ids(
+    async def resolve_case_dispatch_bindings_by_auto_case_ids(
         auto_case_ids: List[str],
-    ) -> tuple[List[str], List[str | None]]:
-        """将 auto_case_id 列表解析为平台 case_id 和脚本实体 ID，保留原始顺序。"""
+    ) -> List[AutoCaseDispatchBinding]:
+        """将 auto_case_id 列表解析为下发所需的完整脚本元数据。"""
         auto_docs = await AutomationTestCaseDoc.find({
             "auto_case_id": {"$in": auto_case_ids},
             "is_deleted": False,
         }).to_list()
-        source_mapping = {doc.auto_case_id: doc.dml_manual_case_id for doc in auto_docs}
-        script_mapping = {
-            doc.auto_case_id: getattr(getattr(doc, "script_ref", None), "entity_id", None)
-            for doc in auto_docs
-        }
+        auto_doc_mapping = {doc.auto_case_id: doc for doc in auto_docs}
 
         missing_auto_case_ids = [
-            auto_case_id for auto_case_id in auto_case_ids if auto_case_id not in source_mapping
+            auto_case_id for auto_case_id in auto_case_ids if auto_case_id not in auto_doc_mapping
         ]
         if missing_auto_case_ids:
             raise KeyError(f"Automation test cases not found: {missing_auto_case_ids}")
 
-        source_case_ids = [source_mapping[auto_case_id] for auto_case_id in auto_case_ids]
+        source_case_ids = [auto_doc_mapping[auto_case_id].dml_manual_case_id for auto_case_id in auto_case_ids]
         docs = await TestCaseDoc.find({
             "case_id": {"$in": source_case_ids},
             "is_deleted": False,
@@ -65,10 +73,10 @@ class ExecutionTaskCaseMixin:
             missing_bindings = [
                 {
                     "auto_case_id": auto_case_id,
-                    "dml_manual_case_id": source_mapping.get(auto_case_id),
+                    "dml_manual_case_id": auto_doc_mapping[auto_case_id].dml_manual_case_id,
                 }
                 for auto_case_id in auto_case_ids
-                if source_mapping.get(auto_case_id) in missing_source_case_ids
+                if auto_doc_mapping[auto_case_id].dml_manual_case_id in missing_source_case_ids
             ]
             raise KeyError(
                 "Automation test cases linked manual cases not found: "
@@ -90,8 +98,35 @@ class ExecutionTaskCaseMixin:
         if ambiguous:
             raise ValueError(f"Automation test cases linked to multiple test cases: {ambiguous}")
 
-        case_ids = [mapping[source_mapping[auto_case_id]][0] for auto_case_id in auto_case_ids]
-        script_entity_ids = [script_mapping.get(auto_case_id) for auto_case_id in auto_case_ids]
+        bindings: List[AutoCaseDispatchBinding] = []
+        for auto_case_id in auto_case_ids:
+            auto_doc = auto_doc_mapping[auto_case_id]
+            case_id = mapping[auto_doc.dml_manual_case_id][0]
+            script_path = getattr(auto_doc, "script_path", None)
+            script_name = getattr(auto_doc, "script_name", None)
+            if not script_path:
+                raise ValueError(f"script_path is required for automation test case: {auto_case_id}")
+            if not script_name:
+                raise ValueError(f"script_name is required for automation test case: {auto_case_id}")
+            bindings.append(
+                AutoCaseDispatchBinding(
+                    auto_case_id=auto_case_id,
+                    case_id=case_id,
+                    script_entity_id=getattr(getattr(auto_doc, "script_ref", None), "entity_id", None),
+                    script_path=script_path,
+                    script_name=script_name,
+                )
+            )
+        return bindings
+
+    @staticmethod
+    async def resolve_case_bindings_by_auto_case_ids(
+        auto_case_ids: List[str],
+    ) -> tuple[List[str], List[str | None]]:
+        """将 auto_case_id 列表解析为平台 case_id 和脚本实体 ID。"""
+        bindings = await ExecutionTaskCaseMixin.resolve_case_dispatch_bindings_by_auto_case_ids(auto_case_ids)
+        case_ids = [binding.case_id for binding in bindings]
+        script_entity_ids = [binding.script_entity_id for binding in bindings]
         return case_ids, script_entity_ids
 
     @staticmethod

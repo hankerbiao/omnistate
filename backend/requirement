@@ -106,6 +106,7 @@ jupyter-cache==1.0.1
 jupyter_client @ file:///Users/builder/cbouss/buildout/croot/jupyter_client_1739483928377/work
 jupyter_core @ file:///private/var/folders/k1/30mswbxs7r1g6zwn8y4fyt500000gp/T/abs_044bmfoejx/croot/jupyter_core_1751991384131/work
 kafka-python==2.3.0
+pika==1.3.2
 kaleido==1.0.0
 kiwisolver==1.4.8
 latexcodec==3.0.1

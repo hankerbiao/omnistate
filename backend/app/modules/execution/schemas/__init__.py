@@ -13,7 +13,7 @@ from .execution import (
     StopTaskRequest,
     StopTaskResponse,
 )
-from .kafka_events import ExecutionResultEvent, TestEvent
+from .kafka_events import ExecutionResultEvent, RawTestEventEnvelope, TestEvent
 
 
 __all__ = [
@@ -24,6 +24,7 @@ __all__ = [
     "DispatchTaskResponse",
     "ExecutionAgentResponse",
     "ExecutionResultEvent",
+    "RawTestEventEnvelope",
     "TestEvent",
     "ExecutionTaskListCaseItem",
     "ExecutionTaskListItem",

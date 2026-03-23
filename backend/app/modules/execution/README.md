@@ -47,11 +47,18 @@
 流程：
 
 1. 路由生成 `task_id` 和 `external_task_id`
-2. 解析 `auto_case_id -> case_id`
+2. 基于 `auto_case_id` 从 `automation_test_cases` 解析 `case_id`、`script_entity_id`、`script_path`、`script_name`
 3. 校验任务去重键，避免相同业务载荷的未完成任务重复创建
 4. 创建 `ExecutionTaskDoc`
 5. 创建 `ExecutionTaskCaseDoc`
 6. 如果是立即执行，则只下发第 1 条 case
+
+约束：
+
+- 前端请求只负责传 `auto_case_id`、`config`、`parameters`
+- 脚本元数据由后端统一解析，不信任前端透传
+- `dispatch` 和 `rerun` 都复用同一套解析逻辑
+- 最终下发到 Kafka、RabbitMQ、HTTP 的任务 payload 字段格式保持一致
 
 ## application 层结构
 

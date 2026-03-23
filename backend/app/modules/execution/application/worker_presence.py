@@ -1,9 +1,9 @@
-"""Kafka worker presence registration and startup gate helpers."""
+"""Kafka worker presence registration helpers."""
 
 from __future__ import annotations
 
 import socket
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from app.modules.execution.repository.models import ExecutionAgentDoc
 from app.shared.db.config import settings
@@ -83,42 +83,3 @@ async def mark_kafka_worker_offline() -> None:
     agent_doc.status = "OFFLINE"
     agent_doc.last_heartbeat_at = datetime.now(timezone.utc)
     await agent_doc.save()
-
-
-async def ensure_kafka_worker_available() -> None:
-    health = await get_kafka_worker_health()
-    if health["status"] != "ONLINE":
-        raise RuntimeError(health["message"])
-
-
-async def get_kafka_worker_health() -> dict[str, str]:
-    agent_doc = await ExecutionAgentDoc.find_one({
-        "agent_id": get_kafka_worker_agent_id(),
-        "is_deleted": False,
-    })
-    if agent_doc is None:
-        return {
-            "status": "OFFLINE",
-            "message": (
-                "execution kafka worker is required but not registered; "
-                f"start `python -m app.workers.kafka_worker_main` first "
-                f"(agent_id={get_kafka_worker_agent_id()})"
-            ),
-        }
-
-    last_heartbeat_at = _ensure_utc_datetime(agent_doc.last_heartbeat_at)
-    expire_at = last_heartbeat_at + timedelta(seconds=max(agent_doc.heartbeat_ttl_seconds, 0))
-    now = datetime.now(timezone.utc)
-    if (agent_doc.status or "").upper() != "ONLINE" or expire_at <= now:
-        return {
-            "status": "OFFLINE",
-            "message": (
-                "execution kafka worker is required but offline; "
-                f"start `python -m app.workers.kafka_worker_main` first "
-                f"(agent_id={agent_doc.agent_id})"
-            ),
-        }
-    return {
-        "status": "ONLINE",
-        "message": f"execution kafka worker is online (agent_id={agent_doc.agent_id})",
-    }

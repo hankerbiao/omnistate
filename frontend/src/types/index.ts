@@ -186,10 +186,7 @@ export interface ListTestCasesParams {
 
 export interface DispatchCaseItem {
   auto_case_id: string;
-  script_entity_id?: string;
   config?: Record<string, unknown>;
-  script_path?: string;
-  script_name?: string;
   parameters?: Record<string, unknown>;
 }
 
@@ -212,9 +209,11 @@ export interface AutomationConfigField {
   extra_props?: Record<string, unknown>;
 }
 
+export type DispatchChannel = 'KAFKA' | 'RABBITMQ' | 'HTTP';
+
 export interface DispatchTaskRequest {
   framework: string;
-  dispatch_channel?: 'KAFKA' | 'HTTP';
+  dispatch_channel?: DispatchChannel;
   agent_id?: string;
   trigger_source?: string;
   schedule_type?: string;
@@ -232,7 +231,7 @@ export interface DispatchTaskRequest {
 
 export interface RerunTaskRequest {
   framework?: string;
-  dispatch_channel?: 'KAFKA' | 'HTTP';
+  dispatch_channel?: DispatchChannel;
   agent_id?: string;
   trigger_source?: string;
   schedule_type?: string;
@@ -401,7 +400,7 @@ export interface TaskStatus {
   result_summary?: Record<string, unknown>;
   request_payload?: {
     framework?: string;
-    dispatch_channel?: 'KAFKA' | 'HTTP' | string;
+    dispatch_channel?: DispatchChannel | string;
     agent_id?: string;
     schedule_type?: string;
     planned_at?: string;

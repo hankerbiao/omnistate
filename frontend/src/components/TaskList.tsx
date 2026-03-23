@@ -5,6 +5,7 @@ import type {
   TaskStatus,
   AutomationTestCaseResponse,
   AutomationConfigField,
+  DispatchChannel,
   ExecutionAgent,
   DispatchCaseItem,
   ExecutionTaskCaseSummary,
@@ -20,7 +21,7 @@ interface TaskListProps {
 interface DispatchModalState {
   isOpen: boolean;
   framework: string;
-  dispatchChannel: 'KAFKA' | 'HTTP';
+  dispatchChannel: DispatchChannel;
   agentId: string;
   scheduleType: 'IMMEDIATE' | 'SCHEDULED';
   plannedAt: string;
@@ -41,6 +42,7 @@ interface RerunEditModalState extends DispatchModalState {
 
 const FRAMEWORKS = ['pytest', 'robot', 'playwright', 'cypress', 'jest'];
 const DEFAULT_FRAMEWORK = 'pytest';
+const DEFAULT_DISPATCH_CHANNEL: DispatchChannel = 'KAFKA';
 const TASK_TABLE_COLUMNS = 7;
 type StatusAppearance = {
   bg: string;
@@ -103,6 +105,13 @@ const getFieldDisplayLabel = (field: AutomationConfigField) => {
   return field.label || field.name;
 };
 
+const normalizeDispatchChannel = (dispatchChannel?: string): DispatchChannel => {
+  if (dispatchChannel === 'HTTP' || dispatchChannel === 'RABBITMQ') {
+    return dispatchChannel;
+  }
+  return 'KAFKA';
+};
+
 const buildDispatchCaseItems = (
   selectedCaseIds: string[],
   autoCases: AutomationTestCaseResponse[],
@@ -113,10 +122,7 @@ const buildDispatchCaseItems = (
     const matchedCase = autoCaseMap.get(autoCaseId);
     return {
       auto_case_id: autoCaseId,
-      script_entity_id: matchedCase?.script_ref?.entity_id,
       config: caseConfigs[autoCaseId] || buildDefaultCaseConfig(matchedCase),
-      script_path: matchedCase?.script_ref?.entity_id || matchedCase?.script_path || '',
-      script_name: matchedCase?.name || autoCaseId,
       parameters: caseConfigs[autoCaseId] || buildDefaultCaseConfig(matchedCase),
     };
   });
@@ -133,7 +139,7 @@ const TaskList: React.FC<TaskListProps> = () => {
   const [dispatchModal, setDispatchModal] = useState<DispatchModalState>({
     isOpen: false,
     framework: DEFAULT_FRAMEWORK,
-    dispatchChannel: 'KAFKA',
+    dispatchChannel: DEFAULT_DISPATCH_CHANNEL,
     agentId: '',
     scheduleType: 'IMMEDIATE',
     plannedAt: '',
@@ -148,7 +154,7 @@ const TaskList: React.FC<TaskListProps> = () => {
     isOpen: false,
     sourceTaskId: null,
     framework: DEFAULT_FRAMEWORK,
-    dispatchChannel: 'KAFKA',
+    dispatchChannel: DEFAULT_DISPATCH_CHANNEL,
     agentId: '',
     scheduleType: 'IMMEDIATE',
     plannedAt: '',
@@ -219,7 +225,7 @@ const TaskList: React.FC<TaskListProps> = () => {
     setDispatchModal({
       isOpen: false,
       framework: DEFAULT_FRAMEWORK,
-      dispatchChannel: 'KAFKA',
+      dispatchChannel: DEFAULT_DISPATCH_CHANNEL,
       agentId: '',
       scheduleType: 'IMMEDIATE',
       plannedAt: '',
@@ -239,7 +245,7 @@ const TaskList: React.FC<TaskListProps> = () => {
       isOpen: false,
       sourceTaskId: null,
       framework: DEFAULT_FRAMEWORK,
-      dispatchChannel: 'KAFKA',
+      dispatchChannel: DEFAULT_DISPATCH_CHANNEL,
       agentId: '',
       scheduleType: 'IMMEDIATE',
       plannedAt: '',
@@ -346,7 +352,7 @@ const TaskList: React.FC<TaskListProps> = () => {
         isOpen: true,
         sourceTaskId: selectedTask.task_id,
         framework: payload.framework || selectedTask.framework || DEFAULT_FRAMEWORK,
-        dispatchChannel: payload.dispatch_channel === 'HTTP' ? 'HTTP' : 'KAFKA',
+        dispatchChannel: normalizeDispatchChannel(payload.dispatch_channel),
         agentId: payload.agent_id || selectedTask.agent_id || '',
         scheduleType: payload.schedule_type === 'SCHEDULED' ? 'SCHEDULED' : 'IMMEDIATE',
         plannedAt: payload.planned_at ? payload.planned_at.slice(0, 16) : '',
@@ -503,7 +509,7 @@ const TaskList: React.FC<TaskListProps> = () => {
     setRerunningTaskId(task.task_id);
     try {
       const response = await api.rerunTask(task.task_id, {
-        dispatch_channel: task.dispatch_channel === 'HTTP' ? 'HTTP' : 'KAFKA',
+        dispatch_channel: normalizeDispatchChannel(task.dispatch_channel),
         agent_id: task.agent_id || undefined,
       });
       const payload = response.data as DispatchTaskResponse | undefined;
@@ -1153,6 +1159,15 @@ const TaskList: React.FC<TaskListProps> = () => {
                         <input
                           type="radio"
                           name="dispatchChannel"
+                          checked={dispatchModal.dispatchChannel === 'RABBITMQ'}
+                          onChange={() => setDispatchModal(prev => ({ ...prev, dispatchChannel: 'RABBITMQ' }))}
+                        />
+                        <span>RabbitMQ 下发</span>
+                      </label>
+                      <label style={styles.radioLabel}>
+                        <input
+                          type="radio"
+                          name="dispatchChannel"
                           checked={dispatchModal.dispatchChannel === 'HTTP'}
                           onChange={() => setDispatchModal(prev => ({ ...prev, dispatchChannel: 'HTTP' }))}
                         />
@@ -1258,6 +1273,9 @@ const TaskList: React.FC<TaskListProps> = () => {
                               onChange={() => toggleCaseSelection(caseItem.auto_case_id)}
                             />
                             <span style={styles.caseName}>{caseItem.auto_case_id}</span>
+                            <span style={styles.caseScriptName}>
+                              {caseItem.script_name || '-'}
+                            </span>
                             <span style={styles.caseFramework}>{caseItem.framework}</span>
                           </label>
                         ))
@@ -1281,7 +1299,9 @@ const TaskList: React.FC<TaskListProps> = () => {
                               <div style={styles.caseConfigHeader}>
                                 <div style={styles.caseConfigTitleBlock}>
                                   <span style={styles.caseConfigTitle}>{caseItem.auto_case_id}</span>
-                                  <span style={styles.caseConfigSubtitle}>{caseItem.name}</span>
+                                  <span style={styles.caseConfigSubtitle}>
+                                    {caseItem.script_name || caseItem.name}
+                                  </span>
                                 </div>
                                 <span style={styles.caseConfigCount}>{fields.length} 项配置</span>
                               </div>
@@ -1384,7 +1404,9 @@ const TaskList: React.FC<TaskListProps> = () => {
               <div style={styles.caseConfigHeader}>
                 <div style={styles.caseConfigTitleBlock}>
                   <span style={styles.caseConfigTitle}>{editingCase.auto_case_id}</span>
-                  <span style={styles.caseConfigSubtitle}>{editingCase.name}</span>
+                  <span style={styles.caseConfigSubtitle}>
+                    {editingCase.script_name || editingCase.name}
+                  </span>
                 </div>
                 <span style={styles.caseConfigCount}>{(editingCase.param_spec || []).length} 项配置</span>
               </div>
@@ -1493,6 +1515,15 @@ const TaskList: React.FC<TaskListProps> = () => {
                           onChange={() => setRerunEditModal(prev => ({ ...prev, dispatchChannel: 'KAFKA' }))}
                         />
                         <span>Kafka 下发</span>
+                      </label>
+                      <label style={styles.radioLabel}>
+                        <input
+                          type="radio"
+                          name="rerunDispatchChannel"
+                          checked={rerunEditModal.dispatchChannel === 'RABBITMQ'}
+                          onChange={() => setRerunEditModal(prev => ({ ...prev, dispatchChannel: 'RABBITMQ' }))}
+                        />
+                        <span>RabbitMQ 下发</span>
                       </label>
                       <label style={styles.radioLabel}>
                         <input
@@ -1644,6 +1675,9 @@ const TaskList: React.FC<TaskListProps> = () => {
                               }}
                             />
                             <span style={styles.caseName}>{caseItem.auto_case_id}</span>
+                            <span style={styles.caseScriptName}>
+                              {caseItem.script_name || '-'}
+                            </span>
                             <span style={styles.caseFramework}>{caseItem.framework}</span>
                           </label>
                         ))
@@ -1667,7 +1701,9 @@ const TaskList: React.FC<TaskListProps> = () => {
                               <div style={styles.caseConfigHeader}>
                                 <div style={styles.caseConfigTitleBlock}>
                                   <span style={styles.caseConfigTitle}>{caseItem.auto_case_id}</span>
-                                  <span style={styles.caseConfigSubtitle}>{caseItem.name}</span>
+                                  <span style={styles.caseConfigSubtitle}>
+                                    {caseItem.script_name || caseItem.name}
+                                  </span>
                                 </div>
                                 <span style={styles.caseConfigCount}>{fields.length} 项配置</span>
                               </div>

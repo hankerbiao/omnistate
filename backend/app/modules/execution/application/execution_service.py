@@ -224,15 +224,14 @@ class ExecutionService(
         else:
             payload_cases = list(dict(source_task_doc.request_payload or {}).get("cases", []))
             auto_case_ids = [case["auto_case_id"] for case in payload_cases]
-        case_ids, script_entity_ids = await self.resolve_case_bindings_by_auto_case_ids(auto_case_ids)
+        dispatch_bindings = await self.resolve_case_dispatch_bindings_by_auto_case_ids(auto_case_ids)
         command = self._build_rerun_command_from_payload(
             source_task_doc=source_task_doc,
             request=request,
             new_task_id=new_task_id,
             external_task_id=external_task_id,
             actor_id=actor_id,
-            case_ids=case_ids,
-            script_entity_ids=script_entity_ids,
+            dispatch_bindings=dispatch_bindings,
         )
         logger.info(
             "Rerunning execution task as new task: "

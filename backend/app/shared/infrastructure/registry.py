@@ -9,9 +9,11 @@ from app.modules.execution.service.task_scheduler import ExecutionTaskScheduler
 from app.shared.core.logger import log as logger
 from app.shared.db.config import settings
 from app.shared.kafka import KafkaMessageManager, load_kafka_config
+from app.shared.rabbitmq import RabbitMQMessageManager, load_rabbitmq_config
 
 
 KAFKA_COMPONENT = "kafka_producer"
+RABBITMQ_COMPONENT = "rabbitmq_producer"
 EXECUTION_SCHEDULER_COMPONENT = "execution_task_scheduler"
 
 
@@ -31,6 +33,7 @@ class InfrastructureRegistry:
 
     def __init__(self) -> None:
         self.kafka_manager: KafkaMessageManager | None = None
+        self.rabbitmq_manager: RabbitMQMessageManager | None = None
         self.execution_task_scheduler = ExecutionTaskScheduler()
         self.execution_scheduler_task: asyncio.Task | None = None
         self._component_status: dict[str, InfrastructureStatus] = {}
@@ -50,6 +53,12 @@ class InfrastructureRegistry:
         self.kafka_manager.start()
         self._set_component_status(KAFKA_COMPONENT, "RUNNING")
 
+    def _ensure_rabbitmq_manager_started(self) -> None:
+        rabbitmq_config = load_rabbitmq_config()
+        self.rabbitmq_manager = RabbitMQMessageManager(config=rabbitmq_config)
+        self.rabbitmq_manager.start()
+        self._set_component_status(RABBITMQ_COMPONENT, "RUNNING")
+
     async def initialize(self, bootstrap_servers: list[str] | None = None) -> None:
         async with self._initialization_lock:
             if self._is_initialized:
@@ -58,9 +67,24 @@ class InfrastructureRegistry:
 
             logger.info("Initializing application infrastructure...")
             dispatch_mode = (settings.EXECUTION_DISPATCH_MODE or "kafka").strip().lower()
+            if dispatch_mode == "rabbitmq":
+                self._set_component_status(RABBITMQ_COMPONENT, "INITIALIZING")
+                self._ensure_rabbitmq_manager_started()
+                self._set_component_status(KAFKA_COMPONENT, "SKIPPED", health_details={"dispatch_mode": dispatch_mode})
+                self.execution_scheduler_task = asyncio.create_task(self._run_execution_scheduler_loop())
+                self._set_component_status(EXECUTION_SCHEDULER_COMPONENT, "RUNNING")
+                self._is_initialized = True
+                logger.info("RabbitMQ producer initialized for execution dispatch mode")
+                return
+
             if dispatch_mode != "kafka":
                 self._set_component_status(
                     KAFKA_COMPONENT,
+                    "SKIPPED",
+                    health_details={"dispatch_mode": dispatch_mode},
+                )
+                self._set_component_status(
+                    RABBITMQ_COMPONENT,
                     "SKIPPED",
                     health_details={"dispatch_mode": dispatch_mode},
                 )
@@ -74,6 +98,11 @@ class InfrastructureRegistry:
 
             try:
                 self._ensure_kafka_manager_started(bootstrap_servers)
+                self._set_component_status(
+                    RABBITMQ_COMPONENT,
+                    "SKIPPED",
+                    health_details={"dispatch_mode": dispatch_mode},
+                )
                 self.execution_scheduler_task = asyncio.create_task(self._run_execution_scheduler_loop())
                 self._set_component_status(EXECUTION_SCHEDULER_COMPONENT, "RUNNING")
                 self._is_initialized = True
@@ -117,11 +146,15 @@ class InfrastructureRegistry:
 
         logger.info("Shutting down application infrastructure...")
         self._set_component_status(KAFKA_COMPONENT, "STOPPING")
+        self._set_component_status(RABBITMQ_COMPONENT, "STOPPING")
 
         try:
             if self.kafka_manager:
                 self.kafka_manager.stop()
                 self.kafka_manager = None
+            if self.rabbitmq_manager:
+                self.rabbitmq_manager.stop()
+                self.rabbitmq_manager = None
             if self.execution_scheduler_task:
                 self.execution_scheduler_task.cancel()
                 try:
@@ -131,6 +164,7 @@ class InfrastructureRegistry:
                 self.execution_scheduler_task = None
             self._set_component_status(EXECUTION_SCHEDULER_COMPONENT, "STOPPED")
             self._set_component_status(KAFKA_COMPONENT, "STOPPED")
+            self._set_component_status(RABBITMQ_COMPONENT, "STOPPED")
             logger.success("Application infrastructure shutdown completed")
         except Exception as e:
             self._set_component_status(
@@ -160,6 +194,45 @@ class InfrastructureRegistry:
     def get_kafka_manager(self) -> KafkaMessageManager | None:
         return self.kafka_manager
 
+    def get_rabbitmq_manager(self) -> RabbitMQMessageManager | None:
+        return self.rabbitmq_manager
+
+    def ensure_kafka_manager(self) -> KafkaMessageManager | None:
+        """按需懒初始化 Kafka producer，支持任务级渠道切换。"""
+        if self.kafka_manager is not None:
+            return self.kafka_manager
+        try:
+            self._set_component_status(KAFKA_COMPONENT, "INITIALIZING")
+            self._ensure_kafka_manager_started()
+            return self.kafka_manager
+        except Exception as exc:
+            self._set_component_status(
+                KAFKA_COMPONENT,
+                "ERROR",
+                error_message=f"Failed to initialize Kafka producer manager: {exc}",
+            )
+            logger.exception(f"Failed to lazily initialize Kafka producer manager: {exc}")
+            self.kafka_manager = None
+            return None
+
+    def ensure_rabbitmq_manager(self) -> RabbitMQMessageManager | None:
+        """按需懒初始化 RabbitMQ producer，支持任务级渠道切换。"""
+        if self.rabbitmq_manager is not None:
+            return self.rabbitmq_manager
+        try:
+            self._set_component_status(RABBITMQ_COMPONENT, "INITIALIZING")
+            self._ensure_rabbitmq_manager_started()
+            return self.rabbitmq_manager
+        except Exception as exc:
+            self._set_component_status(
+                RABBITMQ_COMPONENT,
+                "ERROR",
+                error_message=f"Failed to initialize RabbitMQ producer manager: {exc}",
+            )
+            logger.exception(f"Failed to lazily initialize RabbitMQ producer manager: {exc}")
+            self.rabbitmq_manager = None
+            return None
+
     async def _run_execution_scheduler_loop(self) -> None:
         interval = max(int(settings.EXECUTION_SCHEDULER_INTERVAL_SEC), 1)
         while True:
@@ -188,15 +261,34 @@ class InfrastructureRegistry:
         else:
             kafka_health = self.kafka_manager.health_check()
 
+        if not self.rabbitmq_manager:
+            rabbitmq_health = {
+                "status": "NOT_INITIALIZED",
+                "message": "RabbitMQ producer manager not initialized",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+        else:
+            rabbitmq_health = self.rabbitmq_manager.health_check()
+
         status_info = self._component_status.get(KAFKA_COMPONENT)
         if status_info is not None:
             status_info.last_health_check = datetime.now(timezone.utc)
             status_info.health_details = kafka_health
 
+        rabbitmq_status_info = self._component_status.get(RABBITMQ_COMPONENT)
+        if rabbitmq_status_info is not None:
+            rabbitmq_status_info.last_health_check = datetime.now(timezone.utc)
+            rabbitmq_status_info.health_details = rabbitmq_health
+
         overall_status = "HEALTHY"
-        if kafka_health["status"] == "ERROR":
+        active_component_health = kafka_health
+        dispatch_mode = (settings.EXECUTION_DISPATCH_MODE or "kafka").strip().lower()
+        if dispatch_mode == "rabbitmq":
+            active_component_health = rabbitmq_health
+
+        if active_component_health["status"] == "ERROR":
             overall_status = "UNHEALTHY"
-        elif kafka_health["status"] in {"DEGRADED", "STOPPED", "NOT_INITIALIZED"}:
+        elif active_component_health["status"] in {"DEGRADED", "STOPPED", "NOT_INITIALIZED"}:
             overall_status = "DEGRADED"
 
         return {
@@ -204,6 +296,7 @@ class InfrastructureRegistry:
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "components": {
                 KAFKA_COMPONENT: kafka_health,
+                RABBITMQ_COMPONENT: rabbitmq_health,
                 EXECUTION_SCHEDULER_COMPONENT: {
                     "status": "RUNNING" if self.execution_scheduler_task else "STOPPED",
                     "message": "Execution task scheduler status",
@@ -248,6 +341,10 @@ async def shutdown_infrastructure() -> None:
 
 
 def get_kafka_manager() -> KafkaMessageManager | None:
-    if _infrastructure_registry is None:
-        return None
-    return _infrastructure_registry.get_kafka_manager()
+    registry = get_infrastructure_registry()
+    return registry.ensure_kafka_manager()
+
+
+def get_rabbitmq_manager() -> RabbitMQMessageManager | None:
+    registry = get_infrastructure_registry()
+    return registry.ensure_rabbitmq_manager()
