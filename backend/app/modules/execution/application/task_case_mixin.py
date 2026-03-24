@@ -37,12 +37,6 @@ class ExecutionTaskCaseMixin:
         return doc_map
 
     @staticmethod
-    async def resolve_case_ids_by_auto_case_ids(auto_case_ids: List[str]) -> List[str]:
-        """将 auto_case_id 列表解析为平台测试用例 case_id，保留原始顺序。"""
-        case_ids, _ = await ExecutionTaskCaseMixin.resolve_case_bindings_by_auto_case_ids(auto_case_ids)
-        return case_ids
-
-    @staticmethod
     async def resolve_case_dispatch_bindings_by_auto_case_ids(
         auto_case_ids: List[str],
     ) -> List[AutoCaseDispatchBinding]:
@@ -208,7 +202,6 @@ class ExecutionTaskCaseMixin:
             "script_entity_id": script_entity_id,
             "config": dict(case_config),
             "ref_req_id": case_doc.ref_req_id,
-            "workflow_item_id": case_doc.workflow_item_id,
             "title": case_doc.title,
             "version": case_doc.version,
             "status": getattr(case_doc, "status", "draft"),
@@ -216,14 +209,10 @@ class ExecutionTaskCaseMixin:
             "tags": list(case_doc.tags),
             "test_category": case_doc.test_category,
             "estimated_duration_sec": case_doc.estimated_duration_sec,
-            "target_components": list(case_doc.target_components),  # TODO 物料相关
             "required_env": dict(case_doc.required_env),
-            "tooling_req": list(case_doc.tooling_req),
             "is_destructive": case_doc.is_destructive,
             "pre_condition": case_doc.pre_condition,
             "post_condition": case_doc.post_condition,
-            # "steps": [step.model_dump() for step in case_doc.steps],
-            # "cleanup_steps": [step.model_dump() for step in case_doc.cleanup_steps],
             "custom_fields": dict(case_doc.custom_fields),
         }
 

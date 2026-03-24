@@ -10,14 +10,6 @@ from pymongo import IndexModel, ASCENDING, DESCENDING
 
 # ========== 子结构 ==========
 
-class TestCaseStep(BaseModel):
-    __test__ = False
-    step_id: str = Field(..., description="步骤 ID")
-    name: str = Field(..., description="步骤名称")
-    action: str = Field(..., description="执行动作")
-    expected: str = Field(..., description="预期结果")
-
-
 # ========== Beanie 文档模型 ==========
 
 class TestCaseDoc(Document):
@@ -41,16 +33,12 @@ class TestCaseDoc(Document):
     auto_dev_id: Optional[str] = Field(None, description="自动化开发责任人")
     priority: Optional[str] = Field(None, description="优先级")
     estimated_duration_sec: Optional[int] = Field(None, description="预估执行耗时(秒)")
-    target_components: List[str] = Field(default_factory=list, description="目标部件范围")
     required_env: Dict[str, Any] = Field(default_factory=dict, description="环境要求")
     tags: List[str] = Field(default_factory=list, description="标签")
     test_category: Optional[str] = Field(None, description="测试分类")
-    tooling_req: List[str] = Field(default_factory=list, description="外部工具/设备需求")
     is_destructive: bool = Field(default=False, description="是否为破坏性测试")
     pre_condition: Optional[str] = Field(None, description="前置条件")
     post_condition: Optional[str] = Field(None, description="后置条件")
-    cleanup_steps: List[TestCaseStep] = Field(default_factory=list, description="清理步骤")
-    steps: List[TestCaseStep] = Field(default_factory=list, description="步骤定义列表")
     risk_level: Optional[str] = Field(None, description="风险等级")
     failure_analysis: Optional[str] = Field(None, description="失败分析建议")
     confidentiality: Optional[str] = Field(None, description="机密等级")
@@ -90,7 +78,6 @@ class TestCaseModel(BaseModel):
     id: Optional[str] = None
     case_id: str
     ref_req_id: str
-    workflow_item_id: Optional[str] = None
     title: str
     version: int
     is_active: bool
@@ -101,16 +88,12 @@ class TestCaseModel(BaseModel):
     auto_dev_id: Optional[str] = None
     priority: Optional[str] = None
     estimated_duration_sec: Optional[int] = None
-    target_components: List[str]
     required_env: Dict[str, Any]
     tags: List[str]
     test_category: Optional[str] = None
-    tooling_req: List[str]
     is_destructive: bool
     pre_condition: Optional[str] = None
     post_condition: Optional[str] = None
-    cleanup_steps: List[TestCaseStep]
-    steps: List[TestCaseStep]
     risk_level: Optional[str] = None
     failure_analysis: Optional[str] = None
     confidentiality: Optional[str] = None

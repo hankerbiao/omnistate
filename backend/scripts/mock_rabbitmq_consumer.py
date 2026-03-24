@@ -163,8 +163,20 @@ def create_kafka_producer(runtime_config: dict[str, Any]):
 
 
 def decode_task_message(body: bytes) -> TaskMessage:
-    """将 RabbitMQ 消息体解析为 TaskMessage。"""
-    return TaskMessage.from_json(body.decode("utf-8"))
+    """将 RabbitMQ 消息体解析为任务消息，兼容新旧两种格式。"""
+    raw_json = body.decode("utf-8")
+    data = json.loads(raw_json)
+    if isinstance(data, dict) and {"task_id", "task_type", "task_data"}.issubset(data.keys()):
+        return TaskMessage.from_json(raw_json)
+    if isinstance(data, dict) and data.get("task_id"):
+        return TaskMessage(
+            task_id=str(data["task_id"]),
+            task_type="execution_task",
+            task_data=data,
+            source="rabbitmq-direct-payload",
+            priority=1,
+        )
+    raise ValueError("Unsupported RabbitMQ task payload format")
 
 
 def build_test_event(

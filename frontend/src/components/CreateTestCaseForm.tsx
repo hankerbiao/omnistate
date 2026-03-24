@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { api } from '../services/api';
-import type { CreateTestCaseRequest, TestCaseStep } from '../types';
+import type { CreateTestCaseRequest } from '../types';
 
 interface CreateTestCaseFormProps {
   onClose: () => void;
@@ -21,12 +21,8 @@ const CreateTestCaseForm: React.FC<CreateTestCaseFormProps> = ({
     version: 1,
     is_active: true,
     priority: 'P1',
-    target_components: [],
     tags: [],
-    tooling_req: [],
     is_destructive: false,
-    cleanup_steps: [],
-    steps: [],
     is_need_auto: false,
     is_automated: false,
     attachments: [],
@@ -36,14 +32,7 @@ const CreateTestCaseForm: React.FC<CreateTestCaseFormProps> = ({
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'basic' | 'steps' | 'automation'>('basic');
-  const [newStep, setNewStep] = useState<TestCaseStep>({
-    step_id: '',
-    name: '',
-    action: '',
-    expected: '',
-  });
-  const [newComponent, setNewComponent] = useState('');
+  const [activeTab, setActiveTab] = useState<'basic' | 'automation'>('basic');
   const [newTag, setNewTag] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -68,46 +57,6 @@ const CreateTestCaseForm: React.FC<CreateTestCaseFormProps> = ({
     setFormData(prev => ({
       ...prev,
       [name]: type === 'checkbox' ? (e.target as HTMLInputElement).checked : value,
-    }));
-  };
-
-  const handleAddStep = () => {
-    if (newStep.name && newStep.action && newStep.expected) {
-      const step: TestCaseStep = {
-        step_id: newStep.step_id || `step_${Date.now()}`,
-        name: newStep.name,
-        action: newStep.action,
-        expected: newStep.expected,
-      };
-      setFormData(prev => ({
-        ...prev,
-        steps: [...(prev.steps || []), step],
-      }));
-      setNewStep({ step_id: '', name: '', action: '', expected: '' });
-    }
-  };
-
-  const handleRemoveStep = (stepId: string) => {
-    setFormData(prev => ({
-      ...prev,
-      steps: prev.steps?.filter(s => s.step_id !== stepId) || [],
-    }));
-  };
-
-  const handleAddComponent = () => {
-    if (newComponent) {
-      setFormData(prev => ({
-        ...prev,
-        target_components: [...(prev.target_components || []), newComponent],
-      }));
-      setNewComponent('');
-    }
-  };
-
-  const handleRemoveComponent = (component: string) => {
-    setFormData(prev => ({
-      ...prev,
-      target_components: prev.target_components?.filter(c => c !== component) || [],
     }));
   };
 
@@ -153,16 +102,6 @@ const CreateTestCaseForm: React.FC<CreateTestCaseFormProps> = ({
               onClick={() => setActiveTab('basic')}
             >
               基本信息
-            </button>
-            <button
-              type="button"
-              style={{
-                ...styles.tab,
-                ...(activeTab === 'steps' ? styles.activeTab : {}),
-              }}
-              onClick={() => setActiveTab('steps')}
-            >
-              测试步骤
             </button>
             <button
               type="button"
@@ -267,41 +206,6 @@ const CreateTestCaseForm: React.FC<CreateTestCaseFormProps> = ({
                 </div>
 
                 <div style={styles.formGroup}>
-                  <label style={styles.label}>目标组件</label>
-                  <div style={styles.tagInputContainer}>
-                    <input
-                      type="text"
-                      value={newComponent}
-                      onChange={(e) => setNewComponent(e.target.value)}
-                      style={styles.tagInput}
-                      placeholder="输入组件名称"
-                      onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddComponent())}
-                    />
-                    <button
-                      type="button"
-                      style={styles.addButton}
-                      onClick={handleAddComponent}
-                    >
-                      添加
-                    </button>
-                  </div>
-                  <div style={styles.tagList}>
-                    {formData.target_components?.map((component, index) => (
-                      <span key={index} style={styles.tag}>
-                        {component}
-                        <button
-                          type="button"
-                          style={styles.tagRemove}
-                          onClick={() => handleRemoveComponent(component)}
-                        >
-                          ×
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                </div>
-
-                <div style={styles.formGroup}>
                   <label style={styles.label}>标签</label>
                   <div style={styles.tagInputContainer}>
                     <input
@@ -374,80 +278,6 @@ const CreateTestCaseForm: React.FC<CreateTestCaseFormProps> = ({
                     />
                     是否为破坏性测试
                   </label>
-                </div>
-              </div>
-            )}
-
-            {activeTab === 'steps' && (
-              <div style={styles.tabContent}>
-                <div style={styles.stepForm}>
-                  <h3 style={styles.sectionTitle}>添加测试步骤</h3>
-                  <div style={styles.formGroup}>
-                    <label style={styles.label}>步骤名称</label>
-                    <input
-                      type="text"
-                      value={newStep.name}
-                      onChange={(e) => setNewStep({ ...newStep, name: e.target.value })}
-                      style={styles.input}
-                      placeholder="步骤名称"
-                    />
-                  </div>
-                  <div style={styles.formGroup}>
-                    <label style={styles.label}>执行动作</label>
-                    <textarea
-                      value={newStep.action}
-                      onChange={(e) => setNewStep({ ...newStep, action: e.target.value })}
-                      style={styles.textarea}
-                      placeholder="描述要执行的操作"
-                      rows={3}
-                    />
-                  </div>
-                  <div style={styles.formGroup}>
-                    <label style={styles.label}>预期结果</label>
-                    <textarea
-                      value={newStep.expected}
-                      onChange={(e) => setNewStep({ ...newStep, expected: e.target.value })}
-                      style={styles.textarea}
-                      placeholder="描述预期的结果"
-                      rows={3}
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    style={styles.addButton}
-                    onClick={handleAddStep}
-                  >
-                    添加步骤
-                  </button>
-                </div>
-
-                <div style={styles.stepsList}>
-                  <h3 style={styles.sectionTitle}>已添加的步骤</h3>
-                  {formData.steps?.length === 0 ? (
-                    <p style={styles.emptyText}>暂无测试步骤</p>
-                  ) : (
-                    <div style={styles.stepItems}>
-                      {formData.steps?.map((step, index) => (
-                        <div key={step.step_id} style={styles.stepItem}>
-                          <div style={styles.stepHeader}>
-                            <span style={styles.stepIndex}>步骤 {index + 1}</span>
-                            <button
-                              type="button"
-                              style={styles.removeButton}
-                              onClick={() => handleRemoveStep(step.step_id)}
-                            >
-                              删除
-                            </button>
-                          </div>
-                          <div style={styles.stepContent}>
-                            <p><strong>名称:</strong> {step.name}</p>
-                            <p><strong>动作:</strong> {step.action}</p>
-                            <p><strong>预期:</strong> {step.expected}</p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
                 </div>
               </div>
             )}
