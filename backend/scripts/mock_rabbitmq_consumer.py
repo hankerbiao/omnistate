@@ -15,7 +15,10 @@ from __future__ import annotations
 
 import importlib
 import json
+import os
+import socket
 import sys
+import threading
 import time
 import traceback
 import uuid
@@ -30,6 +33,13 @@ from app.shared.rabbitmq.config import load_rabbitmq_config
 DEFAULT_EXECUTOR = "mock-rabbitmq-consumer"
 DEFAULT_EVENT_SCHEMA = "mock-test-event@1"
 DEFAULT_CASE_DELAY_SEC = 0.2
+DEFAULT_PLATFORM_URL = "http://127.0.0.1:8000"
+DEFAULT_AGENT_ID = "mock-rabbitmq-agent"
+DEFAULT_AGENT_HOST = "127.0.0.1"
+DEFAULT_AGENT_PORT = 19091
+DEFAULT_AGENT_REGION = "default"
+DEFAULT_HEARTBEAT_INTERVAL = 30
+DEFAULT_HEARTBEAT_TTL = 90
 
 
 def pretty_json(data: dict[str, Any]) -> str:
@@ -61,6 +71,28 @@ def _load_kafka_producer_class():
         ) from exc
 
 
+def _load_requests_module():
+    """延迟导入 requests，避免脚本加载时强依赖外部运行环境。"""
+    try:
+        return importlib.import_module("requests")
+    except Exception as exc:  # pragma: no cover - exact import error depends on runtime
+        raise RuntimeError(
+            "requests is required to run mock_rabbitmq_consumer.py"
+        ) from exc
+
+
+def detect_local_ip() -> str:
+    """探测本机对外可见 IP。"""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        sock.connect(("8.8.8.8", 80))
+        return sock.getsockname()[0]
+    except OSError:
+        return "127.0.0.1"
+    finally:
+        sock.close()
+
+
 def resolve_runtime_config() -> dict[str, Any]:
     """使用共享默认配置。"""
     rabbitmq_config = load_rabbitmq_config()
@@ -82,6 +114,17 @@ def resolve_runtime_config() -> dict[str, Any]:
             "bootstrap_servers": kafka_config.bootstrap_servers,
             "result_topic": kafka_config.result_topic,
             "test_events_topic": kafka_config.test_events_topic,
+        },
+        "platform": {
+            "url": os.getenv("MOCK_PLATFORM_URL", DEFAULT_PLATFORM_URL).rstrip("/"),
+            "agent_id": os.getenv("MOCK_AGENT_ID", DEFAULT_AGENT_ID),
+            "host": os.getenv("MOCK_AGENT_HOST", DEFAULT_AGENT_HOST),
+            "port": int(os.getenv("MOCK_AGENT_PORT", str(DEFAULT_AGENT_PORT))),
+            "region": os.getenv("MOCK_AGENT_REGION", DEFAULT_AGENT_REGION),
+            "heartbeat_interval": int(
+                os.getenv("MOCK_HEARTBEAT_INTERVAL", str(DEFAULT_HEARTBEAT_INTERVAL))
+            ),
+            "heartbeat_ttl": int(os.getenv("MOCK_HEARTBEAT_TTL", str(DEFAULT_HEARTBEAT_TTL))),
         },
     }
 
@@ -168,6 +211,71 @@ def build_result_message(task_id: str, duration: float, case_count: int) -> dict
         "executor": DEFAULT_EXECUTOR,
         "complete_time": datetime.now(timezone.utc).isoformat(),
     }
+
+
+class JsonHttpClient:
+    """简单 JSON HTTP 客户端。"""
+
+    def __init__(self, timeout: float = 10.0):
+        self.timeout = timeout
+        self._requests = _load_requests_module()
+
+    def post(self, url: str, payload: dict[str, Any]) -> dict[str, Any]:
+        response = self._requests.post(url, json=payload, timeout=self.timeout)
+        response.raise_for_status()
+        return response.json()
+
+
+class ExecutionAgentClient:
+    """负责向平台注册地址和定期发送心跳。"""
+
+    def __init__(self, runtime_config: dict[str, Any]) -> None:
+        platform_config = runtime_config["platform"]
+        self.platform_url = platform_config["url"]
+        self.agent_id = platform_config["agent_id"]
+        self.host = platform_config["host"]
+        self.port = platform_config["port"]
+        self.region = platform_config["region"]
+        self.heartbeat_interval = platform_config["heartbeat_interval"]
+        self.heartbeat_ttl = platform_config["heartbeat_ttl"]
+        self.base_url = f"http://{self.host}:{self.port}"
+        self.http = JsonHttpClient()
+
+    def build_register_payload(self) -> dict[str, Any]:
+        return {
+            "agent_id": self.agent_id,
+            "hostname": socket.gethostname(),
+            "ip": detect_local_ip(),
+            "port": self.port,
+            "base_url": self.base_url,
+            "region": self.region,
+            "status": "ONLINE",
+            "heartbeat_ttl_seconds": self.heartbeat_ttl,
+        }
+
+    def register_agent(self) -> dict[str, Any]:
+        return self.http.post(
+            f"{self.platform_url}/api/v1/execution/agents/register",
+            self.build_register_payload(),
+        )
+
+    def send_heartbeat(self, status: str = "ONLINE") -> dict[str, Any]:
+        return self.http.post(
+            f"{self.platform_url}/api/v1/execution/agents/{self.agent_id}/heartbeat",
+            {"status": status},
+        )
+
+
+def heartbeat_loop(agent_client: ExecutionAgentClient, stop_event: threading.Event) -> None:
+    """后台定时发送心跳。"""
+    while not stop_event.wait(agent_client.heartbeat_interval):
+        try:
+            agent_client.send_heartbeat(status="ONLINE")
+            print(f"[-] sent agent heartbeat: agent_id={agent_client.agent_id}, status=ONLINE")
+            sys.stdout.flush()
+        except Exception as exc:
+            print(f"[!] failed to send agent heartbeat: agent_id={agent_client.agent_id}, error={exc}")
+            sys.stdout.flush()
 
 
 class MockRabbitMQRuntime:
@@ -274,6 +382,9 @@ def start_consumer(runtime_config: dict[str, Any]) -> None:
     pika, _ = _load_pika()
     producer = create_kafka_producer(runtime_config)
     runtime = MockRabbitMQRuntime(producer=producer, runtime_config=runtime_config)
+    agent_client = ExecutionAgentClient(runtime_config)
+    heartbeat_stop_event = threading.Event()
+    heartbeat_thread: threading.Thread | None = None
 
     parameters = build_connection_parameters(runtime_config)
     connection = pika.BlockingConnection(parameters)
@@ -313,8 +424,25 @@ def start_consumer(runtime_config: dict[str, Any]) -> None:
         f"bootstrap_servers={','.join(runtime_config['kafka']['bootstrap_servers'])}, "
         f"result_topic={runtime.result_topic}, test_events_topic={runtime.test_events_topic}"
     )
+    print(
+        "[*] Execution agent registration: "
+        f"platform_url={runtime_config['platform']['url']}, agent_id={agent_client.agent_id}, "
+        f"heartbeat_interval={agent_client.heartbeat_interval}s"
+    )
     print("[*] Press Ctrl+C to stop")
     sys.stdout.flush()
+
+    register_response = agent_client.register_agent()
+    print(f"[*] registered execution agent: agent_id={agent_client.agent_id}")
+    print(pretty_json(register_response))
+    agent_client.send_heartbeat(status="ONLINE")
+    heartbeat_thread = threading.Thread(
+        target=heartbeat_loop,
+        args=(agent_client, heartbeat_stop_event),
+        name="mock-rabbitmq-heartbeat",
+        daemon=True,
+    )
+    heartbeat_thread.start()
 
     channel.basic_consume(
         queue=runtime_config["rabbitmq"]["queue"],
@@ -328,6 +456,16 @@ def start_consumer(runtime_config: dict[str, Any]) -> None:
         print("\n[*] Stopping RabbitMQ mock consumer...")
         sys.stdout.flush()
     finally:
+        heartbeat_stop_event.set()
+        if heartbeat_thread is not None and heartbeat_thread.is_alive():
+            heartbeat_thread.join(timeout=2)
+        try:
+            agent_client.send_heartbeat(status="OFFLINE")
+            print(f"[*] sent final agent heartbeat: agent_id={agent_client.agent_id}, status=OFFLINE")
+            sys.stdout.flush()
+        except Exception as exc:
+            print(f"[!] failed to send final OFFLINE heartbeat: agent_id={agent_client.agent_id}, error={exc}")
+            sys.stdout.flush()
         try:
             producer.flush()
         except Exception:
