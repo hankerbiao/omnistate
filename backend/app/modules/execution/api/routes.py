@@ -15,8 +15,6 @@ from app.modules.execution.schemas import (
     ExecutionTaskListItem,
     RerunTaskRequest,
     ScheduledTaskMutationResponse,
-    StopTaskRequest,
-    StopTaskResponse,
 )
 from app.modules.execution.application.execution_service import ExecutionService
 from app.modules.execution.application.commands import DispatchExecutionTaskCommand
@@ -197,32 +195,6 @@ async def cancel_scheduled_task(
     """取消未触发的定时执行任务。"""
     try:
         data = await service.cancel_scheduled_task(task_id, actor_id=current_user["user_id"])
-        return APIResponse(data=data)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-
-
-@router.post(
-    "/tasks/{task_id}/stop",
-    response_model=APIResponse[StopTaskResponse],
-    summary="执行完当前 case 后停止任务",
-    dependencies=[Depends(require_permission("execution_tasks:write"))],
-)
-async def stop_task(
-        task_id: str,
-        request: StopTaskRequest,
-        service: ExecutionServiceDep,
-        current_user=Depends(get_current_user),
-):
-    """请求当前任务在当前 case 完成后停止，不再继续下发下一条。"""
-    try:
-        data = await service.stop_task_after_current_case(
-            task_id=task_id,
-            actor_id=current_user["user_id"],
-            reason=request.reason,
-        )
         return APIResponse(data=data)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc))

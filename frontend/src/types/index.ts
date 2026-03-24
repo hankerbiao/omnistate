@@ -358,10 +358,6 @@ export interface ExecutionTask {
   current_case_id?: string;
   current_auto_case_id?: string;
   current_case_index?: number;
-  stop_mode?: string;
-  stop_requested_at?: string;
-  stop_requested_by?: string;
-  stop_reason?: string;
   planned_at?: string;
   triggered_at?: string;
   created_at: string;

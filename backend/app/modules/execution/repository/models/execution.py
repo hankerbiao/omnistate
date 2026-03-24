@@ -39,10 +39,6 @@ class ExecutionTaskDoc(Document):
     progress_percent: Optional[float] = Field(default=None, description="任务进度百分比")
     current_case_id: Optional[str] = Field(None, description="当前下发中的测试用例 ID")
     current_case_index: int = Field(default=0, description="当前下发中的测试用例序号")
-    stop_mode: str = Field(default="NONE", description="停止模式")
-    stop_requested_at: Optional[datetime] = Field(None, description="请求停止时间（UTC）")
-    stop_requested_by: Optional[str] = Field(None, description="请求停止的用户 ID")
-    stop_reason: Optional[str] = Field(None, description="停止原因")
     planned_at: Optional[datetime] = Field(None, description="计划触发时间（UTC），定时任务使用")
     triggered_at: Optional[datetime] = Field(None, description="任务首次真正触发下发的时间（UTC）")
     started_at: Optional[datetime] = Field(None, description="任务开始执行时间（UTC）")
@@ -90,7 +86,6 @@ class ExecutionTaskDoc(Document):
             IndexModel([("overall_status", ASCENDING), ("created_at", DESCENDING)]),
             IndexModel([("dispatch_status", ASCENDING), ("created_at", DESCENDING)]),
             IndexModel([("task_id", ASCENDING), ("current_case_index", ASCENDING)]),
-            IndexModel([("stop_mode", ASCENDING), ("created_at", DESCENDING)]),
         ]
 
 

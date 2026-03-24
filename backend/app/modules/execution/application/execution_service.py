@@ -2,21 +2,15 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import Any, Dict
 
 from app.modules.execution.application.agent_mixin import ExecutionAgentMixin
 from app.modules.execution.application.commands import DispatchExecutionTaskCommand
-from app.modules.execution.application.constants import (
-    FINAL_CASE_STATUSES,
-    FINAL_TASK_STATUSES,
-    STOP_MODE_AFTER_CURRENT_CASE,
-)
 from app.modules.execution.application.task_case_mixin import ExecutionTaskCaseMixin
 from app.modules.execution.application.task_command_mixin import ExecutionTaskCommandMixin
 from app.modules.execution.application.task_dispatch_mixin import ExecutionTaskDispatchMixin
 from app.modules.execution.application.task_query_mixin import ExecutionTaskQueryMixin
-from app.modules.execution.repository.models import ExecutionTaskCaseDoc, ExecutionTaskDoc
+from app.modules.execution.repository.models import ExecutionTaskDoc
 from app.modules.execution.schemas import RerunTaskRequest
 from app.modules.execution.service.task_dispatcher import ExecutionTaskDispatcher
 from app.shared.core.logger import log as logger
@@ -72,82 +66,6 @@ class ExecutionService(
         logger.info(f"Scheduled execution task cancelled: task_id={task_id}, actor_id={actor_id}")
 
         return self._serialize_task_doc(task_doc)
-
-    async def stop_task_after_current_case(
-        self,
-        task_id: str,
-        actor_id: str,
-        reason: str | None = None,
-    ) -> Dict[str, Any]:
-        """请求在当前 case 完成后停止任务，不再继续下发下一条。"""
-        task_doc = await ExecutionTaskDoc.find_one({"task_id": task_id, "is_deleted": False})
-        if not task_doc:
-            raise KeyError(f"Task not found: {task_id}")
-
-        self._ensure_actor_identity(actor_id, task_doc.created_by)
-
-        if task_doc.overall_status in FINAL_TASK_STATUSES:
-            raise ValueError(f"Task {task_id} is already finished with status {task_doc.overall_status}")
-        if task_doc.schedule_type == "SCHEDULED" and task_doc.schedule_status == "PENDING":
-            raise ValueError(f"Task {task_id} has not started yet; use cancel instead")
-
-        if task_doc.stop_mode == STOP_MODE_AFTER_CURRENT_CASE:
-            logger.debug(
-                "Execution task stop already requested: "
-                f"task_id={task_doc.task_id}, actor_id={actor_id}, current_case_id={task_doc.current_case_id}"
-            )
-            return {
-                "task_id": task_doc.task_id,
-                "stop_mode": task_doc.stop_mode,
-                "stop_requested_at": task_doc.stop_requested_at,
-                "stop_requested_by": task_doc.stop_requested_by,
-                "stop_reason": task_doc.stop_reason,
-                "overall_status": task_doc.overall_status,
-                "current_case_id": task_doc.current_case_id,
-                "current_case_index": task_doc.current_case_index,
-                "updated_at": task_doc.updated_at,
-            }
-
-        now = datetime.now(timezone.utc)
-        task_doc.stop_mode = STOP_MODE_AFTER_CURRENT_CASE
-        task_doc.stop_requested_at = now
-        task_doc.stop_requested_by = actor_id
-        task_doc.stop_reason = reason
-
-        current_case_doc = None
-        if task_doc.current_case_id:
-            current_case_doc = await ExecutionTaskCaseDoc.find_one({
-                "task_id": task_id,
-                "case_id": task_doc.current_case_id,
-            })
-
-        if not current_case_doc or current_case_doc.status in FINAL_CASE_STATUSES:
-            task_doc.overall_status = "STOPPED"
-            task_doc.finished_at = now
-            task_doc.last_callback_at = now
-            task_doc.current_case_id = None
-            task_doc.current_case_index = min(task_doc.current_case_index + 1, task_doc.case_count)
-            if task_doc.dispatch_status != "DISPATCH_FAILED":
-                task_doc.dispatch_status = "COMPLETED"
-
-        await task_doc.save()
-        logger.info(
-            "Execution task stop requested: "
-            f"task_id={task_doc.task_id}, actor_id={actor_id}, "
-            f"current_case_id={task_doc.current_case_id}, stop_reason={reason}"
-        )
-
-        return {
-            "task_id": task_doc.task_id,
-            "stop_mode": task_doc.stop_mode,
-            "stop_requested_at": task_doc.stop_requested_at,
-            "stop_requested_by": task_doc.stop_requested_by,
-            "stop_reason": task_doc.stop_reason,
-            "overall_status": task_doc.overall_status,
-            "current_case_id": task_doc.current_case_id,
-            "current_case_index": task_doc.current_case_index,
-            "updated_at": task_doc.updated_at,
-        }
 
     async def dispatch_execution_task(
         self,

@@ -1867,12 +1867,6 @@ function getStatusAppearance(status: string): StatusAppearance {
       label: '下发失败',
       border: '1px solid rgba(248, 113, 113, 0.28)',
     },
-    STOPPED: {
-      bg: 'rgba(148, 163, 184, 0.16)',
-      color: '#cbd5e1',
-      label: '已停止',
-      border: '1px solid rgba(148, 163, 184, 0.28)',
-    },
     CANCELLED: {
       bg: 'rgba(100, 116, 139, 0.16)',
       color: '#94a3b8',

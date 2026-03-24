@@ -10,8 +10,6 @@ from .execution import (
     ExecutionTaskListItem,
     RerunTaskRequest,
     ScheduledTaskMutationResponse,
-    StopTaskRequest,
-    StopTaskResponse,
 )
 from .kafka_events import ExecutionResultEvent, RawTestEventEnvelope, TestEvent
 
@@ -30,6 +28,4 @@ __all__ = [
     "ExecutionTaskListItem",
     "RerunTaskRequest",
     "ScheduledTaskMutationResponse",
-    "StopTaskRequest",
-    "StopTaskResponse",
 ]

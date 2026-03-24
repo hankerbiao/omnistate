@@ -8,7 +8,7 @@ import json
 from typing import Any, Dict
 
 from app.modules.execution.application.commands import DispatchExecutionTaskCommand
-from app.modules.execution.application.constants import FINAL_TASK_STATUSES, STOP_MODE_NONE
+from app.modules.execution.application.constants import FINAL_TASK_STATUSES
 from app.modules.execution.repository.models import ExecutionTaskDoc
 from app.modules.execution.schemas import RerunTaskRequest
 from app.shared.core.logger import log as logger
@@ -278,10 +278,6 @@ class ExecutionTaskCommandMixin:
             reported_case_count=0,
             current_case_id=command.case_ids[0],
             current_case_index=0,
-            stop_mode=STOP_MODE_NONE,
-            stop_requested_at=None,
-            stop_requested_by=None,
-            stop_reason=None,
             planned_at=command.planned_at,
             schedule_type=schedule_type,
             schedule_status=schedule_status,

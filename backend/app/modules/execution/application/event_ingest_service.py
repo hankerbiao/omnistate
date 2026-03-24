@@ -3,10 +3,7 @@ from __future__ import annotations
 from datetime import timezone
 from typing import Any
 
-from app.modules.execution.application.constants import (
-    FINAL_CASE_STATUSES,
-    STOP_MODE_AFTER_CURRENT_CASE,
-)
+from app.modules.execution.application.constants import FINAL_CASE_STATUSES
 from app.modules.execution.application.execution_service import ExecutionService
 from app.modules.execution.domain.status_rules import resolve_case_status
 from app.modules.execution.repository.models import (
@@ -306,22 +303,6 @@ class ExecutionEventIngestService:
             return
 
         next_case_index = getattr(task_doc, "current_case_index", 0) + 1
-        if getattr(task_doc, "stop_mode", None) == STOP_MODE_AFTER_CURRENT_CASE:
-            task_doc.current_case_id = None
-            task_doc.current_case_index = min(next_case_index, task_doc.case_count)
-            task_doc.finished_at = event_time
-            task_doc.last_callback_at = event_time
-            task_doc.overall_status = "STOPPED"
-            if task_doc.dispatch_status != "DISPATCH_FAILED":
-                task_doc.dispatch_status = "COMPLETED"
-            await task_doc.save()
-            logger.info(
-                "Execution task stopped after current case: "
-                f"task_id={task_doc.task_id}, stopped_case_id={event.case_id}, "
-                f"next_case_index={next_case_index}"
-            )
-            return
-
         if next_case_index >= task_doc.case_count:
             task_doc.current_case_id = None
             task_doc.current_case_index = task_doc.case_count

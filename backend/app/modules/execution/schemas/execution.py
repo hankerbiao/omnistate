@@ -113,10 +113,6 @@ class DispatchTaskResponse(BaseModel):
     current_case_id: Optional[str] = Field(None, description="当前正在执行或最近一次下发的测试用例 ID")
     current_auto_case_id: Optional[str] = Field(None, description="当前正在执行或最近一次下发的自动化用例 ID")
     current_case_index: int = Field(0, description="当前测试用例在任务内的顺序索引，从 0 开始")
-    stop_mode: str = Field(default="NONE", description="停止模式")
-    stop_requested_at: Optional[datetime] = Field(None, description="请求停止时间（UTC）")
-    stop_requested_by: Optional[str] = Field(None, description="请求停止的用户 ID")
-    stop_reason: Optional[str] = Field(None, description="停止原因")
     planned_at: Optional[datetime] = Field(None, description="计划执行时间（UTC）")
     triggered_at: Optional[datetime] = Field(None, description="任务首次真正触发下发的时间（UTC）")
     created_at: datetime = Field(..., description="任务创建时间（UTC）")
@@ -140,10 +136,6 @@ class ExecutionTaskListItem(BaseModel):
     current_case_id: Optional[str] = Field(None, description="当前游标指向的测试用例 ID")
     current_auto_case_id: Optional[str] = Field(None, description="当前游标指向的自动化用例 ID")
     current_case_index: int = Field(0, description="当前游标指向的测试用例顺序索引")
-    stop_mode: str = Field(default="NONE", description="停止模式")
-    stop_requested_at: Optional[datetime] = Field(None, description="请求停止时间（UTC）")
-    stop_requested_by: Optional[str] = Field(None, description="请求停止的用户 ID")
-    stop_reason: Optional[str] = Field(None, description="停止原因")
     planned_at: Optional[datetime] = Field(None, description="计划执行时间（UTC）")
     triggered_at: Optional[datetime] = Field(None, description="任务首次被触发执行的时间（UTC）")
     created_at: datetime = Field(..., description="任务创建时间（UTC）")
@@ -185,31 +177,9 @@ class ScheduledTaskMutationResponse(BaseModel):
     case_count: Optional[int] = Field(None, description="任务包含的测试用例数量")
     current_case_id: Optional[str] = Field(None, description="当前游标指向的测试用例 ID")
     current_case_index: int = Field(0, description="当前游标指向的测试用例顺序索引")
-    stop_mode: str = Field(default="NONE", description="停止模式")
-    stop_requested_at: Optional[datetime] = Field(None, description="请求停止时间（UTC）")
-    stop_requested_by: Optional[str] = Field(None, description="请求停止的用户 ID")
-    stop_reason: Optional[str] = Field(None, description="停止原因")
     planned_at: Optional[datetime] = Field(None, description="计划执行时间（UTC）")
     triggered_at: Optional[datetime] = Field(None, description="任务实际触发时间（UTC）")
     created_at: Optional[datetime] = Field(None, description="任务创建时间（UTC）")
-    updated_at: datetime = Field(..., description="任务最近更新时间（UTC）")
-
-
-class StopTaskRequest(BaseModel):
-    reason: Optional[str] = Field(None, description="停止原因")
-
-    model_config = ConfigDict(extra="forbid")
-
-
-class StopTaskResponse(BaseModel):
-    task_id: str = Field(..., description="任务 ID")
-    stop_mode: str = Field(..., description="停止模式")
-    stop_requested_at: Optional[datetime] = Field(None, description="请求停止时间（UTC）")
-    stop_requested_by: Optional[str] = Field(None, description="请求停止的用户 ID")
-    stop_reason: Optional[str] = Field(None, description="停止原因")
-    overall_status: str = Field(..., description="任务整体状态")
-    current_case_id: Optional[str] = Field(None, description="当前执行中的测试用例 ID")
-    current_case_index: int = Field(0, description="当前执行中的测试用例顺序索引")
     updated_at: datetime = Field(..., description="任务最近更新时间（UTC）")
 
 
