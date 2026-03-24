@@ -151,8 +151,8 @@ class ExecutionTaskCommandMixin:
         if dispatch_channel is None:
             raise ValueError("dispatch_channel is required")
         normalized = dispatch_channel.strip().upper()
-        if normalized not in {"KAFKA", "RABBITMQ", "HTTP"}:
-            raise ValueError("dispatch_channel must be KAFKA, RABBITMQ or HTTP")
+        if normalized not in {"RABBITMQ", "HTTP"}:
+            raise ValueError("dispatch_channel must be RABBITMQ or HTTP")
         return normalized
 
     @staticmethod

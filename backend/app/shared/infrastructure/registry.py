@@ -66,42 +66,13 @@ class InfrastructureRegistry:
                 return
 
             logger.info("Initializing application infrastructure...")
-            dispatch_mode = (settings.EXECUTION_DISPATCH_MODE or "kafka").strip().lower()
-            if dispatch_mode == "rabbitmq":
+            try:
                 self._set_component_status(RABBITMQ_COMPONENT, "INITIALIZING")
                 self._ensure_rabbitmq_manager_started()
-                self._set_component_status(KAFKA_COMPONENT, "SKIPPED", health_details={"dispatch_mode": dispatch_mode})
-                self.execution_scheduler_task = asyncio.create_task(self._run_execution_scheduler_loop())
-                self._set_component_status(EXECUTION_SCHEDULER_COMPONENT, "RUNNING")
-                self._is_initialized = True
-                logger.info("RabbitMQ producer initialized for execution dispatch mode")
-                return
-
-            if dispatch_mode != "kafka":
                 self._set_component_status(
                     KAFKA_COMPONENT,
                     "SKIPPED",
-                    health_details={"dispatch_mode": dispatch_mode},
-                )
-                self._set_component_status(
-                    RABBITMQ_COMPONENT,
-                    "SKIPPED",
-                    health_details={"dispatch_mode": dispatch_mode},
-                )
-                self.execution_scheduler_task = asyncio.create_task(self._run_execution_scheduler_loop())
-                self._set_component_status(EXECUTION_SCHEDULER_COMPONENT, "RUNNING")
-                self._is_initialized = True
-                logger.info(f"Skipping Kafka producer initialization because dispatch mode is {dispatch_mode}")
-                return
-
-            self._set_component_status(KAFKA_COMPONENT, "INITIALIZING")
-
-            try:
-                self._ensure_kafka_manager_started(bootstrap_servers)
-                self._set_component_status(
-                    RABBITMQ_COMPONENT,
-                    "SKIPPED",
-                    health_details={"dispatch_mode": dispatch_mode},
+                    health_details={"reason": "kafka dispatch removed"},
                 )
                 self.execution_scheduler_task = asyncio.create_task(self._run_execution_scheduler_loop())
                 self._set_component_status(EXECUTION_SCHEDULER_COMPONENT, "RUNNING")
@@ -109,9 +80,9 @@ class InfrastructureRegistry:
                 logger.success("Application infrastructure initialized successfully")
             except Exception as e:
                 self._set_component_status(
-                    KAFKA_COMPONENT,
+                    RABBITMQ_COMPONENT,
                     "ERROR",
-                    error_message=f"Failed to initialize Kafka producer manager: {e}",
+                    error_message=f"Failed to initialize RabbitMQ producer manager: {e}",
                 )
                 logger.exception(f"Failed to initialize infrastructure: {e}")
                 await self.shutdown()
@@ -281,10 +252,7 @@ class InfrastructureRegistry:
             rabbitmq_status_info.health_details = rabbitmq_health
 
         overall_status = "HEALTHY"
-        active_component_health = kafka_health
-        dispatch_mode = (settings.EXECUTION_DISPATCH_MODE or "kafka").strip().lower()
-        if dispatch_mode == "rabbitmq":
-            active_component_health = rabbitmq_health
+        active_component_health = rabbitmq_health
 
         if active_component_health["status"] == "ERROR":
             overall_status = "UNHEALTHY"

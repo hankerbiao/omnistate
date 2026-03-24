@@ -27,7 +27,7 @@
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | `framework` | string | 是 | 执行框架标识（如 pytest、jest 等） |
-| `dispatch_channel` | string | 否 | 下发渠道，支持 `KAFKA`、`RABBITMQ`、`HTTP` |
+| `dispatch_channel` | string | 否 | 下发渠道，支持 `RABBITMQ`、`HTTP` |
 | `agent_id` | string | 否 | 目标代理 ID，HTTP 直连模式下必填 |
 | `trigger_source` | string | 否 | 触发来源，默认 `manual` |
 | `schedule_type` | string | 否 | 调度类型：`IMMEDIATE` / `SCHEDULED`，默认 `IMMEDIATE` |
@@ -51,7 +51,7 @@
 - `script_name`、`script_path`、`script_entity_id` 不再作为前端请求字段
 - 后端会基于 `auto_case_id` 从 `automation_test_cases` 解析脚本元数据
 - `dispatch` 和 `rerun` 都使用同一套后端解析逻辑
-- 实际下发到 Kafka、RabbitMQ、HTTP 的任务 payload 字段格式不变
+- 实际下发到 RabbitMQ、HTTP 的任务 payload 字段格式不变
 
 ### 请求示例
 

@@ -15,7 +15,6 @@
 
 - `KAFKA_BOOTSTRAP_SERVERS`
 - `KAFKA_CLIENT_ID`
-- `KAFKA_TASK_TOPIC`
 - `KAFKA_RESULT_TOPIC`
 - `KAFKA_DEAD_LETTER_TOPIC`
 - `KAFKA_EXECUTION_RESULT_GROUP_ID`
@@ -27,17 +26,17 @@
 ## 使用方式
 
 ```python
-from app.shared.kafka import KafkaMessageManager, TaskMessage
+from app.shared.kafka import KafkaMessageManager, ResultMessage
 
 manager = KafkaMessageManager()
 manager.start()
 
 try:
-    manager.send_task(
-        TaskMessage(
+    manager.send_result(
+        ResultMessage(
             task_id="task-001",
-            task_type="execution_task",
-            task_data={"foo": "bar"},
+            status="PASSED",
+            result_data={"summary": "ok"},
         )
     )
 finally:

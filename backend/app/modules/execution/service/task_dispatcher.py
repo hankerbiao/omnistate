@@ -27,67 +27,13 @@ class DispatchResult:
 
 
 class ExecutionTaskDispatcher:
-    """根据配置选择 Kafka、RabbitMQ 或 HTTP 分发任务。"""
+    """根据配置选择 RabbitMQ 或 HTTP 分发任务。"""
 
     async def dispatch(self, command: DispatchExecutionTaskCommand) -> DispatchResult:
         mode = command.dispatch_channel.strip().lower()
         if mode == "http":
             return await self._dispatch_via_http(command)
-        if mode == "rabbitmq":
-            return self._dispatch_via_rabbitmq(command)
-        return self._dispatch_via_kafka(command)
-
-    def _dispatch_via_kafka(self, command: DispatchExecutionTaskCommand) -> DispatchResult:
-        from app.shared.infrastructure import get_kafka_manager
-
-        kafka_manager = get_kafka_manager()
-        if not kafka_manager:
-            return DispatchResult(
-                success=False,
-                channel="KAFKA",
-                message="Kafka manager not available",
-                response={"accepted": False, "message": "Kafka manager not available"},
-                error="Kafka manager not available",
-            )
-
-        task_message = TaskMessage(
-            task_id=command.task_id,
-            task_type="execution_task",
-            task_data=command.kafka_task_data,
-            source="dmlv4-execution-api",
-            priority=1,
-        )
-        logger.info(
-            "Dispatching execution task via Kafka: "
-            f"task_id={command.task_id}, topic=default-task-topic, agent_id={command.agent_id}"
-        )
-        logger.debug(
-            "Kafka execution dispatch payload: "
-            f"task_id={command.task_id}, payload={command.kafka_task_data}"
-        )
-        success = kafka_manager.send_task(task_message)
-        if success:
-            logger.info(
-                "Kafka execution dispatch accepted: "
-                f"task_id={command.task_id}, agent_id={command.agent_id}"
-            )
-            return DispatchResult(
-                success=True,
-                channel="KAFKA",
-                message="Task dispatched to Kafka successfully",
-                response={"accepted": True, "message": "Task dispatched to Kafka successfully"},
-            )
-        logger.warning(
-            "Kafka execution dispatch rejected: "
-            f"task_id={command.task_id}, agent_id={command.agent_id}"
-        )
-        return DispatchResult(
-            success=False,
-            channel="KAFKA",
-            message="Failed to dispatch task to Kafka",
-            response={"accepted": False, "message": "Failed to dispatch task to Kafka"},
-            error="Failed to send task to Kafka",
-        )
+        return self._dispatch_via_rabbitmq(command)
 
     def _dispatch_via_rabbitmq(self, command: DispatchExecutionTaskCommand) -> DispatchResult:
         from app.shared.infrastructure import get_rabbitmq_manager
@@ -105,7 +51,7 @@ class ExecutionTaskDispatcher:
         task_message = TaskMessage(
             task_id=command.task_id,
             task_type="execution_task",
-            task_data=command.kafka_task_data,
+            task_data=command.dispatch_task_data,
             source="dmlv4-execution-api",
             priority=1,
         )
@@ -115,7 +61,7 @@ class ExecutionTaskDispatcher:
         )
         logger.debug(
             "RabbitMQ execution dispatch payload: "
-            f"task_id={command.task_id}, payload={command.kafka_task_data}"
+            f"task_id={command.task_id}, payload={command.dispatch_task_data}"
         )
         success = rabbitmq_manager.send_task(task_message)
         if success:
@@ -193,13 +139,13 @@ class ExecutionTaskDispatcher:
         )
         logger.debug(
             "HTTP execution dispatch payload: "
-            f"task_id={command.task_id}, target_url={url}, payload={command.kafka_task_data}"
+            f"task_id={command.task_id}, target_url={url}, payload={command.dispatch_task_data}"
         )
         try:
             response = await asyncio.to_thread(
                 requests.post,
                 url,
-                json=command.kafka_task_data,
+                json=command.dispatch_task_data,
                 timeout=settings.EXECUTION_HTTP_TIMEOUT_SEC,
             )
             accepted = response.status_code in {200, 201, 202}

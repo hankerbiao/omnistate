@@ -27,7 +27,7 @@ class DispatchCaseItem(BaseModel):
 
 class DispatchTaskRequest(BaseModel):
     framework: str = Field(..., description="执行框架标识，例如 pytest、robot 等")
-    dispatch_channel: Optional[str] = Field(None, description="下发通道，可选 KAFKA、RABBITMQ 或 HTTP")
+    dispatch_channel: Optional[str] = Field(None, description="下发通道，可选 RABBITMQ 或 HTTP")
     agent_id: Optional[str] = Field(None, description="目标执行代理 ID；由平台路由到指定 agent 时使用")
     trigger_source: Optional[str] = Field(default="manual", description="触发来源，例如 manual、web_ui、schedule")
     schedule_type: str = Field(default="IMMEDIATE", description="调度类型，只允许 IMMEDIATE 或 SCHEDULED")
@@ -53,8 +53,8 @@ class DispatchTaskRequest(BaseModel):
             raise ValueError("cases must not contain duplicate auto_case_id")
         if self.schedule_type.upper() not in {"IMMEDIATE", "SCHEDULED"}:
             raise ValueError("schedule_type must be IMMEDIATE or SCHEDULED")
-        if self.dispatch_channel and self.dispatch_channel.upper() not in {"KAFKA", "RABBITMQ", "HTTP"}:
-            raise ValueError("dispatch_channel must be KAFKA, RABBITMQ or HTTP")
+        if self.dispatch_channel and self.dispatch_channel.upper() not in {"RABBITMQ", "HTTP"}:
+            raise ValueError("dispatch_channel must be RABBITMQ or HTTP")
         if (self.dispatch_channel or "").upper() == "HTTP" and not self.agent_id:
             raise ValueError("agent_id is required when dispatch_channel is HTTP")
         return self
@@ -83,8 +83,8 @@ class RerunTaskRequest(BaseModel):
     def validate_rerun_request(self) -> "RerunTaskRequest":
         if self.schedule_type and self.schedule_type.upper() not in {"IMMEDIATE", "SCHEDULED"}:
             raise ValueError("schedule_type must be IMMEDIATE or SCHEDULED")
-        if self.dispatch_channel and self.dispatch_channel.upper() not in {"KAFKA", "RABBITMQ", "HTTP"}:
-            raise ValueError("dispatch_channel must be KAFKA, RABBITMQ or HTTP")
+        if self.dispatch_channel and self.dispatch_channel.upper() not in {"RABBITMQ", "HTTP"}:
+            raise ValueError("dispatch_channel must be RABBITMQ or HTTP")
         if (self.dispatch_channel or "").upper() == "HTTP" and not self.agent_id:
             raise ValueError("agent_id is required when dispatch_channel is HTTP")
         if self.cases is not None:
@@ -101,7 +101,7 @@ class DispatchTaskResponse(BaseModel):
     external_task_id: Optional[str] = Field(None, description="对外暴露的任务 ID，供外部系统关联")
     source_task_id: Optional[str] = Field(None, description="重跑来源任务 ID")
     agent_id: Optional[str] = Field(None, description="当前绑定的目标代理 ID")
-    dispatch_channel: str = Field(..., description="任务实际下发通道，例如 KAFKA、HTTP")
+    dispatch_channel: str = Field(..., description="任务实际下发通道，例如 RABBITMQ、HTTP")
     dedup_key: Optional[str] = Field(None, description="任务去重键，用于识别语义相同的未完成任务")
     schedule_type: str = Field(..., description="调度类型：IMMEDIATE 或 SCHEDULED")
     schedule_status: str = Field(..., description="调度状态，例如 PENDING、READY、TRIGGERED、CANCELLED；不表达下发结果")
@@ -160,27 +160,6 @@ class ExecutionTaskListCaseItem(BaseModel):
     last_event_id: Optional[str] = Field(None, description="最近事件 ID")
     last_event_at: Optional[datetime] = Field(None, description="最近事件时间")
     result_data: Dict[str, Any] = Field(default_factory=dict, description="扩展结果")
-
-
-class ScheduledTaskMutationResponse(BaseModel):
-    task_id: str = Field(..., description="任务 ID")
-    external_task_id: Optional[str] = Field(None, description="外部任务 ID")
-    source_task_id: Optional[str] = Field(None, description="重跑来源任务 ID")
-    agent_id: Optional[str] = Field(None, description="目标代理 ID")
-    dispatch_channel: Optional[str] = Field(None, description="任务当前使用的下发通道")
-    dedup_key: Optional[str] = Field(None, description="任务去重键")
-    schedule_type: str = Field(..., description="调度类型")
-    schedule_status: str = Field(..., description="调度状态，不表达下发结果")
-    dispatch_status: str = Field(..., description="下发状态")
-    overall_status: str = Field(..., description="任务整体状态")
-    consume_status: Optional[str] = Field(None, description="消费状态")
-    case_count: Optional[int] = Field(None, description="任务包含的测试用例数量")
-    current_case_id: Optional[str] = Field(None, description="当前游标指向的测试用例 ID")
-    current_case_index: int = Field(0, description="当前游标指向的测试用例顺序索引")
-    planned_at: Optional[datetime] = Field(None, description="计划执行时间（UTC）")
-    triggered_at: Optional[datetime] = Field(None, description="任务实际触发时间（UTC）")
-    created_at: Optional[datetime] = Field(None, description="任务创建时间（UTC）")
-    updated_at: datetime = Field(..., description="任务最近更新时间（UTC）")
 
 
 class AgentRegisterRequest(BaseModel):

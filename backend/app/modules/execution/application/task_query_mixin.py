@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any, Dict, List
 
 from app.modules.execution.repository.models import (
@@ -13,46 +12,6 @@ from app.modules.execution.repository.models import (
 
 class ExecutionTaskQueryMixin:
     """提供任务查询与统一序列化能力。"""
-
-    @staticmethod
-    def _build_list_tasks_query(
-        schedule_type: str | None,
-        schedule_status: str | None,
-        dispatch_status: str | None,
-        consume_status: str | None,
-        overall_status: str | None,
-        created_by: str | None,
-        agent_id: str | None,
-        framework: str | None,
-        date_from: datetime | None,
-        date_to: datetime | None,
-        ensure_utc_datetime,
-    ) -> Dict[str, Any]:
-        query: Dict[str, Any] = {"is_deleted": False}
-        if schedule_type:
-            query["schedule_type"] = schedule_type.upper()
-        if schedule_status:
-            query["schedule_status"] = schedule_status.upper()
-        if dispatch_status:
-            query["dispatch_status"] = dispatch_status.upper()
-        if consume_status:
-            query["consume_status"] = consume_status.upper()
-        if overall_status:
-            query["overall_status"] = overall_status.upper()
-        if created_by:
-            query["created_by"] = created_by
-        if agent_id:
-            query["agent_id"] = agent_id
-        if framework:
-            query["framework"] = framework
-        if date_from or date_to:
-            created_at_query: Dict[str, datetime] = {}
-            if date_from:
-                created_at_query["$gte"] = ensure_utc_datetime(date_from)
-            if date_to:
-                created_at_query["$lte"] = ensure_utc_datetime(date_to)
-            query["created_at"] = created_at_query
-        return query
 
     @staticmethod
     async def _load_task_case_map(task_ids: List[str]) -> Dict[str, List[Dict[str, Any]]]:
@@ -136,40 +95,11 @@ class ExecutionTaskQueryMixin:
             "result_data": dict(case_doc.result_data or {}),
         }
 
-    async def list_tasks(
-        self,
-        schedule_type: str | None = None,
-        schedule_status: str | None = None,
-        dispatch_status: str | None = None,
-        consume_status: str | None = None,
-        overall_status: str | None = None,
-        created_by: str | None = None,
-        agent_id: str | None = None,
-        framework: str | None = None,
-        date_from: datetime | None = None,
-        date_to: datetime | None = None,
-        limit: int = 20,
-        offset: int = 0,
-    ) -> List[Dict[str, Any]]:
-        """列出执行任务，支持按状态和时间窗口过滤。"""
-        query = self._build_list_tasks_query(
-            schedule_type=schedule_type,
-            schedule_status=schedule_status,
-            dispatch_status=dispatch_status,
-            consume_status=consume_status,
-            overall_status=overall_status,
-            created_by=created_by,
-            agent_id=agent_id,
-            framework=framework,
-            date_from=date_from,
-            date_to=date_to,
-            ensure_utc_datetime=self._ensure_utc_datetime,
-        )
+    async def list_tasks(self) -> List[Dict[str, Any]]:
+        """列出全部未删除的执行任务。"""
         docs = await (
-            ExecutionTaskDoc.find(query)
+            ExecutionTaskDoc.find({"is_deleted": False})
             .sort("-created_at")
-            .skip(max(offset, 0))
-            .limit(max(limit, 1))
             .to_list()
         )
         serialized_tasks = [self._serialize_task_doc(task_doc) for task_doc in docs]

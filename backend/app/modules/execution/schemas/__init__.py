@@ -9,7 +9,6 @@ from .execution import (
     ExecutionTaskListCaseItem,
     ExecutionTaskListItem,
     RerunTaskRequest,
-    ScheduledTaskMutationResponse,
 )
 from .kafka_events import ExecutionResultEvent, RawTestEventEnvelope, TestEvent
 
@@ -27,5 +26,4 @@ __all__ = [
     "ExecutionTaskListCaseItem",
     "ExecutionTaskListItem",
     "RerunTaskRequest",
-    "ScheduledTaskMutationResponse",
 ]

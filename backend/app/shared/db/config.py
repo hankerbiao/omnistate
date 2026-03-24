@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     JWT_AUDIENCE: str = "tcm-frontend"
 
     # 执行任务分发配置
-    EXECUTION_DISPATCH_MODE: str = "kafka"  # kafka | rabbitmq | http
+    EXECUTION_DISPATCH_MODE: str = "rabbitmq"  # rabbitmq | http
     EXECUTION_AGENT_DISPATCH_PATH: str = "/api/v1/tasks"
     EXECUTION_HTTP_TIMEOUT_SEC: int = 10
     EXECUTION_SCHEDULER_INTERVAL_SEC: int = 60

@@ -110,7 +110,6 @@ class KafkaProducerManager:
         self.config = runtime_config
         self.bootstrap_servers = runtime_config.bootstrap_servers
         self.client_id = runtime_config.client_id
-        self.task_topic = runtime_config.task_topic
         self.result_topic = runtime_config.result_topic
         self.dead_letter_topic = runtime_config.dead_letter_topic
         self.producer: KafkaProducer | None = None
@@ -164,22 +163,6 @@ class KafkaProducerManager:
             log.error(f"Kafka send failed, topic={topic}, key={key}, error={exc}")
             return False
 
-    def send_task(self, task_message: TaskMessage, priority: int | None = None) -> bool:
-        message_priority = task_message.priority if priority is None else priority
-        success = self._send_message(
-            topic=self.task_topic,
-            key=task_message.task_id,
-            value=task_message.to_json(),
-            headers=[
-                ("priority", str(message_priority).encode("utf-8")),
-                ("task_type", task_message.task_type.encode("utf-8")),
-                ("source", task_message.source.encode("utf-8")),
-            ],
-        )
-        if success:
-            log.info(f"Task sent to Kafka successfully: {task_message.task_id}")
-        return success
-
     def send_result(self, result_message: ResultMessage) -> bool:
         return self._send_message(
             topic=self.result_topic,
@@ -223,7 +206,6 @@ class KafkaProducerManager:
                 "client_id": self.client_id,
                 "producer_available": self.producer is not None,
                 "topics": {
-                    "task_topic": self.task_topic,
                     "result_topic": self.result_topic,
                     "dead_letter_topic": self.dead_letter_topic,
                 },

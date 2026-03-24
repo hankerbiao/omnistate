@@ -1,8 +1,8 @@
 """测试执行 API 路由。"""
 from __future__ import annotations
 
-from typing import Annotated
 from datetime import datetime
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -14,10 +14,8 @@ from app.modules.execution.schemas import (
     ExecutionAgentResponse,
     ExecutionTaskListItem,
     RerunTaskRequest,
-    ScheduledTaskMutationResponse,
 )
 from app.modules.execution.application.execution_service import ExecutionService
-from app.modules.execution.application.commands import DispatchExecutionTaskCommand
 from app.shared.service import SequenceIdService
 from app.shared.api.schemas.base import APIResponse
 from app.shared.auth import get_current_user, require_permission
@@ -56,84 +54,11 @@ async def dispatch_task(
 ):
     """分发测试任务。"""
     try:
-        request_case_payload = [
-            {
-                "auto_case_id": item.auto_case_id,
-                "parameters": dict(item.parameters),
-            }
-            for item in request.cases
-        ]
-        logger.info(
-            "Dispatch task request received: "
-            f"user_id={current_user['user_id']}, framework={request.framework}, "
-            f"dispatch_channel={request.dispatch_channel}, agent_id={request.agent_id}, "
-            f"schedule_type={request.schedule_type}, planned_at={request.planned_at}, "
-            f"cases={request_case_payload}"
+        data = await service.create_and_dispatch_task(
+            request=request,
+            actor_id=current_user["user_id"],
+            sequence_service=sequence_service,
         )
-
-        # 生成任务ID
-        year = datetime.now().year
-        seq = await sequence_service.next(f"execution_task:{year}")
-        task_id = f"ET-{year}-{str(seq).zfill(6)}"
-        external_task_id = f"EXT-{task_id}"
-
-        # 构建自动化用例ID列表
-        auto_case_ids = [item.auto_case_id for item in request.cases]
-        case_configs = [dict(item.config) for item in request.cases]
-        dispatch_bindings = await service.resolve_case_dispatch_bindings_by_auto_case_ids(auto_case_ids)
-        case_ids = [binding.case_id for binding in dispatch_bindings]
-        script_entity_ids = [binding.script_entity_id for binding in dispatch_bindings]
-        case_payloads = [
-            {
-                "case_id": binding.case_id,
-                "script_path": binding.script_path,
-                "script_name": binding.script_name,
-                "parameters": dict(item.parameters),
-            }
-            for item, binding in zip(request.cases, dispatch_bindings)
-        ]
-        logger.debug(
-            "Dispatch task case bindings resolved: "
-            f"task_id={task_id}, auto_case_ids={auto_case_ids}, case_ids={case_ids}, "
-            f"script_entity_ids={script_entity_ids}, case_configs={case_configs}, "
-            f"case_payloads={case_payloads}"
-        )
-
-        # 创建显式命令
-        command = DispatchExecutionTaskCommand(
-            task_id=task_id,
-            external_task_id=external_task_id,
-            framework=request.framework,
-            dispatch_channel=request.dispatch_channel,
-            agent_id=request.agent_id,
-            trigger_source=request.trigger_source,
-            created_by=current_user["user_id"],
-            auto_case_ids=auto_case_ids,
-            case_ids=case_ids,
-            script_entity_ids=script_entity_ids,
-            case_configs=case_configs,
-            case_payloads=case_payloads,
-            schedule_type=request.schedule_type,
-            planned_at=request.planned_at,
-            callback_url=request.callback_url,
-            category=request.category,
-            project_tag=request.project_tag,
-            repo_url=request.repo_url,
-            branch=request.branch,
-            pytest_options=request.pytest_options,
-            timeout=request.timeout,
-            dut=request.dut,
-        )
-
-        # 使用执行服务处理任务分发
-        data = await service.dispatch_execution_task(command, actor_id=current_user["user_id"])
-        logger.info(
-            "Dispatch task request handled successfully: "
-            f"task_id={task_id}, external_task_id={external_task_id}, "
-            f"dispatch_status={data.get('dispatch_status')}, overall_status={data.get('overall_status')}, "
-            f"case_count={data.get('case_count')}"
-        )
-
         return APIResponse(data=data)
 
     except ValueError as exc:
@@ -174,27 +99,6 @@ async def delete_task(
     """删除执行任务（逻辑删除）。"""
     try:
         data = await service.delete_task(task_id, actor_id=current_user["user_id"])
-        return APIResponse(data=data)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-
-
-@router.post(
-    "/tasks/{task_id}/cancel",
-    response_model=APIResponse[ScheduledTaskMutationResponse],
-    summary="取消未触发的定时任务",
-    dependencies=[Depends(require_permission("execution_tasks:write"))],
-)
-async def cancel_scheduled_task(
-        task_id: str,
-        service: ExecutionServiceDep,
-        current_user=Depends(get_current_user),
-):
-    """取消未触发的定时执行任务。"""
-    try:
-        data = await service.cancel_scheduled_task(task_id, actor_id=current_user["user_id"])
         return APIResponse(data=data)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
@@ -318,35 +222,10 @@ async def get_agent(
 )
 async def list_tasks(
         service: ExecutionServiceDep,
-        schedule_type: str | None = None,
-        schedule_status: str | None = None,
-        dispatch_status: str | None = None,
-        consume_status: str | None = None,
-        overall_status: str | None = None,
-        created_by: str | None = None,
-        agent_id: str | None = None,
-        framework: str | None = None,
-        date_from: datetime | None = None,
-        date_to: datetime | None = None,
-        limit: int = 20,
-        offset: int = 0,
         current_user=Depends(get_current_user),
 ):
     """查询执行任务列表。"""
-    data = await service.list_tasks(
-        schedule_type=schedule_type,
-        schedule_status=schedule_status,
-        dispatch_status=dispatch_status,
-        consume_status=consume_status,
-        overall_status=overall_status,
-        created_by=created_by,
-        agent_id=agent_id,
-        framework=framework,
-        date_from=date_from,
-        date_to=date_to,
-        limit=limit,
-        offset=offset,
-    )
+    data = await service.list_tasks()
     return APIResponse(data=data)
 
 

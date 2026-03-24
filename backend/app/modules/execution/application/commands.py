@@ -103,12 +103,12 @@ class DispatchExecutionTaskCommand:
         self._initialize_dispatch_targets()
 
     @property
-    def kafka_task_data(self) -> Dict[str, Any]:
-        """按需构建发送到 Kafka/HTTP 的任务数据，避免命令被更新后缓存失效。"""
-        return self._build_kafka_task_data()
+    def dispatch_task_data(self) -> Dict[str, Any]:
+        """按需构建发送到执行端的任务数据，避免命令被更新后缓存失效。"""
+        return self._build_dispatch_task_data()
 
-    def _build_kafka_task_data(self) -> Dict[str, Any]:
-        """构建Kafka任务数据"""
+    def _build_dispatch_task_data(self) -> Dict[str, Any]:
+        """构建统一的任务下发数据。"""
         current_case_id = self.dispatch_case_id
         current_case_config = self.dispatch_case_config
         current_case_payload = self.case_payloads[self.dispatch_case_index]

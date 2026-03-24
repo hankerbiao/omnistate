@@ -42,7 +42,7 @@ interface RerunEditModalState extends DispatchModalState {
 
 const FRAMEWORKS = ['pytest', 'robot', 'playwright', 'cypress', 'jest'];
 const DEFAULT_FRAMEWORK = 'pytest';
-const DEFAULT_DISPATCH_CHANNEL: DispatchChannel = 'KAFKA';
+const DEFAULT_DISPATCH_CHANNEL: DispatchChannel = 'RABBITMQ';
 const TASK_TABLE_COLUMNS = 7;
 type StatusAppearance = {
   bg: string;
@@ -106,10 +106,10 @@ const getFieldDisplayLabel = (field: AutomationConfigField) => {
 };
 
 const normalizeDispatchChannel = (dispatchChannel?: string): DispatchChannel => {
-  if (dispatchChannel === 'HTTP' || dispatchChannel === 'RABBITMQ') {
+  if (dispatchChannel === 'HTTP') {
     return dispatchChannel;
   }
-  return 'KAFKA';
+  return 'RABBITMQ';
 };
 
 const buildDispatchCaseItems = (
@@ -1150,15 +1150,6 @@ const TaskList: React.FC<TaskListProps> = () => {
                         <input
                           type="radio"
                           name="dispatchChannel"
-                          checked={dispatchModal.dispatchChannel === 'KAFKA'}
-                          onChange={() => setDispatchModal(prev => ({ ...prev, dispatchChannel: 'KAFKA' }))}
-                        />
-                        <span>Kafka 下发</span>
-                      </label>
-                      <label style={styles.radioLabel}>
-                        <input
-                          type="radio"
-                          name="dispatchChannel"
                           checked={dispatchModal.dispatchChannel === 'RABBITMQ'}
                           onChange={() => setDispatchModal(prev => ({ ...prev, dispatchChannel: 'RABBITMQ' }))}
                         />
@@ -1507,15 +1498,6 @@ const TaskList: React.FC<TaskListProps> = () => {
                   <div style={styles.formSection}>
                     <label style={styles.formLabel}>下发通道</label>
                     <div style={styles.radioGroup}>
-                      <label style={styles.radioLabel}>
-                        <input
-                          type="radio"
-                          name="rerunDispatchChannel"
-                          checked={rerunEditModal.dispatchChannel === 'KAFKA'}
-                          onChange={() => setRerunEditModal(prev => ({ ...prev, dispatchChannel: 'KAFKA' }))}
-                        />
-                        <span>Kafka 下发</span>
-                      </label>
                       <label style={styles.radioLabel}>
                         <input
                           type="radio"

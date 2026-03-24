@@ -200,7 +200,7 @@ export interface AutomationConfigField {
   extra_props?: Record<string, unknown>;
 }
 
-export type DispatchChannel = 'KAFKA' | 'RABBITMQ' | 'HTTP';
+export type DispatchChannel = 'RABBITMQ' | 'HTTP';
 
 export interface DispatchTaskRequest {
   framework: string;
