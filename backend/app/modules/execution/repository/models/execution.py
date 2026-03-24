@@ -43,7 +43,6 @@ class ExecutionTaskDoc(Document):
     stop_requested_at: Optional[datetime] = Field(None, description="请求停止时间（UTC）")
     stop_requested_by: Optional[str] = Field(None, description="请求停止的用户 ID")
     stop_reason: Optional[str] = Field(None, description="停止原因")
-    orchestration_lock: Optional[str] = Field(None, description="平台串行推进锁")
     planned_at: Optional[datetime] = Field(None, description="计划触发时间（UTC），定时任务使用")
     triggered_at: Optional[datetime] = Field(None, description="任务首次真正触发下发的时间（UTC）")
     started_at: Optional[datetime] = Field(None, description="任务开始执行时间（UTC）")

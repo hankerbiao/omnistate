@@ -296,5 +296,4 @@ class ExecutionTaskCommandMixin:
             consume_status="PENDING",
             consumed_at=None,
             overall_status="QUEUED",
-            orchestration_lock=None,
         )

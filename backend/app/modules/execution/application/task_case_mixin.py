@@ -216,14 +216,14 @@ class ExecutionTaskCaseMixin:
             "tags": list(case_doc.tags),
             "test_category": case_doc.test_category,
             "estimated_duration_sec": case_doc.estimated_duration_sec,
-            "target_components": list(case_doc.target_components),
+            "target_components": list(case_doc.target_components),  # TODO 物料相关
             "required_env": dict(case_doc.required_env),
             "tooling_req": list(case_doc.tooling_req),
             "is_destructive": case_doc.is_destructive,
             "pre_condition": case_doc.pre_condition,
             "post_condition": case_doc.post_condition,
-            "steps": [step.model_dump() for step in case_doc.steps],
-            "cleanup_steps": [step.model_dump() for step in case_doc.cleanup_steps],
+            # "steps": [step.model_dump() for step in case_doc.steps],
+            # "cleanup_steps": [step.model_dump() for step in case_doc.cleanup_steps],
             "custom_fields": dict(case_doc.custom_fields),
         }
 
