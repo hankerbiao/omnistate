@@ -32,7 +32,6 @@ class ExecutionTaskDispatchMixin:
         planned_at = request_payload["planned_at"]
         return DispatchExecutionTaskCommand(
             task_id=task_doc.task_id,
-            external_task_id=task_doc.external_task_id,
             framework=task_doc.framework,
             dispatch_channel=task_doc.dispatch_channel,
             agent_id=task_doc.agent_id,

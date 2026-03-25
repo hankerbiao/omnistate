@@ -10,16 +10,10 @@ class DispatchCaseItem(BaseModel):
         ...,
         description="自动化测试用例业务 ID，用于标识本次任务包含的单条 case",
     )
-    script_entity_id: Optional[str] = Field(
-        None,
-        description="自动化脚本实体 ID，可由前端显式透传；平台也会在后端二次校准",
-    )
     config: Dict[str, Any] = Field(
         default_factory=dict,
         description="该测试用例本次执行的参数配置",
     )
-    script_path: Optional[str] = Field(None, description="执行端识别的脚本路径")
-    script_name: Optional[str] = Field(None, description="执行端展示的脚本名称")
     parameters: Dict[str, Any] = Field(default_factory=dict, description="执行端用例参数")
 
     model_config = ConfigDict(extra="forbid")
@@ -98,7 +92,6 @@ class RerunTaskRequest(BaseModel):
 
 class DispatchTaskResponse(BaseModel):
     task_id: str = Field(..., description="平台内部任务 ID")
-    external_task_id: Optional[str] = Field(None, description="对外暴露的任务 ID，供外部系统关联")
     source_task_id: Optional[str] = Field(None, description="重跑来源任务 ID")
     agent_id: Optional[str] = Field(None, description="当前绑定的目标代理 ID")
     dispatch_channel: str = Field(..., description="任务实际下发通道，例如 RABBITMQ、HTTP")
@@ -120,7 +113,6 @@ class DispatchTaskResponse(BaseModel):
 
 class ExecutionTaskListItem(BaseModel):
     task_id: str = Field(..., description="平台内部任务 ID")
-    external_task_id: Optional[str] = Field(None, description="对外暴露的任务 ID")
     source_task_id: Optional[str] = Field(None, description="重跑来源任务 ID")
     framework: str = Field(..., description="执行框架标识")
     agent_id: Optional[str] = Field(None, description="目标代理 ID")

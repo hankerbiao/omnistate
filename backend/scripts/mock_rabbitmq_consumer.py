@@ -33,6 +33,7 @@ from app.shared.rabbitmq.config import load_rabbitmq_config
 DEFAULT_EXECUTOR = "mock-rabbitmq-consumer"
 DEFAULT_EVENT_SCHEMA = "mock-test-event@1"
 DEFAULT_CASE_DELAY_SEC = 0.2
+DEFAULT_ASSERTS_PER_CASE = 2
 DEFAULT_PLATFORM_URL = "http://127.0.0.1:8000"
 DEFAULT_AGENT_ID = "mock-rabbitmq-agent"
 DEFAULT_AGENT_HOST = "127.0.0.1"
@@ -189,6 +190,11 @@ def build_test_event(
     failed_cases: int,
     case_id: str | None = None,
     case_title: str | None = None,
+    event_seq: int | None = None,
+    nodeid: str | None = None,
+    project_tag: str | None = None,
+    data: dict[str, Any] | None = None,
+    error: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """构建 mock 测试事件。"""
     event = {
@@ -203,22 +209,88 @@ def build_test_event(
         "started_cases": started_cases,
         "finished_cases": finished_cases,
         "failed_cases": failed_cases,
+        "data": dict(data or {}),
+        "error": dict(error or {}),
     }
+    if event_seq is not None:
+        event["seq"] = event_seq
     if case_id:
         event["case_id"] = case_id
     if case_title:
         event["case_title"] = case_title
+    if nodeid:
+        event["nodeid"] = nodeid
+    if project_tag:
+        event["project_tag"] = project_tag
     return event
 
 
-def build_result_message(task_id: str, duration: float, case_count: int) -> dict[str, Any]:
+def build_assert_event(
+    task_id: str,
+    case_id: str,
+    case_title: str,
+    event_seq: int,
+    assert_index: int,
+    total_cases: int,
+    started_cases: int,
+    finished_cases: int,
+    failed_cases: int,
+    nodeid: str,
+    project_tag: str,
+    parameters: dict[str, Any],
+) -> dict[str, Any]:
+    """构建 mock 断言事件。"""
+    return {
+        "schema": DEFAULT_EVENT_SCHEMA,
+        "event_id": str(uuid.uuid4()),
+        "task_id": task_id,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "event_type": "assert",
+        "seq": event_seq,
+        "name": f"{case_title}-assert-{assert_index}",
+        "status": "ok",
+        "total_cases": total_cases,
+        "started_cases": started_cases,
+        "finished_cases": finished_cases,
+        "failed_cases": failed_cases,
+        "case_id": case_id,
+        "case_title": case_title,
+        "project_tag": project_tag,
+        "nodeid": nodeid,
+        "data": {
+            "checkpoint": f"checkpoint-{assert_index}",
+            "expected": "status_code == 0",
+            "actual": 0,
+            "message": f"mock assert {assert_index} passed",
+            "duration_ms": 30 * assert_index,
+            "parameters_snapshot": dict(parameters),
+        },
+        "error": {},
+    }
+
+
+def build_result_message(task_id: str, duration: float, cases: list[dict[str, Any]]) -> dict[str, Any]:
     """构建 mock 执行结果。"""
+    case_results = [
+        {
+            "case_id": case.get("case_id"),
+            "script_name": case.get("script_name"),
+            "script_path": case.get("script_path"),
+            "status": "PASSED",
+            "duration_sec": round(DEFAULT_CASE_DELAY_SEC, 2),
+        }
+        for case in cases
+    ]
     return {
         "task_id": task_id,
         "status": "success",
         "result_data": {
             "duration": round(duration, 2),
-            "summary": f"{case_count} passed",
+            "summary": f"{len(cases)} passed",
+            "passed_cases": len(cases),
+            "failed_cases": 0,
+            "executor": DEFAULT_EXECUTOR,
+            "case_results": case_results,
         },
         "executor": DEFAULT_EXECUTOR,
         "complete_time": datetime.now(timezone.utc).isoformat(),
@@ -297,6 +369,11 @@ class MockRabbitMQRuntime:
         self.producer = producer
         self.result_topic = runtime_config["kafka"]["result_topic"]
         self.test_events_topic = runtime_config["kafka"]["test_events_topic"]
+        self._event_seq = 0
+
+    def _next_event_seq(self) -> int:
+        self._event_seq += 1
+        return self._event_seq
 
     def process_task_message(
         self,
@@ -328,13 +405,45 @@ class MockRabbitMQRuntime:
             sys.stdout.flush()
             return
 
+        self._event_seq = 0
+        project_tag = str(payload.get("project_tag") or "")
+        repo_url = str(payload.get("repo_url") or "")
+        branch = str(payload.get("branch") or "")
+        timeout = payload.get("timeout")
+        pytest_options = dict(payload.get("pytest_options") or {})
+        dut = dict(payload.get("dut") or {})
         total_delay = 0.0
         finished_cases = 0
         failed_cases = 0
 
+        collection_start_event = build_test_event(
+            task_id=task_id,
+            phase="collection_start",
+            status="RUNNING",
+            case_count=case_count,
+            started_cases=0,
+            finished_cases=0,
+            failed_cases=0,
+            event_seq=self._next_event_seq(),
+            project_tag=project_tag,
+            data={
+                "repo_url": repo_url,
+                "branch": branch,
+                "timeout": timeout,
+                "pytest_options": pytest_options,
+                "dut": dut,
+            },
+        )
+        self.producer.send(self.test_events_topic, collection_start_event)
+        print("[-] sent collection_start event")
+        print(pretty_json(collection_start_event))
+
         for index, case_item in enumerate(cases, start=1):
             case_id = case_item["case_id"]
             case_title = case_item.get("script_name") or case_id
+            script_path = str(case_item.get("script_path") or "")
+            parameters = dict(case_item.get("parameters") or {})
+            nodeid = f"{script_path}::{case_title}" if script_path else f"mock::{case_title}"
             case_start_event = build_test_event(
                 task_id=task_id,
                 phase="case_start",
@@ -345,10 +454,40 @@ class MockRabbitMQRuntime:
                 failed_cases=failed_cases,
                 case_id=case_id,
                 case_title=case_title,
+                event_seq=self._next_event_seq(),
+                nodeid=nodeid,
+                project_tag=project_tag,
+                data={
+                    "script_path": script_path,
+                    "script_name": case_title,
+                    "parameters": parameters,
+                    "case_order": index,
+                    "repo_url": repo_url,
+                    "branch": branch,
+                },
             )
             self.producer.send(self.test_events_topic, case_start_event)
             print(f"[-] sent case_start event: case_id={case_id}")
             print(pretty_json(case_start_event))
+
+            for assert_index in range(1, DEFAULT_ASSERTS_PER_CASE + 1):
+                assert_event = build_assert_event(
+                    task_id=task_id,
+                    case_id=case_id,
+                    case_title=case_title,
+                    event_seq=self._next_event_seq(),
+                    assert_index=assert_index,
+                    total_cases=case_count,
+                    started_cases=index,
+                    finished_cases=finished_cases,
+                    failed_cases=failed_cases,
+                    nodeid=nodeid,
+                    project_tag=project_tag,
+                    parameters=parameters,
+                )
+                self.producer.send(self.test_events_topic, assert_event)
+                print(f"[-] sent assert event: case_id={case_id}, assert={assert_index}")
+                print(pretty_json(assert_event))
 
             time.sleep(DEFAULT_CASE_DELAY_SEC)
             total_delay += DEFAULT_CASE_DELAY_SEC
@@ -364,10 +503,42 @@ class MockRabbitMQRuntime:
                 failed_cases=failed_cases,
                 case_id=case_id,
                 case_title=case_title,
+                event_seq=self._next_event_seq(),
+                nodeid=nodeid,
+                project_tag=project_tag,
+                data={
+                    "script_path": script_path,
+                    "script_name": case_title,
+                    "duration_ms": int(DEFAULT_CASE_DELAY_SEC * 1000),
+                    "assert_total": DEFAULT_ASSERTS_PER_CASE,
+                    "assert_passed": DEFAULT_ASSERTS_PER_CASE,
+                    "assert_failed": 0,
+                    "worker": DEFAULT_EXECUTOR,
+                },
             )
             self.producer.send(self.test_events_topic, case_finish_event)
             print(f"[-] sent case_finish event: case_id={case_id}")
             print(pretty_json(case_finish_event))
+
+        collection_finish_event = build_test_event(
+            task_id=task_id,
+            phase="collection_finish",
+            status="RUNNING",
+            case_count=case_count,
+            started_cases=case_count,
+            finished_cases=finished_cases,
+            failed_cases=failed_cases,
+            event_seq=self._next_event_seq(),
+            project_tag=project_tag,
+            data={
+                "collected_cases": case_count,
+                "repo_url": repo_url,
+                "branch": branch,
+            },
+        )
+        self.producer.send(self.test_events_topic, collection_finish_event)
+        print("[-] sent collection_finish event")
+        print(pretty_json(collection_finish_event))
 
         task_finish_event = build_test_event(
             task_id=task_id,
@@ -377,12 +548,23 @@ class MockRabbitMQRuntime:
             started_cases=case_count,
             finished_cases=finished_cases,
             failed_cases=failed_cases,
+            event_seq=self._next_event_seq(),
+            project_tag=project_tag,
+            data={
+                "duration_ms": int(total_delay * 1000),
+                "executor": DEFAULT_EXECUTOR,
+                "repo_url": repo_url,
+                "branch": branch,
+                "timeout": timeout,
+                "passed_cases": finished_cases,
+                "failed_cases": failed_cases,
+            },
         )
         self.producer.send(self.test_events_topic, task_finish_event)
         print("[-] sent task_finish event")
         print(pretty_json(task_finish_event))
 
-        result_message = build_result_message(task_id, total_delay, case_count)
+        result_message = build_result_message(task_id, total_delay, cases)
         self.producer.send(self.result_topic, result_message)
         print("[-] sent result message")
         print(pretty_json(result_message))
@@ -396,7 +578,6 @@ def start_consumer(runtime_config: dict[str, Any]) -> None:
     runtime = MockRabbitMQRuntime(producer=producer, runtime_config=runtime_config)
     agent_client = ExecutionAgentClient(runtime_config)
     heartbeat_stop_event = threading.Event()
-    heartbeat_thread: threading.Thread | None = None
 
     parameters = build_connection_parameters(runtime_config)
     connection = pika.BlockingConnection(parameters)

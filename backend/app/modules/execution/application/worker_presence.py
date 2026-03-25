@@ -20,11 +20,6 @@ def _detect_local_ip() -> str:
         sock.close()
 
 
-def _ensure_utc_datetime(value: datetime) -> datetime:
-    if value.tzinfo is None or value.tzinfo.utcoffset(value) is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc)
-
 
 def get_kafka_worker_agent_id() -> str:
     return settings.EXECUTION_KAFKA_WORKER_AGENT_ID

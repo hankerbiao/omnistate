@@ -109,7 +109,6 @@ class ExecutionTaskCommandMixin:
         """构建任务级快照，保留完整 case 列表用于后续串行推进。"""
         return {
             "task_id": command.task_id,
-            "external_task_id": command.external_task_id,
             "framework": command.framework,
             "dispatch_channel": command.dispatch_channel,
             "trigger_source": command.trigger_source,
@@ -184,7 +183,6 @@ class ExecutionTaskCommandMixin:
         source_task_doc: Any,
         request: RerunTaskRequest,
         new_task_id: str,
-        external_task_id: str,
         actor_id: str,
         dispatch_bindings: list[Any],
     ) -> DispatchExecutionTaskCommand:
@@ -210,7 +208,6 @@ class ExecutionTaskCommandMixin:
         planned_at = request.planned_at if request.schedule_type else None
         return DispatchExecutionTaskCommand(
             task_id=new_task_id,
-            external_task_id=external_task_id,
             source_task_id=getattr(source_task_doc, "task_id", None),
             framework=request.framework or payload["framework"],
             dispatch_channel=dispatch_channel,

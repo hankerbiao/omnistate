@@ -114,16 +114,6 @@ class ExecutionTaskCaseMixin:
         return bindings
 
     @staticmethod
-    async def resolve_case_bindings_by_auto_case_ids(
-        auto_case_ids: List[str],
-    ) -> tuple[List[str], List[str | None]]:
-        """将 auto_case_id 列表解析为平台 case_id 和脚本实体 ID。"""
-        bindings = await ExecutionTaskCaseMixin.resolve_case_dispatch_bindings_by_auto_case_ids(auto_case_ids)
-        case_ids = [binding.case_id for binding in bindings]
-        script_entity_ids = [binding.script_entity_id for binding in bindings]
-        return case_ids, script_entity_ids
-
-    @staticmethod
     async def resolve_auto_case_ids_by_case_ids(case_ids: List[str]) -> List[str]:
         """根据平台 case_id 反查 auto_case_id，保留原始顺序。"""
         auto_docs = await AutomationTestCaseDoc.find({
@@ -234,10 +224,10 @@ class ExecutionTaskCaseMixin:
             case_id: auto_case_id
             for case_id, auto_case_id in zip(case_ids, auto_case_ids)
         }
-        _, script_entity_ids = await cls.resolve_case_bindings_by_auto_case_ids(auto_case_ids)
+        dispatch_bindings = await cls.resolve_case_dispatch_bindings_by_auto_case_ids(auto_case_ids)
         script_entity_id_map = {
-            case_id: script_entity_id
-            for case_id, script_entity_id in zip(case_ids, script_entity_ids)
+            binding.case_id: binding.script_entity_id
+            for binding in dispatch_bindings
         }
 
         for order_no, case_id in enumerate(case_ids):

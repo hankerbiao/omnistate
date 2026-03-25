@@ -240,7 +240,6 @@ export interface RerunTaskRequest {
 
 export interface DispatchTaskResponse {
   task_id: string;
-  external_task_id?: string;
   source_task_id?: string;
   dispatch_status: string;
   overall_status: string;
@@ -342,7 +341,6 @@ export interface ListAutomationTestCasesParams {
 
 export interface ExecutionTask {
   task_id: string;
-  external_task_id?: string;
   source_task_id?: string;
   framework: string;
   agent_id?: string;
@@ -367,7 +365,6 @@ export interface ExecutionTask {
 
 export interface TaskStatus {
   task_id: string;
-  external_task_id?: string;
   source_task_id?: string;
   framework: string;
   agent_id?: string;

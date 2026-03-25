@@ -125,11 +125,9 @@ async def rerun_task(
         year = datetime.now().year
         seq = await sequence_service.next(f"execution_task:{year}")
         new_task_id = f"ET-{year}-{str(seq).zfill(6)}"
-        external_task_id = f"EXT-{new_task_id}"
         data = await service.rerun_task(
             source_task_id=task_id,
             new_task_id=new_task_id,
-            external_task_id=external_task_id,
             actor_id=current_user["user_id"],
             request=request,
         )

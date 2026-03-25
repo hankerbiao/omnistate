@@ -15,7 +15,7 @@
 
 职责：
 
-- 保存任务身份：`task_id`、`external_task_id`
+- 保存任务身份：`task_id`
 - 保存任务配置：`framework`、`agent_id`、`request_payload`
 - 保存任务当前态：`schedule_status`、`dispatch_status`、`consume_status`、`overall_status`
 - 保存任务聚合统计：`reported_case_count`、`started_case_count`、`finished_case_count`
@@ -46,7 +46,7 @@
 
 流程：
 
-1. 路由生成 `task_id` 和 `external_task_id`
+1. 路由生成 `task_id`
 2. 基于 `auto_case_id` 从 `automation_test_cases` 解析 `case_id`、`script_entity_id`、`script_path`、`script_name`
 3. 校验任务去重键，避免相同业务载荷的未完成任务重复创建
 4. 创建 `ExecutionTaskDoc`
@@ -58,12 +58,12 @@
 - 前端请求只负责传 `auto_case_id`、`config`、`parameters`
 - 脚本元数据由后端统一解析，不信任前端透传
 - `dispatch` 和 `rerun` 都复用同一套解析逻辑
-- 最终下发到 Kafka、RabbitMQ、HTTP 的任务 payload 字段格式保持一致
+- 最终下发到 RabbitMQ、HTTP 的任务 payload 字段格式保持一致
 
 ## application 层结构
 
 - `execution_service.py`
-  命令入口，负责创建任务、删除任务、取消定时任务、停止任务
+  命令入口，负责创建任务、重跑任务、删除任务
 - `task_dispatch_mixin.py`
   负责把当前 case 下发到执行端
 - `task_case_mixin.py`

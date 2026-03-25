@@ -55,7 +55,6 @@ class ExecutionService(
         year = datetime.now().year
         seq = await sequence_service.next(f"execution_task:{year}")
         task_id = f"ET-{year}-{str(seq).zfill(6)}"
-        external_task_id = f"EXT-{task_id}"
 
         auto_case_ids = [item.auto_case_id for item in request.cases]
         case_configs = [dict(item.config) for item in request.cases]
@@ -80,7 +79,6 @@ class ExecutionService(
 
         command = DispatchExecutionTaskCommand(
             task_id=task_id,
-            external_task_id=external_task_id,
             framework=request.framework,
             dispatch_channel=request.dispatch_channel,
             agent_id=request.agent_id,
@@ -106,7 +104,7 @@ class ExecutionService(
         data = await self.dispatch_execution_task(command, actor_id=actor_id)
         logger.info(
             "Dispatch task request handled successfully: "
-            f"task_id={task_id}, external_task_id={external_task_id}, "
+            f"task_id={task_id}, "
             f"dispatch_status={data.get('dispatch_status')}, overall_status={data.get('overall_status')}, "
             f"case_count={data.get('case_count')}"
         )
@@ -151,7 +149,6 @@ class ExecutionService(
 
         task_doc = ExecutionTaskDoc(
             task_id=command.task_id,
-            external_task_id=command.external_task_id,
             framework=command.framework,
             created_by=command.created_by,
             dispatch_channel=dispatch_channel,
@@ -185,7 +182,6 @@ class ExecutionService(
         self,
         source_task_id: str,
         new_task_id: str,
-        external_task_id: str,
         actor_id: str,
         request: RerunTaskRequest,
     ) -> Dict[str, Any]:
@@ -205,7 +201,6 @@ class ExecutionService(
             source_task_doc=source_task_doc,
             request=request,
             new_task_id=new_task_id,
-            external_task_id=external_task_id,
             actor_id=actor_id,
             dispatch_bindings=dispatch_bindings,
         )

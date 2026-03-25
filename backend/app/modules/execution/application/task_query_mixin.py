@@ -51,7 +51,6 @@ class ExecutionTaskQueryMixin:
 
         return {
             "task_id": task_doc.task_id,
-            "external_task_id": task_doc.external_task_id,
             "source_task_id": getattr(task_doc, "source_task_id", None),
             "framework": task_doc.framework,
             "agent_id": task_doc.agent_id,

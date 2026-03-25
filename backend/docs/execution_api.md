@@ -143,7 +143,6 @@
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | `task_id` | string | 任务 ID（如 `ET-2026-000001`） |
-| `external_task_id` | string | 外部任务 ID（如 `EXT-ET-2026-000001`） |
 | `agent_id` | string | 目标代理 ID |
 | `dispatch_channel` | string | 下发渠道 |
 | `schedule_type` | string | 调度类型 |
@@ -164,7 +163,6 @@
   "message": "ok",
   "data": {
     "task_id": "ET-2026-000001",
-    "external_task_id": "EXT-ET-2026-000001",
     "agent_id": "agent-001",
     "dispatch_channel": "HTTP",
     "schedule_type": "IMMEDIATE",

@@ -977,10 +977,6 @@ const TaskList: React.FC<TaskListProps> = () => {
                     <span style={styles.detailValue}>{selectedTask.task_id}</span>
                   </div>
                   <div style={styles.detailItem}>
-                    <span style={styles.detailLabel}>外部ID</span>
-                    <span style={styles.detailValue}>{selectedTask.external_task_id || '-'}</span>
-                  </div>
-                  <div style={styles.detailItem}>
                     <span style={styles.detailLabel}>重跑来源</span>
                     <span style={styles.detailValue}>{selectedTask.source_task_id || '-'}</span>
                   </div>

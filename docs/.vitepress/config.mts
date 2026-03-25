@@ -7,11 +7,11 @@ export default defineConfig({
   themeConfig: {
     nav: [
       { text: '首页', link: '/' },
-      { text: '架构规范', link: '/architecture' },
+      { text: '入门指南', link: '/guide/getting-started' },
       { text: '认证与登录', link: '/guide/authentication' },
       { text: '测试需求与用例', link: '/guide/test-requirements-cases' },
       { text: '测试执行下发', link: '/guide/test-execution' },
-      { text: '入门指南', link: '/guide/getting-started' }
+      { text: '架构规范', link: '/architecture' }
     ],
 
     sidebar: [
@@ -21,8 +21,13 @@ export default defineConfig({
           { text: '快速开始', link: '/guide/getting-started' },
           { text: '认证与登录', link: '/guide/authentication' },
           { text: '测试需求与用例', link: '/guide/test-requirements-cases' },
-          { text: '测试执行下发', link: '/guide/test-execution' },
-          { text: '架构规范', link: '/architecture' }
+          { text: '测试执行下发', link: '/guide/test-execution' }
+        ]
+      },
+      {
+        text: '架构',
+        items: [
+          { text: '后端架构', link: '/architecture' }
         ]
       }
     ],
