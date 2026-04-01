@@ -133,6 +133,7 @@ class ExecutionTaskCommandMixin:
                     "script_path": case_payload.get("script_path"),
                     "script_name": case_payload.get("script_name"),
                     "parameters": case_payload.get("parameters"),
+                    "attachments": case_payload.get("attachments", []),  # 附件列表
                 }
                 for case_id, auto_case_id, script_entity_id, case_config, case_payload in zip(
                     command.case_ids,

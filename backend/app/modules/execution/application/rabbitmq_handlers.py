@@ -46,13 +46,19 @@ class ExecutionRabbitMQHandlers:
         2. 批量事件: schema 结尾为 "-test-event-batch@1"
         """
         payload = json.loads(body.decode("utf-8"))
+        topic = str(metadata.get("queue") or "rabbitmq-events")
+
+        logger.info(
+            "Received RabbitMQ execution test event: "
+            f"queue={topic}, routing_key={metadata.get('routing_key')}, "
+            f"schema={payload.get('schema')}, delivery_tag={metadata.get('delivery_tag')}"
+        )
 
         # 包装成 Kafka 格式的 envelope
         envelope = RawTestEventEnvelope(payload=payload)
 
         # 复用 Kafka 的处理逻辑
         # RabbitMQ 没有 topic 概念，用队列名作为标识
-        topic = metadata.get("queue", "rabbitmq-events")
         enhanced_metadata = {**metadata, "topic": topic}
 
         await self._kafka_handlers.handle_test_event(envelope, enhanced_metadata)
@@ -72,6 +78,12 @@ class ExecutionRabbitMQHandlers:
         """
         event_dict = json.loads(body.decode("utf-8"))
         event = ExecutionResultEvent(**event_dict)
+
+        logger.info(
+            "Received RabbitMQ execution result event: "
+            f"task_id={event.task_id}, status={event.status}, "
+            f"routing_key={metadata.get('routing_key')}, delivery_tag={metadata.get('delivery_tag')}"
+        )
 
         # 复用 Kafka 的处理逻辑
         enhanced_metadata = {**metadata, "topic": "rabbitmq-results"}
@@ -94,6 +106,7 @@ def register_execution_rabbitmq_handlers(
     - "test.result" -> 任务结果消息
     """
     handlers = ExecutionRabbitMQHandlers()
+    logger.info("Registering execution RabbitMQ handlers")
 
     # 注册测试事件处理器 (支持通配符)
     registry.register("test.event.#", handlers.handle_test_event)

@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     EXECUTION_KAFKA_WORKER_AGENT_ID: str = "execution-kafka-worker"
     EXECUTION_KAFKA_WORKER_HEARTBEAT_TTL_SEC: int = 30
     EXECUTION_KAFKA_WORKER_HEARTBEAT_INTERVAL_SEC: int = 10
+    TERMINAL_SHELL: str = "/bin/zsh"
+    TERMINAL_WORKDIR: str = ""
+    TERMINAL_IDLE_TIMEOUT_SEC: int = 1800
+    TERMINAL_MAX_SESSIONS_PER_USER: int = 1
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

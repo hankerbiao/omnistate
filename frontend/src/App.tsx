@@ -5,15 +5,17 @@ import RequirementsPage from './components/RequirementsPage'
 import TestCaseList from './components/TestCaseList'
 import AgentList from './components/AgentList'
 import TaskList from './components/TaskList'
+import TerminalPage from './components/TerminalPage'
 import './App.css'
 
-type PageType = 'requirements' | 'testCases' | 'agents' | 'tasks'
+type PageType = 'requirements' | 'testCases' | 'agents' | 'tasks' | 'terminal'
 
 const navItems: { key: PageType; label: string; icon: string }[] = [
   { key: 'requirements', label: '测试需求', icon: '▣' },
   { key: 'testCases', label: '自动化用例', icon: '⚡' },
   { key: 'agents', label: '执行代理', icon: '◉' },
   { key: 'tasks', label: '执行任务', icon: '▸' },
+  { key: 'terminal', label: '终端调试', icon: '⌘' },
 ]
 
 function App() {
@@ -80,6 +82,8 @@ function App() {
               <RequirementsPage />
             ) : currentPage === 'agents' ? (
               <AgentList onLogout={handleLogout} />
+            ) : currentPage === 'terminal' ? (
+              <TerminalPage />
             ) : (
               <TaskList onLogout={handleLogout} />
             )}

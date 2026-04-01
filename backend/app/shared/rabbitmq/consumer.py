@@ -3,14 +3,11 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from typing import Any, Callable, Coroutine
 
 import aio_pika
-from aio_pika import IncomingMessage
 from aio_pika.abc import (
     AbstractChannel,
-    AbstractConnection,
     AbstractIncomingMessage,
     AbstractQueue,
     AbstractRobustConnection,

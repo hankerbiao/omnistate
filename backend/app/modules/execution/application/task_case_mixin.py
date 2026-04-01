@@ -155,6 +155,7 @@ class ExecutionTaskCaseMixin:
                 "script_path": case["script_path"],
                 "script_name": case["script_name"],
                 "parameters": dict(case["parameters"]),
+                "attachments": list(case.get("attachments", [])),  # 附件列表
             }
             for case in payload["cases"]
         ]
@@ -204,6 +205,7 @@ class ExecutionTaskCaseMixin:
             "pre_condition": case_doc.pre_condition,
             "post_condition": case_doc.post_condition,
             "custom_fields": dict(case_doc.custom_fields),
+            "attachments": list(case_doc.attachments),  # 附件列表
         }
 
     @classmethod

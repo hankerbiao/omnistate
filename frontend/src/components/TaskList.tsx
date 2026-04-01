@@ -2075,6 +2075,12 @@ const styles = {
     flex: 1,
     fontFamily: "'JetBrains Mono', monospace",
   } as const,
+  caseScriptName: {
+    minWidth: '140px',
+    fontSize: '12px',
+    color: 'var(--text-secondary)',
+    fontFamily: "'JetBrains Mono', monospace",
+  } as const,
   caseFramework: {
     fontSize: '11px',
     color: 'var(--accent-purple)',

@@ -27,6 +27,7 @@ from app.modules.test_specs.repository.models import (
 )
 from app.modules.test_specs.service._workflow_status_support import enrich_projected_status, get_workflow_states
 from app.modules.workflow.service.workflow_service import AsyncWorkflowService
+from app.modules.attachments.repository.models import AttachmentDoc
 from app.shared.core.mongo_client import get_mongo_client
 from app.shared.service import BaseService, SequenceIdService
 
@@ -356,6 +357,13 @@ class TestCaseService(BaseService):
 
         async with client.start_session() as session:
             async with await session.start_transaction():
+                # 验证并补全附件信息
+                if payload.get("attachments"):
+                    payload["attachments"] = await self._validate_and_enrich_attachments(
+                        payload["attachments"],
+                        session=session,
+                    )
+
                 requirement = await self._ensure_requirement_exists(payload["ref_req_id"], session=session)
                 existing = await TestCaseDoc.find_one(
                     TestCaseDoc.case_id == payload["case_id"],
@@ -398,6 +406,58 @@ class TestCaseService(BaseService):
         if not existing:
             raise KeyError("requirement not found")
         return existing
+
+    async def _validate_and_enrich_attachments(
+        self,
+        attachments: List[Dict[str, Any]],
+        session=None,
+    ) -> List[Dict[str, Any]]:
+        """验证附件有效性并补全附件信息
+
+        前端提交表单时携带 file_id，后端需要：
+        1. 验证 file_id 对应的附件是否存在且未被删除
+        2. 查询并补全完整的附件信息（storage_path, original_filename, size, content_type）
+
+        Args:
+            attachments: 附件列表，每个附件应包含 file_id 字段
+            session: MongoDB 事务会话（可选）
+
+        Returns:
+            补全后的附件列表
+
+        Raises:
+            KeyError: 附件不存在或已被删除时抛出
+        """
+        if not attachments:
+            return []
+
+        enriched_attachments = []
+        for att in attachments:
+            file_id = att.get("file_id")
+            if not file_id:
+                raise ValueError("attachment missing required field: file_id")
+
+            # 验证附件是否存在
+            attachment = await AttachmentDoc.find_one(
+                {"file_id": file_id, "is_deleted": False},
+                session=session,
+            )
+            if not attachment:
+                raise KeyError(f"attachment not found or deleted: {file_id}")
+
+            # 补全附件信息
+            enriched_attachments.append({
+                "file_id": attachment.file_id,
+                "original_filename": attachment.original_filename,
+                "storage_path": f"{attachment.bucket}/{attachment.object_name}",
+                "size": attachment.size,
+                "content_type": attachment.content_type,
+                "uploaded_at": attachment.uploaded_at.isoformat() if attachment.uploaded_at else None,
+                # 保留前端可能传递的其他字段（如 description）
+                **{k: v for k, v in att.items() if k != "file_id"},
+            })
+
+        return enriched_attachments
 
     async def _generate_case_id(self) -> str:
         """自动生成测试用例编号。

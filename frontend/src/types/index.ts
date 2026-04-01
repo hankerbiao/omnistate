@@ -301,6 +301,7 @@ export interface AutomationTestCaseResponse {
   repo_url?: string;
   repo_branch?: string;
   script_path?: string;
+  script_name?: string;
   script_entity_id?: string;
   entry_command?: string;
   runtime_env: Record<string, unknown>;
@@ -461,4 +462,26 @@ export interface ListTasksParams {
   date_to?: string;
   limit?: number;
   offset?: number;
+}
+
+export interface TerminalSessionMessage {
+  type: 'session';
+  session_id: string;
+  shell: string;
+  cwd: string;
+}
+
+export interface TerminalOutputMessage {
+  type: 'output';
+  data: string;
+}
+
+export interface TerminalErrorMessage {
+  type: 'error';
+  message: string;
+}
+
+export interface TerminalExitMessage {
+  type: 'exit';
+  code: number;
 }
