@@ -70,6 +70,8 @@ const TerminalPage: React.FC = () => {
   const socketRef = useRef<WebSocket | null>(null)
   const resizeObserverRef = useRef<ResizeObserver | null>(null)
   const connectionStateRef = useRef<ConnectionState>('idle')
+  const isTerminalReadyRef = useRef(false)
+  const fitFrameRef = useRef<number | null>(null)
 
   const [connectionState, setConnectionState] = useState<ConnectionState>('idle')
   const [sessionMeta, setSessionMeta] = useState<SessionMeta | null>(null)
@@ -79,6 +81,28 @@ const TerminalPage: React.FC = () => {
   useEffect(() => {
     connectionStateRef.current = connectionState
   }, [connectionState])
+
+  const scheduleFit = () => {
+    if (fitFrameRef.current !== null) {
+      window.cancelAnimationFrame(fitFrameRef.current)
+    }
+
+    fitFrameRef.current = window.requestAnimationFrame(() => {
+      const terminal = terminalRef.current
+      const fitAddon = fitAddonRef.current
+      const container = containerRef.current
+
+      if (!terminal || !fitAddon || !container || !container.isConnected || !isTerminalReadyRef.current) {
+        return
+      }
+
+      try {
+        fitAddon.fit()
+      } catch {
+        // xterm 在 viewport 尚未完成初始化或已销毁时会抛内部异常，这里直接忽略。
+      }
+    })
+  }
 
   useEffect(() => {
     const terminal = new Terminal({
@@ -101,13 +125,14 @@ const TerminalPage: React.FC = () => {
 
     if (containerRef.current) {
       terminal.open(containerRef.current)
-      fitAddon.fit()
+      isTerminalReadyRef.current = true
+      scheduleFit()
       terminal.writeln('\x1b[36mDML SSH Terminal\x1b[0m')
       terminal.writeln('填写远程服务器信息后点击“连接终端”。')
     }
 
     resizeObserverRef.current = new ResizeObserver(() => {
-      fitAddon.fit()
+      scheduleFit()
       const socket = socketRef.current
       if (
         socket &&
@@ -129,6 +154,11 @@ const TerminalPage: React.FC = () => {
     }
 
     return () => {
+      isTerminalReadyRef.current = false
+      if (fitFrameRef.current !== null) {
+        window.cancelAnimationFrame(fitFrameRef.current)
+        fitFrameRef.current = null
+      }
       resizeObserverRef.current?.disconnect()
       resizeObserverRef.current = null
       socketRef.current?.close()
@@ -189,7 +219,7 @@ const TerminalPage: React.FC = () => {
     }
 
     socketRef.current?.close()
-    fitAddon.fit()
+    scheduleFit()
     setConnectionState('connecting')
     setLastError('')
     setSessionMeta(null)
@@ -426,8 +456,10 @@ const styles = {
   formCard: {
     padding: '18px',
     borderRadius: '18px',
-    border: '1px solid var(--border-default)',
-    backgroundColor: 'var(--bg-secondary)',
+    border: '1px solid rgba(148, 163, 184, 0.22)',
+    background:
+      'linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(244, 247, 251, 0.96))',
+    boxShadow: '0 16px 38px rgba(15, 23, 42, 0.08)',
   } as const,
   formGrid: {
     display: 'grid',
@@ -444,15 +476,16 @@ const styles = {
     fontWeight: 700,
     letterSpacing: '0.08em',
     textTransform: 'uppercase',
-    color: 'var(--text-secondary)',
+    color: '#475569',
   } as const,
   input: {
     borderRadius: '12px',
-    border: '1px solid var(--border-default)',
-    backgroundColor: 'rgba(11, 18, 32, 0.85)',
-    color: 'var(--text-primary)',
+    border: '1px solid #cbd5e1',
+    backgroundColor: '#ffffff',
+    color: '#0f172a',
     padding: '12px 14px',
     outline: 'none',
+    boxShadow: 'inset 0 1px 2px rgba(15, 23, 42, 0.04)',
   } as const,
   metaGrid: {
     display: 'grid',
