@@ -16,7 +16,7 @@ from datetime import datetime
 from pymongo import AsyncMongoClient
 from app.modules.test_specs.repository.models import TestRequirementDoc, TestCaseDoc
 from app.modules.test_specs.service._workflow_status_support import enrich_projected_status, get_workflow_states
-from app.modules.workflow.service.workflow_service import AsyncWorkflowService
+from app.modules.workflow.application import WorkflowItemGateway
 from app.shared.core.logger import log as logger
 from app.shared.core.mongo_client import get_mongo_client
 from app.shared.service import BaseService, SequenceIdService
@@ -39,6 +39,9 @@ class RequirementService(BaseService):
         # - 工作流字段：通过工作流命令修改
         # - 业务ID和关联：通过显式命令修改
     }
+
+    def __init__(self, workflow_gateway: WorkflowItemGateway) -> None:
+        self._workflow_gateway = workflow_gateway
 
     async def _enrich_requirement_status(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """使用工作流状态覆盖业务文档中的状态投影字段。"""
@@ -284,8 +287,6 @@ class RequirementService(BaseService):
         3. 将 workflow_item_id/current_state 回填到需求文档。
         4. 插入 requirement 文档并提交事务。
         """
-        workflow_service = AsyncWorkflowService()
-
         async with client.start_session() as session:
             async with await session.start_transaction():
                 existing = await TestRequirementDoc.find_one(
@@ -296,7 +297,7 @@ class RequirementService(BaseService):
                     raise ValueError("req_id already exists")
 
                 # 在同一事务上下文内创建 workflow 事项，确保跨集合原子性。
-                workflow_item = await workflow_service.create_item(
+                workflow_item = await self._workflow_gateway.create_work_item(
                     type_code="REQUIREMENT",
                     title=payload["title"],
                     content=payload.get("description") or payload["title"],

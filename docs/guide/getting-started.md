@@ -148,5 +148,6 @@ curl http://localhost:8000/health
 
 - 阅读 [后端架构说明](/architecture)
 - 阅读 [认证与授权](/guide/authentication)
+- 阅读 [WebSocket 远程终端](/guide/websocket-terminal)
 - 阅读 [需求与用例管理](/guide/test-requirements-cases)
 - 阅读 [执行编排](/guide/test-execution)

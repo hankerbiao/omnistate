@@ -108,7 +108,13 @@ class TestCaseCommandService:
             self._test_case_service.get_test_case,
             TestCaseNotFoundError,
         )
-        await ensure_permission(context, test_case, can_update_test_case, "update test case")
+        await ensure_permission(
+            context,
+            test_case,
+            can_update_test_case,
+            "update test case",
+            self._workflow_command_service.get_work_item_by_id,
+        )
 
         return await self._test_case_service.update_test_case(command.case_id, command.payload)
 
@@ -145,6 +151,7 @@ class TestCaseCommandService:
             test_case,
             can_delete_test_case,
             "delete test case",
+            self._workflow_command_service.get_work_item_by_id,
         )
         await delete_entity_or_work_item(
             context,
@@ -179,7 +186,13 @@ class TestCaseCommandService:
             self._test_case_service.get_test_case,
             TestCaseNotFoundError,
         )
-        await ensure_permission(context, test_case, can_update_test_case, "link automation case")
+        await ensure_permission(
+            context,
+            test_case,
+            can_update_test_case,
+            "link automation case",
+            self._workflow_command_service.get_work_item_by_id,
+        )
 
         return await self._test_case_service.link_automation_case(
             case_id=command.case_id,
@@ -214,7 +227,13 @@ class TestCaseCommandService:
             self._test_case_service.get_test_case,
             TestCaseNotFoundError,
         )
-        await ensure_permission(context, test_case, can_update_test_case, "assign test case owners")
+        await ensure_permission(
+            context,
+            test_case,
+            can_update_test_case,
+            "assign test case owners",
+            self._workflow_command_service.get_work_item_by_id,
+        )
 
         return await self._test_case_service.assign_owners(
             case_id=command.case_id,
@@ -262,7 +281,13 @@ class TestCaseCommandService:
         )
 
         command.validate()
-        await ensure_permission(context, test_case, can_update_test_case, "move test case to requirement")
+        await ensure_permission(
+            context,
+            test_case,
+            can_update_test_case,
+            "move test case to requirement",
+            self._workflow_command_service.get_work_item_by_id,
+        )
 
         return await self._test_case_service.move_to_requirement(
             case_id=command.case_id,

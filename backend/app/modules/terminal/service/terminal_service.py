@@ -3,9 +3,9 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import socket
 import uuid
 from datetime import datetime, timezone
+from typing import Any
 
 from fastapi import WebSocket
 
@@ -15,13 +15,14 @@ from app.shared.core.logger import log as logger
 from app.shared.db.config import settings
 
 try:
-    import paramiko
+    import asyncssh
 except ImportError:  # pragma: no cover - runtime dependency path
-    paramiko = None
+    asyncssh = None
 
 
 def validate_session_capacity(active_count: int, max_sessions: int) -> None:
     """Reject new sessions when the per-user quota is reached."""
+    # 每个用户的并发终端数做硬限制，避免长期占用 SSH/PTY 资源。
     if active_count >= max_sessions:
         raise ValueError("too many active terminal sessions")
 
@@ -30,8 +31,10 @@ class TerminalService:
     """Manage SSH-backed terminal sessions."""
 
     def __init__(self) -> None:
+        # 会话只放内存里，进程重启后自然失效。
         self._sessions: dict[str, TerminalSession] = {}
         self._user_sessions: dict[str, set[str]] = {}
+        # 创建/关闭会话时加锁，避免并发请求下出现计数不一致。
         self._lock = asyncio.Lock()
 
     async def create_session(
@@ -46,14 +49,13 @@ class TerminalService:
             active_count = len(self._user_sessions.get(user_id, set()))
             validate_session_capacity(active_count, settings.TERMINAL_MAX_SESSIONS_PER_USER)
 
-            ssh_client, ssh_channel = await asyncio.to_thread(
-                self._open_ssh_session,
-                connect_message.host or "",
-                int(connect_message.port or 22),
-                connect_message.username or "",
-                connect_message.password or "",
-                cols,
-                rows,
+            ssh_connection, ssh_process = await self._open_ssh_session(
+                host=connect_message.host or "",
+                port=int(connect_message.port or 22),
+                username=connect_message.username or "",
+                password=connect_message.password or "",
+                cols=cols,
+                rows=rows,
             )
 
             session = TerminalSession(
@@ -66,8 +68,8 @@ class TerminalService:
                 host=connect_message.host or "",
                 port=int(connect_message.port or 22),
                 username=connect_message.username or "",
-                ssh_client=ssh_client,
-                ssh_channel=ssh_channel,
+                ssh_connection=ssh_connection,
+                ssh_process=ssh_process,
             )
             self._sessions[session.session_id] = session
             self._user_sessions.setdefault(user_id, set()).add(session.session_id)
@@ -91,7 +93,7 @@ class TerminalService:
                 if not user_sessions:
                     self._user_sessions.pop(session.user_id, None)
 
-        await asyncio.to_thread(self._shutdown_ssh_session, session)
+        await self._shutdown_ssh_session(session)
         logger.info(
             "terminal ssh session closed: "
             f"user_id={session.user_id}, session_id={session.session_id}, "
@@ -100,6 +102,7 @@ class TerminalService:
 
     async def handle_websocket(self, websocket: WebSocket, user_id: str, cols: int = 120, rows: int = 32) -> None:
         """Run the terminal websocket bridge for one connection."""
+        # 协议约定第一条消息必须是 connect，用它携带 SSH 目标信息。
         connect_message = await self._receive_connect_message(websocket)
         session = await self.create_session(
             user_id=user_id,
@@ -123,6 +126,7 @@ class TerminalService:
         receive_task = asyncio.create_task(self._receive_client_messages(websocket, session))
         idle_task = asyncio.create_task(self._watch_idle_timeout(websocket, session))
 
+        # 任一方向结束都认为会话需要收尾，其余任务统一取消。
         done, pending = await asyncio.wait(
             {pump_task, receive_task, idle_task},
             return_when=asyncio.FIRST_COMPLETED,
@@ -155,21 +159,18 @@ class TerminalService:
     async def _pump_ssh_output(self, websocket: WebSocket, session: TerminalSession) -> None:
         """Read SSH output and forward it to the websocket."""
         while True:
-            if session.ssh_channel.closed:
+            if self._process_exited(session.ssh_process):
                 return
 
-            chunk = await asyncio.to_thread(self._read_channel_chunk, session.ssh_channel)
+            chunk = await self._read_output(session.ssh_process)
             if not chunk:
-                if session.ssh_channel.exit_status_ready():
-                    return
-                await asyncio.sleep(0.02)
-                continue
+                return
 
             session.last_active_at = datetime.now(timezone.utc)
             await websocket.send_json(
                 TerminalServerMessage(
                     type="output",
-                    data=chunk.decode("utf-8", errors="ignore"),
+                    data=chunk,
                 ).model_dump(exclude_none=True)
             )
 
@@ -183,13 +184,15 @@ class TerminalService:
             if message.type == "input":
                 data = message.data or ""
                 if data:
-                    await asyncio.to_thread(session.ssh_channel.send, data)
+                    # 原样转发终端输入，控制字符也通过同一通道传递。
+                    await self._write_input(session.ssh_process.stdin, data)
                 continue
 
             if message.type == "resize":
                 cols = message.cols or session.cols
                 rows = message.rows or session.rows
-                await asyncio.to_thread(session.ssh_channel.resize_pty, width=cols, height=rows)
+                # 前端窗口变化后同步调整远端 PTY 尺寸，避免换行和光标错位。
+                self._resize_pty(session.ssh_process, cols, rows)
                 session.cols = cols
                 session.rows = rows
                 continue
@@ -207,7 +210,7 @@ class TerminalService:
         timeout_seconds = max(1, int(settings.TERMINAL_IDLE_TIMEOUT_SEC))
         while True:
             await asyncio.sleep(5)
-            if session.ssh_channel.closed or session.ssh_channel.exit_status_ready():
+            if self._process_exited(session.ssh_process):
                 return
 
             idle_seconds = (datetime.now(timezone.utc) - session.last_active_at).total_seconds()
@@ -225,62 +228,124 @@ class TerminalService:
                     message=f"terminal session idle for more than {timeout_seconds} seconds",
                 ).model_dump(exclude_none=True)
             )
-            await asyncio.to_thread(self._shutdown_ssh_session, session)
+            # 先主动关闭 SSH，后续 websocket 收尾逻辑会统一回收 session 记录。
+            await self._shutdown_ssh_session(session)
             return
 
-    @staticmethod
-    def _open_ssh_session(
+    async def _open_ssh_session(
+        self,
         host: str,
         port: int,
         username: str,
         password: str,
         cols: int,
         rows: int,
-    ) -> tuple["paramiko.SSHClient", "paramiko.Channel"]:
-        if paramiko is None:
-            raise RuntimeError("paramiko is required to use SSH terminal sessions")
+    ) -> tuple[Any, Any]:
+        asyncssh_module = self._require_asyncssh(asyncssh)
+        connect_kwargs: dict[str, Any] = {
+            "host": host,
+            "port": port,
+            "username": username,
+            "password": password,
+            "connect_timeout": 10,
+            "login_timeout": 10,
+            "client_keys": None,
+            "agent_path": None,
+        }
+        known_hosts = getattr(settings, "TERMINAL_SSH_KNOWN_HOSTS", None)
+        if known_hosts:
+            connect_kwargs["known_hosts"] = known_hosts
 
-        client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-
+        connection = await asyncssh_module.connect(**connect_kwargs)
         try:
-            client.connect(
-                hostname=host,
-                port=port,
-                username=username,
-                password=password,
-                look_for_keys=False,
-                allow_agent=False,
-                timeout=10,
-                banner_timeout=10,
-                auth_timeout=10,
+            # 建立交互式 shell，而不是执行单次命令。
+            process = await connection.create_process(
+                term_type="xterm-256color",
+                term_size=(cols, rows),
+                encoding="utf-8",
             )
-            channel = client.invoke_shell(term="xterm-256color", width=cols, height=rows)
-            channel.settimeout(0.2)
-            return client, channel
+            return connection, process
         except Exception:
+            connection.close()
             with contextlib.suppress(Exception):
-                client.close()
+                await connection.wait_closed()
             raise
 
     @staticmethod
-    def _shutdown_ssh_session(session: TerminalSession) -> None:
-        with contextlib.suppress(Exception):
-            if not session.ssh_channel.closed:
-                session.ssh_channel.close()
-        with contextlib.suppress(Exception):
-            session.ssh_client.close()
+    def _require_asyncssh(module: Any) -> Any:
+        if module is None:
+            raise RuntimeError("asyncssh is required to use SSH terminal sessions")
+        return module
 
     @staticmethod
-    def _read_channel_chunk(channel: "paramiko.Channel") -> bytes:
-        try:
-            return channel.recv(4096)
-        except socket.timeout:
-            return b""
+    async def _write_input(writer: Any, data: str) -> None:
+        writer.write(data)
+        drain = getattr(writer, "drain", None)
+        if callable(drain):
+            await drain()
+
+    @staticmethod
+    def _resize_pty(process: Any, cols: int, rows: int) -> None:
+        channel = getattr(process, "channel", None)
+        if channel is None:
+            return
+
+        for method_name in ("change_terminal_size", "set_terminal_size"):
+            method = getattr(channel, method_name, None)
+            if callable(method):
+                method(cols, rows, 0, 0)
+                return
+
+    @staticmethod
+    async def _read_output(process: Any) -> str:
+        stdout = getattr(process, "stdout", None)
+        if stdout is None:
+            return ""
+
+        chunk = await stdout.read(4096)
+        if isinstance(chunk, bytes):
+            return chunk.decode("utf-8", errors="ignore")
+        return chunk or ""
+
+    @staticmethod
+    def _process_exited(process: Any) -> bool:
+        return bool(getattr(process, "exit_status", None) is not None or getattr(process, "returncode", None) is not None)
+
+    @staticmethod
+    async def _shutdown_ssh_session(session: TerminalSession) -> None:
+        process = session.ssh_process
+        connection = session.ssh_connection
+
+        with contextlib.suppress(Exception):
+            stdin = getattr(process, "stdin", None)
+            if stdin is not None:
+                stdin.close()
+
+        with contextlib.suppress(Exception):
+            process.close()
+
+        with contextlib.suppress(Exception):
+            wait_closed = getattr(process, "wait_closed", None)
+            if callable(wait_closed):
+                await wait_closed()
+
+        with contextlib.suppress(Exception):
+            connection.close()
+
+        with contextlib.suppress(Exception):
+            wait_closed = getattr(connection, "wait_closed", None)
+            if callable(wait_closed):
+                await wait_closed()
 
     @staticmethod
     def _read_exit_code(session: TerminalSession) -> int | None:
-        with contextlib.suppress(Exception):
-            if session.ssh_channel.exit_status_ready():
-                return int(session.ssh_channel.recv_exit_status())
+        process = session.ssh_process
+        for attr in ("exit_status", "returncode"):
+            value = getattr(process, attr, None)
+            if value is None:
+                continue
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                continue
         return None

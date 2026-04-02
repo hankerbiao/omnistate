@@ -11,9 +11,12 @@ ROOT = Path(__file__).resolve().parents[3]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app.modules.terminal.api.routes import extract_token_from_query
-from app.modules.terminal.schemas import TerminalClientMessage
-from app.modules.terminal.service.terminal_service import validate_session_capacity
+from app.modules.terminal.api.routes import extract_token_from_query  # noqa: E402
+from app.modules.terminal.schemas import TerminalClientMessage  # noqa: E402
+from app.modules.terminal.service.terminal_service import (  # noqa: E402
+    TerminalService,
+    validate_session_capacity,
+)
 
 
 def test_extract_token_from_query_rejects_empty_token() -> None:
@@ -59,3 +62,30 @@ def test_terminal_client_message_rejects_connect_without_host() -> None:
                 "password": "secret",
             }
         )
+
+
+def test_terminal_service_requires_asyncssh_runtime() -> None:
+    service = TerminalService()
+
+    with pytest.raises(RuntimeError, match="asyncssh is required"):
+        service._require_asyncssh(None)
+
+
+def test_terminal_service_write_input_uses_write_and_drain() -> None:
+    calls: list[tuple[str, str]] = []
+
+    class FakeWriter:
+        def write(self, data: str) -> None:
+            calls.append(("write", data))
+
+        async def drain(self) -> None:
+            calls.append(("drain", ""))
+
+    async def run() -> None:
+        await TerminalService()._write_input(FakeWriter(), "ls\n")
+
+    import asyncio
+
+    asyncio.run(run())
+
+    assert calls == [("write", "ls\n"), ("drain", "")]

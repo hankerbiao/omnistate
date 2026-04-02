@@ -42,5 +42,6 @@ python -m app.main
 - [开始使用](/guide/getting-started)
 - [后端架构说明](/architecture)
 - [认证与授权](/guide/authentication)
+- [WebSocket 远程终端](/guide/websocket-terminal)
 - [需求与用例管理](/guide/test-requirements-cases)
 - [执行编排](/guide/test-execution)

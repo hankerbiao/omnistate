@@ -26,7 +26,7 @@ from app.modules.test_specs.repository.models import (
     AutomationTestCaseDoc,
 )
 from app.modules.test_specs.service._workflow_status_support import enrich_projected_status, get_workflow_states
-from app.modules.workflow.service.workflow_service import AsyncWorkflowService
+from app.modules.workflow.application import WorkflowItemGateway
 from app.modules.attachments.repository.models import AttachmentDoc
 from app.shared.core.mongo_client import get_mongo_client
 from app.shared.service import BaseService, SequenceIdService
@@ -61,6 +61,9 @@ class TestCaseService(BaseService):
         # - 工作流字段：通过工作流命令修改
         # - 业务ID和关联：通过显式命令修改
     }
+
+    def __init__(self, workflow_gateway: WorkflowItemGateway) -> None:
+        self._workflow_gateway = workflow_gateway
 
     async def _enrich_test_case_status(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """使用工作流状态覆盖业务文档中的状态投影字段。"""
@@ -353,8 +356,6 @@ class TestCaseService(BaseService):
             payload: Dict[str, Any],
     ) -> Dict[str, Any]:
         """使用事务模式创建测试用例（推荐）"""
-        workflow_service = AsyncWorkflowService()
-
         async with client.start_session() as session:
             async with await session.start_transaction():
                 # 验证并补全附件信息
@@ -372,7 +373,7 @@ class TestCaseService(BaseService):
                 if existing:
                     raise ValueError("case_id already exists")
 
-                workflow_item = await workflow_service.create_item(
+                workflow_item = await self._workflow_gateway.create_work_item(
                     type_code="TEST_CASE",
                     title=payload["title"],
                     content=payload.get("pre_condition") or payload.get("post_condition") or payload["title"],

@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field, model_validator
 class TerminalClientMessage(BaseModel):
     """Client-to-server terminal message."""
 
+    # connect 用于首次建连；其余消息都复用已建立的 session。
     type: Literal["connect", "input", "resize", "ping"]
     data: str | None = None
     cols: int | None = Field(default=None, ge=1)
@@ -20,6 +21,7 @@ class TerminalClientMessage(BaseModel):
 
     @model_validator(mode="after")
     def validate_connect_payload(self) -> "TerminalClientMessage":
+        # 只有首次 connect 需要校验 SSH 连接参数，其它消息只携带局部字段。
         if self.type != "connect":
             return self
 
@@ -40,6 +42,7 @@ class TerminalClientMessage(BaseModel):
 class TerminalServerMessage(BaseModel):
     """Server-to-client terminal message."""
 
+    # session/output/error/exit/pong 分别对应建连成功、终端输出、错误、退出、保活响应。
     type: Literal["session", "output", "error", "exit", "pong"]
     data: str | None = None
     message: str | None = None

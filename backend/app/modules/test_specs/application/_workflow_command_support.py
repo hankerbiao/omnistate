@@ -2,7 +2,6 @@ from typing import Any, Awaitable, Callable
 
 from app.modules.workflow.application import DeleteWorkItemCommand, OperationContext, WorkflowCommandService
 from app.modules.workflow.domain.exceptions import PermissionDeniedError
-from app.modules.workflow.service.workflow_service import AsyncWorkflowService
 
 
 def build_actor(context: OperationContext) -> dict[str, Any]:
@@ -22,12 +21,15 @@ async def ensure_entity(
         raise error_cls(entity_id) from exc
 
 
-async def get_work_item(entity: dict) -> tuple[str, Any]:
+async def get_work_item(
+    entity: dict,
+    getter: Callable[[str], Awaitable[dict | None]],
+) -> tuple[str, Any]:
     """按业务实体里的 workflow_item_id 加载关联工作项。"""
     workflow_item_id = str(entity.get("workflow_item_id") or "").strip()
     if not workflow_item_id:
         return workflow_item_id, None
-    return workflow_item_id, await AsyncWorkflowService().get_item_by_id(workflow_item_id)
+    return workflow_item_id, await getter(workflow_item_id)
 
 
 async def ensure_permission(
@@ -35,9 +37,10 @@ async def ensure_permission(
     entity: dict,
     checker: Callable[[dict[str, Any], dict, Any], bool],
     action: str,
+    workflow_getter: Callable[[str], Awaitable[dict | None]],
 ) -> str:
     """统一执行 workflow-aware 权限判断，并返回 workflow_item_id 供后续复用。"""
-    workflow_item_id, work_item = await get_work_item(entity)
+    workflow_item_id, work_item = await get_work_item(entity, workflow_getter)
     if not checker(build_actor(context), entity, work_item):
         raise PermissionDeniedError(context.actor_id, action)
     return workflow_item_id

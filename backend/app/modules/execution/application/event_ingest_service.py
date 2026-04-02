@@ -3,8 +3,7 @@ from __future__ import annotations
 from datetime import timezone
 from typing import Any
 
-from app.modules.execution.application.constants import FINAL_CASE_STATUSES
-from app.modules.execution.application.execution_service import ExecutionService
+from app.modules.execution.application.progress_coordinator import ExecutionProgressCoordinator
 from app.modules.execution.domain.status_rules import resolve_case_status
 from app.modules.execution.repository.models import (
     ExecutionEventDoc,
@@ -30,6 +29,9 @@ class ExecutionEventIngestService:
     3. `ExecutionTaskDoc`
        保存整个任务的当前游标、聚合进度、整体状态，以及是否要继续推进到下一条 case
     """
+
+    def __init__(self, progress_coordinator: ExecutionProgressCoordinator | None = None) -> None:
+        self._progress_coordinator = progress_coordinator or ExecutionProgressCoordinator()
 
     async def ingest_event(
         self,
@@ -380,49 +382,10 @@ class ExecutionEventIngestService:
         只有满足这些条件，平台才会认为：
             “当前正在跑的这条 case 确实结束了，可以考虑推进下一条”
         """
-        if event.event_type != "progress" or event.phase != "case_finish":
-            return
-        if case_doc is None or resolved_case_status not in FINAL_CASE_STATUSES:
-            # 还没进入终态时不能推进，否则会出现未完成 case 被跳过的问题。
-            logger.debug(
-                "Skipping task auto-advance because case is not final: "
-                f"task_id={task_doc.task_id}, case_id={event.case_id}, "
-                f"resolved_case_status={resolved_case_status}"
-            )
-            return
-        if event.case_id != getattr(task_doc, "current_case_id", None):
-            # 防止旧事件、乱序事件或非当前 case 的事件错误推动任务游标。
-            logger.debug(
-                "Skipping task auto-advance because event case is not current: "
-                f"task_id={task_doc.task_id}, event_case_id={event.case_id}, "
-                f"current_case_id={task_doc.current_case_id}"
-            )
-            return
-
-        next_case_index = getattr(task_doc, "current_case_index", 0) + 1
-        if next_case_index >= task_doc.case_count:
-            # 没有下一条 case 时，直接把任务收口为最终态。
-            task_doc.current_case_id = None
-            task_doc.current_case_index = task_doc.case_count
-            task_doc.finished_at = event_time
-            task_doc.last_callback_at = event_time
-            task_doc.overall_status = "FAILED" if task_doc.failed_case_count > 0 else "PASSED"
-            if task_doc.dispatch_status != "DISPATCH_FAILED":
-                task_doc.dispatch_status = "COMPLETED"
-            await task_doc.save()
-            logger.info(
-                "Execution task completed after final case: "
-                f"task_id={task_doc.task_id}, final_case_id={event.case_id}, "
-                f"overall_status={task_doc.overall_status}"
-            )
-            return
-
-        # 仍有剩余 case 时，构建下一条 case 的下发命令，并立即触发平台串行推进。
-        service = ExecutionService()
-        command = await service._build_task_dispatch_command(task_doc, next_case_index)
-        logger.info(
-            "Auto-dispatching next execution case: "
-            f"task_id={task_doc.task_id}, finished_case_id={event.case_id}, "
-            f"next_case_id={command.dispatch_case_id}, next_case_index={next_case_index}"
+        await self._progress_coordinator.advance_after_case_finish(
+            task_doc=task_doc,
+            case_doc=case_doc,
+            event=event,
+            event_time=event_time,
+            resolved_case_status=resolved_case_status,
         )
-        await service._dispatch_existing_task(task_doc, command)

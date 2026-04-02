@@ -7,10 +7,15 @@ from app.modules.test_specs.application import (
     CreateTestCaseCommand,
     DeleteTestCaseCommand,
     LinkAutomationCaseCommand,
+    TestSpecsWorkflowProjectionHook,
     TestCaseCommandService,
     UpdateTestCaseCommand,
 )
-from app.modules.workflow.application import OperationContext, WorkflowCommandService
+from app.modules.workflow.application import (
+    AsyncWorkflowServiceAdapter,
+    OperationContext,
+    WorkflowCommandService,
+)
 from app.modules.workflow.service.workflow_service import AsyncWorkflowService
 from app.shared.api.schemas.base import APIResponse
 from app.shared.auth import get_current_user, require_permission
@@ -25,24 +30,41 @@ from app.modules.test_specs.schemas import (
 router = APIRouter(prefix="/test-cases", tags=["TestCases"])
 
 
-def get_test_case_service() -> TestCaseService:
+def get_workflow_service() -> AsyncWorkflowService:
+    return AsyncWorkflowService()
+
+
+WorkflowServiceDep = Annotated[AsyncWorkflowService, Depends(get_workflow_service)]
+
+
+def get_test_case_service(workflow_service: WorkflowServiceDep) -> TestCaseService:
     """FastAPI 依赖：为每次请求提供服务实例。"""
-    return TestCaseService()
+    return TestCaseService(workflow_gateway=AsyncWorkflowServiceAdapter(workflow_service))
 
 
 TestCaseServiceDep = Annotated[TestCaseService, Depends(get_test_case_service)]
 
 
-def get_requirement_service() -> RequirementService:
+def get_requirement_service(workflow_service: WorkflowServiceDep) -> RequirementService:
     """FastAPI 依赖：为命令服务提供需求服务实例。"""
-    return RequirementService()
+    return RequirementService(workflow_gateway=AsyncWorkflowServiceAdapter(workflow_service))
 
 
 RequirementServiceDep = Annotated[RequirementService, Depends(get_requirement_service)]
 
 
-def get_workflow_command_service() -> WorkflowCommandService:
-    return WorkflowCommandService(AsyncWorkflowService())
+def get_workflow_projection_hook() -> TestSpecsWorkflowProjectionHook:
+    return TestSpecsWorkflowProjectionHook()
+
+
+WorkflowProjectionHookDep = Annotated[TestSpecsWorkflowProjectionHook, Depends(get_workflow_projection_hook)]
+
+
+def get_workflow_command_service(
+    workflow_service: WorkflowServiceDep,
+    projection_hook: WorkflowProjectionHookDep,
+) -> WorkflowCommandService:
+    return WorkflowCommandService(workflow_service, mutation_hooks=[projection_hook])
 
 
 WorkflowCommandServiceDep = Annotated[WorkflowCommandService, Depends(get_workflow_command_service)]

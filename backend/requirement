@@ -19,6 +19,7 @@ APScheduler==3.10.4
 archspec @ file:///croot/archspec_1709217642129/work
 asttokens==3.0.0
 async-timeout==5.0.1
+asyncssh==2.22.0
 asyncpg==0.31.0
 attrs==25.3.0
 audioop-lts==0.2.1

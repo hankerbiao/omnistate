@@ -102,7 +102,13 @@ class RequirementCommandService:
             self._requirement_service.get_requirement,
             RequirementNotFoundError,
         )
-        await ensure_permission(context, requirement, can_update_requirement, "update requirement")
+        await ensure_permission(
+            context,
+            requirement,
+            can_update_requirement,
+            "update requirement",
+            self._workflow_command_service.get_work_item_by_id,
+        )
 
         return await self._requirement_service.update_requirement(command.req_id, command.payload)
 
@@ -139,6 +145,7 @@ class RequirementCommandService:
             requirement,
             can_delete_requirement,
             "delete requirement",
+            self._workflow_command_service.get_work_item_by_id,
         )
         await delete_entity_or_work_item(
             context,
@@ -174,7 +181,13 @@ class RequirementCommandService:
             self._requirement_service.get_requirement,
             RequirementNotFoundError,
         )
-        await ensure_permission(context, requirement, can_update_requirement, "assign requirement owners")
+        await ensure_permission(
+            context,
+            requirement,
+            can_update_requirement,
+            "assign requirement owners",
+            self._workflow_command_service.get_work_item_by_id,
+        )
 
         return await self._requirement_service.assign_owners(
             req_id=command.req_id,

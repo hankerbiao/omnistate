@@ -14,6 +14,7 @@ from .commands import (
 )
 from .requirement_command_service import RequirementCommandService
 from .test_case_command_service import TestCaseCommandService
+from .workflow_projection_hook import TestSpecsWorkflowProjectionHook
 
 __all__ = [
     "AssignRequirementOwnersCommand",
@@ -26,6 +27,7 @@ __all__ = [
     "MoveTestCaseToRequirementCommand",
     "RequirementCommandService",
     "TestCaseCommandService",
+    "TestSpecsWorkflowProjectionHook",
     "UpdateRequirementCommand",
     "UpdateTestCaseCommand",
 ]
