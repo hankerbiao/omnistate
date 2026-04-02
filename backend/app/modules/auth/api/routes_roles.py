@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from app.modules.auth.api.dependencies import RbacServiceDep, require_admin_user
+from app.modules.auth.api.dependencies import RoleServiceDep, require_admin_user
 from app.modules.auth.schemas import (
     CreateRoleRequest,
     RoleResponse,
@@ -19,7 +19,7 @@ router = APIRouter()
 @router.post("/roles", response_model=APIResponse[RoleResponse], status_code=201, summary="创建角色")
 async def create_role(
     request: CreateRoleRequest,
-    service: RbacServiceDep,
+    service: RoleServiceDep,
     _=Depends(require_permission("roles:write")),
 ):
     try:
@@ -33,7 +33,7 @@ async def create_role(
 @router.get("/roles/{role_id}", response_model=APIResponse[RoleResponse], summary="获取角色详情")
 async def get_role(
     role_id: str,
-    service: RbacServiceDep,
+    service: RoleServiceDep,
     _=Depends(require_permission("roles:read")),
 ):
     try:
@@ -44,7 +44,7 @@ async def get_role(
 
 @router.get("/roles", response_model=APIResponse[list[RoleResponse]], summary="查询角色列表")
 async def list_roles(
-    service: RbacServiceDep,
+    service: RoleServiceDep,
     _=Depends(require_permission("roles:read")),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
@@ -56,7 +56,7 @@ async def list_roles(
 async def update_role(
     role_id: str,
     request: UpdateRoleRequest,
-    service: RbacServiceDep,
+    service: RoleServiceDep,
     _=Depends(require_permission("roles:write")),
 ):
     try:
@@ -76,7 +76,7 @@ async def update_role(
 async def update_role_permissions(
     role_id: str,
     request: UpdateRolePermissionsRequest,
-    service: RbacServiceDep,
+    service: RoleServiceDep,
     _=Depends(require_admin_user),
 ):
     try:

@@ -3,13 +3,13 @@ from __future__ import annotations
 from typing import Any
 
 from app.modules.execution.application.constants import FINAL_CASE_STATUSES
-from app.modules.execution.application.execution_service import ExecutionService
+from app.modules.execution.application.task_dispatch_service import ExecutionDispatchService
 from app.shared.core.logger import log as logger
 
 
 class ExecutionProgressCoordinator:
-    def __init__(self, execution_service: ExecutionService | None = None) -> None:
-        self._execution_service = execution_service or ExecutionService()
+    def __init__(self, dispatch_service: ExecutionDispatchService | None = None) -> None:
+        self._dispatch_service = dispatch_service or ExecutionDispatchService()
 
     async def advance_after_case_finish(
         self,
@@ -53,10 +53,10 @@ class ExecutionProgressCoordinator:
             )
             return
 
-        command = await self._execution_service._build_task_dispatch_command(task_doc, next_case_index)
+        command = await self._dispatch_service.build_task_dispatch_command(task_doc, next_case_index)
         logger.info(
             "Auto-dispatching next execution case: "
             f"task_id={task_doc.task_id}, finished_case_id={event.case_id}, "
             f"next_case_id={command.dispatch_case_id}, next_case_index={next_case_index}"
         )
-        await self._execution_service._dispatch_existing_task(task_doc, command)
+        await self._dispatch_service.dispatch_existing_task(task_doc, command)

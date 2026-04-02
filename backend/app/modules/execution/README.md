@@ -63,17 +63,21 @@
 ## application 层结构
 
 - `execution_service.py`
-  命令入口，负责创建任务、重跑任务、删除任务
+  兼容门面，委托到更小的 application service
+- `task_command_service.py`
+  负责创建任务、重跑任务、删除任务
+- `task_dispatch_service.py`
+  负责重建 dispatch command 和真正下发当前 case
+- `task_query_service.py`
+  负责任务查询和序列化
+- `agent_service.py`
+  负责代理注册、心跳和查询
 - `task_dispatch_mixin.py`
-  负责把当前 case 下发到执行端
+  下发实现细节，供 dispatch service 复用
 - `task_case_mixin.py`
   负责 case 解析、快照构建和任务 case 明细维护
-- `task_query_mixin.py`
-  负责任务查询和序列化
 - `event_ingest_service.py`
   负责消费 Kafka 事件并回填当前任务态与当前 case 态
-- `agent_mixin.py`
-  负责代理注册、心跳和查询
 
 ## 对外接口
 

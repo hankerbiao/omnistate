@@ -4,15 +4,44 @@ from typing import Annotated
 
 from fastapi import Depends, HTTPException
 
-from app.modules.auth.service import RbacService
+from app.modules.auth.service import (
+    NavigationAccessService,
+    PermissionService,
+    RoleService,
+    UserService,
+)
 from app.shared.auth import get_current_user
 
 
-def get_rbac_service() -> RbacService:
-    return RbacService()
+def get_user_service() -> UserService:
+    return UserService()
 
 
-RbacServiceDep = Annotated[RbacService, Depends(get_rbac_service)]
+UserServiceDep = Annotated[UserService, Depends(get_user_service)]
+
+
+def get_role_service() -> RoleService:
+    return RoleService()
+
+
+RoleServiceDep = Annotated[RoleService, Depends(get_role_service)]
+
+
+def get_permission_service() -> PermissionService:
+    return PermissionService()
+
+
+PermissionServiceDep = Annotated[PermissionService, Depends(get_permission_service)]
+
+
+def get_navigation_access_service() -> NavigationAccessService:
+    return NavigationAccessService()
+
+
+NavigationAccessServiceDep = Annotated[
+    NavigationAccessService,
+    Depends(get_navigation_access_service),
+]
 
 
 def is_admin_user(current_user: dict) -> bool:

@@ -1,7 +1,10 @@
 """Terminal websocket routes."""
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, status
+from functools import lru_cache
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, status
 
 from app.modules.auth.repository.models import UserDoc
 from app.modules.terminal.service import TerminalService
@@ -9,9 +12,6 @@ from app.shared.auth.jwt_auth import decode_token
 from app.shared.core.logger import log as logger
 
 router = APIRouter(prefix="/terminal", tags=["Terminal"])
-
-# API 层只负责 websocket 生命周期和鉴权，不直接管理 PTY 细节。
-terminal_service = TerminalService()
 
 
 def extract_token_from_query(token: str | None) -> str:
@@ -44,8 +44,23 @@ async def get_ws_current_user(token: str) -> dict:
     return data
 
 
+@lru_cache(maxsize=1)
+def get_terminal_service() -> TerminalService:
+    """提供默认的 terminal service。
+
+    当前仍是单进程内存会话模型，不支持多实例共享。
+    """
+    return TerminalService()
+
+
+TerminalServiceDep = Annotated[TerminalService, Depends(get_terminal_service)]
+
+
 @router.websocket("/ws")
-async def terminal_ws(websocket: WebSocket) -> None:
+async def terminal_ws(
+    websocket: WebSocket,
+    terminal_service: TerminalServiceDep,
+) -> None:
     """Interactive terminal websocket endpoint."""
     try:
         token = extract_token_from_query(websocket.query_params.get("token"))

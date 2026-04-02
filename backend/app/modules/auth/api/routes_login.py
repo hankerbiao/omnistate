@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.modules.auth.api.dependencies import RbacServiceDep
+from app.modules.auth.api.dependencies import NavigationAccessServiceDep, UserServiceDep
 from app.modules.auth.schemas import (
     ChangePasswordRequest,
     LoginRequest,
@@ -19,7 +19,7 @@ router = APIRouter()
 
 
 @router.post("/login", response_model=APIResponse[LoginResponse], summary="用户登录")
-async def login(request: LoginRequest, service: RbacServiceDep):
+async def login(request: LoginRequest, service: UserServiceDep):
     try:
         user = await service.authenticate_user(request.user_id, request.password)
         token = create_access_token(user["user_id"])
@@ -37,7 +37,7 @@ async def login(request: LoginRequest, service: RbacServiceDep):
 )
 async def change_my_password(
     request: ChangePasswordRequest,
-    service: RbacServiceDep,
+    service: UserServiceDep,
     current_user=Depends(get_current_user),
 ):
     try:
@@ -58,7 +58,7 @@ async def change_my_password(
     response_model=APIResponse[MePermissionsResponse],
     summary="获取当前用户权限",
 )
-async def get_my_permissions(service: RbacServiceDep, current_user=Depends(get_current_user)):
+async def get_my_permissions(service: UserServiceDep, current_user=Depends(get_current_user)):
     try:
         data = await service.get_effective_permissions(current_user["user_id"])
         return APIResponse(data=MePermissionsResponse(**data))
@@ -72,7 +72,7 @@ async def get_my_permissions(service: RbacServiceDep, current_user=Depends(get_c
     summary="获取当前用户导航访问权限",
 )
 async def get_my_navigation(
-    service: RbacServiceDep,
+    service: NavigationAccessServiceDep,
     current_user=Depends(get_current_user),
     _=Depends(require_permission("navigation:read")),
 ):

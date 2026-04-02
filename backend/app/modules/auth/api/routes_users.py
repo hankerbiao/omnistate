@@ -4,7 +4,11 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from app.modules.auth.api.dependencies import RbacServiceDep, require_admin_user
+from app.modules.auth.api.dependencies import (
+    NavigationAccessServiceDep,
+    UserServiceDep,
+    require_admin_user,
+)
 from app.modules.auth.schemas import (
     UpdateUserNavigationRequest,
     UpdateUserPasswordRequest,
@@ -24,7 +28,7 @@ router = APIRouter()
 @router.post("/users", response_model=APIResponse[UserResponse], status_code=201, summary="创建用户")
 async def create_user(
     request: CreateUserRequest,
-    service: RbacServiceDep,
+    service: UserServiceDep,
     _=Depends(require_permission("users:write")),
 ):
     try:
@@ -39,7 +43,7 @@ async def create_user(
 @router.get("/users/{user_id}", response_model=APIResponse[UserResponse], summary="获取用户详情")
 async def get_user(
     user_id: str,
-    service: RbacServiceDep,
+    service: UserServiceDep,
     _=Depends(require_any_permission(["users:read", "work_items:read"])),
 ):
     try:
@@ -50,7 +54,7 @@ async def get_user(
 
 @router.get("/users", response_model=APIResponse[list[UserResponse]], summary="查询用户列表")
 async def list_users(
-    service: RbacServiceDep,
+    service: UserServiceDep,
     _=Depends(require_any_permission(["users:read", "work_items:read"])),
     status: Optional[str] = Query(None),
     role_id: Optional[str] = Query(None),
@@ -64,7 +68,7 @@ async def list_users(
 async def update_user(
     user_id: str,
     request: UpdateUserRequest,
-    service: RbacServiceDep,
+    service: UserServiceDep,
     _=Depends(require_permission("users:write")),
 ):
     try:
@@ -80,7 +84,7 @@ async def update_user(
 async def update_user_roles(
     user_id: str,
     request: UpdateUserRolesRequest,
-    service: RbacServiceDep,
+    service: UserServiceDep,
     _=Depends(require_admin_user),
 ):
     try:
@@ -95,7 +99,7 @@ async def update_user_roles(
 async def update_user_password(
     user_id: str,
     request: UpdateUserPasswordRequest,
-    service: RbacServiceDep,
+    service: UserServiceDep,
     _=Depends(require_admin_user),
 ):
     try:
@@ -111,7 +115,7 @@ async def update_user_password(
 )
 async def get_user_navigation(
     user_id: str,
-    service: RbacServiceDep,
+    service: NavigationAccessServiceDep,
     _=Depends(require_admin_user),
 ):
     try:
@@ -128,7 +132,7 @@ async def get_user_navigation(
 async def update_user_navigation(
     user_id: str,
     request: UpdateUserNavigationRequest,
-    service: RbacServiceDep,
+    service: NavigationAccessServiceDep,
     _=Depends(require_admin_user),
 ):
     try:

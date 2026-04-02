@@ -11,6 +11,7 @@ from fastapi import WebSocket
 
 from app.modules.terminal.domain import TerminalSession
 from app.modules.terminal.schemas import TerminalClientMessage, TerminalServerMessage
+from app.modules.terminal.service.session_store import InMemoryTerminalSessionStore, TerminalSessionStore
 from app.shared.core.logger import log as logger
 from app.shared.db.config import settings
 
@@ -30,10 +31,9 @@ def validate_session_capacity(active_count: int, max_sessions: int) -> None:
 class TerminalService:
     """Manage SSH-backed terminal sessions."""
 
-    def __init__(self) -> None:
-        # 会话只放内存里，进程重启后自然失效。
-        self._sessions: dict[str, TerminalSession] = {}
-        self._user_sessions: dict[str, set[str]] = {}
+    def __init__(self, session_store: TerminalSessionStore | None = None) -> None:
+        # 默认使用单进程内存存储；当前不支持多实例共享会话。
+        self._session_store = session_store or InMemoryTerminalSessionStore()
         # 创建/关闭会话时加锁，避免并发请求下出现计数不一致。
         self._lock = asyncio.Lock()
 
@@ -46,7 +46,7 @@ class TerminalService:
     ) -> TerminalSession:
         """Create and register one SSH-backed shell session."""
         async with self._lock:
-            active_count = len(self._user_sessions.get(user_id, set()))
+            active_count = self._session_store.count_user_sessions(user_id)
             validate_session_capacity(active_count, settings.TERMINAL_MAX_SESSIONS_PER_USER)
 
             ssh_connection, ssh_process = await self._open_ssh_session(
@@ -71,8 +71,7 @@ class TerminalService:
                 ssh_connection=ssh_connection,
                 ssh_process=ssh_process,
             )
-            self._sessions[session.session_id] = session
-            self._user_sessions.setdefault(user_id, set()).add(session.session_id)
+            self._session_store.save(session)
             logger.info(
                 "terminal ssh session created: "
                 f"user_id={user_id}, session_id={session.session_id}, "
@@ -83,15 +82,9 @@ class TerminalService:
     async def close_session(self, session_id: str) -> None:
         """Close a session and release resources."""
         async with self._lock:
-            session = self._sessions.pop(session_id, None)
+            session = self._session_store.delete(session_id)
             if not session:
                 return
-
-            user_sessions = self._user_sessions.get(session.user_id)
-            if user_sessions:
-                user_sessions.discard(session_id)
-                if not user_sessions:
-                    self._user_sessions.pop(session.user_id, None)
 
         await self._shutdown_ssh_session(session)
         logger.info(

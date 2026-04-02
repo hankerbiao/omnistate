@@ -44,7 +44,7 @@ class RequirementService(BaseService):
         self._workflow_gateway = workflow_gateway
 
     async def _enrich_requirement_status(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """使用工作流状态覆盖业务文档中的状态投影字段。"""
+        """使用工作流状态补齐需求响应中的派生状态字段。"""
         return await enrich_projected_status(data)
 
     async def _get_workflow_states_for_requirements(self, req_ids: List[str]) -> Dict[str, str]:
@@ -153,10 +153,12 @@ class RequirementService(BaseService):
 
             for doc in docs:
                 doc_dict = self._doc_to_dict(doc)
-                # 关键：使用工作流状态覆盖业务文档中的投影状态
+                # 关键：使用工作流状态作为唯一真实来源
                 workflow_state = workflow_states.get(doc.req_id)
                 if workflow_state:
                     doc_dict["status"] = workflow_state
+                else:
+                    doc_dict["status"] = "未开始"
                 result.append(doc_dict)
 
         return result
@@ -208,7 +210,7 @@ class RequirementService(BaseService):
             raise KeyError("requirement not found")
         self._apply_updates(doc, data, self._UPDATABLE_FIELDS)
         await doc.save()
-        return self._doc_to_dict(doc)
+        return await self._enrich_requirement_status(self._doc_to_dict(doc))
 
     async def assign_owners(self, req_id: str, tpm_owner_id: str | None = None, manual_dev_id: str | None = None, auto_dev_id: str | None = None) -> Dict[str, Any]:
         """分配需求负责人（Phase 4显式命令）。
@@ -247,7 +249,7 @@ class RequirementService(BaseService):
             doc.auto_dev_id = auto_dev_id
 
         await doc.save()
-        return self._doc_to_dict(doc)
+        return await self._enrich_requirement_status(self._doc_to_dict(doc))
 
     async def delete_requirement(self, req_id: str) -> None:
         """逻辑删除需求。
@@ -307,10 +309,9 @@ class RequirementService(BaseService):
                 )
 
                 payload["workflow_item_id"] = workflow_item["id"]
-                payload["status"] = payload.get("status") or workflow_item.get("current_state") or "待指派"
                 doc = TestRequirementDoc(**payload)
                 await doc.insert(session=session)
-                return self._doc_to_dict(doc)
+                return await self._enrich_requirement_status(self._doc_to_dict(doc))
 
     @staticmethod
     def _get_mongo_client_or_none() -> Optional[AsyncMongoClient]:

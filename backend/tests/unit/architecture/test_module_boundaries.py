@@ -39,3 +39,70 @@ def test_event_ingest_service_does_not_instantiate_execution_service_directly() 
     source = (ROOT / "app/modules/execution/application/event_ingest_service.py").read_text()
 
     assert "ExecutionService()" not in source
+
+
+def test_progress_coordinator_does_not_instantiate_execution_service_directly() -> None:
+    source = (ROOT / "app/modules/execution/application/progress_coordinator.py").read_text()
+
+    assert "ExecutionService()" not in source
+
+
+def test_task_scheduler_does_not_instantiate_execution_service_directly() -> None:
+    source = (ROOT / "app/modules/execution/service/task_scheduler.py").read_text()
+
+    assert "ExecutionService()" not in source
+
+
+def test_workflow_api_dependencies_do_not_access_private_service_members() -> None:
+    source = (ROOT / "app/modules/workflow/api/dependencies.py").read_text()
+
+    assert "._query_service" not in source
+    assert "._mutation_service" not in source
+
+
+def test_execution_helpers_do_not_call_private_dispatch_methods_across_services() -> None:
+    progress_source = (ROOT / "app/modules/execution/application/progress_coordinator.py").read_text()
+    scheduler_source = (ROOT / "app/modules/execution/service/task_scheduler.py").read_text()
+
+    assert "._build_task_dispatch_command" not in progress_source
+    assert "._dispatch_existing_task" not in progress_source
+    assert "._build_task_dispatch_command" not in scheduler_source
+    assert "._dispatch_existing_task" not in scheduler_source
+
+
+def test_terminal_routes_do_not_hold_module_level_terminal_service_singleton() -> None:
+    source = (ROOT / "app/modules/terminal/api/routes.py").read_text()
+
+    assert "terminal_service = TerminalService()" not in source
+
+
+def test_auth_routes_do_not_depend_on_rbac_service_facade() -> None:
+    route_files = [
+        "app/modules/auth/api/routes_login.py",
+        "app/modules/auth/api/routes_users.py",
+        "app/modules/auth/api/routes_roles.py",
+        "app/modules/auth/api/routes_permissions.py",
+        "app/modules/auth/api/routes_navigation.py",
+    ]
+
+    for relative_path in route_files:
+        source = (ROOT / relative_path).read_text()
+        assert "RbacServiceDep" not in source
+
+
+def test_test_specs_routes_do_not_depend_on_workflow_service_facade() -> None:
+    route_files = [
+        "app/modules/test_specs/api/test_required_routes.py",
+        "app/modules/test_specs/api/test_case_routes.py",
+    ]
+
+    for relative_path in route_files:
+        source = (ROOT / relative_path).read_text()
+        assert "AsyncWorkflowService" not in source
+        assert "AsyncWorkflowServiceAdapter" not in source
+
+
+def test_test_specs_projection_hook_only_handles_delete_side_effects() -> None:
+    source = (ROOT / "app/modules/test_specs/application/workflow_projection_hook.py").read_text()
+
+    assert "def after_transition" not in source

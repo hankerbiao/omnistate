@@ -20,3 +20,7 @@ def test_workflow_api_aggregator_stays_small() -> None:
 
 def test_auth_api_aggregator_stays_small() -> None:
     assert _line_count("app/modules/auth/api/routes.py") <= 120
+
+
+def test_rbac_service_facade_stays_small() -> None:
+    assert _line_count("app/modules/auth/service/rbac_service.py") <= 220

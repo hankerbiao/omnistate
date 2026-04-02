@@ -66,7 +66,7 @@ class TestCaseService(BaseService):
         self._workflow_gateway = workflow_gateway
 
     async def _enrich_test_case_status(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """使用工作流状态覆盖业务文档中的状态投影字段。"""
+        """使用工作流状态补齐测试用例响应中的派生状态字段。"""
         return await enrich_projected_status(data)
 
     async def _get_workflow_states_for_test_cases(self, case_ids: List[str]) -> Dict[str, str]:
@@ -167,10 +167,12 @@ class TestCaseService(BaseService):
 
             for doc in docs:
                 doc_dict = self._doc_to_dict(doc)
-                # 关键：使用工作流状态覆盖业务文档中的投影状态
+                # 关键：使用工作流状态作为唯一真实来源
                 workflow_state = workflow_states.get(doc.case_id)
                 if workflow_state:
                     doc_dict["status"] = workflow_state
+                else:
+                    doc_dict["status"] = "未开始"
                 result.append(doc_dict)
 
         return result
@@ -223,7 +225,7 @@ class TestCaseService(BaseService):
             raise KeyError("test case not found")
         self._apply_updates(doc, data, self._UPDATABLE_FIELDS)
         await doc.save()
-        return self._doc_to_dict(doc)
+        return await self._enrich_test_case_status(self._doc_to_dict(doc))
 
     async def delete_test_case(self, case_id: str) -> None:
         """逻辑删除测试用例。
@@ -267,7 +269,7 @@ class TestCaseService(BaseService):
         if auto_doc.dml_manual_case_id != case_doc.case_id:
             raise ValueError("automation test case dml_manual_case_id does not match test case case_id")
         await case_doc.save()
-        return self._doc_to_dict(case_doc)
+        return await self._enrich_test_case_status(self._doc_to_dict(case_doc))
 
     async def assign_owners(self, case_id: str, owner_id: str | None = None, reviewer_id: str | None = None,
                             auto_dev_id: str | None = None) -> Dict[str, Any]:
@@ -307,7 +309,7 @@ class TestCaseService(BaseService):
             doc.auto_dev_id = auto_dev_id
 
         await doc.save()
-        return self._doc_to_dict(doc)
+        return await self._enrich_test_case_status(self._doc_to_dict(doc))
 
     async def move_to_requirement(self, case_id: str, target_req_id: str) -> Dict[str, Any]:
         """将测试用例移动到不同需求（Phase 4显式命令）。
@@ -348,7 +350,7 @@ class TestCaseService(BaseService):
         case_doc.ref_req_id = target_req_id
         await case_doc.save()
 
-        return self._doc_to_dict(case_doc)
+        return await self._enrich_test_case_status(self._doc_to_dict(case_doc))
 
     async def _create_test_case_with_transaction(
             self,
@@ -382,11 +384,10 @@ class TestCaseService(BaseService):
                     session=session,
                 )
                 payload["workflow_item_id"] = workflow_item["id"]
-                payload["status"] = workflow_item["current_state"]
 
                 doc = TestCaseDoc(**payload)
                 await doc.insert(session=session)
-                return self._doc_to_dict(doc)
+                return await self._enrich_test_case_status(self._doc_to_dict(doc))
 
     @staticmethod
     def _get_mongo_client_or_none() -> Optional[AsyncMongoClient]:

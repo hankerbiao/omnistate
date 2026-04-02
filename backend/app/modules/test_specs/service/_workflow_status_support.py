@@ -2,16 +2,21 @@ from typing import Any, Dict, Iterable
 
 from app.modules.workflow.repository.models.business import BusWorkItemDoc
 
+DEFAULT_PROJECTED_STATUS = "未开始"
+
 
 async def enrich_projected_status(data: Dict[str, Any]) -> Dict[str, Any]:
-    """用工作流真实状态覆盖业务文档中的投影状态字段。"""
+    """用工作流真实状态补齐业务响应中的派生状态字段。"""
     workflow_item_id = str(data.get("workflow_item_id") or "").strip()
     if not workflow_item_id:
+        data["status"] = DEFAULT_PROJECTED_STATUS
         return data
 
     work_item = await BusWorkItemDoc.get(workflow_item_id)
     if work_item and not work_item.is_deleted:
         data["status"] = work_item.current_state
+    else:
+        data["status"] = DEFAULT_PROJECTED_STATUS
     return data
 
 

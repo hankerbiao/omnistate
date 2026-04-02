@@ -1,25 +1,29 @@
-"""RBAC 服务模块
+"""Auth service exports."""
 
-AI 友好注释说明：
-- 这里导出 Service，供 API 层依赖注入。
-- 后续如有多个服务，可在此统一聚合。
-"""
+from .exceptions import (
+    NavigationPageNotFoundError,
+    PermissionNotFoundError,
+    RbacError,
+    RoleNotFoundError,
+    UserNotFoundError,
+)
+from .navigation_access_service import NavigationAccessService
 from .rbac_service import RbacService
 from .navigation_page_service import NavigationPageService
-from .exceptions import (
-    RbacError,
-    UserNotFoundError,
-    RoleNotFoundError,
-    PermissionNotFoundError,
-    NavigationPageNotFoundError,
-)
+from .permission_service import PermissionService
+from .role_service import RoleService
+from .user_service import UserService
 
 __all__ = [
+    "NavigationAccessService",
     "RbacService",
     "NavigationPageService",
+    "PermissionService",
     "RbacError",
-    "UserNotFoundError",
-    "RoleNotFoundError",
-    "PermissionNotFoundError",
     "NavigationPageNotFoundError",
+    "PermissionNotFoundError",
+    "RoleNotFoundError",
+    "RoleService",
+    "UserNotFoundError",
+    "UserService",
 ]

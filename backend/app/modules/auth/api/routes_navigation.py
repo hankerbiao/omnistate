@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from app.modules.auth.api.dependencies import RbacServiceDep, require_admin_user
+from app.modules.auth.api.dependencies import NavigationAccessServiceDep, require_admin_user
 from app.modules.auth.schemas import (
     CreateNavigationPageRequest,
     NavigationPageResponse,
@@ -20,7 +20,7 @@ router = APIRouter()
     summary="获取系统导航页面定义（管理员）",
 )
 async def list_navigation_pages(
-    service: RbacServiceDep,
+    service: NavigationAccessServiceDep,
     _=Depends(require_admin_user),
     include_inactive: bool = Query(True, description="是否包含未启用页面"),
 ):
@@ -35,7 +35,7 @@ async def list_navigation_pages(
 )
 async def get_navigation_page(
     view: str,
-    service: RbacServiceDep,
+    service: NavigationAccessServiceDep,
     _=Depends(require_admin_user),
 ):
     try:
@@ -53,7 +53,7 @@ async def get_navigation_page(
 )
 async def create_navigation_page(
     request: CreateNavigationPageRequest,
-    service: RbacServiceDep,
+    service: NavigationAccessServiceDep,
     _=Depends(require_admin_user),
 ):
     try:
@@ -71,7 +71,7 @@ async def create_navigation_page(
 async def update_navigation_page(
     view: str,
     request: UpdateNavigationPageRequest,
-    service: RbacServiceDep,
+    service: NavigationAccessServiceDep,
     _=Depends(require_admin_user),
 ):
     payload = request.model_dump(exclude_unset=True)
@@ -91,7 +91,7 @@ async def update_navigation_page(
 )
 async def delete_navigation_page(
     view: str,
-    service: RbacServiceDep,
+    service: NavigationAccessServiceDep,
     _=Depends(require_admin_user),
 ):
     try:

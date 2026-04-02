@@ -6,24 +6,6 @@ from app.modules.test_specs.repository.models import TestCaseDoc, TestRequiremen
 
 
 class TestSpecsWorkflowProjectionHook:
-    async def after_transition(self, result: dict[str, Any]) -> None:
-        work_item = dict(result.get("work_item") or {})
-        work_item_id = str(work_item.get("id") or "")
-        type_code = str(work_item.get("type_code") or "")
-        if not work_item_id or not type_code:
-            return
-
-        next_state = str(result.get("to_state") or work_item.get("current_state") or "").strip()
-        if not next_state:
-            return
-
-        projection_doc = await self._find_projection_doc(work_item_id, type_code)
-        if projection_doc is None:
-            return
-
-        projection_doc.status = next_state
-        await projection_doc.save()
-
     async def before_delete(self, work_item: dict[str, Any]) -> None:
         work_item_id = str(work_item.get("id") or "")
         type_code = str(work_item.get("type_code") or "")

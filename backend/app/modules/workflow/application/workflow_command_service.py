@@ -6,16 +6,20 @@ from app.modules.workflow.application.commands import (
 )
 from app.modules.workflow.application.contexts import OperationContext
 from app.modules.workflow.application.ports import WorkflowMutationHook
+from app.modules.workflow.application.query_service import WorkflowQueryService
+from app.modules.workflow.application.mutation_service import WorkflowMutationService
 from app.modules.workflow.service.workflow_service import AsyncWorkflowService
 
 
 class WorkflowCommandService:
     def __init__(
         self,
-        workflow_service: AsyncWorkflowService,
+        workflow_service: AsyncWorkflowService | WorkflowMutationService,
+        query_service: WorkflowQueryService | None = None,
         mutation_hooks: list[WorkflowMutationHook] | None = None,
     ):
         self._workflow_service = workflow_service
+        self._query_service = query_service
         self._mutation_hooks = mutation_hooks or []
 
     async def _run_hook(self, method_name: str, payload: dict) -> None:
@@ -26,7 +30,11 @@ class WorkflowCommandService:
             await method(payload)
 
     async def get_work_item_by_id(self, item_id: str) -> dict | None:
-        return await self._workflow_service.get_item_by_id(item_id)
+        if hasattr(self._workflow_service, "get_item_by_id"):
+            return await self._workflow_service.get_item_by_id(item_id)
+        if self._query_service is None:
+            raise RuntimeError("query_service is required to load work items for command hooks")
+        return await self._query_service.get_item_by_id(item_id)
 
     async def create_work_item(
         self,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from app.modules.auth.api.dependencies import RbacServiceDep
+from app.modules.auth.api.dependencies import PermissionServiceDep
 from app.modules.auth.schemas import (
     CreatePermissionRequest,
     PermissionResponse,
@@ -23,7 +23,7 @@ router = APIRouter()
 )
 async def create_permission(
     request: CreatePermissionRequest,
-    service: RbacServiceDep,
+    service: PermissionServiceDep,
     _=Depends(require_permission("permissions:write")),
 ):
     try:
@@ -39,7 +39,7 @@ async def create_permission(
 )
 async def get_permission(
     perm_id: str,
-    service: RbacServiceDep,
+    service: PermissionServiceDep,
     _=Depends(require_permission("permissions:read")),
 ):
     try:
@@ -54,7 +54,7 @@ async def get_permission(
     summary="查询权限列表",
 )
 async def list_permissions(
-    service: RbacServiceDep,
+    service: PermissionServiceDep,
     _=Depends(require_permission("permissions:read")),
     limit: int = Query(100, ge=1, le=200),
     offset: int = Query(0, ge=0),
@@ -70,7 +70,7 @@ async def list_permissions(
 async def update_permission(
     perm_id: str,
     request: UpdatePermissionRequest,
-    service: RbacServiceDep,
+    service: PermissionServiceDep,
     _=Depends(require_permission("permissions:write")),
 ):
     try:

@@ -4,26 +4,33 @@ from typing import Annotated
 
 from fastapi import Depends
 
-from app.modules.workflow.application import OperationContext, WorkflowCommandService, WorkflowQueryService
-from app.modules.workflow.service.workflow_service import AsyncWorkflowService
+from app.modules.workflow.application import (
+    OperationContext,
+    WorkflowCommandService,
+    WorkflowMutationService,
+    WorkflowQueryService,
+)
 
 
-def get_workflow_service() -> AsyncWorkflowService:
-    return AsyncWorkflowService()
-
-
-WorkflowServiceDep = Annotated[AsyncWorkflowService, Depends(get_workflow_service)]
-
-
-def get_workflow_query_service(service: WorkflowServiceDep) -> WorkflowQueryService:
-    return service._query_service
+def get_workflow_query_service() -> WorkflowQueryService:
+    return WorkflowQueryService()
 
 
 WorkflowQueryServiceDep = Annotated[WorkflowQueryService, Depends(get_workflow_query_service)]
 
 
-def get_workflow_command_service(service: WorkflowServiceDep) -> WorkflowCommandService:
-    return WorkflowCommandService(service)
+def get_workflow_mutation_service() -> WorkflowMutationService:
+    return WorkflowMutationService()
+
+
+WorkflowMutationServiceDep = Annotated[WorkflowMutationService, Depends(get_workflow_mutation_service)]
+
+
+def get_workflow_command_service(
+    query_service: WorkflowQueryServiceDep,
+    mutation_service: WorkflowMutationServiceDep,
+) -> WorkflowCommandService:
+    return WorkflowCommandService(mutation_service, query_service=query_service)
 
 
 WorkflowCommandServiceDep = Annotated[WorkflowCommandService, Depends(get_workflow_command_service)]
