@@ -15,7 +15,14 @@ from typing import Dict, Any, Optional, List
 from datetime import datetime
 from pymongo import AsyncMongoClient
 from app.modules.test_specs.repository.models import TestRequirementDoc, TestCaseDoc
-from app.modules.test_specs.service._workflow_status_support import enrich_projected_status, get_workflow_states
+from app.modules.test_specs.service._service_support import (
+    apply_workflow_status_projection,
+    create_with_workflow_transaction,
+    ensure_safe_generic_update,
+    load_workflow_states_for_entities,
+    workflow_aware_soft_delete,
+)
+from app.modules.test_specs.service._workflow_status_support import enrich_projected_status
 from app.modules.workflow.application import WorkflowItemGateway
 from app.shared.core.logger import log as logger
 from app.shared.core.mongo_client import get_mongo_client
@@ -48,20 +55,12 @@ class RequirementService(BaseService):
         return await enrich_projected_status(data)
 
     async def _get_workflow_states_for_requirements(self, req_ids: List[str]) -> Dict[str, str]:
-        """批量获取需求的工作流状态。
-
-        使用这个方法比逐个查询更高效。
-        """
-        if not req_ids:
-            return {}
-
-        # 先获取需求文档和对应的workflow_item_id
-        requirements = await TestRequirementDoc.find({
-            "req_id": {"$in": req_ids},
-            "is_deleted": False
-        }).to_list()
-
-        return await get_workflow_states(requirements, "req_id")
+        """批量获取需求的工作流状态。"""
+        return await load_workflow_states_for_entities(
+            doc_cls=TestRequirementDoc,
+            ids=req_ids,
+            id_field="req_id",
+        )
 
     async def create_requirement(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """创建测试需求（仅事务模式）。
@@ -146,22 +145,17 @@ class RequirementService(BaseService):
             docs = await query.sort("-created_at").skip(offset).limit(limit).to_list()
 
         # Phase 3B: 转换时确保使用工作流状态作为真实来源
-        result = []
-        if docs:
-            req_ids = [doc.req_id for doc in docs]
-            workflow_states = await self._get_workflow_states_for_requirements(req_ids)
+        if not docs:
+            return []
 
-            for doc in docs:
-                doc_dict = self._doc_to_dict(doc)
-                # 关键：使用工作流状态作为唯一真实来源
-                workflow_state = workflow_states.get(doc.req_id)
-                if workflow_state:
-                    doc_dict["status"] = workflow_state
-                else:
-                    doc_dict["status"] = "未开始"
-                result.append(doc_dict)
-
-        return result
+        req_ids = [doc.req_id for doc in docs]
+        workflow_states = await self._get_workflow_states_for_requirements(req_ids)
+        return await apply_workflow_status_projection(
+            docs=docs,
+            id_getter=lambda doc: doc.req_id,
+            to_dict=self._doc_to_dict,
+            workflow_states=workflow_states,
+        )
 
     async def update_requirement(self, req_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
         """更新需求内容字段（仅限安全的内容更新）。
@@ -182,25 +176,15 @@ class RequirementService(BaseService):
             KeyError: 需求不存在时抛出
             ValueError: 尝试更新高风险字段时抛出
         """
-        # Phase 4: 强化验证 - 检查是否尝试更新高风险字段
-        high_risk_fields = {
-            'req_id', 'workflow_item_id', 'status', 'is_deleted',
-            'tpm_owner_id', 'manual_dev_id', 'auto_dev_id',
-            'created_at', 'updated_at'
-        }
-        conflicts = set(data.keys()) & high_risk_fields
-        if conflicts:
-            raise ValueError(
-                f"cannot update high-risk fields through generic update: {conflicts}. "
-                f"Use explicit commands instead. Allowed fields: {self._UPDATABLE_FIELDS}"
-            )
-
-        # 明确禁止修改status字段（投影字段）
-        if "status" in data:
-            raise ValueError(
-                "status is a workflow state projection and cannot be updated directly. "
-                "Use workflow transition to change state."
-            )
+        ensure_safe_generic_update(
+            data=data,
+            high_risk_fields={
+                'req_id', 'workflow_item_id', 'status', 'is_deleted',
+                'tpm_owner_id', 'manual_dev_id', 'auto_dev_id',
+                'created_at', 'updated_at'
+            },
+            allowed_fields=self._UPDATABLE_FIELDS,
+        )
 
         doc = await TestRequirementDoc.find_one(
             TestRequirementDoc.req_id == req_id,
@@ -264,17 +248,21 @@ class RequirementService(BaseService):
         )
         if not doc:
             raise KeyError("requirement not found")
-        if doc.workflow_item_id:
-            raise ValueError("delete requirement through workflow-aware path only")
-        # 若存在关联用例（未删除），则不允许删除需求
-        related_cases = await TestCaseDoc.find(
-            TestCaseDoc.ref_req_id == req_id,
-            {"is_deleted": False},
-        ).count()
-        if related_cases > 0:
-            raise ValueError("requirement has related test cases")
-        doc.is_deleted = True
-        await doc.save()
+
+        async def _ensure_no_related_cases() -> None:
+            related_cases = await TestCaseDoc.find(
+                TestCaseDoc.ref_req_id == req_id,
+                {"is_deleted": False},
+            ).count()
+            if related_cases > 0:
+                raise ValueError("requirement has related test cases")
+
+        await workflow_aware_soft_delete(
+            doc=doc,
+            workflow_item_id=doc.workflow_item_id,
+            workflow_error_message="delete requirement through workflow-aware path only",
+            extra_guard=_ensure_no_related_cases,
+        )
 
     async def _create_requirement_with_transaction(
         self,
@@ -289,29 +277,22 @@ class RequirementService(BaseService):
         3. 将 workflow_item_id/current_state 回填到需求文档。
         4. 插入 requirement 文档并提交事务。
         """
-        async with client.start_session() as session:
-            async with await session.start_transaction():
-                existing = await TestRequirementDoc.find_one(
-                    TestRequirementDoc.req_id == payload["req_id"],
-                    session=session,
-                )
-                if existing:
-                    raise ValueError("req_id already exists")
-
-                # 在同一事务上下文内创建 workflow 事项，确保跨集合原子性。
-                workflow_item = await self._workflow_gateway.create_work_item(
-                    type_code="REQUIREMENT",
-                    title=payload["title"],
-                    content=payload.get("description") or payload["title"],
-                    creator_id=payload["tpm_owner_id"],
-                    parent_item_id=None,
-                    session=session,
-                )
-
-                payload["workflow_item_id"] = workflow_item["id"]
-                doc = TestRequirementDoc(**payload)
-                await doc.insert(session=session)
-                return await self._enrich_requirement_status(self._doc_to_dict(doc))
+        return await create_with_workflow_transaction(
+            client=client,
+            payload=payload,
+            doc_cls=TestRequirementDoc,
+            unique_lookup=lambda data: TestRequirementDoc.req_id == data["req_id"],
+            duplicate_error_message="req_id already exists",
+            workflow_gateway=self._workflow_gateway,
+            workflow_item_factory=lambda data: {
+                "type_code": "REQUIREMENT",
+                "title": data["title"],
+                "content": data.get("description") or data["title"],
+                "creator_id": data["tpm_owner_id"],
+                "parent_item_id": None,
+            },
+            enrich_result=lambda doc: self._enrich_requirement_status(self._doc_to_dict(doc)),
+        )
 
     @staticmethod
     def _get_mongo_client_or_none() -> Optional[AsyncMongoClient]:

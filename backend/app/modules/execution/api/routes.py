@@ -6,6 +6,9 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from app.modules.execution.application.agent_service import ExecutionAgentService
+from app.modules.execution.application.task_command_service import ExecutionTaskCommandService
+from app.modules.execution.application.task_query_service import ExecutionTaskQueryService
 from app.modules.execution.schemas import (
     AgentHeartbeatRequest,
     AgentRegisterRequest,
@@ -15,7 +18,6 @@ from app.modules.execution.schemas import (
     ExecutionTaskListItem,
     RerunTaskRequest,
 )
-from app.modules.execution.application.execution_service import ExecutionService
 from app.shared.service import SequenceIdService
 from app.shared.api.schemas.base import APIResponse
 from app.shared.auth import get_current_user, require_permission
@@ -24,11 +26,31 @@ from app.shared.core.logger import log as logger
 router = APIRouter(prefix="/execution", tags=["Execution"])
 
 
-def get_execution_service() -> ExecutionService:
-    return ExecutionService()
+def get_task_command_service() -> ExecutionTaskCommandService:
+    return ExecutionTaskCommandService()
 
 
-ExecutionServiceDep = Annotated[ExecutionService, Depends(get_execution_service)]
+ExecutionTaskCommandServiceDep = Annotated[
+    ExecutionTaskCommandService,
+    Depends(get_task_command_service),
+]
+
+
+def get_task_query_service() -> ExecutionTaskQueryService:
+    return ExecutionTaskQueryService()
+
+
+ExecutionTaskQueryServiceDep = Annotated[
+    ExecutionTaskQueryService,
+    Depends(get_task_query_service),
+]
+
+
+def get_agent_service() -> ExecutionAgentService:
+    return ExecutionAgentService()
+
+
+ExecutionAgentServiceDep = Annotated[ExecutionAgentService, Depends(get_agent_service)]
 
 
 def get_sequence_id_service() -> SequenceIdService:
@@ -48,7 +70,7 @@ SequenceIdServiceDep = Annotated[SequenceIdService, Depends(get_sequence_id_serv
 )
 async def dispatch_task(
         request: DispatchTaskRequest,
-        service: ExecutionServiceDep,
+        service: ExecutionTaskCommandServiceDep,
         sequence_service: SequenceIdServiceDep,
         current_user=Depends(get_current_user),
 ):
@@ -93,7 +115,7 @@ async def dispatch_task(
 )
 async def delete_task(
         task_id: str,
-        service: ExecutionServiceDep,
+        service: ExecutionTaskCommandServiceDep,
         current_user=Depends(get_current_user),
 ):
     """删除执行任务（逻辑删除）。"""
@@ -116,7 +138,7 @@ async def delete_task(
 async def rerun_task(
         task_id: str,
         request: RerunTaskRequest,
-        service: ExecutionServiceDep,
+        service: ExecutionTaskCommandServiceDep,
         sequence_service: SequenceIdServiceDep,
         current_user=Depends(get_current_user),
 ):
@@ -146,7 +168,7 @@ async def rerun_task(
 )
 async def register_agent(
         request: AgentRegisterRequest,
-        service: ExecutionServiceDep,
+        service: ExecutionAgentServiceDep,
 ):
     """执行代理注册接口。"""
     data = await service.register_agent(request.model_dump())
@@ -161,7 +183,7 @@ async def register_agent(
 async def heartbeat_agent(
         agent_id: str,
         request: AgentHeartbeatRequest,
-        service: ExecutionServiceDep,
+        service: ExecutionAgentServiceDep,
 ):
     """执行代理心跳接口。"""
     try:
@@ -178,7 +200,7 @@ async def heartbeat_agent(
     dependencies=[Depends(require_permission("execution_agents:read"))],
 )
 async def list_agents(
-        service: ExecutionServiceDep,
+        service: ExecutionAgentServiceDep,
         region: str | None = None,
         status: str | None = None,
         online_only: bool = False,
@@ -201,7 +223,7 @@ async def list_agents(
 )
 async def get_agent(
         agent_id: str,
-        service: ExecutionServiceDep,
+        service: ExecutionAgentServiceDep,
         current_user=Depends(get_current_user),
 ):
     """查询执行代理详情。"""
@@ -219,7 +241,7 @@ async def get_agent(
     dependencies=[Depends(require_permission("execution_tasks:read"))],
 )
 async def list_tasks(
-        service: ExecutionServiceDep,
+        service: ExecutionTaskQueryServiceDep,
         current_user=Depends(get_current_user),
 ):
     """查询执行任务列表。"""
@@ -235,7 +257,7 @@ async def list_tasks(
 )
 async def get_task_status(
         task_id: str,
-        service: ExecutionServiceDep,
+        service: ExecutionTaskQueryServiceDep,
         current_user=Depends(get_current_user),
 ):
     """获取任务状态"""

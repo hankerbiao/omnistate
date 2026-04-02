@@ -1,7 +1,6 @@
 """执行模块 application 层。"""
 
 from .agent_service import ExecutionAgentService
-from .execution_service import ExecutionService
 from .commands import DispatchExecutionTaskCommand
 from .event_ingest_service import ExecutionEventIngestService
 from .progress_coordinator import ExecutionProgressCoordinator
@@ -16,7 +15,6 @@ __all__ = [
     "ExecutionEventIngestService",
     "ExecutionKafkaHandlers",
     "ExecutionProgressCoordinator",
-    "ExecutionService",
     "ExecutionTaskCommandService",
     "ExecutionTaskQueryService",
     "DispatchExecutionTaskCommand",

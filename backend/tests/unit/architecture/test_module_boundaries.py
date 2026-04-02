@@ -20,7 +20,7 @@ def _module_imports(relative_path: str) -> list[str]:
 
 
 def test_workflow_service_does_not_depend_on_test_specs_models() -> None:
-    imports = _module_imports("app/modules/workflow/service/workflow_service.py")
+    imports = _module_imports("app/modules/workflow/application/mutation_service.py")
 
     assert "app.modules.test_specs.repository.models" not in imports
 
@@ -38,19 +38,19 @@ def test_test_specs_services_do_not_depend_on_workflow_service_implementation() 
 def test_event_ingest_service_does_not_instantiate_execution_service_directly() -> None:
     source = (ROOT / "app/modules/execution/application/event_ingest_service.py").read_text()
 
-    assert "ExecutionService()" not in source
+    assert "ExecutionService" not in source
 
 
 def test_progress_coordinator_does_not_instantiate_execution_service_directly() -> None:
     source = (ROOT / "app/modules/execution/application/progress_coordinator.py").read_text()
 
-    assert "ExecutionService()" not in source
+    assert "ExecutionService" not in source
 
 
 def test_task_scheduler_does_not_instantiate_execution_service_directly() -> None:
     source = (ROOT / "app/modules/execution/service/task_scheduler.py").read_text()
 
-    assert "ExecutionService()" not in source
+    assert "ExecutionService" not in source
 
 
 def test_workflow_api_dependencies_do_not_access_private_service_members() -> None:
@@ -88,6 +88,7 @@ def test_auth_routes_do_not_depend_on_rbac_service_facade() -> None:
     for relative_path in route_files:
         source = (ROOT / relative_path).read_text()
         assert "RbacServiceDep" not in source
+        assert "RbacService" not in source
 
 
 def test_test_specs_routes_do_not_depend_on_workflow_service_facade() -> None:
@@ -100,6 +101,35 @@ def test_test_specs_routes_do_not_depend_on_workflow_service_facade() -> None:
         source = (ROOT / relative_path).read_text()
         assert "AsyncWorkflowService" not in source
         assert "AsyncWorkflowServiceAdapter" not in source
+
+
+def test_workflow_command_service_does_not_use_facade_union_or_hasattr_dispatch() -> None:
+    source = (ROOT / "app/modules/workflow/application/workflow_command_service.py").read_text()
+
+    assert "AsyncWorkflowService" not in source
+    assert "| WorkflowMutationService" not in source
+    assert "hasattr(" not in source
+
+
+def test_removed_facade_modules_do_not_exist() -> None:
+    removed_paths = [
+        "app/modules/workflow/service/workflow_service.py",
+        "app/modules/execution/application/execution_service.py",
+        "app/modules/auth/service/rbac_service.py",
+    ]
+
+    for relative_path in removed_paths:
+        assert not (ROOT / relative_path).exists()
+
+
+def test_application_exports_do_not_expose_removed_facades_or_adapters() -> None:
+    workflow_application = (ROOT / "app/modules/workflow/application/__init__.py").read_text()
+    execution_application = (ROOT / "app/modules/execution/application/__init__.py").read_text()
+    auth_services = (ROOT / "app/modules/auth/service/__init__.py").read_text()
+
+    assert "AsyncWorkflowServiceAdapter" not in workflow_application
+    assert "ExecutionService" not in execution_application
+    assert "RbacService" not in auth_services
 
 
 def test_test_specs_projection_hook_only_handles_delete_side_effects() -> None:

@@ -48,7 +48,10 @@ auth/
 ├── schemas/               # 数据模式
 │   └── rbac.py          # API 请求/响应模式
 ├── service/              # 业务逻辑层
-│   ├── rbac_service.py   # RBAC 业务服务
+│   ├── user_service.py   # 用户资源服务
+│   ├── role_service.py   # 角色资源服务
+│   ├── permission_service.py # 权限资源服务
+│   ├── navigation_access_service.py # 导航访问服务
 │   ├── navigation_page_service.py # 导航页面服务
 │   └── exceptions.py     # 业务异常定义
 └── README.md            # 本文档
@@ -237,12 +240,12 @@ updated_at: datetime      # 更新时间
 ### Service 依赖
 ```python
 from fastapi import Depends
-from app.modules.auth.service import RbacService
+from app.modules.auth.service import UserService
 
-def get_rbac_service() -> RbacService:
-    return RbacService()
+def get_user_service() -> UserService:
+    return UserService()
 
-RbacServiceDep = Annotated[RbacService, Depends(get_rbac_service)]
+UserServiceDep = Annotated[UserService, Depends(get_user_service)]
 ```
 
 ### 权限检查

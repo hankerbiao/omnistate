@@ -92,7 +92,7 @@ def get_workflow_command_service(
     projection_hook: WorkflowProjectionHookDep,
 ) -> WorkflowCommandService:
     return WorkflowCommandService(
-        workflow_mutation_service,
+        mutation_service=workflow_mutation_service,
         query_service=workflow_query_service,
         mutation_hooks=[projection_hook],
     )

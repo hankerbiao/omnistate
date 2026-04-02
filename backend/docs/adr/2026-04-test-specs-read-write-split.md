@@ -7,8 +7,7 @@
 `test_specs` 路由此前直接依赖：
 
 - `RequirementService` / `TestCaseService`
-- `AsyncWorkflowService`
-- `AsyncWorkflowServiceAdapter`
+- workflow facade / 兼容 adapter
 
 导致路由层既知道 workflow facade，又直接绑定胖 service，依赖关系过宽。
 

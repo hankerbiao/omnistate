@@ -62,8 +62,6 @@
 
 ## application 层结构
 
-- `execution_service.py`
-  兼容门面，委托到更小的 application service
 - `task_command_service.py`
   负责创建任务、重跑任务、删除任务
 - `task_dispatch_service.py`
@@ -108,7 +106,7 @@
 
 ## 维护建议
 
-- 改任务创建、删除、取消、停止，优先看 `execution_service.py`
+- 改任务创建、删除、取消、停止，优先看 `task_command_service.py`
 - 改任务查询返回，优先看 `task_query_mixin.py`
 - 改事件消费聚合，优先看 `event_ingest_service.py`
 - 改下发通道，优先看 `task_dispatcher.py`

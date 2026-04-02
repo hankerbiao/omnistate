@@ -30,7 +30,10 @@ def get_workflow_command_service(
     query_service: WorkflowQueryServiceDep,
     mutation_service: WorkflowMutationServiceDep,
 ) -> WorkflowCommandService:
-    return WorkflowCommandService(mutation_service, query_service=query_service)
+    return WorkflowCommandService(
+        mutation_service=mutation_service,
+        query_service=query_service,
+    )
 
 
 WorkflowCommandServiceDep = Annotated[WorkflowCommandService, Depends(get_workflow_command_service)]

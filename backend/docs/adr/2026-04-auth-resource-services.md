@@ -24,15 +24,16 @@
 - `NavigationAccessService`
 
 API 路由按资源直接依赖对应 service。  
-`RbacService` 降级为兼容 facade，仅做委托，不再承载新增逻辑。
+删除 `RbacService` 兼容 facade，API 与调用方统一直接依赖资源级 service。
 
 ## 结果
 
 - 路由依赖和资源边界一致
-- `RbacService` 体量显著收缩
+- 彻底消除 facade 回流风险
 - 后续可以逐步淘汰 facade，而不影响当前 API
 
 ## 放弃方案
 
 - 保留单一 `RbacService`，只靠注释和方法分组维持可读性
+- 保留 `RbacService` 作为兼容 facade，继续做旧入口转发
 - 再拆一个更大的 “AuthApplicationService” 聚合所有资源

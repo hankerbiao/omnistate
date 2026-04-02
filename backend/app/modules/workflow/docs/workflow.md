@@ -1,10 +1,11 @@
-# 任务流转说明（AsyncWorkflowService）
+# 任务流转说明（WorkflowMutationService / WorkflowQueryService）
 
 本文档只关注「任务/事项流转」相关的核心设计与实现，方便前后端在对接和扩展流程时统一理解。
 
 相关核心代码：
 
-- 工作流服务：[workflow_service.py](file:///Users/libiao/Desktop/github/test/backend/app/modules/workflow/service/workflow_service.py)
+- 写侧服务：`WorkflowMutationService`
+- 读侧服务：`WorkflowQueryService`
 - 业务路由：[routes.py](file:///Users/libiao/Desktop/github/test/backend/app/modules/workflow/api/routes.py)
 - 文档模型：
   - 系统配置模型：[system.py](file:///Users/libiao/Desktop/github/test/backend/app/modules/workflow/repository/models/system.py)
@@ -64,7 +65,7 @@
 - `TO_CREATOR`：流转回创建人
 - `TO_SPECIFIC_USER`：流转到表单中指定的用户（需要 `target_owner_id` 字段）
 
-实际计算逻辑由 `AsyncWorkflowService._apply_owner_strategy` 负责。
+实际计算逻辑由 `app.modules.workflow.domain.rules.resolve_owner` 负责。
 
 ---
 
@@ -72,7 +73,7 @@
 
 核心接口：
 
-- 服务方法：`AsyncWorkflowService.handle_transition`
+- 服务方法：`WorkflowMutationService.handle_transition`
 - 典型调用路径：
   - HTTP 路由：[routes.py](file:///Users/libiao/Desktop/github/test/backend/app/modules/workflow/api/routes.py)
     中的 `POST /api/v1/work-items/{item_id}/transition`
@@ -147,8 +148,7 @@
 
 实现位置：
 
-- [workflow_service.py](file:///Users/libiao/Desktop/github/test/backend/app/services/workflow_service.py)
-  中的 `AsyncWorkflowService._apply_owner_strategy`
+- `app.modules.workflow.domain.rules.resolve_owner`
 
 输入参数：
 
@@ -181,7 +181,7 @@
 ### 4.1 创建事项（设置初始状态）
 
 - 方法：`POST /api/v1/work-items`
-- 对应服务方法：`AsyncWorkflowService.create_item`
+- 对应服务方法：`WorkflowMutationService.create_item`
 - 关键行为：
   - 创建 `BusWorkItemDoc`
   - 初始状态设置为 `WorkItemState.DRAFT`
@@ -266,12 +266,12 @@
     - 状态会流转到 `PENDING_REVIEW`
     - 新处理人会根据 `target_owner_id` 决定
 
-`AsyncWorkflowService.handle_transition` 会使用这些配置完成实际的状态和处理人变更，同时写入流转日志。
+`WorkflowMutationService.handle_transition` 会使用这些配置完成实际的状态和处理人变更，同时写入流转日志。
 
 ---
 
 通过以上约定，本项目实现了「**配置驱动的任务流转**」：
 
-- 代码（`AsyncWorkflowService`）只实现通用的流转引擎
+- 代码（`WorkflowMutationService` + `WorkflowQueryService`）只实现通用的流转引擎
 - 具体有哪些状态、动作、谁处理、必填什么字段，全部由配置决定
 - 修改或新增流程时，只需要调整配置，无需改动核心代码
