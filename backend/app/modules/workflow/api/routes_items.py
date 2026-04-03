@@ -19,7 +19,7 @@ router = APIRouter()
 
 
 @router.post(
-    "",
+    "/",
     response_model=APIResponse[WorkItemResponse],
     status_code=201,
     summary="创建业务事项",
@@ -46,7 +46,7 @@ async def create_work_item(
 
 
 @router.get(
-    "",
+    "/",
     response_model=APIResponse[list[WorkItemResponse]],
     summary="获取事项列表",
     dependencies=[Depends(require_permission("work_items:read"))],
