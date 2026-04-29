@@ -1,0 +1,144 @@
+# =============================================================================
+# dmlv4 后端服务配置
+# =============================================================================
+# 所有服务配置集中在此文件中，方便统一管理和修改
+# 注意：敏感信息（如密码、密钥）请根据实际情况修改
+
+# =============================================================================
+# 应用基础配置
+# =============================================================================
+app:
+  debug: false
+  host: "0.0.0.0"
+  port: 8000
+  cors_origins:
+    - "*"
+
+# =============================================================================
+# MongoDB 配置
+# =============================================================================
+mongodb:
+  uri: "mongodb://10.17.154.252:27019?replicaSet=rs0"
+  db_name: "workflow_db"
+
+# =============================================================================
+# RabbitMQ 配置
+# =============================================================================
+rabbitmq:
+  # 连接参数
+  host: "10.32.12.28"
+  port: 5672
+  username: "admin"
+  password: "admin@123+"
+  virtual_host: "/"
+  heartbeat: 60
+  blocked_connection_timeout: 30
+  connection_attempts: 3
+  retry_delay: 2.0
+  ssl_enabled: false
+
+  # 任务下发队列（生产者：后端 -> 测试代理）
+  task_queue: "dml_task_queue"
+  task_exchange: ""
+  task_routing_key: "dml_task_queue"
+
+  # 测试事件队列（消费者：测试代理 -> 后端）
+  event_queue: "dml_test_events"
+  event_exchange: "dml_test_exchange"
+  event_routing_key: "test.event.#"
+
+  # 测试结果队列（消费者：测试代理 -> 后端）
+  result_queue: "dml_test_results"
+  result_exchange: "dml_results_exchange"
+  result_routing_key: "test.result"
+
+  # 消费者预取数量
+  prefetch_count: 10
+
+# =============================================================================
+# Kafka 配置
+# =============================================================================
+kafka:
+  bootstrap_servers:
+    - "10.17.154.252:9092"
+  client_id: "dmlv4-shard"
+
+  # Topic 配置
+  result_topic: "dmlv4.results"
+  dead_letter_topic: "dmlv4.deadletter"
+  test_events_topic: "test-events"
+
+  # Consumer Group 配置
+  execution_result_group_id: "dmlv4-execution-result-consumers"
+  test_events_group_id: "dmlv4-test-events-consumers"
+
+  # Producer 选项
+  producer_options:
+    acks: "all"
+    retries: 3
+    batch_size: 16384
+    linger_ms: 10
+    buffer_memory: 33554432
+
+  # Consumer 选项
+  consumer_options:
+    auto_offset_reset: "earliest"
+    enable_auto_commit: true
+    session_timeout_ms: 30000
+    heartbeat_interval_ms: 3000
+    max_poll_records: 100
+    consumer_timeout_ms: 1000
+
+# =============================================================================
+# MinIO 配置（对象存储）
+# =============================================================================
+minio:
+  endpoint: "localhost:9000"
+  access_key: "minioadmin"
+  secret_key: "minioadmin"
+  bucket: "attachments"
+  secure: false
+
+# =============================================================================
+# JWT 认证配置
+# =============================================================================
+jwt:
+  secret_key: "CHANGE_ME_generate_with_openssl_rand_hex_32"
+  algorithm: "HS256"
+  expire_minutes: 480
+  issuer: "tcm-backend"
+  audience: "tcm-frontend"
+
+# =============================================================================
+# 任务执行配置
+# =============================================================================
+execution:
+  dispatch_mode: "rabbitmq"  # 可选: rabbitmq, http
+  agent_dispatch_path: "/api/v1/tasks"
+  http_timeout_sec: 10
+  scheduler_interval_sec: 60
+
+  # Kafka Worker 配置（仅当 dispatch_mode=kafka 时使用）
+  kafka_worker_agent_id: "execution-kafka-worker"
+  kafka_worker_heartbeat_ttl_sec: 30
+  kafka_worker_heartbeat_interval_sec: 10
+
+# =============================================================================
+# 终端配置
+# =============================================================================
+terminal:
+  shell: "/bin/zsh"
+  workdir: ""
+  idle_timeout_sec: 1800
+  max_sessions_per_user: 1
+
+# =============================================================================
+# 日志配置
+# =============================================================================
+logging:
+  console_level: "DEBUG"
+  log_dir: "logs"
+  retention:
+    info_days: 7
+    error_days: 30
+    debug_days: 3

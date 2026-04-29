@@ -1,16 +1,12 @@
-"""Kafka 模块配置。"""
+"""Kafka 模块配置。
 
-import os
+配置从 config.yaml 统一加载，参考 app/shared/config/settings.py
+"""
+
 from dataclasses import dataclass, field
 from typing import Any
 
-
-DEFAULT_BOOTSTRAP_SERVERS = ["10.17.154.252:9092"]
-DEFAULT_RESULT_TOPIC = "dmlv4.results"
-DEFAULT_DEAD_LETTER_TOPIC = "dmlv4.deadletter"
-DEFAULT_EXECUTION_RESULT_GROUP_ID = "dmlv4-execution-result-consumers"
-DEFAULT_TEST_EVENTS_TOPIC = "test-events"
-DEFAULT_TEST_EVENTS_GROUP_ID = "dmlv4-test-events-consumers"
+from app.shared.config import KafkaConfig as BaseKafkaConfig
 
 
 @dataclass(slots=True)
@@ -20,19 +16,24 @@ class ConsumerSubscription:
     topic: str
     group_id: str
     parser: str = "json"
-    dead_letter_topic: str | None = DEFAULT_DEAD_LETTER_TOPIC
+    dead_letter_topic: str | None = None
 
 
 @dataclass(slots=True)
 class KafkaConfig:
-    """Kafka 运行时配置。"""
+    """Kafka 运行时配置。
 
-    bootstrap_servers: list[str] = field(default_factory=lambda: DEFAULT_BOOTSTRAP_SERVERS.copy())
+    整合基础配置和旧接口所需的 consumer_subscriptions。
+    """
+
+    # 基础配置属性
+    bootstrap_servers: list[str] = field(default_factory=lambda: ["localhost:9092"])
     client_id: str = "dmlv4-shard"
-    result_topic: str = DEFAULT_RESULT_TOPIC
-    dead_letter_topic: str = DEFAULT_DEAD_LETTER_TOPIC
-    test_events_topic: str = DEFAULT_TEST_EVENTS_TOPIC
-    consumer_subscriptions: dict[str, ConsumerSubscription] = field(default_factory=dict)
+    result_topic: str = "dmlv4.results"
+    dead_letter_topic: str = "dmlv4.deadletter"
+    test_events_topic: str = "test-events"
+    execution_result_group_id: str = "dmlv4-execution-result-consumers"
+    test_events_group_id: str = "dmlv4-test-events-consumers"
     producer_options: dict[str, Any] = field(default_factory=lambda: {
         "acks": "all",
         "retries": 3,
@@ -49,43 +50,41 @@ class KafkaConfig:
         "consumer_timeout_ms": 1000,
     })
 
+    # 扩展属性（兼容旧接口）
+    consumer_subscriptions: dict[str, ConsumerSubscription] = field(default_factory=dict)
 
-def _split_csv(value: str | None, default: list[str]) -> list[str]:
-    if not value:
-        return default.copy()
-    return [item.strip() for item in value.split(",") if item.strip()]
+    def __post_init__(self):
+        """初始化后设置默认的 consumer_subscriptions。"""
+        if not self.consumer_subscriptions:
+            self.consumer_subscriptions = {
+                "execution_result": ConsumerSubscription(
+                    topic=self.result_topic,
+                    group_id=self.execution_result_group_id,
+                    dead_letter_topic=self.dead_letter_topic,
+                ),
+                "test_events": ConsumerSubscription(
+                    topic=self.test_events_topic,
+                    group_id=self.test_events_group_id,
+                    dead_letter_topic=self.dead_letter_topic,
+                ),
+            }
 
 
 def load_kafka_config() -> KafkaConfig:
-    """从环境变量加载 Kafka 配置。"""
-    result_topic = os.getenv("KAFKA_RESULT_TOPIC", DEFAULT_RESULT_TOPIC)
-    dead_letter_topic = os.getenv("KAFKA_DEAD_LETTER_TOPIC", DEFAULT_DEAD_LETTER_TOPIC)
-    test_events_topic = os.getenv("KAFKA_TEST_EVENTS_TOPIC", DEFAULT_TEST_EVENTS_TOPIC)
+    """从 YAML 加载 Kafka 配置（兼容旧接口）。"""
+    from app.shared.config import get_settings
+    settings = get_settings()
     return KafkaConfig(
-        bootstrap_servers=_split_csv(
-            os.getenv("KAFKA_BOOTSTRAP_SERVERS"),
-            DEFAULT_BOOTSTRAP_SERVERS,
-        ),
-        client_id=os.getenv("KAFKA_CLIENT_ID", "dmlv4-shard"),
-        result_topic=result_topic,
-        dead_letter_topic=dead_letter_topic,
-        test_events_topic=test_events_topic,
-        consumer_subscriptions={
-            "execution_result": ConsumerSubscription(
-                topic=result_topic,
-                group_id=os.getenv(
-                    "KAFKA_EXECUTION_RESULT_GROUP_ID",
-                    DEFAULT_EXECUTION_RESULT_GROUP_ID,
-                ),
-                dead_letter_topic=dead_letter_topic,
-            ),
-            "test_events": ConsumerSubscription(
-                topic=test_events_topic,
-                group_id=os.getenv(
-                    "KAFKA_TEST_EVENTS_GROUP_ID",
-                    DEFAULT_TEST_EVENTS_GROUP_ID,
-                ),
-                dead_letter_topic=dead_letter_topic,
-            ),
-        },
+        bootstrap_servers=settings.kafka.bootstrap_servers,
+        client_id=settings.kafka.client_id,
+        result_topic=settings.kafka.result_topic,
+        dead_letter_topic=settings.kafka.dead_letter_topic,
+        test_events_topic=settings.kafka.test_events_topic,
+        execution_result_group_id=settings.kafka.execution_result_group_id,
+        test_events_group_id=settings.kafka.test_events_group_id,
+        producer_options=settings.kafka.producer_options.model_dump(),
+        consumer_options=settings.kafka.consumer_options.model_dump(),
     )
+
+
+__all__ = ["KafkaConfig", "ConsumerSubscription", "load_kafka_config"]

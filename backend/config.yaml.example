@@ -1,0 +1,133 @@
+# =============================================================================
+# dmlv4 后端服务配置示例
+# =============================================================================
+# 复制此文件为 config.yaml 并修改实际值
+# cp config.yaml.example config.yaml
+
+# =============================================================================
+# 应用基础配置
+# =============================================================================
+app:
+  debug: false
+  host: "0.0.0.0"
+  port: 8000
+  cors_origins:
+    - "http://localhost:3000"
+
+# =============================================================================
+# MongoDB 配置
+# =============================================================================
+mongodb:
+  uri: "mongodb://localhost:27017"
+  db_name: "workflow_db"
+
+# =============================================================================
+# RabbitMQ 配置
+# =============================================================================
+rabbitmq:
+  host: "localhost"
+  port: 5672
+  username: "guest"
+  password: "guest"
+  virtual_host: "/"
+  heartbeat: 60
+  blocked_connection_timeout: 30
+  connection_attempts: 3
+  retry_delay: 2.0
+  ssl_enabled: false
+
+  task_queue: "dml_task_queue"
+  task_exchange: ""
+  task_routing_key: "dml_task_queue"
+
+  event_queue: "dml_test_events"
+  event_exchange: "dml_test_exchange"
+  event_routing_key: "test.event.#"
+
+  result_queue: "dml_test_results"
+  result_exchange: "dml_results_exchange"
+  result_routing_key: "test.result"
+
+  prefetch_count: 10
+
+# =============================================================================
+# Kafka 配置
+# =============================================================================
+kafka:
+  bootstrap_servers:
+    - "localhost:9092"
+  client_id: "dmlv4-shard"
+
+  result_topic: "dmlv4.results"
+  dead_letter_topic: "dmlv4.deadletter"
+  test_events_topic: "test-events"
+
+  execution_result_group_id: "dmlv4-execution-result-consumers"
+  test_events_group_id: "dmlv4-test-events-consumers"
+
+  producer_options:
+    acks: "all"
+    retries: 3
+    batch_size: 16384
+    linger_ms: 10
+    buffer_memory: 33554432
+
+  consumer_options:
+    auto_offset_reset: "earliest"
+    enable_auto_commit: true
+    session_timeout_ms: 30000
+    heartbeat_interval_ms: 3000
+    max_poll_records: 100
+    consumer_timeout_ms: 1000
+
+# =============================================================================
+# MinIO 配置
+# =============================================================================
+minio:
+  endpoint: "localhost:9000"
+  access_key: "minioadmin"
+  secret_key: "minioadmin"
+  bucket: "attachments"
+  secure: false
+
+# =============================================================================
+# JWT 认证配置（重要：生产环境必须修改 secret_key）
+# =============================================================================
+jwt:
+  secret_key: "REPLACE_WITH_SECURE_SECRET_KEY"  # 使用 openssl rand -hex 32 生成
+  algorithm: "HS256"
+  expire_minutes: 480
+  issuer: "tcm-backend"
+  audience: "tcm-frontend"
+
+# =============================================================================
+# 任务执行配置
+# =============================================================================
+execution:
+  dispatch_mode: "rabbitmq"
+  agent_dispatch_path: "/api/v1/tasks"
+  http_timeout_sec: 10
+  scheduler_interval_sec: 60
+  kafka_worker_agent_id: "execution-kafka-worker"
+  kafka_worker_heartbeat_ttl_sec: 30
+  kafka_worker_heartbeat_interval_sec: 10
+
+# =============================================================================
+# 终端配置
+# =============================================================================
+terminal:
+  shell: "/bin/zsh"
+  workdir: ""
+  idle_timeout_sec: 1800
+  max_sessions_per_user: 1
+
+# =============================================================================
+# 日志配置
+# =============================================================================
+logging:
+  console_level: "DEBUG"
+  log_dir: "logs"
+  retention:
+    info_days: 7
+    error_days: 30
+    debug_days: 3

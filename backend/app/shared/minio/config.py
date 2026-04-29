@@ -1,18 +1,8 @@
-from dataclasses import dataclass, field
-from os import getenv
+"""MinIO 对象存储模块配置。
 
+配置从 config.yaml 统一加载，参考 app/shared/config/settings.py
+"""
 
-@dataclass
-class MinIOConfig:
-    """MinIO配置类"""
+from app.shared.config import MinIOConfig, load_minio_config
 
-    endpoint: str = field(default_factory=lambda: getenv("MINIO_ENDPOINT", "localhost:9000"))
-    access_key: str = field(default_factory=lambda: getenv("MINIO_ACCESS_KEY", "minioadmin"))
-    secret_key: str = field(default_factory=lambda: getenv("MINIO_SECRET_KEY", "minioadmin"))
-    bucket: str = field(default_factory=lambda: getenv("MINIO_BUCKET", "attachments"))
-    secure: bool = field(default_factory=lambda: getenv("MINIO_SECURE", "false").lower() == "true")
-
-
-def load_minio_config() -> MinIOConfig:
-    """加载MinIO配置"""
-    return MinIOConfig()
+__all__ = ["MinIOConfig", "load_minio_config"]

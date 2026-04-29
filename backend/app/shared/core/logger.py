@@ -1,12 +1,16 @@
-import sys
+"""日志配置模块。
+
+日志配置可从 config.yaml 读取，也支持默认值。
+注意：此模块在配置加载之前被部分引用，因此使用 try-except 处理配置不存在的情况。
+"""
+
 import os
+import sys
 from loguru import logger
 
-# 日志目录设置
-BASE_DIR = os.path.dirname(os.path.dirname(__file__))
-LOG_DIR = os.path.join(BASE_DIR, "logs")
-if not os.path.exists(LOG_DIR):
-    os.makedirs(LOG_DIR)
+# 日志目录设置（基于项目根目录）
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+DEFAULT_LOG_DIR = os.path.join(BASE_DIR, "logs")
 
 # 日志格式定义
 # <green> 等标签是 loguru 特有的彩色输出
@@ -18,11 +22,48 @@ LOG_FORMAT = (
 )
 
 
-def setup_logger(console_level="DEBUG"):
+def _load_log_config() -> dict:
+    """尝试从配置加载日志配置，失败时使用默认值。"""
+    try:
+        from app.shared.config import get_settings
+        settings = get_settings()
+        return {
+            "console_level": settings.logging.console_level,
+            "log_dir": settings.logging.log_dir,
+            "info_days": settings.logging.retention.info_days,
+            "error_days": settings.logging.retention.error_days,
+            "debug_days": settings.logging.retention.debug_days,
+        }
+    except Exception:
+        # 配置加载失败时使用默认值
+        return {
+            "console_level": "DEBUG",
+            "log_dir": DEFAULT_LOG_DIR,
+            "info_days": 7,
+            "error_days": 30,
+            "debug_days": 3,
+        }
+
+
+def setup_logger(console_level: str | None = None) -> logger:
     """
     统一配置日志模块
-    - console_level: 控制台输出等级，默认为 DEBUG
+
+    Args:
+        console_level: 控制台输出等级，默认为从配置读取或 DEBUG
     """
+    # 加载日志配置
+    log_config = _load_log_config()
+
+    if console_level is None:
+        console_level = log_config["console_level"]
+
+    log_dir = log_config["log_dir"]
+
+    # 确保日志目录存在
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir, exist_ok=True)
+
     # 移除默认的 handler
     logger.remove()
 
@@ -35,40 +76,39 @@ def setup_logger(console_level="DEBUG"):
     )
 
     # 2. 配置文件输出 - 分级别记录
-    # INFO 及以上级别的日志 (包含 INFO, WARNING, ERROR, CRITICAL)
+    # INFO 及以上级别的日志
     logger.add(
-        os.path.join(LOG_DIR, "info.log"),
+        os.path.join(log_dir, "info.log"),
         level="INFO",
         format=LOG_FORMAT,
-        rotation="10 MB",  # 文件超过 10MB 自动切割
-        retention="1 week",  # 保留一周
+        rotation="10 MB",
+        retention=f"{log_config['info_days']} days",
         encoding="utf-8",
-        enqueue=True  # 异步写入，提升性能
+        enqueue=True
     )
 
-    # ERROR 及以上级别的日志 (包含 ERROR, CRITICAL)
-    # 专门记录错误，方便排查
+    # ERROR 及以上级别的日志
     logger.add(
-        os.path.join(LOG_DIR, "error.log"),
+        os.path.join(log_dir, "error.log"),
         level="ERROR",
         format=LOG_FORMAT,
         rotation="10 MB",
-        retention="1 month",
+        retention=f"{log_config['error_days']} days",
         encoding="utf-8",
         enqueue=True,
-        backtrace=True,  # 记录完整的异常堆栈
-        diagnose=True  # 记录变量值，极大方便调试
+        backtrace=True,
+        diagnose=True
     )
 
     # DEBUG 级别的日志单独记录
     logger.add(
-        os.path.join(LOG_DIR, "debug.log"),
+        os.path.join(log_dir, "debug.log"),
         level="DEBUG",
         format=LOG_FORMAT,
         rotation="10 MB",
-        retention="3 days",
+        retention=f"{log_config['debug_days']} days",
         encoding="utf-8",
-        filter=lambda record: record["level"].name == "DEBUG"  # 仅记录 DEBUG
+        filter=lambda record: record["level"].name == "DEBUG"
     )
 
     return logger
