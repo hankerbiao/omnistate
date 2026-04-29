@@ -33,7 +33,7 @@ class ExecutionDispatchService(
         self._ensure_actor_identity(actor_id, command.created_by)
         logger.info(
             "Creating execution task: "
-            f"task_id={command.task_id}, framework={command.framework}, agent_id={command.agent_id}, "
+            f"task_id={command.task_id}, agent_id={command.agent_id}, "
             f"case_count={len(command.case_ids)}, schedule_type={command.schedule_type}"
         )
         doc_map = await self._case_coordinator.load_case_docs(command.case_ids)
@@ -50,7 +50,6 @@ class ExecutionDispatchService(
 
         task_doc = ExecutionTaskDoc(
             task_id=command.task_id,
-            framework=command.framework,
             created_by=command.created_by,
             dispatch_channel=dispatch_channel,
         )

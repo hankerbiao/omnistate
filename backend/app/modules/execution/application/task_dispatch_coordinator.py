@@ -36,10 +36,8 @@ class ExecutionTaskDispatchCoordinator:
         planned_at = request_payload["planned_at"]
         return DispatchExecutionTaskCommand(
             task_id=task_doc.task_id,
-            framework=task_doc.framework,
             dispatch_channel=task_doc.dispatch_channel,
             agent_id=task_doc.agent_id,
-            trigger_source=request_payload["trigger_source"],
             created_by=task_doc.created_by,
             auto_case_ids=auto_case_ids,
             case_ids=case_ids,
@@ -118,7 +116,7 @@ class ExecutionTaskDispatchCoordinator:
         logger.debug(
             "Dispatching execution task case: "
             f"task_id={command.task_id}, case_id={command.dispatch_case_id}, "
-            f"case_index={command.dispatch_case_index}, framework={command.framework}, "
+            f"case_index={command.dispatch_case_index}, "
             f"agent_id={command.agent_id}"
         )
         dispatch_result = await self._dispatcher.dispatch(command)

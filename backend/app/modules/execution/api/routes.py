@@ -86,14 +86,14 @@ async def dispatch_task(
     except ValueError as exc:
         logger.warning(
             "Dispatch task request rejected with validation error: "
-            f"user_id={current_user['user_id']}, framework={request.framework}, "
+            f"user_id={current_user['user_id']}, "
             f"dispatch_channel={request.dispatch_channel}, detail={exc}"
         )
         raise HTTPException(status_code=400, detail=str(exc))
     except KeyError as exc:
         logger.warning(
             "Dispatch task request rejected with missing dependency: "
-            f"user_id={current_user['user_id']}, framework={request.framework}, "
+            f"user_id={current_user['user_id']}, "
             f"dispatch_channel={request.dispatch_channel}, "
             f"auto_case_ids={[item.auto_case_id for item in request.cases]}, detail={exc}"
         )
@@ -101,7 +101,7 @@ async def dispatch_task(
     except Exception:
         logger.exception(
             "Dispatch task request failed unexpectedly: "
-            f"user_id={current_user['user_id']}, framework={request.framework}, "
+            f"user_id={current_user['user_id']}, "
             f"dispatch_channel={request.dispatch_channel}"
         )
         raise

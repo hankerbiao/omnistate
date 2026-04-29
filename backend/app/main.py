@@ -81,7 +81,6 @@ app.include_router(api_router)
 
 
 def main() -> None:
-    """Python 3.13 runtime entrypoint."""
     import uvicorn
 
     uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=False)

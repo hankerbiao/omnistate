@@ -20,10 +20,8 @@ class DispatchCaseItem(BaseModel):
 
 
 class DispatchTaskRequest(BaseModel):
-    framework: str = Field(..., description="执行框架标识，例如 pytest、robot 等")
     dispatch_channel: Optional[str] = Field(None, description="下发通道，可选 RABBITMQ 或 HTTP")
     agent_id: Optional[str] = Field(None, description="目标执行代理 ID；由平台路由到指定 agent 时使用")
-    trigger_source: Optional[str] = Field(default="manual", description="触发来源，例如 manual、web_ui、schedule")
     schedule_type: str = Field(default="IMMEDIATE", description="调度类型，只允许 IMMEDIATE 或 SCHEDULED")
     planned_at: Optional[datetime] = Field(None, description="计划执行时间（UTC）；schedule_type 为 SCHEDULED 时必填")
     callback_url: Optional[str] = Field(None, description="执行端回调地址，用于上报任务/用例执行结果")
@@ -55,10 +53,8 @@ class DispatchTaskRequest(BaseModel):
 
 
 class RerunTaskRequest(BaseModel):
-    framework: Optional[str] = Field(None, description="重跑任务使用的执行框架")
     dispatch_channel: Optional[str] = Field(None, description="重跑任务使用的下发通道")
     agent_id: Optional[str] = Field(None, description="重跑任务使用的目标代理 ID")
-    trigger_source: Optional[str] = Field(None, description="触发来源")
     schedule_type: Optional[str] = Field(None, description="重跑调度类型")
     planned_at: Optional[datetime] = Field(None, description="重跑计划时间（UTC）")
     callback_url: Optional[str] = Field(None, description="执行端回调地址")
@@ -114,7 +110,6 @@ class DispatchTaskResponse(BaseModel):
 class ExecutionTaskListItem(BaseModel):
     task_id: str = Field(..., description="平台内部任务 ID")
     source_task_id: Optional[str] = Field(None, description="重跑来源任务 ID")
-    framework: str = Field(..., description="执行框架标识")
     agent_id: Optional[str] = Field(None, description="目标代理 ID")
     dispatch_channel: str = Field(..., description="当前任务使用的下发通道")
     dedup_key: Optional[str] = Field(None, description="任务去重键")

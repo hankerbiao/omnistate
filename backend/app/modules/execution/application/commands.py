@@ -15,8 +15,6 @@ class DispatchExecutionTaskCommand:
     """分发执行任务命令。"""
     # 任务基本信息
     task_id: str
-    framework: str
-    trigger_source: str
     created_by: str
 
     # 测试用例信息

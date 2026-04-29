@@ -34,9 +34,9 @@ class RabbitMQHandlerRegistry:
         self._handlers: dict[str, Callable[[bytes, dict[str, Any]], Coroutine[Any, Any, None]]] = {}
 
     def register(
-        self,
-        routing_key: str,
-        handler: Callable[[bytes, dict[str, Any]], Coroutine[Any, Any, None]],
+            self,
+            routing_key: str,
+            handler: Callable[[bytes, dict[str, Any]], Coroutine[Any, Any, None]],
     ) -> None:
         """注册 routing_key 对应的处理器。
 
@@ -67,39 +67,7 @@ class RabbitMQHandlerRegistry:
         # 精确匹配
         if routing_key in self._handlers:
             return self._handlers[routing_key]
-
-        # 通配符匹配
-        for pattern, handler in self._handlers.items():
-            if self._match_routing_key(routing_key, pattern):
-                return handler
-
         return None
-
-    @staticmethod
-    def _match_routing_key(routing_key: str, pattern: str) -> bool:
-        """匹配 routing_key 与模式。
-
-        Args:
-            routing_key: 实际的路由键
-            pattern: 模式，支持 # 和 * 通配符
-
-        Returns:
-            是否匹配
-        """
-        if pattern == "#":
-            return True
-
-        # 转换为正则表达式
-        # * 匹配单个词 (非点号字符序列)
-        # # 匹配零或多词 (点号分隔的任意内容)
-        import re
-
-        regex_pattern = re.escape(pattern)
-        regex_pattern = regex_pattern.replace(r"\*", r"[^.]+")
-        regex_pattern = regex_pattern.replace(r"#*", ".*")
-        regex_pattern = f"^{regex_pattern}$"
-
-        return bool(re.match(regex_pattern, routing_key))
 
 
 class RabbitMQConsumerRunner:
@@ -113,9 +81,9 @@ class RabbitMQConsumerRunner:
     """
 
     def __init__(
-        self,
-        config: RabbitMQConfig | None = None,
-        registry: RabbitMQHandlerRegistry | None = None,
+            self,
+            config: RabbitMQConfig | None = None,
+            registry: RabbitMQHandlerRegistry | None = None,
     ) -> None:
         """初始化消费者运行时。
 

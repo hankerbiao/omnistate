@@ -16,7 +16,6 @@ class ExecutionTaskDoc(Document):
 
     task_id: str = Field(..., description="平台任务唯一 ID")
     source_task_id: Optional[str] = Field(None, description="重跑来源任务 ID")
-    framework: str = Field(..., description="外部框架标识")
     agent_id: Optional[str] = Field(None, description="目标代理 ID")
     dispatch_channel: str = Field(default="RABBITMQ", description="下发通道")
     dedup_key: Optional[str] = Field(None, description="业务去重键")
@@ -67,7 +66,6 @@ class ExecutionTaskDoc(Document):
         indexes = [
             IndexModel("task_id", unique=True),
             IndexModel("source_task_id"),
-            IndexModel("framework"),
             IndexModel("agent_id"),
             IndexModel("dispatch_channel"),
             IndexModel("dedup_key"),

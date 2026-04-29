@@ -42,7 +42,7 @@ class ExecutionTaskCommandService(ExecutionTaskCommandMixin):
         ]
         logger.info(
             "Dispatch task request received: "
-            f"user_id={actor_id}, framework={request.framework}, "
+            f"user_id={actor_id}, "
             f"dispatch_channel={request.dispatch_channel}, agent_id={request.agent_id}, "
             f"schedule_type={request.schedule_type}, planned_at={request.planned_at}, "
             f"cases={request_case_payload}"
@@ -77,10 +77,8 @@ class ExecutionTaskCommandService(ExecutionTaskCommandMixin):
 
         command = DispatchExecutionTaskCommand(
             task_id=task_id,
-            framework=request.framework,
             dispatch_channel=request.dispatch_channel,
             agent_id=request.agent_id,
-            trigger_source=request.trigger_source,
             created_by=actor_id,
             auto_case_ids=auto_case_ids,
             case_ids=case_ids,

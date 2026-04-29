@@ -26,10 +26,8 @@ class ExecutionTaskCommandMixin:
     def _build_dedup_key(command: DispatchExecutionTaskCommand) -> str:
         """基于业务载荷构建稳定去重键。"""
         payload = {
-            "framework": command.framework,
             "dispatch_channel": command.dispatch_channel,
             "agent_id": command.agent_id,
-            "trigger_source": command.trigger_source,
             "schedule_type": command.schedule_type,
             "planned_at": command.planned_at.isoformat() if command.planned_at else None,
             "callback_url": command.callback_url,
@@ -109,9 +107,7 @@ class ExecutionTaskCommandMixin:
         """构建任务级快照，保留完整 case 列表用于后续串行推进。"""
         return {
             "task_id": command.task_id,
-            "framework": command.framework,
             "dispatch_channel": command.dispatch_channel,
-            "trigger_source": command.trigger_source,
             "agent_id": command.agent_id,
             "schedule_type": command.schedule_type,
             "planned_at": command.planned_at.isoformat() if command.planned_at else None,
@@ -204,16 +200,13 @@ class ExecutionTaskCommandMixin:
         ]
         dispatch_channel = request.dispatch_channel or payload.get("dispatch_channel")
         agent_id = request.agent_id if request.agent_id is not None else payload.get("agent_id")
-        trigger_source = request.trigger_source or "rerun"
         schedule_type = request.schedule_type or "IMMEDIATE"
         planned_at = request.planned_at if request.schedule_type else None
         return DispatchExecutionTaskCommand(
             task_id=new_task_id,
             source_task_id=getattr(source_task_doc, "task_id", None),
-            framework=request.framework or payload["framework"],
             dispatch_channel=dispatch_channel,
             agent_id=agent_id,
-            trigger_source=trigger_source,
             created_by=actor_id,
             auto_case_ids=auto_case_ids,
             case_ids=case_ids,

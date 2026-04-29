@@ -52,7 +52,6 @@ class ExecutionTaskSerializer:
         return {
             "task_id": task_doc.task_id,
             "source_task_id": getattr(task_doc, "source_task_id", None),
-            "framework": task_doc.framework,
             "agent_id": task_doc.agent_id,
             "dispatch_channel": task_doc.dispatch_channel,
             "dedup_key": task_doc.dedup_key,
