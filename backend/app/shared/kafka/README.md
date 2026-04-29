@@ -5,7 +5,6 @@
 - `config.py`：Kafka 连接、topic、consumer group 配置
 - `producer.py`：producer 生命周期和消息发送
 - `consumer.py` / `router.py` / `dead_letter.py`：consumer runtime、topic 分发、死信
-- `KafkaMessageManager`：兼容旧调用的 producer-only 包装类
 
 ## 配置来源
 
@@ -26,9 +25,9 @@
 ## 使用方式
 
 ```python
-from app.shared.kafka import KafkaMessageManager, ResultMessage
+from app.shared.kafka import KafkaProducerManager, ResultMessage
 
-manager = KafkaMessageManager()
+manager = KafkaProducerManager()
 manager.start()
 
 try:
@@ -46,9 +45,9 @@ finally:
 如果需要显式注入配置：
 
 ```python
-from app.shared.kafka import KafkaConfig, KafkaMessageManager
+from app.shared.kafka import KafkaConfig, KafkaProducerManager
 
-manager = KafkaMessageManager(
+manager = KafkaProducerManager(
     config=KafkaConfig(
         bootstrap_servers=["127.0.0.1:9092"],
         client_id="local-dev",

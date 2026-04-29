@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-from app.modules.execution.application.task_case_mixin import ExecutionTaskCaseMixin
+from app.modules.execution.application.task_case_coordinator import ExecutionTaskCaseCoordinator
 from app.modules.execution.application.task_command_mixin import ExecutionTaskCommandMixin
-from app.modules.execution.application.task_dispatch_mixin import ExecutionTaskDispatchMixin
-from app.modules.execution.application.task_query_mixin import ExecutionTaskQueryMixin
+from app.modules.execution.application.task_dispatch_coordinator import ExecutionTaskDispatchCoordinator
+from app.modules.execution.application.task_serializer import ExecutionTaskSerializer
 from app.modules.execution.application.commands import DispatchExecutionTaskCommand
 from app.modules.execution.repository.models import ExecutionTaskDoc
 from app.modules.execution.service.task_dispatcher import ExecutionTaskDispatcher
@@ -15,15 +15,14 @@ from app.shared.core.logger import log as logger
 
 
 class ExecutionDispatchService(
-    ExecutionTaskDispatchMixin,
-    ExecutionTaskCaseMixin,
     ExecutionTaskCommandMixin,
-    ExecutionTaskQueryMixin,
 ):
     """统一封装任务创建后的下发与重建能力。"""
 
     def __init__(self, dispatcher: ExecutionTaskDispatcher | None = None) -> None:
-        self._dispatcher = dispatcher or ExecutionTaskDispatcher()
+        self._dispatch_coordinator = ExecutionTaskDispatchCoordinator(dispatcher)
+        self._case_coordinator = ExecutionTaskCaseCoordinator()
+        self._serializer = ExecutionTaskSerializer()
 
     async def create_task_from_command(
         self,
@@ -37,7 +36,7 @@ class ExecutionDispatchService(
             f"task_id={command.task_id}, framework={command.framework}, agent_id={command.agent_id}, "
             f"case_count={len(command.case_ids)}, schedule_type={command.schedule_type}"
         )
-        doc_map = await self._load_case_docs(command.case_ids)
+        doc_map = await self._case_coordinator.load_case_docs(command.case_ids)
         schedule_type, planned_at, schedule_status, should_dispatch_now = self._normalize_schedule(
             command.schedule_type,
             command.planned_at,
@@ -64,7 +63,7 @@ class ExecutionDispatchService(
             dispatch_status="DISPATCHING" if should_dispatch_now else "PENDING",
         )
         await task_doc.insert()
-        await self._replace_task_case_docs(
+        await self._case_coordinator.replace_task_case_docs(
             task_doc.task_id,
             command.case_ids,
             command.auto_case_ids,
@@ -72,13 +71,19 @@ class ExecutionDispatchService(
             doc_map,
         )
         await task_doc.save()
-        await self._dispatch_task_if_needed(task_doc, should_dispatch_now)
+        await self._dispatch_coordinator.dispatch_task_if_needed(
+            task_doc,
+            should_dispatch_now,
+            0,
+            self._case_coordinator.resolve_task_case_pairs,
+            self._ensure_utc_datetime,
+        )
         logger.info(
             "Execution task created: "
             f"task_id={task_doc.task_id}, schedule_status={task_doc.schedule_status}, "
             f"dispatch_status={task_doc.dispatch_status}, should_dispatch_now={should_dispatch_now}"
         )
-        return self._serialize_task_doc(task_doc)
+        return self._serializer.serialize_task_doc(task_doc)
 
     async def build_task_dispatch_command(
         self,
@@ -86,7 +91,12 @@ class ExecutionDispatchService(
         dispatch_case_index: int,
     ) -> DispatchExecutionTaskCommand:
         """根据任务快照重建指定 case 的下发命令。"""
-        return await self._build_task_dispatch_command(task_doc, dispatch_case_index)
+        return await self._dispatch_coordinator.build_task_dispatch_command(
+            task_doc,
+            dispatch_case_index,
+            self._case_coordinator.resolve_task_case_pairs,
+            self._ensure_utc_datetime,
+        )
 
     async def dispatch_existing_task(
         self,
@@ -94,4 +104,4 @@ class ExecutionDispatchService(
         command: DispatchExecutionTaskCommand,
     ) -> None:
         """对已有任务执行一次真正下发。"""
-        await self._dispatch_existing_task(task_doc, command)
+        await self._dispatch_coordinator.dispatch_existing_task(task_doc, command)

@@ -46,6 +46,28 @@ async def ensure_permission(
     return workflow_item_id
 
 
+async def ensure_authorized_entity(
+    *,
+    context: OperationContext,
+    entity_id: str,
+    getter: Callable[[str], Awaitable[dict]],
+    error_cls: type[Exception],
+    checker: Callable[[dict[str, Any], dict, Any], bool],
+    action: str,
+    workflow_getter: Callable[[str], Awaitable[dict | None]],
+) -> tuple[dict, str]:
+    """Load an entity and apply workflow-aware permission checks in one step."""
+    entity = await ensure_entity(entity_id, getter, error_cls)
+    workflow_item_id = await ensure_permission(
+        context,
+        entity,
+        checker,
+        action,
+        workflow_getter,
+    )
+    return entity, workflow_item_id
+
+
 async def delete_entity_or_work_item(
     context: OperationContext,
     workflow_command_service: WorkflowCommandService,

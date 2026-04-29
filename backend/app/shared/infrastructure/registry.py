@@ -8,8 +8,8 @@ from typing import Any
 from app.modules.execution.service.task_scheduler import ExecutionTaskScheduler
 from app.shared.core.logger import log as logger
 from app.shared.db.config import settings
-from app.shared.kafka import KafkaMessageManager, load_kafka_config
-from app.shared.rabbitmq import RabbitMQMessageManager, load_rabbitmq_config
+from app.shared.kafka import KafkaProducerManager, load_kafka_config
+from app.shared.rabbitmq import RabbitMQProducerManager, load_rabbitmq_config
 
 
 KAFKA_COMPONENT = "kafka_producer"
@@ -32,8 +32,8 @@ class InfrastructureRegistry:
     """统一管理 API 进程内的应用级基础设施生命周期。"""
 
     def __init__(self) -> None:
-        self.kafka_manager: KafkaMessageManager | None = None
-        self.rabbitmq_manager: RabbitMQMessageManager | None = None
+        self.kafka_manager: KafkaProducerManager | None = None
+        self.rabbitmq_manager: RabbitMQProducerManager | None = None
         self.execution_task_scheduler = ExecutionTaskScheduler()
         self.execution_scheduler_task: asyncio.Task | None = None
         self._component_status: dict[str, InfrastructureStatus] = {}
@@ -46,7 +46,7 @@ class InfrastructureRegistry:
         if bootstrap_servers is not None:
             kafka_config.bootstrap_servers = bootstrap_servers
 
-        self.kafka_manager = KafkaMessageManager(
+        self.kafka_manager = KafkaProducerManager(
             client_id="dmlv4-infrastructure",
             config=kafka_config,
         )
@@ -55,7 +55,7 @@ class InfrastructureRegistry:
 
     def _ensure_rabbitmq_manager_started(self) -> None:
         rabbitmq_config = load_rabbitmq_config()
-        self.rabbitmq_manager = RabbitMQMessageManager(config=rabbitmq_config)
+        self.rabbitmq_manager = RabbitMQProducerManager(config=rabbitmq_config)
         self.rabbitmq_manager.start()
         self._set_component_status(RABBITMQ_COMPONENT, "RUNNING")
 
@@ -162,13 +162,13 @@ class InfrastructureRegistry:
             error_message=error_message,
         )
 
-    def get_kafka_manager(self) -> KafkaMessageManager | None:
+    def get_kafka_manager(self) -> KafkaProducerManager | None:
         return self.kafka_manager
 
-    def get_rabbitmq_manager(self) -> RabbitMQMessageManager | None:
+    def get_rabbitmq_manager(self) -> RabbitMQProducerManager | None:
         return self.rabbitmq_manager
 
-    def ensure_kafka_manager(self) -> KafkaMessageManager | None:
+    def ensure_kafka_manager(self) -> KafkaProducerManager | None:
         """按需懒初始化 Kafka producer，支持任务级渠道切换。"""
         if self.kafka_manager is not None:
             return self.kafka_manager
@@ -186,7 +186,7 @@ class InfrastructureRegistry:
             self.kafka_manager = None
             return None
 
-    def ensure_rabbitmq_manager(self) -> RabbitMQMessageManager | None:
+    def ensure_rabbitmq_manager(self) -> RabbitMQProducerManager | None:
         """按需懒初始化 RabbitMQ producer，支持任务级渠道切换。"""
         if self.rabbitmq_manager is not None:
             return self.rabbitmq_manager
@@ -308,11 +308,11 @@ async def shutdown_infrastructure() -> None:
     await registry.shutdown()
 
 
-def get_kafka_manager() -> KafkaMessageManager | None:
+def get_kafka_manager() -> KafkaProducerManager | None:
     registry = get_infrastructure_registry()
     return registry.ensure_kafka_manager()
 
 
-def get_rabbitmq_manager() -> RabbitMQMessageManager | None:
+def get_rabbitmq_manager() -> RabbitMQProducerManager | None:
     registry = get_infrastructure_registry()
     return registry.ensure_rabbitmq_manager()

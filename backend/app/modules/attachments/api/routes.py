@@ -173,28 +173,3 @@ async def list_attachments(
     ]
 
     return AttachmentListResponse(items=items, total=total)
-
-
-# ==================== 预留接口：下发给测试框架 ====================
-
-@router.post("/{file_id}/dispatch", response_model=DispatchResponse, status_code=status.HTTP_501_NOT_IMPLEMENTED)
-async def dispatch_to_test_framework(
-    file_id: str,
-    current_user: CurrentUser = None,
-):
-    """预留：下发给测试框架
-
-    将附件同步下发给测试框架（暂未实现）
-
-    - **file_id**: 文件唯一标识
-    """
-    # TODO: 实现下发给测试框架的业务逻辑
-    # 需要根据项目具体需求确定：
-    # 1. 测试框架的接口地址和认证方式
-    # 2. 文件传输方式（直传、URL分享等）
-    # 3. 下发状态跟踪和回调
-
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="下发给测试框架功能暂未实现",
-    )

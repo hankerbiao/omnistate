@@ -70,6 +70,34 @@ def test_execution_helpers_do_not_call_private_dispatch_methods_across_services(
     assert "._dispatch_existing_task" not in scheduler_source
 
 
+def test_execution_task_command_service_uses_case_resolver_collaborator() -> None:
+    source = (ROOT / "app/modules/execution/application/task_command_service.py").read_text()
+
+    assert "ExecutionTaskCaseMixin" not in source
+    assert "ExecutionCaseResolver" in source
+
+
+def test_execution_dispatch_service_uses_serializer_collaborator() -> None:
+    source = (ROOT / "app/modules/execution/application/task_dispatch_service.py").read_text()
+
+    assert "ExecutionTaskQueryMixin" not in source
+    assert "ExecutionTaskSerializer" in source
+
+
+def test_execution_dispatch_service_uses_dispatch_coordinator() -> None:
+    source = (ROOT / "app/modules/execution/application/task_dispatch_service.py").read_text()
+
+    assert "ExecutionTaskDispatchMixin" not in source
+    assert "ExecutionTaskDispatchCoordinator" in source
+
+
+def test_execution_dispatch_service_uses_case_coordinator() -> None:
+    source = (ROOT / "app/modules/execution/application/task_dispatch_service.py").read_text()
+
+    assert "ExecutionTaskCaseMixin" not in source
+    assert "ExecutionTaskCaseCoordinator" in source
+
+
 def test_terminal_routes_do_not_hold_module_level_terminal_service_singleton() -> None:
     source = (ROOT / "app/modules/terminal/api/routes.py").read_text()
 
@@ -136,3 +164,15 @@ def test_test_specs_projection_hook_only_handles_delete_side_effects() -> None:
     source = (ROOT / "app/modules/test_specs/application/workflow_projection_hook.py").read_text()
 
     assert "def after_transition" not in source
+
+
+def test_test_specs_command_services_use_authorized_entity_helper() -> None:
+    command_service_files = [
+        "app/modules/test_specs/application/requirement_command_service.py",
+        "app/modules/test_specs/application/test_case_command_service.py",
+    ]
+
+    for relative_path in command_service_files:
+        source = (ROOT / relative_path).read_text()
+        assert "ensure_authorized_entity" in source
+        assert "ensure_permission(" not in source

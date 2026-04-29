@@ -5,8 +5,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Dict
 
+from app.modules.execution.application.case_resolver import ExecutionCaseResolver
 from app.modules.execution.application.commands import DispatchExecutionTaskCommand
-from app.modules.execution.application.task_case_mixin import ExecutionTaskCaseMixin
 from app.modules.execution.application.task_command_mixin import ExecutionTaskCommandMixin
 from app.modules.execution.application.task_dispatch_service import ExecutionDispatchService
 from app.modules.execution.repository.models import ExecutionTaskDoc
@@ -15,11 +15,16 @@ from app.shared.core.logger import log as logger
 from app.shared.service import SequenceIdService
 
 
-class ExecutionTaskCommandService(ExecutionTaskCaseMixin, ExecutionTaskCommandMixin):
+class ExecutionTaskCommandService(ExecutionTaskCommandMixin):
     """处理任务创建、重跑、删除等命令。"""
 
-    def __init__(self, dispatch_service: ExecutionDispatchService | None = None) -> None:
+    def __init__(
+        self,
+        dispatch_service: ExecutionDispatchService | None = None,
+        case_resolver: ExecutionCaseResolver | None = None,
+    ) -> None:
         self._dispatch_service = dispatch_service or ExecutionDispatchService()
+        self._case_resolver = case_resolver or ExecutionCaseResolver()
 
     async def create_and_dispatch_task(
         self,
@@ -49,7 +54,9 @@ class ExecutionTaskCommandService(ExecutionTaskCaseMixin, ExecutionTaskCommandMi
 
         auto_case_ids = [item.auto_case_id for item in request.cases]
         case_configs = [dict(item.config) for item in request.cases]
-        dispatch_bindings = await self.resolve_case_dispatch_bindings_by_auto_case_ids(auto_case_ids)
+        dispatch_bindings = await self._case_resolver.resolve_case_dispatch_bindings_by_auto_case_ids(
+            auto_case_ids
+        )
         case_ids = [binding.case_id for binding in dispatch_bindings]
         script_entity_ids = [binding.script_entity_id for binding in dispatch_bindings]
         case_payloads = [
@@ -140,7 +147,9 @@ class ExecutionTaskCommandService(ExecutionTaskCaseMixin, ExecutionTaskCommandMi
         else:
             payload_cases = list(dict(source_task_doc.request_payload or {}).get("cases", []))
             auto_case_ids = [case["auto_case_id"] for case in payload_cases]
-        dispatch_bindings = await self.resolve_case_dispatch_bindings_by_auto_case_ids(auto_case_ids)
+        dispatch_bindings = await self._case_resolver.resolve_case_dispatch_bindings_by_auto_case_ids(
+            auto_case_ids
+        )
         command = self._build_rerun_command_from_payload(
             source_task_doc=source_task_doc,
             request=request,

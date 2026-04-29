@@ -78,7 +78,7 @@ class WorkflowCommandService:
         context: OperationContext,
         command: DeleteWorkItemCommand,
     ) -> bool:
-        work_item = await self._workflow_service.get_item_by_id(command.work_item_id)
+        work_item = await self._query_service.get_item_by_id(command.work_item_id)
         if work_item is not None:
             await self._run_hook("before_delete", work_item)
 

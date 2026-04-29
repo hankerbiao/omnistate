@@ -1,7 +1,7 @@
 """共享基础设施与通用能力。"""
 
 from .kafka import (
-    KafkaMessageManager,
+    KafkaProducerManager,
     TaskMessage,
     ResultMessage,
     KafkaConfig,
@@ -9,7 +9,7 @@ from .kafka import (
 )
 
 __all__ = [
-    "KafkaMessageManager",
+    "KafkaProducerManager",
     "TaskMessage",
     "ResultMessage",
     "KafkaConfig",

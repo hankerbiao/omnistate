@@ -1,4 +1,8 @@
-"""Role resource service."""
+"""角色资源服务模块。
+
+提供角色的增删改查以及权限绑定功能。
+依赖于 RoleDoc 数据模型和权限验证逻辑。
+"""
 
 from __future__ import annotations
 
@@ -10,14 +14,31 @@ from app.modules.auth.service.support import AuthServiceSupport
 
 
 class RoleService(AuthServiceSupport):
-    """Role CRUD and permission binding."""
+    """角色服务类。
 
+    负责角色的创建、查询、更新和权限绑定操作。
+    继承自 AuthServiceSupport，获取通用的权限验证和辅助方法。
+    """
+
+    # 角色允许更新的字段集合，用于控制哪些字段可通过 update_role 修改
     _ROLE_UPDATABLE_FIELDS = {"name"}
 
     async def create_role(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """创建新角色。
+
+        Args:
+            data: 包含 role_id、name、permission_ids 等字段的角色数据
+
+        Returns:
+            创建成功后的角色字典
+
+        Raises:
+            ValueError: 当 role_id 已存在时抛出
+        """
         existing = await RoleDoc.find_one(RoleDoc.role_id == data["role_id"])
         if existing:
             raise ValueError("role_id already exists")
+        # 验证权限 IDs 是否有效
         await self._ensure_permissions_exist(data.get("permission_ids", []))
         doc = RoleDoc(**data)
         await doc.insert()

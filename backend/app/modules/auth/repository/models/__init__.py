@@ -23,4 +23,12 @@ __all__ = [
     "RoleModel",
     "PermissionModel",
     "NavigationPageModel",
+    "DOCUMENT_MODELS",
+]
+
+DOCUMENT_MODELS = [
+    UserDoc,
+    RoleDoc,
+    PermissionDoc,
+    NavigationPageDoc,
 ]

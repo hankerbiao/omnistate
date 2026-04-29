@@ -21,4 +21,11 @@ __all__ = [
     "CodeSnapshotModel",
     "ReportMetaModel",
     "ConfigFieldModel",
+    "DOCUMENT_MODELS",
+]
+
+DOCUMENT_MODELS = [
+    TestRequirementDoc,
+    TestCaseDoc,
+    AutomationTestCaseDoc,
 ]

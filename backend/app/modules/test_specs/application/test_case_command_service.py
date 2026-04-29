@@ -2,8 +2,8 @@ from copy import deepcopy
 
 from app.modules.test_specs.application._workflow_command_support import (
     delete_entity_or_work_item,
+    ensure_authorized_entity,
     ensure_entity,
-    ensure_permission,
 )
 from app.modules.test_specs.application.commands import (
     AssignTestCaseOwnersCommand,
@@ -103,17 +103,14 @@ class TestCaseCommandService:
         if not command.payload:
             raise ValueError("no fields to update")
 
-        test_case = await ensure_entity(
-            command.case_id,
-            self._test_case_service.get_test_case,
-            TestCaseNotFoundError,
-        )
-        await ensure_permission(
-            context,
-            test_case,
-            can_update_test_case,
-            "update test case",
-            self._workflow_command_service.get_work_item_by_id,
+        await ensure_authorized_entity(
+            context=context,
+            entity_id=command.case_id,
+            getter=self._test_case_service.get_test_case,
+            error_cls=TestCaseNotFoundError,
+            checker=can_update_test_case,
+            action="update test case",
+            workflow_getter=self._workflow_command_service.get_work_item_by_id,
         )
 
         return await self._test_case_service.update_test_case(command.case_id, command.payload)
@@ -141,17 +138,14 @@ class TestCaseCommandService:
             TestCaseNotFoundError: 测试用例不存在时抛出
             PermissionDeniedError: 没有删除权限时抛出
         """
-        test_case = await ensure_entity(
-            command.case_id,
-            self._test_case_service.get_test_case,
-            TestCaseNotFoundError,
-        )
-        workflow_item_id = await ensure_permission(
-            context,
-            test_case,
-            can_delete_test_case,
-            "delete test case",
-            self._workflow_command_service.get_work_item_by_id,
+        _test_case, workflow_item_id = await ensure_authorized_entity(
+            context=context,
+            entity_id=command.case_id,
+            getter=self._test_case_service.get_test_case,
+            error_cls=TestCaseNotFoundError,
+            checker=can_delete_test_case,
+            action="delete test case",
+            workflow_getter=self._workflow_command_service.get_work_item_by_id,
         )
         await delete_entity_or_work_item(
             context,
@@ -181,17 +175,14 @@ class TestCaseCommandService:
         Raises:
             相关异常可能由底层服务抛出
         """
-        test_case = await ensure_entity(
-            command.case_id,
-            self._test_case_service.get_test_case,
-            TestCaseNotFoundError,
-        )
-        await ensure_permission(
-            context,
-            test_case,
-            can_update_test_case,
-            "link automation case",
-            self._workflow_command_service.get_work_item_by_id,
+        await ensure_authorized_entity(
+            context=context,
+            entity_id=command.case_id,
+            getter=self._test_case_service.get_test_case,
+            error_cls=TestCaseNotFoundError,
+            checker=can_update_test_case,
+            action="link automation case",
+            workflow_getter=self._workflow_command_service.get_work_item_by_id,
         )
 
         return await self._test_case_service.link_automation_case(
@@ -222,17 +213,14 @@ class TestCaseCommandService:
             PermissionDeniedError: 没有更新权限时抛出
         """
         command.validate()
-        test_case = await ensure_entity(
-            command.case_id,
-            self._test_case_service.get_test_case,
-            TestCaseNotFoundError,
-        )
-        await ensure_permission(
-            context,
-            test_case,
-            can_update_test_case,
-            "assign test case owners",
-            self._workflow_command_service.get_work_item_by_id,
+        await ensure_authorized_entity(
+            context=context,
+            entity_id=command.case_id,
+            getter=self._test_case_service.get_test_case,
+            error_cls=TestCaseNotFoundError,
+            checker=can_update_test_case,
+            action="assign test case owners",
+            workflow_getter=self._workflow_command_service.get_work_item_by_id,
         )
 
         return await self._test_case_service.assign_owners(
@@ -264,10 +252,14 @@ class TestCaseCommandService:
             RequirementNotFoundError: 目标需求不存在时抛出
             PermissionDeniedError: 没有更新权限时抛出
         """
-        test_case = await ensure_entity(
-            command.case_id,
-            self._test_case_service.get_test_case,
-            TestCaseNotFoundError,
+        test_case, _workflow_item_id = await ensure_authorized_entity(
+            context=context,
+            entity_id=command.case_id,
+            getter=self._test_case_service.get_test_case,
+            error_cls=TestCaseNotFoundError,
+            checker=can_update_test_case,
+            action="move test case to requirement",
+            workflow_getter=self._workflow_command_service.get_work_item_by_id,
         )
 
         if test_case.get("ref_req_id") == command.target_req_id:
@@ -281,14 +273,6 @@ class TestCaseCommandService:
         )
 
         command.validate()
-        await ensure_permission(
-            context,
-            test_case,
-            can_update_test_case,
-            "move test case to requirement",
-            self._workflow_command_service.get_work_item_by_id,
-        )
-
         return await self._test_case_service.move_to_requirement(
             case_id=command.case_id,
             target_req_id=command.target_req_id,

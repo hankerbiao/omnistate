@@ -16,7 +16,7 @@ from app.modules.workflow.application import (  # noqa: E402
 )
 
 
-class _FakeWorkflowService:
+class _FakeMutationService:
     def __init__(self) -> None:
         self.deleted: list[str] = []
         self.transition_calls: list[tuple[str, str, str, dict, list[str]]] = []
@@ -40,13 +40,6 @@ class _FakeWorkflowService:
             },
         }
 
-    async def get_item_by_id(self, item_id: str) -> dict:
-        return {
-            "id": item_id,
-            "type_code": "REQUIREMENT",
-            "current_state": "DRAFT",
-        }
-
     async def delete_item(
         self,
         item_id: str,
@@ -55,6 +48,15 @@ class _FakeWorkflowService:
     ) -> bool:
         self.deleted.append(item_id)
         return True
+
+
+class _FakeQueryService:
+    async def get_item_by_id(self, item_id: str) -> dict:
+        return {
+            "id": item_id,
+            "type_code": "REQUIREMENT",
+            "current_state": "DRAFT",
+        }
 
 
 class _FakeHook:
@@ -74,9 +76,13 @@ class _FakeHook:
 
 
 def test_transition_work_item_runs_post_transition_hooks() -> None:
-    service = _FakeWorkflowService()
+    mutation_service = _FakeMutationService()
     hook = _FakeHook()
-    command_service = WorkflowCommandService(service, mutation_hooks=[hook])
+    command_service = WorkflowCommandService(
+        mutation_service=mutation_service,
+        query_service=_FakeQueryService(),
+        mutation_hooks=[hook],
+    )
     context = OperationContext(actor_id="u-1", role_ids=["ROLE_QA"])
 
     result = asyncio.run(
@@ -95,9 +101,13 @@ def test_transition_work_item_runs_post_transition_hooks() -> None:
 
 
 def test_delete_work_item_runs_delete_hooks_around_workflow_delete() -> None:
-    service = _FakeWorkflowService()
+    mutation_service = _FakeMutationService()
     hook = _FakeHook()
-    command_service = WorkflowCommandService(service, mutation_hooks=[hook])
+    command_service = WorkflowCommandService(
+        mutation_service=mutation_service,
+        query_service=_FakeQueryService(),
+        mutation_hooks=[hook],
+    )
     context = OperationContext(actor_id="u-1", role_ids=["ROLE_QA"])
 
     deleted = asyncio.run(
@@ -108,7 +118,7 @@ def test_delete_work_item_runs_delete_hooks_around_workflow_delete() -> None:
     )
 
     assert deleted is True
-    assert service.deleted == ["wi-2"]
+    assert mutation_service.deleted == ["wi-2"]
     assert hook.before_delete_items == [
         {"id": "wi-2", "type_code": "REQUIREMENT", "current_state": "DRAFT"}
     ]

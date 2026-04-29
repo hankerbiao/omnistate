@@ -44,4 +44,13 @@ __all__ = [
     "SysWorkflowConfigDoc",
     "BusWorkItemDoc",
     "BusFlowLogDoc",
+    "DOCUMENT_MODELS",
+]
+
+DOCUMENT_MODELS = [
+    SysWorkTypeDoc,
+    SysWorkflowStateDoc,
+    SysWorkflowConfigDoc,
+    BusWorkItemDoc,
+    BusFlowLogDoc,
 ]

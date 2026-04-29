@@ -12,4 +12,12 @@ __all__ = [
     "ExecutionTaskCaseDoc",
     "ExecutionAgentDoc",
     "ExecutionEventDoc",
+    "DOCUMENT_MODELS",
+]
+
+DOCUMENT_MODELS = [
+    ExecutionAgentDoc,
+    ExecutionEventDoc,
+    ExecutionTaskDoc,
+    ExecutionTaskCaseDoc,
 ]
