@@ -1,10 +1,13 @@
 import io
+from datetime import timedelta
 from typing import Optional
 
 from minio import Minio
 from minio.error import S3Error
 
 from ..minio.config import MinIOConfig, load_minio_config
+
+DEFAULT_PRESIGNED_URL_EXPIRES_SECONDS = 7 * 24 * 60 * 60
 
 
 class MinIOClientWrapper:
@@ -109,7 +112,11 @@ class MinIOClientWrapper:
         except S3Error as e:
             raise RuntimeError(f"Failed to stat object {object_name}: {e}")
 
-    def presigned_get_object(self, object_name: str, expires_seconds: int = 3600) -> str:
+    def presigned_get_object(
+        self,
+        object_name: str,
+        expires_seconds: int = DEFAULT_PRESIGNED_URL_EXPIRES_SECONDS,
+    ) -> str:
         """生成预签名下载链接
 
         Args:
@@ -123,7 +130,7 @@ class MinIOClientWrapper:
             return self.client.presigned_get_object(
                 bucket_name=self._bucket,
                 object_name=object_name,
-                expires=expires_seconds,
+                expires=timedelta(seconds=expires_seconds),
             )
         except S3Error as e:
             raise RuntimeError(f"Failed to generate presigned URL for {object_name}: {e}")

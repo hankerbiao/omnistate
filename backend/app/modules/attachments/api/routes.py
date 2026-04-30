@@ -1,18 +1,17 @@
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 
 from app.modules.attachments.schemas.attachment import (
     AttachmentInfo,
     AttachmentListResponse,
     DeleteResponse,
-    DispatchResponse,
     DownloadResponse,
     UploadResponse,
 )
 from app.modules.attachments.service import AttachmentService
 from app.shared.auth import get_current_user
+from app.shared.minio.client import DEFAULT_PRESIGNED_URL_EXPIRES_SECONDS
 
 router = APIRouter(prefix="/attachments", tags=["附件管理"])
 
@@ -88,7 +87,7 @@ async def get_attachment(
 @router.get("/{file_id}/download", response_model=DownloadResponse)
 async def get_download_url(
     file_id: str,
-    expires_seconds: int = 3600,
+    expires_seconds: int = DEFAULT_PRESIGNED_URL_EXPIRES_SECONDS,
     current_user: CurrentUser = None,
 ):
     """获取下载链接
@@ -96,7 +95,7 @@ async def get_download_url(
     生成预签名下载链接
 
     - **file_id**: 文件唯一标识
-    - **expires_seconds**: 链接有效期（秒），默认3600秒
+    - **expires_seconds**: 链接有效期（秒），默认604800秒（7天）
     """
     attachment_service = get_service()
     download_url = await attachment_service.get_download_url(

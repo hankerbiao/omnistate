@@ -82,6 +82,32 @@ export interface ListRequirementsParams {
   offset?: number;
 }
 
+export interface WorkflowTransition {
+  action: string;
+  to_state: string;
+  target_owner_strategy: string;
+  required_fields: string[];
+}
+
+export interface WorkflowTransitionsResponse {
+  item_id: string;
+  current_state: string;
+  available_transitions: WorkflowTransition[];
+}
+
+export interface WorkflowTransitionRequest {
+  action: string;
+  form_data?: Record<string, unknown>;
+}
+
+export interface WorkflowTransitionResponse {
+  work_item_id: string;
+  from_state: string;
+  to_state: string;
+  action: string;
+  new_owner_id?: string;
+}
+
 export interface TestCaseStep {
   step_id: string;
   name: string;
@@ -214,10 +240,8 @@ export interface AutomationConfigField {
 export type DispatchChannel = 'RABBITMQ' | 'HTTP';
 
 export interface DispatchTaskRequest {
-  framework: string;
   dispatch_channel?: DispatchChannel;
   agent_id?: string;
-  trigger_source?: string;
   schedule_type?: string;
   planned_at?: string;
   callback_url?: string;
@@ -233,10 +257,8 @@ export interface DispatchTaskRequest {
 }
 
 export interface RerunTaskRequest {
-  framework?: string;
   dispatch_channel?: DispatchChannel;
   agent_id?: string;
-  trigger_source?: string;
   schedule_type?: string;
   planned_at?: string;
   callback_url?: string;
@@ -356,7 +378,6 @@ export interface ListAutomationTestCasesParams {
 export interface ExecutionTask {
   task_id: string;
   source_task_id?: string;
-  framework: string;
   agent_id?: string;
   dispatch_channel: string;
   dedup_key?: string;
@@ -380,7 +401,6 @@ export interface ExecutionTask {
 export interface TaskStatus {
   task_id: string;
   source_task_id?: string;
-  framework: string;
   agent_id?: string;
   dispatch_channel: string;
   dedup_key?: string;
@@ -397,7 +417,6 @@ export interface TaskStatus {
   error_message?: string;
   result_summary?: Record<string, unknown>;
   request_payload?: {
-    framework?: string;
     dispatch_channel?: DispatchChannel | string;
     agent_id?: string;
     schedule_type?: string;
@@ -471,7 +490,6 @@ export interface ListTasksParams {
   overall_status?: string;
   created_by?: string;
   agent_id?: string;
-  framework?: string;
   date_from?: string;
   date_to?: string;
   limit?: number;

@@ -2,11 +2,9 @@ import uuid
 from datetime import datetime
 from typing import List, Optional
 
-from beanie import PydanticObjectId
-from pydantic import BaseModel
-
 from app.modules.attachments.repository.models import AttachmentDoc
 from app.modules.attachments.schemas.attachment import AttachmentInfo, UploadResponse
+from app.shared.minio.client import DEFAULT_PRESIGNED_URL_EXPIRES_SECONDS
 from app.shared.minio import get_minio_client
 
 
@@ -144,7 +142,11 @@ class AttachmentService:
 
         return True
 
-    async def get_download_url(self, file_id: str, expires_seconds: int = 3600) -> Optional[str]:
+    async def get_download_url(
+        self,
+        file_id: str,
+        expires_seconds: int = DEFAULT_PRESIGNED_URL_EXPIRES_SECONDS,
+    ) -> Optional[str]:
         """获取下载链接
 
         Args:

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../services/api';
-import type { RequirementResponse, TestCaseResponse } from '../types';
+import type { RequirementResponse, TestCaseResponse, WorkflowTransition } from '../types';
 import CreateRequirementForm from './CreateRequirementForm';
 import CreateTestCaseForm from './CreateTestCaseForm';
 import TestCaseDetailModal from './TestCaseDetailModal';
@@ -15,6 +15,10 @@ const RequirementsPage: React.FC = () => {
   const [showCreateRequirement, setShowCreateRequirement] = useState(false);
   const [showCreateTestCase, setShowCreateTestCase] = useState(false);
   const [selectedTestCase, setSelectedTestCase] = useState<TestCaseResponse | null>(null);
+  const [workflowState, setWorkflowState] = useState<string>('');
+  const [workflowTransitions, setWorkflowTransitions] = useState<WorkflowTransition[]>([]);
+  const [loadingWorkflow, setLoadingWorkflow] = useState(false);
+  const [transitioningAction, setTransitioningAction] = useState<string | null>(null);
 
   const selectedRequirement = useMemo(
     () => requirements.find((item) => item.req_id === selectedRequirementId) || null,
@@ -60,6 +64,22 @@ const RequirementsPage: React.FC = () => {
     }
   }, []);
 
+  const fetchWorkflowTransitions = useCallback(async (workflowItemId: string) => {
+    setLoadingWorkflow(true);
+    try {
+      const response = await api.getWorkflowTransitions(workflowItemId);
+      setWorkflowState(response.data.current_state);
+      setWorkflowTransitions(response.data.available_transitions || []);
+    } catch (err) {
+      setWorkflowState('');
+      setWorkflowTransitions([]);
+      setError('获取工作流信息失败');
+      console.error('Fetch workflow transitions error:', err);
+    } finally {
+      setLoadingWorkflow(false);
+    }
+  }, []);
+
   useEffect(() => {
     fetchRequirements();
   }, [fetchRequirements]);
@@ -71,6 +91,15 @@ const RequirementsPage: React.FC = () => {
     }
     fetchTestCases(selectedRequirementId);
   }, [fetchTestCases, selectedRequirementId]);
+
+  useEffect(() => {
+    if (!selectedRequirement?.workflow_item_id) {
+      setWorkflowState('');
+      setWorkflowTransitions([]);
+      return;
+    }
+    fetchWorkflowTransitions(selectedRequirement.workflow_item_id);
+  }, [fetchWorkflowTransitions, selectedRequirement?.workflow_item_id]);
 
   const handleRequirementCreated = (requirement: RequirementResponse) => {
     fetchRequirements(requirement.req_id);
@@ -90,6 +119,87 @@ const RequirementsPage: React.FC = () => {
       P3: { bg: 'var(--bg-tertiary)', color: 'var(--text-muted)' },
     };
     return styleMap[priority] || { bg: 'var(--bg-tertiary)', color: 'var(--text-secondary)' };
+  };
+
+  const getWorkflowStateStyle = (state: string) => {
+    const styleMap: Record<string, { bg: string; color: string }> = {
+      DRAFT: { bg: 'var(--bg-tertiary)', color: 'var(--text-muted)' },
+      PENDING_REVIEW: { bg: 'var(--status-warning-bg)', color: 'var(--accent-yellow)' },
+      PENDING_DEVELOP: { bg: 'var(--status-info-bg)', color: 'var(--accent-blue)' },
+      DEVELOPING: { bg: 'rgba(57, 208, 214, 0.12)', color: 'var(--accent-cyan)' },
+      PENDING_TEST: { bg: 'rgba(163, 113, 247, 0.14)', color: 'var(--accent-purple)' },
+      PENDING_UAT: { bg: 'rgba(57, 208, 214, 0.12)', color: 'var(--accent-cyan)' },
+      PENDING_RELEASE: { bg: 'rgba(34, 197, 94, 0.12)', color: '#4ade80' },
+      RELEASED: { bg: 'rgba(34, 197, 94, 0.16)', color: '#22c55e' },
+    };
+    return styleMap[state] || { bg: 'var(--bg-tertiary)', color: 'var(--text-secondary)' };
+  };
+
+  const getActionLabel = (action: string) => {
+    const labelMap: Record<string, string> = {
+      SUBMIT: '提交评审',
+      APPROVE: '通过',
+      REJECT: '驳回',
+      START: '开始开发',
+      FINISH: '完成开发',
+      PASS: '通过',
+      PUBLISH: '发布',
+    };
+    return labelMap[action] || action;
+  };
+
+  const getFieldLabel = (field: string) => {
+    const labelMap: Record<string, string> = {
+      target_owner_id: '目标处理人',
+      priority: '优先级',
+      comment: '备注',
+    };
+    return labelMap[field] || field;
+  };
+
+  const buildTransitionFormData = (transition: WorkflowTransition): Record<string, unknown> | null => {
+    const formData: Record<string, unknown> = {};
+    for (const field of transition.required_fields) {
+      const defaultValue = field === 'priority' ? selectedRequirement?.priority || '' : '';
+      const value = window.prompt(`请输入${getFieldLabel(field)}`, defaultValue);
+      if (value === null) {
+        return null;
+      }
+      if (!value.trim()) {
+        setError(`${getFieldLabel(field)}不能为空`);
+        return null;
+      }
+      formData[field] = value.trim();
+    }
+    return formData;
+  };
+
+  const handleWorkflowTransition = async (transition: WorkflowTransition) => {
+    if (!selectedRequirement?.workflow_item_id) {
+      setError('当前需求缺少工作流事项ID');
+      return;
+    }
+
+    const formData = buildTransitionFormData(transition);
+    if (formData === null) {
+      return;
+    }
+
+    setTransitioningAction(transition.action);
+    setError(null);
+    try {
+      await api.transitionWorkflow(selectedRequirement.workflow_item_id, {
+        action: transition.action,
+        form_data: formData,
+      });
+      await fetchRequirements(selectedRequirement.req_id);
+      await fetchWorkflowTransitions(selectedRequirement.workflow_item_id);
+    } catch (err) {
+      setError('工作流流转失败');
+      console.error('Workflow transition error:', err);
+    } finally {
+      setTransitioningAction(null);
+    }
   };
 
   return (
@@ -159,6 +269,74 @@ const RequirementsPage: React.FC = () => {
                 </button>
               );
             })}
+          </div>
+        )}
+      </div>
+
+      <div style={styles.panel}>
+        <div style={styles.panelHeader}>
+          <div>
+            <h2 style={styles.panelTitle}>需求工作流</h2>
+            <span style={styles.panelHint}>
+              {selectedRequirement
+                ? `当前需求：${selectedRequirement.req_id}`
+                : '请先选择一个需求'}
+            </span>
+          </div>
+          {selectedRequirement && (
+            <span
+              style={{
+                ...styles.workflowStateBadge,
+                backgroundColor: getWorkflowStateStyle(workflowState || selectedRequirement.status).bg,
+                color: getWorkflowStateStyle(workflowState || selectedRequirement.status).color,
+              }}
+            >
+              {workflowState || selectedRequirement.status || '-'}
+            </span>
+          )}
+        </div>
+
+        {!selectedRequirement ? (
+          <div style={styles.emptyState}>选中需求后，这里会展示工作流状态和可执行流转。</div>
+        ) : !selectedRequirement.workflow_item_id ? (
+          <div style={styles.emptyState}>当前需求没有关联工作流事项。</div>
+        ) : loadingWorkflow ? (
+          <div style={styles.loadingState}>加载工作流中...</div>
+        ) : (
+          <div style={styles.workflowBody}>
+            <div style={styles.workflowInfoGrid}>
+              <div style={styles.workflowInfoItem}>
+                <span style={styles.workflowInfoLabel}>工作流事项</span>
+                <span style={styles.workflowInfoValue}>{selectedRequirement.workflow_item_id}</span>
+              </div>
+              <div style={styles.workflowInfoItem}>
+                <span style={styles.workflowInfoLabel}>当前状态</span>
+                <span style={styles.workflowInfoValue}>{workflowState || selectedRequirement.status || '-'}</span>
+              </div>
+            </div>
+
+            {workflowTransitions.length === 0 ? (
+              <div style={styles.workflowEmpty}>当前状态没有可执行流转。</div>
+            ) : (
+              <div style={styles.workflowActionList}>
+                {workflowTransitions.map((transition) => (
+                  <button
+                    key={`${transition.action}-${transition.to_state}`}
+                    type="button"
+                    style={styles.workflowActionButton}
+                    onClick={() => handleWorkflowTransition(transition)}
+                    disabled={Boolean(transitioningAction)}
+                  >
+                    <span style={styles.workflowActionName}>
+                      {transitioningAction === transition.action ? '处理中...' : getActionLabel(transition.action)}
+                    </span>
+                    <span style={styles.workflowActionMeta}>
+                      {workflowState || selectedRequirement.status} → {transition.to_state}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>

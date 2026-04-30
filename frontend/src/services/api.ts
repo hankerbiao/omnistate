@@ -1,4 +1,4 @@
-import type { LoginRequest, LoginResponse, ApiResponse, CreateRequirementRequest, RequirementResponse, ListRequirementsParams, CreateTestCaseRequest, TestCaseResponse, ListTestCasesParams, DispatchTaskRequest, DispatchTaskResponse, ExecutionAgent, ListAgentsParams, CreateAutomationTestCaseRequest, AutomationTestCaseResponse, ListAutomationTestCasesParams, ExecutionTask, ListTasksParams, TaskStatus, RerunTaskRequest, AttachmentInfo } from '../types';
+import type { LoginRequest, LoginResponse, ApiResponse, CreateRequirementRequest, RequirementResponse, ListRequirementsParams, CreateTestCaseRequest, TestCaseResponse, ListTestCasesParams, DispatchTaskRequest, DispatchTaskResponse, ExecutionAgent, ListAgentsParams, CreateAutomationTestCaseRequest, AutomationTestCaseResponse, ListAutomationTestCasesParams, ExecutionTask, ListTasksParams, TaskStatus, RerunTaskRequest, AttachmentInfo, WorkflowTransitionRequest, WorkflowTransitionResponse, WorkflowTransitionsResponse } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
 
@@ -121,6 +121,22 @@ class ApiClient {
 
   async createRequirement(data: CreateRequirementRequest): Promise<ApiResponse<RequirementResponse>> {
     return this.request<RequirementResponse>('/requirements', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getWorkflowTransitions(itemId: string): Promise<ApiResponse<WorkflowTransitionsResponse>> {
+    return this.request<WorkflowTransitionsResponse>(`/work-items/${itemId}/transitions`, {
+      method: 'GET',
+    });
+  }
+
+  async transitionWorkflow(
+    itemId: string,
+    data: WorkflowTransitionRequest,
+  ): Promise<ApiResponse<WorkflowTransitionResponse>> {
+    return this.request<WorkflowTransitionResponse>(`/work-items/${itemId}/transition`, {
       method: 'POST',
       body: JSON.stringify(data),
     });

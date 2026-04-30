@@ -21,7 +21,6 @@ interface TaskListProps {
 
 interface DispatchModalState {
   isOpen: boolean;
-  framework: string;
   dispatchChannel: DispatchChannel;
   agentId: string;
   scheduleType: 'IMMEDIATE' | 'SCHEDULED';
@@ -43,10 +42,8 @@ interface RerunEditModalState extends DispatchModalState {
   timeout: string;
 }
 
-const FRAMEWORKS = ['pytest', 'robot', 'playwright', 'cypress', 'jest'];
-const DEFAULT_FRAMEWORK = 'pytest';
 const DEFAULT_DISPATCH_CHANNEL: DispatchChannel = 'RABBITMQ';
-const TASK_TABLE_COLUMNS = 7;
+const TASK_TABLE_COLUMNS = 6;
 type StatusAppearance = {
   bg: string;
   color: string;
@@ -151,7 +148,6 @@ const TaskList: React.FC<TaskListProps> = () => {
   const [rerunningTaskId, setRerunningTaskId] = useState<string | null>(null);
   const [dispatchModal, setDispatchModal] = useState<DispatchModalState>({
     isOpen: false,
-    framework: DEFAULT_FRAMEWORK,
     dispatchChannel: DEFAULT_DISPATCH_CHANNEL,
     agentId: '',
     scheduleType: 'IMMEDIATE',
@@ -168,7 +164,6 @@ const TaskList: React.FC<TaskListProps> = () => {
   const [rerunEditModal, setRerunEditModal] = useState<RerunEditModalState>({
     isOpen: false,
     sourceTaskId: null,
-    framework: DEFAULT_FRAMEWORK,
     dispatchChannel: DEFAULT_DISPATCH_CHANNEL,
     agentId: '',
     scheduleType: 'IMMEDIATE',
@@ -241,7 +236,6 @@ const TaskList: React.FC<TaskListProps> = () => {
   const closeDispatchModal = () => {
     setDispatchModal({
       isOpen: false,
-      framework: DEFAULT_FRAMEWORK,
       dispatchChannel: DEFAULT_DISPATCH_CHANNEL,
       agentId: '',
       scheduleType: 'IMMEDIATE',
@@ -263,7 +257,6 @@ const TaskList: React.FC<TaskListProps> = () => {
     setRerunEditModal({
       isOpen: false,
       sourceTaskId: null,
-      framework: DEFAULT_FRAMEWORK,
       dispatchChannel: DEFAULT_DISPATCH_CHANNEL,
       agentId: '',
       scheduleType: 'IMMEDIATE',
@@ -395,7 +388,7 @@ const TaskList: React.FC<TaskListProps> = () => {
   );
 
   const handleDispatchSubmit = async () => {
-    const { framework, dispatchChannel, agentId, scheduleType, plannedAt, selectedCases, category, projectTag } = dispatchModal;
+    const { dispatchChannel, agentId, scheduleType, plannedAt, selectedCases, category, projectTag } = dispatchModal;
     if (selectedCases.length === 0) {
       setDispatchModal(prev => ({ ...prev, error: '请选择至少一个用例' }));
       return;
@@ -434,10 +427,8 @@ const TaskList: React.FC<TaskListProps> = () => {
       const cases = buildDispatchCaseItems(selectedCases, autoCases, caseConfigs);
       const firstSelectedCase = autoCases.find(caseItem => caseItem.auto_case_id === selectedCases[0]);
       const requestData = {
-        framework,
         dispatch_channel: dispatchChannel,
         agent_id: agentId || undefined,
-        trigger_source: 'web_ui',
         schedule_type: scheduleType,
         planned_at: scheduleType === 'SCHEDULED' ? plannedAt : undefined,
         category,
@@ -483,7 +474,6 @@ const TaskList: React.FC<TaskListProps> = () => {
       setRerunEditModal({
         isOpen: true,
         sourceTaskId: selectedTask.task_id,
-        framework: payload.framework || selectedTask.framework || DEFAULT_FRAMEWORK,
         dispatchChannel: normalizeDispatchChannel(payload.dispatch_channel),
         agentId: payload.agent_id || selectedTask.agent_id || '',
         scheduleType: payload.schedule_type === 'SCHEDULED' ? 'SCHEDULED' : 'IMMEDIATE',
@@ -507,7 +497,7 @@ const TaskList: React.FC<TaskListProps> = () => {
   };
 
   const handleEditRerunSubmit = async () => {
-    const { sourceTaskId, framework, dispatchChannel, agentId, scheduleType, plannedAt, selectedCases, category, projectTag, repoUrl, branch, timeout } = rerunEditModal;
+    const { sourceTaskId, dispatchChannel, agentId, scheduleType, plannedAt, selectedCases, category, projectTag, repoUrl, branch, timeout } = rerunEditModal;
     if (!sourceTaskId) {
       setRerunEditModal(prev => ({ ...prev, error: '缺少来源任务 ID' }));
       return;
@@ -552,10 +542,8 @@ const TaskList: React.FC<TaskListProps> = () => {
     try {
       const cases = buildDispatchCaseItems(selectedCases, autoCases, caseConfigs);
       const requestData: RerunTaskRequest = {
-        framework,
         dispatch_channel: dispatchChannel,
         agent_id: agentId || undefined,
-        trigger_source: 'rerun_edit',
         schedule_type: scheduleType,
         planned_at: scheduleType === 'SCHEDULED' ? plannedAt : undefined,
         category,
@@ -976,7 +964,6 @@ const TaskList: React.FC<TaskListProps> = () => {
             <thead>
               <tr style={styles.tableHeader}>
                 <th style={styles.th}>任务ID</th>
-                <th style={styles.th}>框架</th>
                 <th style={styles.th}>调度类型</th>
                 <th style={styles.th}>状态</th>
                 <th style={styles.th}>用例数</th>
@@ -1003,9 +990,6 @@ const TaskList: React.FC<TaskListProps> = () => {
                             <span style={styles.sourceTaskTag}>来源 {task.source_task_id}</span>
                           )}
                         </div>
-                      </td>
-                      <td style={styles.td}>
-                        <span style={styles.frameworkBadge}>{task.framework}</span>
                       </td>
                       <td style={styles.td}>
                         <span
@@ -1114,10 +1098,6 @@ const TaskList: React.FC<TaskListProps> = () => {
                   <div style={styles.detailItem}>
                     <span style={styles.detailLabel}>重跑来源</span>
                     <span style={styles.detailValue}>{selectedTask.source_task_id || '-'}</span>
-                  </div>
-                  <div style={styles.detailItem}>
-                    <span style={styles.detailLabel}>执行框架</span>
-                    <span style={styles.detailValue}>{selectedTask.framework}</span>
                   </div>
                   <div style={styles.detailItem}>
                     <span style={styles.detailLabel}>代理ID</span>
@@ -1281,19 +1261,6 @@ const TaskList: React.FC<TaskListProps> = () => {
                 </div>
               ) : (
                 <>
-                  <div style={styles.formSection}>
-                    <label style={styles.formLabel}>执行框架</label>
-                    <select
-                      style={styles.select}
-                      value={dispatchModal.framework}
-                      onChange={(e) => setDispatchModal(prev => ({ ...prev, framework: e.target.value }))}
-                    >
-                      {FRAMEWORKS.map(fw => (
-                        <option key={fw} value={fw}>{fw.toUpperCase()}</option>
-                      ))}
-                    </select>
-                  </div>
-
                   <div style={styles.formSection}>
                     <label style={styles.formLabel}>下发通道</label>
                     <div style={styles.radioGroup}>
@@ -1640,18 +1607,6 @@ const TaskList: React.FC<TaskListProps> = () => {
                 </div>
               ) : (
                 <>
-                  <div style={styles.formSection}>
-                    <label style={styles.formLabel}>执行框架</label>
-                    <select
-                      style={styles.select}
-                      value={rerunEditModal.framework}
-                      onChange={(e) => setRerunEditModal(prev => ({ ...prev, framework: e.target.value }))}
-                    >
-                      {FRAMEWORKS.map(fw => (
-                        <option key={fw} value={fw}>{fw.toUpperCase()}</option>
-                      ))}
-                    </select>
-                  </div>
                   <div style={styles.formSection}>
                     <label style={styles.formLabel}>下发通道</label>
                     <div style={styles.radioGroup}>
@@ -2693,14 +2648,6 @@ const styles = {
     backgroundColor: 'rgba(57, 208, 214, 0.12)',
     border: '1px solid rgba(57, 208, 214, 0.22)',
     fontFamily: "'JetBrains Mono', monospace",
-  } as const,
-  frameworkBadge: {
-    fontFamily: "'JetBrains Mono', monospace",
-    fontSize: '12px',
-    color: 'var(--accent-purple)',
-    backgroundColor: 'rgba(163, 113, 247, 0.15)',
-    padding: '4px 10px',
-    borderRadius: '6px',
   } as const,
   statusBadge: {
     display: 'inline-flex',

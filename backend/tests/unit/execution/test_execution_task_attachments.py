@@ -28,7 +28,7 @@ class _FakeAttachment:
 
 
 class _FakeMinioClient:
-    def presigned_get_object(self, object_name: str, expires_seconds: int = 3600) -> str:
+    def presigned_get_object(self, object_name: str, expires_seconds: int = 604800) -> str:
         return f"http://minio.local/{object_name}?expires={expires_seconds}"
 
 
@@ -122,6 +122,6 @@ def test_dispatch_task_data_adds_presigned_attachment_urls(monkeypatch) -> None:
             "size": 128,
             "content_type": "application/json",
             "uploaded_at": "2026-04-30T08:00:00+00:00",
-            "download_url": "http://minio.local/attachments/file-1.json?expires=3600",
+            "download_url": "http://minio.local/attachments/file-1.json?expires=604800",
         }
     ]

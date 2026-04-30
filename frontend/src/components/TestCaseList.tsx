@@ -81,13 +81,8 @@ const TestCaseList: React.FC = () => {
     setDispatchSuccess(null);
 
     try {
-      const selectedTestCases = testCases.filter(tc => selectedCases.has(tc.auto_case_id));
-      const framework = selectedTestCases[0]?.framework || 'pytest';
-
       const response = await api.dispatchTask({
-        framework,
         agent_id: selectedAgentId,
-        trigger_source: 'web_ui',
         cases: Array.from(selectedCases).map((auto_case_id) => ({ auto_case_id })),
       });
 
