@@ -35,6 +35,8 @@ class DispatchExecutionTaskCommand:
     planned_at: Optional[datetime] = None
 
     # 任务配置
+    framework: Optional[str] = None
+    trigger_source: Optional[str] = None
     callback_url: Optional[str] = None
     category: Optional[str] = None
     project_tag: Optional[str] = None
@@ -43,6 +45,7 @@ class DispatchExecutionTaskCommand:
     pytest_options: Optional[Dict[str, Any]] = None
     timeout: Optional[int] = None
     dut: Optional[Dict[str, Any]] = None
+    attachments: Optional[List[Dict[str, Any]]] = None
 
     def _initialize_case_collections(self) -> None:
         if self.script_entity_ids is None:
@@ -81,6 +84,8 @@ class DispatchExecutionTaskCommand:
             self.pytest_options = {}
         if self.timeout is None:
             self.timeout = 0
+        if self.attachments is None:
+            self.attachments = []
 
     def _initialize_dispatch_targets(self) -> None:
         if self.dispatch_case_id is None:
@@ -130,10 +135,13 @@ class DispatchExecutionTaskCommand:
         case_parameters = dict(case_parameters or {})
         return {
             "task_id": self.task_id,
+            "framework": self.framework,
+            "trigger_source": self.trigger_source,
             "category": self.category,
             "project_tag": self.project_tag,
             "repo_url": self.repo_url,
             "branch": self.branch,
+            "attachments": self._build_dispatch_attachments(),
             "cases": [{
                 "case_id": current_case_payload["case_id"],
                 "script_path": script_path,
@@ -143,3 +151,22 @@ class DispatchExecutionTaskCommand:
             "pytest_options": pytest_options,
             "timeout": self.timeout,
         }
+
+    def _build_dispatch_attachments(self) -> List[Dict[str, Any]]:
+        """Build task-level attachment payload with fresh presigned URLs when possible."""
+        if not self.attachments:
+            return []
+
+        from app.shared.minio import get_minio_client
+
+        minio_client = get_minio_client()
+        dispatch_attachments: List[Dict[str, Any]] = []
+        for attachment in self.attachments:
+            item = dict(attachment)
+            object_name = item.get("object_name")
+            if object_name:
+                item["download_url"] = minio_client.presigned_get_object(object_name)
+            item.pop("object_name", None)
+            item.pop("bucket", None)
+            dispatch_attachments.append(item)
+        return dispatch_attachments

@@ -10,6 +10,7 @@ from app.modules.execution.application.commands import DispatchExecutionTaskComm
 from app.modules.execution.application.task_command_mixin import ExecutionTaskCommandMixin
 from app.modules.execution.application.task_dispatch_service import ExecutionDispatchService
 from app.modules.execution.repository.models import ExecutionTaskDoc
+from app.modules.attachments.repository.models import AttachmentDoc
 from app.modules.execution.schemas import DispatchTaskRequest, RerunTaskRequest
 from app.shared.core.logger import log as logger
 from app.shared.service import SequenceIdService
@@ -54,6 +55,9 @@ class ExecutionTaskCommandService(ExecutionTaskCommandMixin):
 
         auto_case_ids = [item.auto_case_id for item in request.cases]
         case_configs = [dict(item.config) for item in request.cases]
+        attachments = await self._validate_and_enrich_attachments(
+            [item.model_dump(exclude_none=True) for item in request.attachments]
+        )
         dispatch_bindings = await self._case_resolver.resolve_case_dispatch_bindings_by_auto_case_ids(
             auto_case_ids
         )
@@ -87,6 +91,8 @@ class ExecutionTaskCommandService(ExecutionTaskCommandMixin):
             case_payloads=case_payloads,
             schedule_type=request.schedule_type,
             planned_at=request.planned_at,
+            framework=request.framework,
+            trigger_source=request.trigger_source,
             callback_url=request.callback_url,
             category=request.category,
             project_tag=request.project_tag,
@@ -95,6 +101,7 @@ class ExecutionTaskCommandService(ExecutionTaskCommandMixin):
             pytest_options=request.pytest_options,
             timeout=request.timeout,
             dut=request.dut,
+            attachments=attachments,
         )
 
         data = await self._dispatch_service.create_task_from_command(command, actor_id=actor_id)
@@ -118,14 +125,6 @@ class ExecutionTaskCommandService(ExecutionTaskCommandMixin):
         logger.info(f"Execution task marked deleted: task_id={task_id}, actor_id={actor_id}")
 
         return {"task_id": task_id, "deleted": True}
-
-    async def dispatch_execution_task(
-        self,
-        command: DispatchExecutionTaskCommand,
-        actor_id: str,
-    ) -> Dict[str, Any]:
-        """兼容旧入口。"""
-        return await self._dispatch_service.create_task_from_command(command, actor_id=actor_id)
 
     async def rerun_task(
         self,
@@ -155,8 +154,38 @@ class ExecutionTaskCommandService(ExecutionTaskCommandMixin):
             actor_id=actor_id,
             dispatch_bindings=dispatch_bindings,
         )
+        command.attachments = await self._validate_and_enrich_attachments(command.attachments or [])
         logger.info(
             "Rerunning execution task as new task: "
             f"source_task_id={source_task_id}, new_task_id={new_task_id}, actor_id={actor_id}"
         )
         return await self._dispatch_service.create_task_from_command(command, actor_id=actor_id)
+
+    @staticmethod
+    async def _validate_and_enrich_attachments(attachments: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Validate task attachments and store stable MinIO metadata in the task snapshot."""
+        if not attachments:
+            return []
+
+        enriched_attachments: list[dict[str, Any]] = []
+        for attachment_ref in attachments:
+            file_id = attachment_ref.get("file_id")
+            if not file_id:
+                raise ValueError("attachment missing required field: file_id")
+
+            attachment = await AttachmentDoc.find_one({"file_id": file_id, "is_deleted": False})
+            if not attachment:
+                raise KeyError(f"attachment not found or deleted: {file_id}")
+
+            enriched_attachments.append({
+                "file_id": attachment.file_id,
+                "original_filename": attachment.original_filename,
+                "storage_path": f"{attachment.bucket}/{attachment.object_name}",
+                "bucket": attachment.bucket,
+                "object_name": attachment.object_name,
+                "size": attachment.size,
+                "content_type": attachment.content_type,
+                "uploaded_at": attachment.uploaded_at.isoformat() if attachment.uploaded_at else None,
+            })
+
+        return enriched_attachments

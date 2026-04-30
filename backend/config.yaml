@@ -93,9 +93,9 @@ kafka:
 # MinIO 配置（对象存储）
 # =============================================================================
 minio:
-  endpoint: "localhost:9000"
-  access_key: "minioadmin"
-  secret_key: "minioadmin"
+  endpoint: "10.17.151.170:9000"
+  access_key: "admin"
+  secret_key: "kk123123"
   bucket: "attachments"
   secure: false
 
@@ -103,7 +103,7 @@ minio:
 # JWT 认证配置
 # =============================================================================
 jwt:
-  secret_key: "CHANGE_ME_generate_with_openssl_rand_hex_32"
+  secret_key: "fa5922eb48724ba4a4ff3ea16872f0c1aeb294b2c2322fb942fc7148c23fe5dc"
   algorithm: "HS256"
   expire_minutes: 480
   issuer: "tcm-backend"

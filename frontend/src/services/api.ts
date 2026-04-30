@@ -1,4 +1,4 @@
-import type { LoginRequest, LoginResponse, ApiResponse, CreateRequirementRequest, RequirementResponse, ListRequirementsParams, CreateTestCaseRequest, TestCaseResponse, ListTestCasesParams, DispatchTaskRequest, DispatchTaskResponse, ExecutionAgent, ListAgentsParams, CreateAutomationTestCaseRequest, AutomationTestCaseResponse, ListAutomationTestCasesParams, ExecutionTask, ListTasksParams, TaskStatus, RerunTaskRequest } from '../types';
+import type { LoginRequest, LoginResponse, ApiResponse, CreateRequirementRequest, RequirementResponse, ListRequirementsParams, CreateTestCaseRequest, TestCaseResponse, ListTestCasesParams, DispatchTaskRequest, DispatchTaskResponse, ExecutionAgent, ListAgentsParams, CreateAutomationTestCaseRequest, AutomationTestCaseResponse, ListAutomationTestCasesParams, ExecutionTask, ListTasksParams, TaskStatus, RerunTaskRequest, AttachmentInfo } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
 
@@ -96,6 +96,12 @@ class ApiClient {
     });
   }
 
+  async getTestCase(caseId: string): Promise<ApiResponse<TestCaseResponse>> {
+    return this.request<TestCaseResponse>(`/test-cases/${caseId}`, {
+      method: 'GET',
+    });
+  }
+
   async listRequirements(params: ListRequirementsParams = {}): Promise<ApiResponse<RequirementResponse[]>> {
     const queryParams = new URLSearchParams();
 
@@ -118,6 +124,34 @@ class ApiClient {
       method: 'POST',
       body: JSON.stringify(data),
     });
+  }
+
+  async uploadAttachment(file: File): Promise<AttachmentInfo> {
+    const url = `${this.baseUrl}/attachments/upload`;
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const headers: HeadersInit = {};
+    if (this.token) {
+      headers['Authorization'] = `Bearer ${this.token}`;
+    }
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('Attachment upload failed:', error);
+      throw error;
+    }
   }
 
   async dispatchTask(data: DispatchTaskRequest): Promise<ApiResponse<DispatchTaskResponse>> {

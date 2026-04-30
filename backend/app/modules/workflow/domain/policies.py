@@ -1,3 +1,9 @@
+"""工作流领域权限策略。
+
+这个模块只表达“谁可以做什么”的业务判断，不直接访问数据库，
+也不依赖 FastAPI、Beanie 等基础设施。
+"""
+
 from typing import Any, Iterable
 
 
@@ -15,6 +21,7 @@ def _read_value(source: Any, field: str, default: Any = None) -> Any:
     """
     if source is None:
         return default
+    # 兼容 dict 和对象两种输入，方便领域层被服务、测试或序列化数据复用。
     if isinstance(source, dict):
         return source.get(field, default)
     return getattr(source, field, default)
@@ -61,6 +68,7 @@ def is_admin_actor(actor: Any) -> bool:
     Returns:
         True如果参与者是管理员，否则False
     """
+    # role_id 可能来自数据库、JWT 或测试桩，统一转成大写后比较。
     return any("ADMIN" in role_id.upper() for role_id in actor_role_ids(actor))
 
 
@@ -85,6 +93,7 @@ def _matches_actor_type(actor: Any, work_item: Any, actor_type: str) -> bool:
     """
     normalized = str(actor_type).strip().lower()
     current_actor_id = actor_id(actor)
+    # 管理员、创建者、当前负责人等都是领域语义，不绑定具体权限表结构。
     if normalized == "admin":
         return is_admin_actor(actor)
     if normalized == "creator":
@@ -109,6 +118,7 @@ def _has_any_role(actor: Any, allowed_role_ids: Iterable[str]) -> bool:
     Returns:
         True如果参与者具有任何指定角色，否则False
     """
+    # 使用集合判交集，避免角色顺序影响判断。
     actor_roles = {role_id.upper() for role_id in actor_role_ids(actor)}
     expected_roles = {str(role_id).upper() for role_id in allowed_role_ids if str(role_id).strip()}
     return not expected_roles.isdisjoint(actor_roles)
@@ -131,10 +141,12 @@ def can_transition(actor: Any, work_item: Any, workflow_config: Any) -> bool:
     Returns:
         True如果参与者可以执行转换，否则False
     """
+    # ADMIN 是最高权限，直接放行所有流转动作。
     if is_admin_actor(actor):
         return True
 
     properties = _read_value(workflow_config, "properties", {}) or {}
+    # 显式 owner_only / creator_only 优先级最高，用于简单强约束场景。
     if properties.get("owner_only"):
         return _matches_actor_type(actor, work_item, "current_owner")
     if properties.get("creator_only"):
@@ -143,13 +155,16 @@ def can_transition(actor: Any, work_item: Any, workflow_config: Any) -> bool:
     allowed_actor_types = properties.get("allowed_actor_types") or []
     allowed_role_ids = properties.get("allowed_role_ids") or []
 
+    # 如果配置了允许的参与者类型，则必须匹配其中一种类型。
     if allowed_actor_types:
         if not any(_matches_actor_type(actor, work_item, actor_type) for actor_type in allowed_actor_types):
             return False
+    # 如果没有配置参与者类型，但配置了角色列表，则按角色判断。
     elif allowed_role_ids:
         if not _has_any_role(actor, allowed_role_ids):
             return False
     else:
+        # 默认策略：未配置额外限制时，仅创建者或当前负责人可以流转。
         if not (
                 _matches_actor_type(actor, work_item, "creator")
                 or _matches_actor_type(actor, work_item, "current_owner")
@@ -172,6 +187,7 @@ def can_reassign(actor: Any, work_item: Any) -> bool:
     Returns:
         True如果参与者可以重新分配，否则False
     """
+    # 重新分配会改变当前处理人，因此只允许 ADMIN 或当前负责人操作。
     return is_admin_actor(actor) or _matches_actor_type(actor, work_item, "current_owner")
 
 
@@ -188,4 +204,5 @@ def can_delete_work_item(actor: Any, work_item: Any) -> bool:
     Returns:
         True如果参与者可以删除工作项，否则False
     """
+    # 删除采用创建者负责制：除 ADMIN 外，只有创建者可以删除自己的工作项。
     return is_admin_actor(actor) or _matches_actor_type(actor, work_item, "creator")

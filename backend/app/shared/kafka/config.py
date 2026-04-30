@@ -1,12 +1,14 @@
-"""Kafka 模块配置。
+"""Kafka 模块配置适配层。
 
-配置从 config.yaml 统一加载，参考 app/shared/config/settings.py
+Kafka 的真实配置来源只保留 `config.yaml`，本模块只负责把统一配置对象
+转换为 Kafka runtime 需要的结构，并补充 consumer subscription 元数据。
 """
 
 from dataclasses import dataclass, field
 from typing import Any
 
 from app.shared.config import KafkaConfig as BaseKafkaConfig
+from app.shared.config import load_kafka_config as load_base_kafka_config
 
 
 @dataclass(slots=True)
@@ -23,34 +25,21 @@ class ConsumerSubscription:
 class KafkaConfig:
     """Kafka 运行时配置。
 
-    整合基础配置和旧接口所需的 consumer_subscriptions。
+    该对象不再定义 Kafka 默认值，避免与 `app.shared.config.settings.KafkaConfig`
+    形成第二套配置来源。所有字段都由 `config.yaml` 经统一 settings 加载后传入。
     """
 
-    # 基础配置属性
-    bootstrap_servers: list[str] = field(default_factory=lambda: ["localhost:9092"])
-    client_id: str = "dmlv4-shard"
-    result_topic: str = "dmlv4.results"
-    dead_letter_topic: str = "dmlv4.deadletter"
-    test_events_topic: str = "test-events"
-    execution_result_group_id: str = "dmlv4-execution-result-consumers"
-    test_events_group_id: str = "dmlv4-test-events-consumers"
-    producer_options: dict[str, Any] = field(default_factory=lambda: {
-        "acks": "all",
-        "retries": 3,
-        "batch_size": 16384,
-        "linger_ms": 10,
-        "buffer_memory": 33554432,
-    })
-    consumer_options: dict[str, Any] = field(default_factory=lambda: {
-        "auto_offset_reset": "earliest",
-        "enable_auto_commit": True,
-        "session_timeout_ms": 30000,
-        "heartbeat_interval_ms": 3000,
-        "max_poll_records": 100,
-        "consumer_timeout_ms": 1000,
-    })
+    bootstrap_servers: list[str]
+    client_id: str
+    result_topic: str
+    dead_letter_topic: str
+    test_events_topic: str
+    execution_result_group_id: str
+    test_events_group_id: str
+    producer_options: dict[str, Any]
+    consumer_options: dict[str, Any]
 
-    # 扩展属性（兼容旧接口）
+    # Kafka consumer runner 需要的派生订阅配置，不作为独立配置源维护。
     consumer_subscriptions: dict[str, ConsumerSubscription] = field(default_factory=dict)
 
     def __post_init__(self):
@@ -70,21 +59,24 @@ class KafkaConfig:
             }
 
 
-def load_kafka_config() -> KafkaConfig:
-    """从 YAML 加载 Kafka 配置（兼容旧接口）。"""
-    from app.shared.config import get_settings
-    settings = get_settings()
+def _to_runtime_config(base_config: BaseKafkaConfig) -> KafkaConfig:
+    """把统一配置模型转换成 Kafka 模块运行时配置。"""
     return KafkaConfig(
-        bootstrap_servers=settings.kafka.bootstrap_servers,
-        client_id=settings.kafka.client_id,
-        result_topic=settings.kafka.result_topic,
-        dead_letter_topic=settings.kafka.dead_letter_topic,
-        test_events_topic=settings.kafka.test_events_topic,
-        execution_result_group_id=settings.kafka.execution_result_group_id,
-        test_events_group_id=settings.kafka.test_events_group_id,
-        producer_options=settings.kafka.producer_options.model_dump(),
-        consumer_options=settings.kafka.consumer_options.model_dump(),
+        bootstrap_servers=list(base_config.bootstrap_servers),
+        client_id=base_config.client_id,
+        result_topic=base_config.result_topic,
+        dead_letter_topic=base_config.dead_letter_topic,
+        test_events_topic=base_config.test_events_topic,
+        execution_result_group_id=base_config.execution_result_group_id,
+        test_events_group_id=base_config.test_events_group_id,
+        producer_options=base_config.producer_options.model_dump(),
+        consumer_options=base_config.consumer_options.model_dump(),
     )
+
+
+def load_kafka_config() -> KafkaConfig:
+    """从统一配置加载 Kafka 配置，并转换成 Kafka 模块运行时结构。"""
+    return _to_runtime_config(load_base_kafka_config())
 
 
 __all__ = ["KafkaConfig", "ConsumerSubscription", "load_kafka_config"]

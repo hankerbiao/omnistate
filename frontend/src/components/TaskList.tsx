@@ -12,6 +12,7 @@ import type {
   ExecutionAssertionItem,
   DispatchTaskResponse,
   RerunTaskRequest,
+  AttachmentInfo,
 } from '../types';
 
 interface TaskListProps {
@@ -30,6 +31,8 @@ interface DispatchModalState {
   projectTag: string;
   loading: boolean;
   submitting: boolean;
+  attachmentUploading: boolean;
+  attachments: AttachmentInfo[];
   error: string | null;
 }
 
@@ -112,6 +115,16 @@ const normalizeDispatchChannel = (dispatchChannel?: string): DispatchChannel => 
   return 'RABBITMQ';
 };
 
+const formatAttachmentSize = (size: number) => {
+  if (size < 1024) {
+    return `${size} B`;
+  }
+  if (size < 1024 * 1024) {
+    return `${(size / 1024).toFixed(1)} KB`;
+  }
+  return `${(size / 1024 / 1024).toFixed(1)} MB`;
+};
+
 const buildDispatchCaseItems = (
   selectedCaseIds: string[],
   autoCases: AutomationTestCaseResponse[],
@@ -148,6 +161,8 @@ const TaskList: React.FC<TaskListProps> = () => {
     projectTag: 'universal',
     loading: false,
     submitting: false,
+    attachmentUploading: false,
+    attachments: [],
     error: null,
   });
   const [rerunEditModal, setRerunEditModal] = useState<RerunEditModalState>({
@@ -166,6 +181,8 @@ const TaskList: React.FC<TaskListProps> = () => {
     timeout: '',
     loading: false,
     submitting: false,
+    attachmentUploading: false,
+    attachments: [],
     error: null,
   });
   const [autoCases, setAutoCases] = useState<AutomationTestCaseResponse[]>([]);
@@ -234,6 +251,8 @@ const TaskList: React.FC<TaskListProps> = () => {
       projectTag: 'universal',
       loading: false,
       submitting: false,
+      attachmentUploading: false,
+      attachments: [],
       error: null,
     });
     setCaseConfigs({});
@@ -257,11 +276,123 @@ const TaskList: React.FC<TaskListProps> = () => {
       timeout: '',
       loading: false,
       submitting: false,
+      attachmentUploading: false,
+      attachments: [],
       error: null,
     });
     setCaseConfigs({});
     setConfigEditorCaseId(null);
   };
+
+  const uploadAttachments = async (files: FileList | null, target: 'dispatch' | 'rerun') => {
+    if (!files || files.length === 0) {
+      return;
+    }
+
+    if (target === 'dispatch') {
+      setDispatchModal(prev => ({ ...prev, attachmentUploading: true, error: null }));
+    } else {
+      setRerunEditModal(prev => ({ ...prev, attachmentUploading: true, error: null }));
+    }
+    try {
+      const uploaded = await Promise.all(Array.from(files).map(file => api.uploadAttachment(file)));
+      const appendAttachments = <T extends { attachments: AttachmentInfo[]; attachmentUploading: boolean }>(prev: T): T => {
+        const existingIds = new Set(prev.attachments.map(attachment => attachment.file_id));
+        const nextAttachments = [
+          ...prev.attachments,
+          ...uploaded.filter(attachment => !existingIds.has(attachment.file_id)),
+        ];
+        return {
+          ...prev,
+          attachments: nextAttachments,
+          attachmentUploading: false,
+        };
+      };
+      if (target === 'dispatch') {
+        setDispatchModal(prev => appendAttachments(prev));
+      } else {
+        setRerunEditModal(prev => appendAttachments(prev));
+      }
+    } catch (err) {
+      console.error('Upload attachments error:', err);
+      if (target === 'dispatch') {
+        setDispatchModal(prev => ({
+          ...prev,
+          attachmentUploading: false,
+          error: '附件上传失败',
+        }));
+      } else {
+        setRerunEditModal(prev => ({
+          ...prev,
+          attachmentUploading: false,
+          error: '附件上传失败',
+        }));
+      }
+    }
+  };
+
+  const removeAttachment = (fileId: string, target: 'dispatch' | 'rerun') => {
+    if (target === 'dispatch') {
+      setDispatchModal(prev => ({
+        ...prev,
+        attachments: prev.attachments.filter(attachment => attachment.file_id !== fileId),
+      }));
+      return;
+    }
+    setRerunEditModal(prev => ({
+      ...prev,
+      attachments: prev.attachments.filter(attachment => attachment.file_id !== fileId),
+    }));
+  };
+
+  const renderAttachmentUploader = (
+    target: 'dispatch' | 'rerun',
+    attachments: AttachmentInfo[],
+    uploading: boolean,
+  ) => (
+    <div style={styles.formSection}>
+      <label style={styles.formLabel}>任务附件</label>
+      <div style={styles.attachmentPanel}>
+        <label style={styles.attachmentUploadButton}>
+          <input
+            type="file"
+            multiple
+            style={styles.hiddenFileInput}
+            disabled={uploading}
+            onChange={(e) => {
+              uploadAttachments(e.currentTarget.files, target);
+              e.currentTarget.value = '';
+            }}
+          />
+          <span>{uploading ? '上传中...' : '选择并上传附件'}</span>
+        </label>
+        {attachments.length === 0 ? (
+          <div style={styles.attachmentEmpty}>尚未上传附件</div>
+        ) : (
+          <div style={styles.attachmentList}>
+            {attachments.map(attachment => (
+              <div key={attachment.file_id} style={styles.attachmentItem}>
+                <div style={styles.attachmentInfo}>
+                  <span style={styles.attachmentName}>{attachment.original_filename}</span>
+                  <span style={styles.attachmentMeta}>
+                    {formatAttachmentSize(attachment.size)} · {attachment.content_type || 'application/octet-stream'}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  style={styles.attachmentRemoveBtn}
+                  onClick={() => removeAttachment(attachment.file_id, target)}
+                  disabled={uploading}
+                >
+                  移除
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 
   const handleDispatchSubmit = async () => {
     const { framework, dispatchChannel, agentId, scheduleType, plannedAt, selectedCases, category, projectTag } = dispatchModal;
@@ -315,6 +446,7 @@ const TaskList: React.FC<TaskListProps> = () => {
         branch: firstSelectedCase?.code_snapshot?.branch || undefined,
         pytest_options: {},
         timeout: firstSelectedCase?.report_meta?.timeout || 0,
+        attachments: dispatchModal.attachments,
         cases,
       };
       await api.dispatchTask(requestData);
@@ -362,6 +494,8 @@ const TaskList: React.FC<TaskListProps> = () => {
         repoUrl: payload.repo_url || '',
         branch: payload.branch || '',
         timeout: payload.timeout ? String(payload.timeout) : '',
+        attachments: payload.attachments || [],
+        attachmentUploading: false,
         loading: false,
         submitting: false,
         error: null,
@@ -429,6 +563,7 @@ const TaskList: React.FC<TaskListProps> = () => {
         repo_url: repoUrl || undefined,
         branch: branch || undefined,
         timeout: timeout ? Number(timeout) : undefined,
+        attachments: rerunEditModal.attachments,
         cases,
       };
       const response = await api.rerunTask(sourceTaskId, requestData);
@@ -1078,6 +1213,26 @@ const TaskList: React.FC<TaskListProps> = () => {
                   </div>
                 </div>
 
+                <div style={styles.timeSection}>
+                  <h3 style={styles.sectionTitle}>任务附件</h3>
+                  {selectedTask.request_payload?.attachments?.length ? (
+                    <div style={styles.attachmentList}>
+                      {selectedTask.request_payload.attachments.map(attachment => (
+                        <div key={attachment.file_id} style={styles.attachmentItem}>
+                          <div style={styles.attachmentInfo}>
+                            <span style={styles.attachmentName}>{attachment.original_filename}</span>
+                            <span style={styles.attachmentMeta}>
+                              {formatAttachmentSize(attachment.size)} · {attachment.content_type || '-'}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={styles.attachmentEmpty}>无附件</div>
+                  )}
+                </div>
+
                 <div style={styles.detailActions}>
                   <button
                     style={styles.secondaryActionBtn}
@@ -1244,6 +1399,12 @@ const TaskList: React.FC<TaskListProps> = () => {
                     </select>
                   </div>
 
+                  {renderAttachmentUploader(
+                    'dispatch',
+                    dispatchModal.attachments,
+                    dispatchModal.attachmentUploading,
+                  )}
+
                   <div style={styles.formSection}>
                     <label style={styles.formLabel}>
                       选择用例 ({dispatchModal.selectedCases.length} 已选)
@@ -1365,7 +1526,7 @@ const TaskList: React.FC<TaskListProps> = () => {
                     <button
                       style={styles.submitBtn}
                       onClick={handleDispatchSubmit}
-                      disabled={dispatchModal.submitting}
+                      disabled={dispatchModal.submitting || dispatchModal.attachmentUploading}
                     >
                       {dispatchModal.submitting ? '下发中...' : '确认下发'}
                     </button>
@@ -1618,6 +1779,12 @@ const TaskList: React.FC<TaskListProps> = () => {
                     />
                   </div>
 
+                  {renderAttachmentUploader(
+                    'rerun',
+                    rerunEditModal.attachments,
+                    rerunEditModal.attachmentUploading,
+                  )}
+
                   <div style={styles.formSection}>
                     <label style={styles.formLabel}>
                       选择用例 ({rerunEditModal.selectedCases.length} 已选)
@@ -1757,7 +1924,7 @@ const TaskList: React.FC<TaskListProps> = () => {
                     <button
                       style={styles.submitBtn}
                       onClick={handleEditRerunSubmit}
-                      disabled={rerunEditModal.submitting}
+                      disabled={rerunEditModal.submitting || rerunEditModal.attachmentUploading}
                     >
                       {rerunEditModal.submitting ? '提交中...' : '确认重跑'}
                     </button>
@@ -2035,6 +2202,77 @@ const styles = {
     border: '1px solid var(--border-default)',
     borderRadius: 'var(--radius-md)',
     outline: 'none',
+  } as const,
+  attachmentPanel: {
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+    backgroundColor: 'var(--bg-primary)',
+    padding: '12px',
+  } as const,
+  attachmentUploadButton: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '9px 13px',
+    fontSize: '13px',
+    fontWeight: 600,
+    color: 'var(--accent-cyan)',
+    backgroundColor: 'rgba(57, 208, 214, 0.08)',
+    border: '1px solid rgba(57, 208, 214, 0.24)',
+    borderRadius: 'var(--radius-md)',
+    cursor: 'pointer',
+  } as const,
+  hiddenFileInput: {
+    display: 'none',
+  } as const,
+  attachmentEmpty: {
+    marginTop: '10px',
+    fontSize: '13px',
+    color: 'var(--text-muted)',
+  } as const,
+  attachmentList: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: '8px',
+    marginTop: '12px',
+  } as const,
+  attachmentItem: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '12px',
+    padding: '10px 12px',
+    border: '1px solid var(--border-muted)',
+    borderRadius: 'var(--radius-md)',
+    backgroundColor: 'var(--bg-secondary)',
+  } as const,
+  attachmentInfo: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: '4px',
+    minWidth: 0,
+  } as const,
+  attachmentName: {
+    fontSize: '13px',
+    fontWeight: 600,
+    color: 'var(--text-primary)',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap' as const,
+  } as const,
+  attachmentMeta: {
+    fontSize: '12px',
+    color: 'var(--text-muted)',
+  } as const,
+  attachmentRemoveBtn: {
+    flexShrink: 0,
+    padding: '6px 10px',
+    fontSize: '12px',
+    color: 'var(--accent-red)',
+    backgroundColor: 'var(--status-error-bg)',
+    border: '1px solid rgba(248, 81, 73, 0.24)',
+    borderRadius: 'var(--radius-sm)',
+    cursor: 'pointer',
   } as const,
   radioGroup: {
     display: 'flex',

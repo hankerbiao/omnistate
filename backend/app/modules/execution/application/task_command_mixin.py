@@ -28,6 +28,8 @@ class ExecutionTaskCommandMixin:
         payload = {
             "dispatch_channel": command.dispatch_channel,
             "agent_id": command.agent_id,
+            "framework": command.framework,
+            "trigger_source": command.trigger_source,
             "schedule_type": command.schedule_type,
             "planned_at": command.planned_at.isoformat() if command.planned_at else None,
             "callback_url": command.callback_url,
@@ -38,6 +40,7 @@ class ExecutionTaskCommandMixin:
             "pytest_options": command.pytest_options,
             "timeout": command.timeout,
             "dut": command.dut,
+            "attachments": command.attachments,
             "cases": sorted(
                 [
                     {
@@ -109,6 +112,8 @@ class ExecutionTaskCommandMixin:
             "task_id": command.task_id,
             "dispatch_channel": command.dispatch_channel,
             "agent_id": command.agent_id,
+            "framework": command.framework,
+            "trigger_source": command.trigger_source,
             "schedule_type": command.schedule_type,
             "planned_at": command.planned_at.isoformat() if command.planned_at else None,
             "callback_url": command.callback_url,
@@ -119,6 +124,7 @@ class ExecutionTaskCommandMixin:
             "pytest_options": command.pytest_options,
             "timeout": command.timeout,
             "dut": command.dut,
+            "attachments": list(command.attachments or []),
             "cases": [
                 {
                     "case_id": case_id,
@@ -195,9 +201,11 @@ class ExecutionTaskCommandMixin:
                 "script_path": binding.script_path,
                 "script_name": binding.script_name,
                 "parameters": dict(case.get("parameters") or {}),
+                "attachments": list(case.get("attachments", [])),
             }
             for case, binding in zip(cases, dispatch_bindings)
         ]
+        attachments = cls._resolve_rerun_attachments(payload, request)
         dispatch_channel = request.dispatch_channel or payload.get("dispatch_channel")
         agent_id = request.agent_id if request.agent_id is not None else payload.get("agent_id")
         schedule_type = request.schedule_type or "IMMEDIATE"
@@ -215,6 +223,8 @@ class ExecutionTaskCommandMixin:
             case_payloads=case_payloads,
             schedule_type=schedule_type,
             planned_at=planned_at,
+            framework=request.framework if request.framework is not None else payload.get("framework"),
+            trigger_source=request.trigger_source if request.trigger_source is not None else payload.get("trigger_source"),
             callback_url=request.callback_url if request.callback_url is not None else payload.get("callback_url"),
             category=request.category if request.category is not None else payload.get("category"),
             project_tag=request.project_tag if request.project_tag is not None else payload.get("project_tag"),
@@ -223,6 +233,7 @@ class ExecutionTaskCommandMixin:
             pytest_options=cls._resolve_override_dict(request.pytest_options, payload, "pytest_options"),
             timeout=request.timeout if request.timeout is not None else payload.get("timeout"),
             dut=cls._resolve_override_dict(request.dut, payload, "dut"),
+            attachments=attachments,
         )
 
     @staticmethod
@@ -237,6 +248,15 @@ class ExecutionTaskCommandMixin:
             }
             for item in request.cases
         ]
+
+    @staticmethod
+    def _resolve_rerun_attachments(payload: Dict[str, Any], request: RerunTaskRequest) -> list[dict[str, Any]]:
+        if "attachments" in request.model_fields_set:
+            return [
+                item.model_dump(exclude_none=True)
+                for item in (request.attachments or [])
+            ]
+        return list(payload.get("attachments") or [])
 
     @staticmethod
     def _resolve_override_dict(

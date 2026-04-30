@@ -8,19 +8,11 @@
 
 ## 配置来源
 
-模块只认一套配置来源：环境变量。
+模块只认一套配置来源：项目根目录的 `config.yaml`。
 
-支持的变量：
-
-- `KAFKA_BOOTSTRAP_SERVERS`
-- `KAFKA_CLIENT_ID`
-- `KAFKA_RESULT_TOPIC`
-- `KAFKA_DEAD_LETTER_TOPIC`
-- `KAFKA_EXECUTION_RESULT_GROUP_ID`
-- `KAFKA_TEST_EVENTS_TOPIC`
-- `KAFKA_TEST_EVENTS_GROUP_ID`
-
-其中 `KAFKA_BOOTSTRAP_SERVERS` 支持逗号分隔多个地址。
+`app/shared/config/settings.py` 负责读取和校验 YAML，`app/shared/kafka/config.py`
+只把统一配置对象转换成 Kafka runtime 需要的结构，并派生 consumer subscription
+元数据。
 
 ## 使用方式
 
@@ -45,13 +37,10 @@ finally:
 如果需要显式注入配置：
 
 ```python
-from app.shared.kafka import KafkaConfig, KafkaProducerManager
+from app.shared.kafka import KafkaProducerManager, load_kafka_config
 
 manager = KafkaProducerManager(
-    config=KafkaConfig(
-        bootstrap_servers=["127.0.0.1:9092"],
-        client_id="local-dev",
-    )
+    config=load_kafka_config()
 )
 ```
 

@@ -3,6 +3,7 @@ import { api } from '../services/api';
 import type { RequirementResponse, TestCaseResponse } from '../types';
 import CreateRequirementForm from './CreateRequirementForm';
 import CreateTestCaseForm from './CreateTestCaseForm';
+import TestCaseDetailModal from './TestCaseDetailModal';
 
 const RequirementsPage: React.FC = () => {
   const [requirements, setRequirements] = useState<RequirementResponse[]>([]);
@@ -13,6 +14,7 @@ const RequirementsPage: React.FC = () => {
   const [selectedRequirementId, setSelectedRequirementId] = useState<string | null>(null);
   const [showCreateRequirement, setShowCreateRequirement] = useState(false);
   const [showCreateTestCase, setShowCreateTestCase] = useState(false);
+  const [selectedTestCase, setSelectedTestCase] = useState<TestCaseResponse | null>(null);
 
   const selectedRequirement = useMemo(
     () => requirements.find((item) => item.req_id === selectedRequirementId) || null,
@@ -203,7 +205,19 @@ const RequirementsPage: React.FC = () => {
               </thead>
               <tbody>
                 {testCases.map((testCase) => (
-                  <tr key={testCase.id} style={styles.tr}>
+                  <tr
+                    key={testCase.id}
+                    style={styles.tr}
+                    onClick={() => setSelectedTestCase(testCase)}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.cursor = 'pointer';
+                      e.currentTarget.style.backgroundColor = 'var(--bg-tertiary)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.cursor = 'default';
+                      e.currentTarget.style.backgroundColor = 'transparent';
+                    }}
+                  >
                     <td style={styles.td}>{testCase.case_id}</td>
                     <td style={styles.td}>{testCase.title}</td>
                     <td style={styles.td}>{testCase.priority || '-'}</td>
@@ -230,6 +244,13 @@ const RequirementsPage: React.FC = () => {
           onSuccess={handleTestCaseCreated}
           defaultRequirementId={selectedRequirement.req_id}
           lockRequirementId
+        />
+      )}
+
+      {selectedTestCase && (
+        <TestCaseDetailModal
+          testCase={selectedTestCase}
+          onClose={() => setSelectedTestCase(null)}
         />
       )}
     </div>
@@ -404,6 +425,8 @@ const styles = {
   } as const,
   tr: {
     borderBottom: '1px solid rgba(255,255,255,0.04)',
+    cursor: 'pointer',
+    transition: 'background-color var(--transition-fast)',
   } as const,
   td: {
     padding: '14px',

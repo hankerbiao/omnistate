@@ -10,9 +10,14 @@ python backend/app/init_mongodb.py
 import asyncio
 import json
 import os
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 from pymongo import AsyncMongoClient
 from beanie import init_beanie

@@ -181,6 +181,17 @@ export interface DispatchCaseItem {
   parameters?: Record<string, unknown>;
 }
 
+export interface AttachmentInfo {
+  file_id: string;
+  original_filename: string;
+  storage_path: string;
+  size: number;
+  content_type: string;
+  uploaded_by?: string;
+  uploaded_at: string;
+  download_url?: string | null;
+}
+
 export interface AutomationConfigFieldOption {
   label?: string;
   value: string | number | boolean;
@@ -218,6 +229,7 @@ export interface DispatchTaskRequest {
   timeout?: number;
   dut?: Record<string, unknown>;
   cases: DispatchCaseItem[];
+  attachments?: AttachmentInfo[];
 }
 
 export interface RerunTaskRequest {
@@ -236,6 +248,7 @@ export interface RerunTaskRequest {
   timeout?: number;
   dut?: Record<string, unknown>;
   cases?: DispatchCaseItem[];
+  attachments?: AttachmentInfo[];
 }
 
 export interface DispatchTaskResponse {
@@ -397,6 +410,7 @@ export interface TaskStatus {
     pytest_options?: Record<string, unknown>;
     timeout?: number;
     dut?: Record<string, unknown>;
+    attachments?: AttachmentInfo[];
     cases?: Array<{
       auto_case_id?: string;
       script_entity_id?: string;

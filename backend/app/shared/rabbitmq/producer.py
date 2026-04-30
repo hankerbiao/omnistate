@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import ssl
 from datetime import UTC, datetime
 from typing import Any
 
@@ -33,6 +34,13 @@ class RabbitMQProducerManager:
         if pika is None or PlainCredentials is None:
             raise RuntimeError("pika is required to use RabbitMQ dispatch")
 
+        ssl_options = None
+        if self.config.ssl_enabled:
+            ssl_options = pika.SSLOptions(
+                context=ssl.create_default_context(),
+                server_hostname=self.config.host,
+            )
+
         parameters = pika.ConnectionParameters(
             host=self.config.host,
             port=self.config.port,
@@ -45,7 +53,7 @@ class RabbitMQProducerManager:
             blocked_connection_timeout=self.config.blocked_connection_timeout,
             connection_attempts=self.config.connection_attempts,
             retry_delay=self.config.retry_delay,
-            ssl_options=self.config.ssl_options,
+            ssl_options=ssl_options,
         )
         return pika.BlockingConnection(parameters)
 

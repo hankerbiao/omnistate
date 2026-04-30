@@ -51,6 +51,7 @@ class ExecutionTaskSerializer:
 
         return {
             "task_id": task_doc.task_id,
+            "framework": request_payload.get("framework"),
             "source_task_id": getattr(task_doc, "source_task_id", None),
             "agent_id": task_doc.agent_id,
             "dispatch_channel": task_doc.dispatch_channel,

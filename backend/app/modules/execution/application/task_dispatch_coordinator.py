@@ -51,6 +51,8 @@ class ExecutionTaskDispatchCoordinator:
             dispatch_case_index=dispatch_case_index,
             schedule_type=task_doc.schedule_type,
             planned_at=planned_at_normalizer(planned_at) if planned_at else None,
+            framework=request_payload.get("framework"),
+            trigger_source=request_payload.get("trigger_source"),
             callback_url=request_payload["callback_url"],
             category=request_payload["category"],
             project_tag=request_payload["project_tag"],
@@ -59,6 +61,7 @@ class ExecutionTaskDispatchCoordinator:
             pytest_options=request_payload["pytest_options"],
             timeout=request_payload["timeout"],
             dut=request_payload["dut"],
+            attachments=list(request_payload.get("attachments") or []),
         )
 
     async def build_task_dispatch_command(
