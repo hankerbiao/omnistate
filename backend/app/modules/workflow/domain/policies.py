@@ -118,9 +118,15 @@ def _has_any_role(actor: Any, allowed_role_ids: Iterable[str]) -> bool:
     Returns:
         True如果参与者具有任何指定角色，否则False
     """
-    # 使用集合判交集，避免角色顺序影响判断。
-    actor_roles = {role_id.upper() for role_id in actor_role_ids(actor)}
-    expected_roles = {str(role_id).upper() for role_id in allowed_role_ids if str(role_id).strip()}
+    def normalize_role(role_id: Any) -> str:
+        normalized = str(role_id).strip().upper()
+        if normalized.startswith("ROLE_"):
+            return normalized[5:]
+        return normalized
+
+    # 使用集合判交集，避免角色顺序影响判断；兼容 ROLE_QA 与 QA 两种命名。
+    actor_roles = {normalize_role(role_id) for role_id in actor_role_ids(actor)}
+    expected_roles = {normalize_role(role_id) for role_id in allowed_role_ids if str(role_id).strip()}
     return not expected_roles.isdisjoint(actor_roles)
 
 

@@ -9,70 +9,80 @@
         "action": "SUBMIT",
         "to_state": "PENDING_REVIEW",
         "target_owner_strategy": "TO_SPECIFIC_USER",
-        "required_fields": ["target_owner_id", "priority"]
+        "required_fields": ["target_owner_id", "priority"],
+        "properties": {"allowed_role_ids": ["TPM"]}
       },
       {
         "from_state": "PENDING_REVIEW",
         "action": "APPROVE",
         "to_state": "PENDING_DEVELOP",
         "target_owner_strategy": "TO_SPECIFIC_USER",
-        "required_fields": ["target_owner_id", "comment"]
+        "required_fields": ["target_owner_id", "comment"],
+        "properties": {"allowed_role_ids": ["TPM", "REVIEWER"]}
       },
       {
         "from_state": "PENDING_REVIEW",
         "action": "REJECT",
         "to_state": "DRAFT",
         "target_owner_strategy": "TO_CREATOR",
-        "required_fields": ["comment"]
+        "required_fields": ["comment"],
+        "properties": {"allowed_role_ids": ["TPM", "REVIEWER"]}
       },
       {
         "from_state": "PENDING_DEVELOP",
         "action": "START",
         "to_state": "DEVELOPING",
         "target_owner_strategy": "KEEP",
-        "required_fields": []
+        "required_fields": [],
+        "properties": {"allowed_role_ids": ["MANUAL_DEV", "AUTO_DEV"]}
       },
       {
         "from_state": "DEVELOPING",
         "action": "FINISH",
         "to_state": "PENDING_TEST",
         "target_owner_strategy": "TO_SPECIFIC_USER",
-        "required_fields": ["target_owner_id"]
+        "required_fields": ["target_owner_id"],
+        "properties": {"allowed_role_ids": ["MANUAL_DEV", "AUTO_DEV"]}
       },
       {
         "from_state": "PENDING_TEST",
         "action": "PASS",
         "to_state": "PENDING_UAT",
         "target_owner_strategy": "TO_SPECIFIC_USER",
-        "required_fields": ["target_owner_id"]
+        "required_fields": ["target_owner_id"],
+        "properties": {"allowed_role_ids": ["QA", "TESTER"]}
       },
       {
         "from_state": "PENDING_TEST",
         "action": "REJECT",
         "to_state": "DEVELOPING",
         "target_owner_strategy": "TO_SPECIFIC_USER",
-        "required_fields": ["target_owner_id", "comment"]
+        "required_fields": ["target_owner_id", "comment"],
+        "properties": {"allowed_role_ids": ["QA", "TESTER"]}
       },
       {
         "from_state": "PENDING_UAT",
         "action": "PASS",
         "to_state": "PENDING_RELEASE",
         "target_owner_strategy": "TO_SPECIFIC_USER",
-        "required_fields": ["target_owner_id"]
+        "required_fields": ["target_owner_id"],
+        "properties": {"allowed_role_ids": ["TPM", "QA", "TESTER"]}
       },
       {
         "from_state": "PENDING_UAT",
         "action": "REJECT",
         "to_state": "DEVELOPING",
         "target_owner_strategy": "TO_SPECIFIC_USER",
-        "required_fields": ["target_owner_id", "comment"]
+        "required_fields": ["target_owner_id", "comment"],
+        "properties": {"allowed_role_ids": ["TPM", "QA", "TESTER"]}
       },
       {
         "from_state": "PENDING_RELEASE",
         "action": "PUBLISH",
         "to_state": "RELEASED",
         "target_owner_strategy": "KEEP",
-        "required_fields": []
+        "required_fields": [],
+        "properties": {"allowed_role_ids": ["TPM"]}
       }
     ]
   }

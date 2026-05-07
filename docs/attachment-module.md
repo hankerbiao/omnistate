@@ -90,12 +90,12 @@ GET /api/v1/attachments/{file_id}
 ### 3. 获取下载链接
 
 ```
-GET /api/v1/attachments/{file_id}/download?expires_seconds=3600
+GET /api/v1/attachments/{file_id}/download?expires_seconds=604800
 
 响应：
 {
   "download_url": "https://minio.example.com/attachments/...",
-  "expires_in": 3600
+  "expires_in": 604800
 }
 ```
 
@@ -189,7 +189,7 @@ download_url = await service.get_download_url(result.file_id)
 
 - 单文件大小限制：100MB
 - 逻辑删除：删除操作不会物理删除MinIO中的文件
-- 下载链接有效期：默认3600秒（1小时）
+- 下载链接有效期：默认604800秒（7天）
 
 ## 预留功能
 

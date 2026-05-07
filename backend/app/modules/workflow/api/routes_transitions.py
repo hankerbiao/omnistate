@@ -177,9 +177,17 @@ async def batch_get_transition_logs(
     summary="获取可用的下一步流转",
     dependencies=[Depends(require_permission("work_items:read"))],
 )
-async def get_available_transitions(item_id: str, service: WorkflowQueryServiceDep):
+async def get_available_transitions(
+    item_id: str,
+    service: WorkflowQueryServiceDep,
+    current_user=Depends(get_current_user),
+):
     try:
-        result = await service.get_item_with_transitions(item_id)
+        actor = {
+            "actor_id": current_user.get("user_id"),
+            "role_ids": current_user.get("role_ids", []),
+        }
+        result = await service.get_item_with_transitions(item_id, actor=actor)
         item = result["item"]
         return APIResponse(
             data=AvailableTransitionsResponse(

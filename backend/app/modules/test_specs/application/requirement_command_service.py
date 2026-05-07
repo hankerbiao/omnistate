@@ -11,9 +11,14 @@ from app.modules.test_specs.application.commands import (
     DeleteRequirementCommand,
 )
 from app.modules.test_specs.domain.exceptions import RequirementNotFoundError
-from app.modules.test_specs.domain.policies import can_delete_requirement, can_update_requirement
+from app.modules.test_specs.domain.policies import (
+    can_create_requirement,
+    can_delete_requirement,
+    can_update_requirement,
+)
 from app.modules.test_specs.service import RequirementService
 from app.modules.workflow.application import OperationContext, WorkflowCommandService
+from app.modules.workflow.domain.exceptions import PermissionDeniedError
 
 
 class RequirementCommandService:
@@ -60,6 +65,10 @@ class RequirementCommandService:
         Raises:
             相关异常可能由底层服务抛出
         """
+        actor = {"actor_id": context.actor_id, "role_ids": context.role_ids}
+        if not can_create_requirement(actor):
+            raise PermissionDeniedError(context.actor_id, "create requirement")
+
         payload = deepcopy(command.payload)
         owner_id = str(payload.get("tpm_owner_id") or "").strip()
         if not owner_id:

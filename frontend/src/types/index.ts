@@ -517,3 +517,89 @@ export interface TerminalExitMessage {
   type: 'exit';
   code: number;
 }
+
+// Role and Permission types
+export interface PermissionResponse {
+  id: string;
+  permission_id: string;
+  name: string;
+  code: string;
+  resource: string;
+  action: string;
+  description?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RoleResponse {
+  id: string;
+  role_id: string;
+  name: string;
+  description?: string;
+  permission_ids?: string[];
+  is_system?: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateRoleRequest {
+  name: string;
+  description?: string;
+  permission_ids?: string[];
+}
+
+export interface UpdateRoleRequest {
+  name?: string;
+  description?: string;
+}
+
+export interface UpdateRolePermissionsRequest {
+  permission_ids: string[];
+}
+
+export interface CurrentUserPermissionsResponse {
+  user_id: string;
+  permissions: string[];
+  roles: {
+    role_id: string;
+    role_name: string;
+  }[];
+}
+
+// User types
+export interface UserResponse {
+  id: string;
+  user_id: string;
+  username: string;
+  email?: string;
+  role_ids: string[];
+  status: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateUserRequest {
+  user_id: string;
+  username: string;
+  password: string;
+  email?: string;
+  role_ids?: string[];
+  status?: string;
+}
+
+export interface UpdateUserRequest {
+  username?: string;
+  email?: string;
+  status?: string;
+}
+
+export interface UpdateUserRolesRequest {
+  role_ids: string[];
+}
+
+export interface ListUsersParams {
+  status?: string;
+  role_id?: string;
+  limit?: number;
+  offset?: number;
+}

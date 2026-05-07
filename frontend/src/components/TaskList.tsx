@@ -900,66 +900,80 @@ const TaskList: React.FC<TaskListProps> = () => {
   }, {} as Record<string, number>);
 
   return (
-    <div style={styles.container}>
-      <div style={styles.header}>
-        <div style={styles.headerLeft}>
-          <h1 style={styles.title}>执行任务</h1>
-          <div style={styles.statsRow}>
-            {Object.entries(statusCounts).slice(0, 4).map(([status, count]) => {
-              const s = getStatusAppearance(status);
-              return (
-                <span
-                  key={status}
-                  style={{
-                    ...styles.statBadge,
-                    backgroundColor: s.bg,
-                    color: s.color,
-                    border: s.border,
-                    boxShadow: s.glow,
-                  }}
-                >
-                  {s.label} {count}
-                </span>
-              );
-            })}
-          </div>
+    <div className="workspace">
+      {/* Toolbar */}
+      <div className="toolbar">
+        <div className="toolbar-section">
+          <span style={styles.title}>执行任务</span>
+          {Object.entries(statusCounts).slice(0, 4).map(([status, count]) => {
+            const s = getStatusAppearance(status);
+            return (
+              <span
+                key={status}
+                className="status-badge"
+                style={{
+                  backgroundColor: s.bg,
+                  color: s.color,
+                  border: s.border,
+                }}
+              >
+                {s.label} {count}
+              </span>
+            );
+          })}
         </div>
-        <div style={styles.headerActions}>
-          <button style={styles.dispatchBtn} onClick={openDispatchModal}>
-            <span style={styles.btnIcon}>▶</span>
-            下发任务
+        <div style={{ marginLeft: 'auto' }}>
+          <button className="btn btn--primary" onClick={openDispatchModal}>
+            ▶ 下发任务
           </button>
-          <button style={styles.refreshBtn} onClick={fetchTasks} disabled={loading}>
-            <span style={styles.btnIcon}>↻</span>
-            {loading ? '加载中' : '刷新'}
+          <button
+            className="btn btn--secondary"
+            style={{ marginLeft: '8px' }}
+            onClick={fetchTasks}
+            disabled={loading}
+          >
+            {loading ? '加载中' : '↻ 刷新'}
           </button>
         </div>
       </div>
 
       {error && (
-        <div style={styles.errorBanner}>
+        <div className="error-banner" style={{ margin: '16px 24px' }}>
           <span>⚠</span> {error}
         </div>
       )}
 
       {successMessage && (
-        <div style={styles.successBanner}>
+        <div
+          style={{
+            margin: '16px 24px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            padding: '12px 16px',
+            backgroundColor: 'var(--status-success-bg)',
+            border: '1px solid var(--status-success)',
+            borderRadius: 'var(--radius-md)',
+            color: 'var(--status-success)',
+            fontSize: '13px',
+          }}
+        >
           <span>✓</span> {successMessage}
         </div>
       )}
 
-      <div style={styles.tableWrapper}>
-        {loading ? (
-          <div style={styles.loadingState}>
-            <div style={styles.spinner} />
-            <span>加载任务列表...</span>
-          </div>
-        ) : tasks.length === 0 ? (
-          <div style={styles.emptyState}>
-            <span style={styles.emptyIcon}>▸</span>
-            <p>暂无执行任务</p>
-          </div>
-        ) : (
+      <div style={{ padding: '0 24px 24px' }}>
+        <div className="data-panel">
+          {loading ? (
+            <div className="loading-overlay">
+              <div className="loading-spinner" />
+            </div>
+          ) : tasks.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-state__icon">▸</div>
+              <p className="empty-state__text">暂无执行任务</p>
+            </div>
+          ) : (
           <table style={styles.table}>
             <thead>
               <tr style={styles.tableHeader}>
@@ -1069,7 +1083,8 @@ const TaskList: React.FC<TaskListProps> = () => {
               })}
             </tbody>
           </table>
-        )}
+          )}
+        </div>
       </div>
 
       {/* Modal */}
@@ -1895,10 +1910,10 @@ const TaskList: React.FC<TaskListProps> = () => {
         @keyframes spin { to { transform: rotate(360deg); } }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
         .task-row { cursor: pointer; }
-        .task-row:hover { background-color: var(--bg-tertiary) !important; }
-        .task-row:hover td { color: var(--accent-cyan); }
-        .rerun-btn:hover { background-color: rgba(57, 208, 214, 0.12) !important; border-color: rgba(57, 208, 214, 0.28) !important; color: var(--accent-cyan) !important; }
-        .delete-btn:hover { background-color: var(--status-error-bg) !important; border-color: var(--accent-red) !important; color: var(--accent-red) !important; }
+        .task-row:hover { background-color: var(--surface-hover) !important; }
+        .task-row:hover td { color: var(--accent-primary); }
+        .rerun-btn:hover { background-color: var(--status-info-bg) !important; border-color: var(--status-info) !important; color: var(--status-info) !important; }
+        .delete-btn:hover { background-color: var(--status-error-bg) !important; border-color: var(--status-error) !important; color: var(--status-error) !important; }
       `}</style>
     </div>
   );

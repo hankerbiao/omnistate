@@ -1,6 +1,6 @@
 from typing import Any, Iterable
 
-from app.modules.workflow.domain.policies import can_delete_work_item, is_admin_actor
+from app.modules.workflow.domain.policies import actor_role_ids, can_delete_work_item, is_admin_actor
 
 
 def _read_value(source: Any, field: str, default: Any = None) -> Any:
@@ -23,6 +23,26 @@ def _matches_any(actor_id: str, candidates: Iterable[Any]) -> bool:
     """判断操作者 ID 是否匹配任一候选负责人 ID，忽略 None 和首尾空白。"""
     normalized = actor_id.strip()
     return any(normalized and normalized == str(candidate).strip() for candidate in candidates if candidate is not None)
+
+
+def _normalized_roles(actor: Any) -> set[str]:
+    roles: set[str] = set()
+    for role_id in actor_role_ids(actor):
+        normalized = role_id.strip().upper()
+        if normalized.startswith("ROLE_"):
+            normalized = normalized[5:]
+        if normalized:
+            roles.add(normalized)
+    return roles
+
+
+def can_create_requirement(actor: Any) -> bool:
+    """
+    需求创建策略：
+    - 管理员始终允许；
+    - TPM 角色允许创建需求。
+    """
+    return is_admin_actor(actor) or "TPM" in _normalized_roles(actor)
 
 
 def can_update_requirement(actor: Any, requirement: Any, work_item: Any = None) -> bool:

@@ -13,6 +13,7 @@ from app.modules.workflow.application.common import (
     validate_object_id,
 )
 from app.modules.workflow.domain.exceptions import WorkItemNotFoundError
+from app.modules.workflow.domain.policies import can_transition
 from app.modules.workflow.domain.rules import normalize_sort
 from app.modules.workflow.repository.models import (
     BusFlowLogDoc,
@@ -160,7 +161,11 @@ class WorkflowQueryService:
                 result[work_item_id].append(data)
         return result
 
-    async def get_item_with_transitions(self, item_id: str) -> dict[str, Any]:
+    async def get_item_with_transitions(
+        self,
+        item_id: str,
+        actor: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         item = await self.get_item_by_id(item_id)
         if not item:
             raise WorkItemNotFoundError(item_id)
@@ -169,6 +174,9 @@ class WorkflowQueryService:
             SysWorkflowConfigDoc.type_code == item["type_code"],
             SysWorkflowConfigDoc.from_state == item["current_state"],
         ).to_list()
+        if actor is not None:
+            configs = [config for config in configs if can_transition(actor, item, config)]
+
         return {
             "item": item,
             "available_transitions": [

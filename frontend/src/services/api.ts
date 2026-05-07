@@ -1,4 +1,4 @@
-import type { LoginRequest, LoginResponse, ApiResponse, CreateRequirementRequest, RequirementResponse, ListRequirementsParams, CreateTestCaseRequest, TestCaseResponse, ListTestCasesParams, DispatchTaskRequest, DispatchTaskResponse, ExecutionAgent, ListAgentsParams, CreateAutomationTestCaseRequest, AutomationTestCaseResponse, ListAutomationTestCasesParams, ExecutionTask, ListTasksParams, TaskStatus, RerunTaskRequest, AttachmentInfo, WorkflowTransitionRequest, WorkflowTransitionResponse, WorkflowTransitionsResponse } from '../types';
+import type { LoginRequest, LoginResponse, ApiResponse, CreateRequirementRequest, RequirementResponse, ListRequirementsParams, CreateTestCaseRequest, TestCaseResponse, ListTestCasesParams, DispatchTaskRequest, DispatchTaskResponse, ExecutionAgent, ListAgentsParams, CreateAutomationTestCaseRequest, AutomationTestCaseResponse, ListAutomationTestCasesParams, ExecutionTask, ListTasksParams, TaskStatus, RerunTaskRequest, AttachmentInfo, WorkflowTransitionRequest, WorkflowTransitionResponse, WorkflowTransitionsResponse, RoleResponse, PermissionResponse, CreateRoleRequest, UpdateRoleRequest, UpdateRolePermissionsRequest, CurrentUserPermissionsResponse, UserResponse, CreateUserRequest, UpdateUserRequest, UpdateUserRolesRequest, ListUsersParams } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
 
@@ -263,6 +263,97 @@ class ApiClient {
   async deleteTask(taskId: string): Promise<ApiResponse<{ task_id: string; deleted: boolean }>> {
     return this.request<{ task_id: string; deleted: boolean }>(`/execution/tasks/${taskId}`, {
       method: 'DELETE',
+    });
+  }
+
+  // Role and Permission APIs
+  async listRoles(): Promise<ApiResponse<RoleResponse[]>> {
+    return this.request<RoleResponse[]>('/auth/roles', {
+      method: 'GET',
+    });
+  }
+
+  async getRole(roleId: string): Promise<ApiResponse<RoleResponse>> {
+    return this.request<RoleResponse>(`/auth/roles/${roleId}`, {
+      method: 'GET',
+    });
+  }
+
+  async createRole(data: CreateRoleRequest): Promise<ApiResponse<RoleResponse>> {
+    return this.request<RoleResponse>('/auth/roles', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateRole(roleId: string, data: UpdateRoleRequest): Promise<ApiResponse<RoleResponse>> {
+    return this.request<RoleResponse>(`/auth/roles/${roleId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateRolePermissions(roleId: string, data: UpdateRolePermissionsRequest): Promise<ApiResponse<RoleResponse>> {
+    return this.request<RoleResponse>(`/auth/roles/${roleId}/permissions`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async listPermissions(): Promise<ApiResponse<PermissionResponse[]>> {
+    return this.request<PermissionResponse[]>('/auth/permissions', {
+      method: 'GET',
+    });
+  }
+
+  async getCurrentUserPermissions(): Promise<ApiResponse<CurrentUserPermissionsResponse>> {
+    return this.request<CurrentUserPermissionsResponse>('/auth/users/me/permissions', {
+      method: 'GET',
+    });
+  }
+
+  // User APIs
+  async listUsers(params: ListUsersParams = {}): Promise<ApiResponse<UserResponse[]>> {
+    const queryParams = new URLSearchParams();
+
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        queryParams.append(key, String(value));
+      }
+    });
+
+    const queryString = queryParams.toString();
+    const endpoint = `/auth/users${queryString ? `?${queryString}` : ''}`;
+
+    return this.request<UserResponse[]>(endpoint, {
+      method: 'GET',
+    });
+  }
+
+  async getUser(userId: string): Promise<ApiResponse<UserResponse>> {
+    return this.request<UserResponse>(`/auth/users/${userId}`, {
+      method: 'GET',
+    });
+  }
+
+  async createUser(data: CreateUserRequest): Promise<ApiResponse<UserResponse>> {
+    return this.request<UserResponse>('/auth/users', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateUser(userId: string, data: UpdateUserRequest): Promise<ApiResponse<UserResponse>> {
+    return this.request<UserResponse>(`/auth/users/${userId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateUserRoles(userId: string, data: UpdateUserRolesRequest): Promise<ApiResponse<UserResponse>> {
+    return this.request<UserResponse>(`/auth/users/${userId}/roles`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
     });
   }
 }

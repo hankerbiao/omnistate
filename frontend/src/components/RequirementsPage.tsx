@@ -5,6 +5,8 @@ import CreateRequirementForm from './CreateRequirementForm';
 import CreateTestCaseForm from './CreateTestCaseForm';
 import TestCaseDetailModal from './TestCaseDetailModal';
 
+type ActiveTab = 'workflow' | 'testcases';
+
 const RequirementsPage: React.FC = () => {
   const [requirements, setRequirements] = useState<RequirementResponse[]>([]);
   const [testCases, setTestCases] = useState<TestCaseResponse[]>([]);
@@ -19,6 +21,9 @@ const RequirementsPage: React.FC = () => {
   const [workflowTransitions, setWorkflowTransitions] = useState<WorkflowTransition[]>([]);
   const [loadingWorkflow, setLoadingWorkflow] = useState(false);
   const [transitioningAction, setTransitioningAction] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<ActiveTab>('workflow');
+  const [transitionModal, setTransitionModal] = useState<{ open: boolean; transition?: WorkflowTransition }>({ open: false });
+  const [transitionFormData, setTransitionFormData] = useState<Record<string, string>>({});
 
   const selectedRequirement = useMemo(
     () => requirements.find((item) => item.req_id === selectedRequirementId) || null,
@@ -57,8 +62,8 @@ const RequirementsPage: React.FC = () => {
       const response = await api.listTestCases({ ref_req_id: requirementId, limit: 50 });
       setTestCases(response.data || []);
     } catch (err) {
-      setError('获取需求关联测试用例失败');
-      console.error('Fetch requirement test cases error:', err);
+      setError('获取测试用例失败');
+      console.error('Fetch test cases error:', err);
     } finally {
       setLoadingTestCases(false);
     }
@@ -113,26 +118,26 @@ const RequirementsPage: React.FC = () => {
 
   const getPriorityStyle = (priority: string) => {
     const styleMap: Record<string, { bg: string; color: string }> = {
-      P0: { bg: 'var(--status-error-bg)', color: 'var(--accent-red)' },
-      P1: { bg: 'var(--status-warning-bg)', color: 'var(--accent-yellow)' },
-      P2: { bg: 'var(--status-info-bg)', color: 'var(--accent-blue)' },
-      P3: { bg: 'var(--bg-tertiary)', color: 'var(--text-muted)' },
+      P0: { bg: 'var(--status-error-bg)', color: 'var(--status-error)' },
+      P1: { bg: 'var(--status-warning-bg)', color: 'var(--status-warning)' },
+      P2: { bg: 'var(--status-info-bg)', color: 'var(--status-info)' },
+      P3: { bg: 'var(--surface-tertiary)', color: 'var(--text-tertiary)' },
     };
-    return styleMap[priority] || { bg: 'var(--bg-tertiary)', color: 'var(--text-secondary)' };
+    return styleMap[priority] || { bg: 'var(--surface-tertiary)', color: 'var(--text-secondary)' };
   };
 
   const getWorkflowStateStyle = (state: string) => {
     const styleMap: Record<string, { bg: string; color: string }> = {
-      DRAFT: { bg: 'var(--bg-tertiary)', color: 'var(--text-muted)' },
-      PENDING_REVIEW: { bg: 'var(--status-warning-bg)', color: 'var(--accent-yellow)' },
-      PENDING_DEVELOP: { bg: 'var(--status-info-bg)', color: 'var(--accent-blue)' },
-      DEVELOPING: { bg: 'rgba(57, 208, 214, 0.12)', color: 'var(--accent-cyan)' },
-      PENDING_TEST: { bg: 'rgba(163, 113, 247, 0.14)', color: 'var(--accent-purple)' },
-      PENDING_UAT: { bg: 'rgba(57, 208, 214, 0.12)', color: 'var(--accent-cyan)' },
-      PENDING_RELEASE: { bg: 'rgba(34, 197, 94, 0.12)', color: '#4ade80' },
-      RELEASED: { bg: 'rgba(34, 197, 94, 0.16)', color: '#22c55e' },
+      DRAFT: { bg: 'var(--surface-tertiary)', color: 'var(--text-tertiary)' },
+      PENDING_REVIEW: { bg: 'var(--status-warning-bg)', color: 'var(--status-warning)' },
+      PENDING_DEVELOP: { bg: 'var(--status-info-bg)', color: 'var(--status-info)' },
+      DEVELOPING: { bg: 'var(--status-info-bg)', color: 'var(--status-info)' },
+      PENDING_TEST: { bg: 'var(--status-info-bg)', color: 'var(--status-info)' },
+      PENDING_UAT: { bg: 'var(--status-info-bg)', color: 'var(--status-info)' },
+      PENDING_RELEASE: { bg: 'var(--status-success-bg)', color: 'var(--status-success)' },
+      RELEASED: { bg: 'var(--status-success-bg)', color: 'var(--status-success)' },
     };
-    return styleMap[state] || { bg: 'var(--bg-tertiary)', color: 'var(--text-secondary)' };
+    return styleMap[state] || { bg: 'var(--surface-tertiary)', color: 'var(--text-secondary)' };
   };
 
   const getActionLabel = (action: string) => {
@@ -157,43 +162,35 @@ const RequirementsPage: React.FC = () => {
     return labelMap[field] || field;
   };
 
-  const buildTransitionFormData = (transition: WorkflowTransition): Record<string, unknown> | null => {
-    const formData: Record<string, unknown> = {};
+  const openTransitionModal = (transition: WorkflowTransition) => {
+    const initialData: Record<string, string> = {};
     for (const field of transition.required_fields) {
-      const defaultValue = field === 'priority' ? selectedRequirement?.priority || '' : '';
-      const value = window.prompt(`请输入${getFieldLabel(field)}`, defaultValue);
-      if (value === null) {
-        return null;
-      }
-      if (!value.trim()) {
-        setError(`${getFieldLabel(field)}不能为空`);
-        return null;
-      }
-      formData[field] = value.trim();
+      initialData[field] = field === 'priority' ? selectedRequirement?.priority || '' : '';
     }
-    return formData;
+    setTransitionFormData(initialData);
+    setTransitionModal({ open: true, transition });
   };
 
-  const handleWorkflowTransition = async (transition: WorkflowTransition) => {
-    if (!selectedRequirement?.workflow_item_id) {
-      setError('当前需求缺少工作流事项ID');
-      return;
+  const handleTransitionSubmit = async () => {
+    if (!selectedRequirement?.workflow_item_id || !transitionModal.transition) return;
+
+    for (const field of transitionModal.transition.required_fields) {
+      if (!transitionFormData[field]?.trim()) {
+        setError(`${getFieldLabel(field)}不能为空`);
+        return;
+      }
     }
 
-    const formData = buildTransitionFormData(transition);
-    if (formData === null) {
-      return;
-    }
-
-    setTransitioningAction(transition.action);
+    setTransitioningAction(transitionModal.transition.action);
     setError(null);
     try {
       await api.transitionWorkflow(selectedRequirement.workflow_item_id, {
-        action: transition.action,
-        form_data: formData,
+        action: transitionModal.transition.action,
+        form_data: transitionFormData,
       });
       await fetchRequirements(selectedRequirement.req_id);
       await fetchWorkflowTransitions(selectedRequirement.workflow_item_id);
+      setTransitionModal({ open: false });
     } catch (err) {
       setError('工作流流转失败');
       console.error('Workflow transition error:', err);
@@ -202,212 +199,259 @@ const RequirementsPage: React.FC = () => {
     }
   };
 
+  const onlineCount = requirements.filter(r => r.status === 'RELEASED').length;
+
   return (
-    <div style={styles.container}>
-      <div style={styles.header}>
-        <div>
-          <h1 style={styles.title}>测试需求</h1>
-          <p style={styles.subtitle}>先创建需求，再在需求上下文里创建测试用例。</p>
-        </div>
-        <div style={styles.headerActions}>
-          <button style={styles.secondaryButton} onClick={() => fetchRequirements()} disabled={loadingRequirements}>
-            {loadingRequirements ? '加载中' : '刷新'}
-          </button>
-          <button style={styles.primaryButton} onClick={() => setShowCreateRequirement(true)}>
-            新建需求
-          </button>
-        </div>
-      </div>
-
-      {error && <div style={styles.errorBanner}>⚠ {error}</div>}
-
-      <div style={styles.panel}>
+    <div className="workspace">
+      {/* Left Panel - Requirements List */}
+      <div style={styles.leftPanel}>
         <div style={styles.panelHeader}>
           <div>
             <h2 style={styles.panelTitle}>需求列表</h2>
-            <span style={styles.panelHint}>点击一条需求，查看并创建其下属测试用例</span>
+            <span style={styles.panelHint}>{requirements.length} 个需求，已发布 {onlineCount}</span>
           </div>
-          <span style={styles.counterBadge}>{requirements.length}</span>
+          <div style={styles.panelActions}>
+            <button className="btn btn--ghost btn--sm" onClick={() => fetchRequirements()} disabled={loadingRequirements}>
+              ↻
+            </button>
+            <button className="btn btn--primary btn--sm" onClick={() => setShowCreateRequirement(true)}>
+              + 新建
+            </button>
+          </div>
         </div>
 
         {loadingRequirements ? (
-          <div style={styles.loadingState}>加载需求中...</div>
+          <div className="loading-overlay">
+            <div className="loading-spinner" />
+          </div>
         ) : requirements.length === 0 ? (
-          <div style={styles.emptyState}>暂无需求，先创建一条测试需求。</div>
+          <div className="empty-state">
+            <div className="empty-state__icon">📋</div>
+            <p className="empty-state__text">暂无需求，点击上方"新建"创建</p>
+          </div>
         ) : (
-          <div style={styles.requirementList}>
+          <div style={styles.list}>
             {requirements.map((requirement) => {
               const priorityStyle = getPriorityStyle(requirement.priority);
               const isSelected = selectedRequirementId === requirement.req_id;
               return (
-                <button
+                <div
                   key={requirement.req_id}
-                  type="button"
-                  style={{
-                    ...styles.requirementCard,
-                    ...(isSelected ? styles.requirementCardActive : {}),
-                  }}
+                  className={`requirement-item ${isSelected ? 'requirement-item--selected' : ''}`}
                   onClick={() => setSelectedRequirementId(requirement.req_id)}
                 >
-                  <div style={styles.requirementCardTop}>
-                    <span style={styles.requirementId}>{requirement.req_id}</span>
+                  <div style={styles.itemHeader}>
+                    <span style={styles.itemId}>{requirement.req_id}</span>
                     <span
-                      style={{
-                        ...styles.priorityBadge,
-                        backgroundColor: priorityStyle.bg,
-                        color: priorityStyle.color,
-                      }}
+                      className="status-badge"
+                      style={{ backgroundColor: priorityStyle.bg, color: priorityStyle.color }}
                     >
                       {requirement.priority}
                     </span>
                   </div>
-                  <div style={styles.requirementTitle}>{requirement.title}</div>
-                  <div style={styles.requirementMeta}>
-                    <span>{requirement.status}</span>
-                    <span>{new Date(requirement.created_at).toLocaleString('zh-CN')}</span>
+                  <div style={styles.itemTitle}>{requirement.title}</div>
+                  <div style={styles.itemMeta}>
+                    <span
+                      className="status-badge status-badge--neutral"
+                      style={{ fontSize: '10px' }}
+                    >
+                      {requirement.status}
+                    </span>
+                    <span style={styles.metaTime}>
+                      {new Date(requirement.created_at).toLocaleDateString('zh-CN')}
+                    </span>
                   </div>
-                </button>
+                </div>
               );
             })}
           </div>
         )}
       </div>
 
-      <div style={styles.panel}>
-        <div style={styles.panelHeader}>
-          <div>
-            <h2 style={styles.panelTitle}>需求工作流</h2>
-            <span style={styles.panelHint}>
-              {selectedRequirement
-                ? `当前需求：${selectedRequirement.req_id}`
-                : '请先选择一个需求'}
-            </span>
-          </div>
-          {selectedRequirement && (
-            <span
-              style={{
-                ...styles.workflowStateBadge,
-                backgroundColor: getWorkflowStateStyle(workflowState || selectedRequirement.status).bg,
-                color: getWorkflowStateStyle(workflowState || selectedRequirement.status).color,
-              }}
-            >
-              {workflowState || selectedRequirement.status || '-'}
-            </span>
-          )}
-        </div>
-
-        {!selectedRequirement ? (
-          <div style={styles.emptyState}>选中需求后，这里会展示工作流状态和可执行流转。</div>
-        ) : !selectedRequirement.workflow_item_id ? (
-          <div style={styles.emptyState}>当前需求没有关联工作流事项。</div>
-        ) : loadingWorkflow ? (
-          <div style={styles.loadingState}>加载工作流中...</div>
-        ) : (
-          <div style={styles.workflowBody}>
-            <div style={styles.workflowInfoGrid}>
-              <div style={styles.workflowInfoItem}>
-                <span style={styles.workflowInfoLabel}>工作流事项</span>
-                <span style={styles.workflowInfoValue}>{selectedRequirement.workflow_item_id}</span>
-              </div>
-              <div style={styles.workflowInfoItem}>
-                <span style={styles.workflowInfoLabel}>当前状态</span>
-                <span style={styles.workflowInfoValue}>{workflowState || selectedRequirement.status || '-'}</span>
+      {/* Right Panel - Detail Workspace */}
+      <div style={styles.rightPanel}>
+        {selectedRequirement ? (
+          <>
+            <div style={styles.detailHeader}>
+              <div>
+                <h2 style={styles.detailTitle}>{selectedRequirement.title}</h2>
+                <div style={styles.detailMeta}>
+                  <span className="mono" style={styles.detailId}>{selectedRequirement.req_id}</span>
+                  <span
+                    className="status-badge"
+                    style={{
+                      ...getWorkflowStateStyle(workflowState || selectedRequirement.status),
+                    }}
+                  >
+                    {workflowState || selectedRequirement.status}
+                  </span>
+                  <span
+                    className="status-badge"
+                    style={getPriorityStyle(selectedRequirement.priority)}
+                  >
+                    {selectedRequirement.priority}
+                  </span>
+                </div>
               </div>
             </div>
 
-            {workflowTransitions.length === 0 ? (
-              <div style={styles.workflowEmpty}>当前状态没有可执行流转。</div>
-            ) : (
-              <div style={styles.workflowActionList}>
-                {workflowTransitions.map((transition) => (
-                  <button
-                    key={`${transition.action}-${transition.to_state}`}
-                    type="button"
-                    style={styles.workflowActionButton}
-                    onClick={() => handleWorkflowTransition(transition)}
-                    disabled={Boolean(transitioningAction)}
-                  >
-                    <span style={styles.workflowActionName}>
-                      {transitioningAction === transition.action ? '处理中...' : getActionLabel(transition.action)}
-                    </span>
-                    <span style={styles.workflowActionMeta}>
-                      {workflowState || selectedRequirement.status} → {transition.to_state}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+            {/* Tabs */}
+            <div className="tabs">
+              <button
+                className={`tab ${activeTab === 'workflow' ? 'tab--active' : ''}`}
+                onClick={() => setActiveTab('workflow')}
+              >
+                工作流
+              </button>
+              <button
+                className={`tab ${activeTab === 'testcases' ? 'tab--active' : ''}`}
+                onClick={() => setActiveTab('testcases')}
+              >
+                测试用例 ({testCases.length})
+              </button>
+            </div>
 
-      <div style={styles.panel}>
-        <div style={styles.panelHeader}>
-          <div>
-            <h2 style={styles.panelTitle}>关联测试用例</h2>
-            <span style={styles.panelHint}>
-              {selectedRequirement
-                ? `当前需求：${selectedRequirement.req_id} / ${selectedRequirement.title}`
-                : '请先选择一个需求'}
-            </span>
-          </div>
-          <button
-            style={{
-              ...styles.primaryButton,
-              ...(selectedRequirement ? {} : styles.buttonDisabled),
-            }}
-            onClick={() => setShowCreateTestCase(true)}
-            disabled={!selectedRequirement}
-          >
-            为当前需求创建测试用例
-          </button>
-        </div>
+            {/* Tab Content */}
+            <div style={styles.tabContent}>
+              {activeTab === 'workflow' ? (
+                <div className="data-panel">
+                  {!selectedRequirement.workflow_item_id ? (
+                    <div className="empty-state">
+                      <div className="empty-state__icon">⚙</div>
+                      <p className="empty-state__text">当前需求没有关联工作流</p>
+                    </div>
+                  ) : loadingWorkflow ? (
+                    <div className="loading-overlay">
+                      <div className="loading-spinner" />
+                    </div>
+                  ) : (
+                    <>
+                      <div className="data-panel-header">
+                        <h3 className="data-panel-title">工作流状态</h3>
+                      </div>
+                      <div style={styles.workflowInfo}>
+                        <div style={styles.workflowInfoItem}>
+                          <span style={styles.workflowInfoLabel}>工作流ID</span>
+                          <span style={styles.workflowInfoValue} className="mono">
+                            {selectedRequirement.workflow_item_id}
+                          </span>
+                        </div>
+                        <div style={styles.workflowInfoItem}>
+                          <span style={styles.workflowInfoLabel}>当前状态</span>
+                          <span
+                            className="status-badge"
+                            style={getWorkflowStateStyle(workflowState || selectedRequirement.status)}
+                          >
+                            {workflowState || selectedRequirement.status}
+                          </span>
+                        </div>
+                      </div>
 
-        {!selectedRequirement ? (
-          <div style={styles.emptyState}>选中需求后，这里会展示该需求下的测试用例。</div>
-        ) : loadingTestCases ? (
-          <div style={styles.loadingState}>加载测试用例中...</div>
-        ) : testCases.length === 0 ? (
-          <div style={styles.emptyState}>当前需求下暂无测试用例。</div>
+                      <div style={styles.workflowActions}>
+                        <h4 style={styles.sectionTitle}>可用操作</h4>
+                        {workflowTransitions.length === 0 ? (
+                          <div className="empty-state" style={{ padding: '24px' }}>
+                            <p className="empty-state__text">当前状态没有可执行的操作</p>
+                          </div>
+                        ) : (
+                          <div style={styles.actionGrid}>
+                            {workflowTransitions.map((transition) => (
+                              <button
+                                key={`${transition.action}-${transition.to_state}`}
+                                className="btn btn--secondary"
+                                onClick={() => openTransitionModal(transition)}
+                                disabled={Boolean(transitioningAction)}
+                              >
+                                <span style={styles.actionName}>{getActionLabel(transition.action)}</span>
+                                <span style={styles.actionArrow}>→ {transition.to_state}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              ) : (
+                <div className="data-panel">
+                  <div className="data-panel-header">
+                    <h3 className="data-panel-title">关联测试用例</h3>
+                    <button
+                      className="btn btn--primary btn--sm"
+                      onClick={() => setShowCreateTestCase(true)}
+                    >
+                      + 创建用例
+                    </button>
+                  </div>
+
+                  {loadingTestCases ? (
+                    <div className="loading-overlay">
+                      <div className="loading-spinner" />
+                    </div>
+                  ) : testCases.length === 0 ? (
+                    <div className="empty-state">
+                      <div className="empty-state__icon">🧪</div>
+                      <p className="empty-state__text">暂无测试用例，点击上方按钮创建</p>
+                    </div>
+                  ) : (
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th>用例ID</th>
+                          <th>名称</th>
+                          <th>优先级</th>
+                          <th>状态</th>
+                          <th>创建时间</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {testCases.map((testCase) => (
+                          <tr
+                            key={testCase.id}
+                            onClick={() => setSelectedTestCase(testCase)}
+                            style={{ cursor: 'pointer' }}
+                          >
+                            <td className="mono">{testCase.case_id}</td>
+                            <td>{testCase.title}</td>
+                            <td>
+                              <span
+                                className="status-badge status-badge--neutral"
+                                style={getPriorityStyle(testCase.priority || 'P3')}
+                              >
+                                {testCase.priority || '-'}
+                              </span>
+                            </td>
+                            <td>
+                              <span className="status-badge status-badge--neutral">
+                                {testCase.status}
+                              </span>
+                            </td>
+                            <td className="mono">
+                              {new Date(testCase.created_at).toLocaleDateString('zh-CN')}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              )}
+            </div>
+          </>
         ) : (
-          <div style={styles.tableWrapper}>
-            <table style={styles.table}>
-              <thead>
-                <tr>
-                  <th style={styles.th}>用例ID</th>
-                  <th style={styles.th}>名称</th>
-                  <th style={styles.th}>优先级</th>
-                  <th style={styles.th}>状态</th>
-                  <th style={styles.th}>创建时间</th>
-                </tr>
-              </thead>
-              <tbody>
-                {testCases.map((testCase) => (
-                  <tr
-                    key={testCase.id}
-                    style={styles.tr}
-                    onClick={() => setSelectedTestCase(testCase)}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.cursor = 'pointer';
-                      e.currentTarget.style.backgroundColor = 'var(--bg-tertiary)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.cursor = 'default';
-                      e.currentTarget.style.backgroundColor = 'transparent';
-                    }}
-                  >
-                    <td style={styles.td}>{testCase.case_id}</td>
-                    <td style={styles.td}>{testCase.title}</td>
-                    <td style={styles.td}>{testCase.priority || '-'}</td>
-                    <td style={styles.td}>{testCase.status}</td>
-                    <td style={styles.td}>{new Date(testCase.created_at).toLocaleString('zh-CN')}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="empty-state" style={{ height: '100%' }}>
+            <div className="empty-state__icon">👈</div>
+            <p className="empty-state__text">从左侧选择一条需求查看详情</p>
           </div>
         )}
       </div>
+
+      {error && (
+        <div style={styles.errorToast}>
+          <span>⚠</span> {error}
+          <button onClick={() => setError(null)} style={styles.errorClose}>×</button>
+        </div>
+      )}
 
       {showCreateRequirement && (
         <CreateRequirementForm
@@ -431,186 +475,256 @@ const RequirementsPage: React.FC = () => {
           onClose={() => setSelectedTestCase(null)}
         />
       )}
+
+      {/* Transition Modal */}
+      {transitionModal.open && transitionModal.transition && (
+        <div className="modal-overlay" onClick={() => setTransitionModal({ open: false })}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal__header">
+              <h3 className="modal__title">{getActionLabel(transitionModal.transition.action)}</h3>
+              <button className="modal__close" onClick={() => setTransitionModal({ open: false })}>×</button>
+            </div>
+            <div className="modal__body">
+              <p style={{ marginBottom: '16px', color: 'var(--text-secondary)', fontSize: '13px' }}>
+                状态将变为: <strong>{transitionModal.transition.to_state}</strong>
+              </p>
+              {transitionModal.transition.required_fields.map(field => (
+                <div key={field} style={{ marginBottom: '16px' }}>
+                  <label style={styles.formLabel}>{getFieldLabel(field)} *</label>
+                  {field === 'priority' ? (
+                    <select
+                      className="form-input form-select"
+                      value={transitionFormData[field] || ''}
+                      onChange={e => setTransitionFormData({ ...transitionFormData, [field]: e.target.value })}
+                    >
+                      <option value="">请选择</option>
+                      <option value="P0">P0 - 紧急</option>
+                      <option value="P1">P1 - 高</option>
+                      <option value="P2">P2 - 中</option>
+                      <option value="P3">P3 - 低</option>
+                    </select>
+                  ) : (
+                    <input
+                      className="form-input"
+                      type="text"
+                      value={transitionFormData[field] || ''}
+                      onChange={e => setTransitionFormData({ ...transitionFormData, [field]: e.target.value })}
+                      placeholder={`请输入${getFieldLabel(field)}`}
+                    />
+                  )}
+                </div>
+              ))}
+            </div>
+            <div className="modal__footer">
+              <button className="btn btn--secondary" onClick={() => setTransitionModal({ open: false })}>
+                取消
+              </button>
+              <button
+                className="btn btn--primary"
+                onClick={handleTransitionSubmit}
+                disabled={Boolean(transitioningAction)}
+              >
+                {transitioningAction ? '处理中...' : '确认'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <style>{`
+        .requirement-item {
+          padding: 14px 16px;
+          margin-bottom: 8px;
+          background-color: var(--surface-primary);
+          border: 1px solid var(--border-subtle);
+          border-radius: var(--radius-md);
+          cursor: pointer;
+          transition: all var(--transition-fast);
+        }
+        .requirement-item:hover {
+          border-color: var(--border-default);
+          background-color: var(--surface-hover);
+        }
+        .requirement-item--selected {
+          border-color: var(--accent-primary);
+          background-color: rgba(37, 99, 235, 0.04);
+        }
+      `}</style>
     </div>
   );
 };
 
 const styles = {
-  container: {
-    padding: '32px',
-    maxWidth: '1400px',
-    margin: '0 auto',
+  leftPanel: {
+    width: '340px',
+    minWidth: '340px',
+    height: 'calc(100vh - 56px - 48px)',
     display: 'flex',
     flexDirection: 'column' as const,
-    gap: '24px',
-  } as const,
-  header: {
+    backgroundColor: 'var(--surface-primary)',
+    borderRight: '1px solid var(--border-subtle)',
+    overflow: 'hidden',
+  },
+  rightPanel: {
+    flex: 1,
     display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: '16px',
-  } as const,
-  title: {
-    margin: 0,
-    fontSize: '28px',
-    fontWeight: 700,
-    color: 'var(--text-primary)',
-  } as const,
-  subtitle: {
-    margin: '8px 0 0',
-    fontSize: '14px',
-    color: 'var(--text-muted)',
-  } as const,
-  headerActions: {
-    display: 'flex',
-    gap: '10px',
-  } as const,
-  primaryButton: {
-    padding: '10px 16px',
-    backgroundColor: 'var(--accent-cyan)',
-    color: 'var(--bg-primary)',
-    border: 'none',
-    borderRadius: 'var(--radius-md)',
-    fontWeight: 600,
-    cursor: 'pointer',
-  } as const,
-  secondaryButton: {
-    padding: '10px 16px',
-    backgroundColor: 'var(--bg-secondary)',
-    color: 'var(--text-secondary)',
-    border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-md)',
-    cursor: 'pointer',
-  } as const,
-  buttonDisabled: {
-    opacity: 0.5,
-    cursor: 'not-allowed',
-  } as const,
-  errorBanner: {
-    padding: '12px 16px',
-    backgroundColor: 'var(--status-error-bg)',
-    color: 'var(--accent-red)',
-    border: '1px solid rgba(255, 107, 107, 0.25)',
-    borderRadius: 'var(--radius-md)',
-  } as const,
-  panel: {
-    backgroundColor: 'var(--bg-secondary)',
-    border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-lg)',
-    padding: '20px',
-  } as const,
+    flexDirection: 'column' as const,
+    overflow: 'hidden',
+  },
   panelHeader: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    gap: '16px',
-    marginBottom: '18px',
-  } as const,
+    padding: '16px 20px',
+    borderBottom: '1px solid var(--border-subtle)',
+  },
   panelTitle: {
-    margin: 0,
-    fontSize: '18px',
-    color: 'var(--text-primary)',
-  } as const,
-  panelHint: {
-    display: 'inline-block',
-    marginTop: '6px',
-    fontSize: '13px',
-    color: 'var(--text-muted)',
-  } as const,
-  counterBadge: {
-    minWidth: '32px',
-    padding: '6px 10px',
-    textAlign: 'center' as const,
-    borderRadius: '999px',
-    backgroundColor: 'var(--bg-tertiary)',
-    color: 'var(--text-secondary)',
-    fontSize: '13px',
-  } as const,
-  loadingState: {
-    padding: '32px',
-    textAlign: 'center' as const,
-    color: 'var(--text-muted)',
-  } as const,
-  emptyState: {
-    padding: '32px',
-    textAlign: 'center' as const,
-    color: 'var(--text-muted)',
-    backgroundColor: 'var(--bg-primary)',
-    borderRadius: 'var(--radius-md)',
-    border: '1px dashed var(--border-default)',
-  } as const,
-  requirementList: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-    gap: '14px',
-  } as const,
-  requirementCard: {
-    textAlign: 'left' as const,
-    padding: '16px',
-    borderRadius: 'var(--radius-md)',
-    border: '1px solid var(--border-default)',
-    backgroundColor: 'var(--bg-primary)',
-    cursor: 'pointer',
-  } as const,
-  requirementCardActive: {
-    borderColor: 'var(--accent-cyan)',
-    boxShadow: '0 0 0 1px rgba(57, 208, 214, 0.25)',
-  } as const,
-  requirementCardTop: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: '10px',
-    marginBottom: '12px',
-  } as const,
-  requirementId: {
-    fontSize: '13px',
-    color: 'var(--accent-cyan)',
-    fontFamily: 'monospace',
-  } as const,
-  priorityBadge: {
-    padding: '4px 8px',
-    borderRadius: '999px',
-    fontSize: '12px',
-    fontWeight: 600,
-  } as const,
-  requirementTitle: {
     fontSize: '15px',
     fontWeight: 600,
     color: 'var(--text-primary)',
-    marginBottom: '10px',
-  } as const,
-  requirementMeta: {
+    margin: 0,
+  },
+  panelHint: {
+    fontSize: '12px',
+    color: 'var(--text-tertiary)',
+    marginTop: '2px',
+    display: 'block',
+  },
+  panelActions: {
+    display: 'flex',
+    gap: '8px',
+  },
+  list: {
+    flex: 1,
+    overflow: 'auto',
+    padding: '12px',
+  },
+  itemHeader: {
     display: 'flex',
     justifyContent: 'space-between',
-    gap: '10px',
+    alignItems: 'center',
+    marginBottom: '8px',
+  },
+  itemId: {
     fontSize: '12px',
-    color: 'var(--text-muted)',
-  } as const,
-  tableWrapper: {
-    overflowX: 'auto' as const,
-  } as const,
-  table: {
-    width: '100%',
-    borderCollapse: 'collapse' as const,
-  } as const,
-  th: {
-    textAlign: 'left' as const,
-    padding: '12px 14px',
-    fontSize: '13px',
-    color: 'var(--text-secondary)',
-    borderBottom: '1px solid var(--border-default)',
-  } as const,
-  tr: {
-    borderBottom: '1px solid rgba(255,255,255,0.04)',
-    cursor: 'pointer',
-    transition: 'background-color var(--transition-fast)',
-  } as const,
-  td: {
-    padding: '14px',
+    fontFamily: "'JetBrains Mono', monospace",
+    color: 'var(--accent-primary)',
+  },
+  itemTitle: {
     fontSize: '14px',
+    fontWeight: 500,
     color: 'var(--text-primary)',
-  } as const,
+    marginBottom: '8px',
+    lineHeight: 1.4,
+  },
+  itemMeta: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+  },
+  metaTime: {
+    fontSize: '11px',
+    color: 'var(--text-tertiary)',
+  },
+  detailHeader: {
+    padding: '20px 24px',
+    backgroundColor: 'var(--surface-primary)',
+    borderBottom: '1px solid var(--border-subtle)',
+  },
+  detailTitle: {
+    fontSize: '18px',
+    fontWeight: 600,
+    color: 'var(--text-primary)',
+    margin: '0 0 12px 0',
+  },
+  detailMeta: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+  },
+  detailId: {
+    fontSize: '12px',
+    color: 'var(--text-tertiary)',
+  },
+  tabContent: {
+    flex: 1,
+    overflow: 'auto',
+    padding: '24px',
+  },
+  workflowInfo: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+    gap: '16px',
+    marginBottom: '24px',
+  },
+  workflowInfoItem: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: '6px',
+  },
+  workflowInfoLabel: {
+    fontSize: '12px',
+    color: 'var(--text-tertiary)',
+    fontWeight: 500,
+  },
+  workflowInfoValue: {
+    fontSize: '13px',
+    color: 'var(--text-primary)',
+  },
+  workflowActions: {
+    paddingTop: '16px',
+    borderTop: '1px solid var(--border-subtle)',
+  },
+  sectionTitle: {
+    fontSize: '13px',
+    fontWeight: 600,
+    color: 'var(--text-secondary)',
+    marginBottom: '12px',
+  },
+  actionGrid: {
+    display: 'flex',
+    flexWrap: 'wrap' as const,
+    gap: '10px',
+  },
+  actionName: {
+    fontWeight: 600,
+    color: 'var(--accent-primary)',
+  },
+  actionArrow: {
+    fontSize: '12px',
+    color: 'var(--text-tertiary)',
+    marginLeft: '8px',
+  },
+  formLabel: {
+    display: 'block',
+    fontSize: '13px',
+    fontWeight: 500,
+    color: 'var(--text-secondary)',
+    marginBottom: '6px',
+  },
+  errorToast: {
+    position: 'fixed' as const,
+    bottom: '24px',
+    right: '24px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    padding: '12px 16px',
+    backgroundColor: 'var(--status-error-bg)',
+    border: '1px solid var(--status-error)',
+    borderRadius: 'var(--radius-md)',
+    color: 'var(--status-error)',
+    fontSize: '13px',
+    zIndex: 1000,
+  },
+  errorClose: {
+    padding: '0 4px',
+    fontSize: '16px',
+    background: 'none',
+    border: 'none',
+    color: 'var(--status-error)',
+    cursor: 'pointer',
+  },
 };
 
 export default RequirementsPage;

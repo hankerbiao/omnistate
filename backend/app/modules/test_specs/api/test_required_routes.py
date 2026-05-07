@@ -18,6 +18,7 @@ from app.modules.test_specs.schemas import (
     RequirementResponse,
     UpdateRequirementRequest,
 )
+from app.modules.workflow.domain.exceptions import PermissionDeniedError
 from app.shared.api.schemas.base import APIResponse
 from app.shared.auth import get_current_user, require_permission
 
@@ -44,6 +45,8 @@ async def create_requirement(
         return APIResponse(data=data)
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
+    except PermissionDeniedError as e:
+        raise HTTPException(status_code=403, detail=str(e))
 
 
 @router.get(
