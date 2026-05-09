@@ -62,6 +62,7 @@ class RabbitMQProducerManager:
             return
         self.connection = self._create_connection()
         self.channel = self.connection.channel()
+        self.channel.confirm_delivery()
         self.channel.queue_declare(queue=self.config.task_queue, durable=True)
         self.is_running = True
         log.info("RabbitMQ producer manager started")
@@ -87,8 +88,10 @@ class RabbitMQProducerManager:
             self.is_running
             and self.connection is not None
             and self.channel is not None
-            and getattr(self.connection, "is_open", True)
-            and getattr(self.channel, "is_open", True)
+            and hasattr(self.connection, "is_open")
+            and self.connection.is_open
+            and hasattr(self.channel, "is_open")
+            and self.channel.is_open
         )
 
     def _ensure_connection_ready(self) -> bool:

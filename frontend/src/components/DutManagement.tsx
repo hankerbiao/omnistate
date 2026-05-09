@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../services/api';
-import type { DutResponse, DutDetailResponse, CreateDutRequest, UpdateDutRequest, ListDutsParams } from '../types';
+import type { DutResponse, DutDetailResponse, CreateDutRequest, UpdateDutRequest, ListDutsParams, ExternalMachineItem, ImportExternalMachinesResponse } from '../types';
 
 const STATUS_OPTIONS = [
   { value: '', label: '全部' },
@@ -31,6 +31,16 @@ const DutManagement: React.FC = () => {
   const [editingDut, setEditingDut] = useState<DutResponse | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  // External system integration state
+  const [showExternalModal, setShowExternalModal] = useState(false);
+  const [externalMachines, setExternalMachines] = useState<ExternalMachineItem[]>([]);
+  const [externalLoading, setExternalLoading] = useState(false);
+  const [externalRegions, setExternalRegions] = useState<string[]>([]);
+  const [selectedMachines, setSelectedMachines] = useState<Set<string>>(new Set());
+  const [externalFilters, setExternalFilters] = useState({ region: '', status: '', search: '' });
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<ImportExternalMachinesResponse | null>(null);
+
   const fetchDuts = useCallback(async (params: ListDutsParams = {}) => {
     setLoading(true);
     setError(null);
@@ -59,6 +69,90 @@ const DutManagement: React.FC = () => {
       console.error('Failed to fetch regions:', err);
     }
   }, []);
+
+  const fetchExternalMachines = useCallback(async () => {
+    setExternalLoading(true);
+    try {
+      const response = await api.getExternalMachines(externalFilters);
+      if (response.data) {
+        setExternalMachines(response.data.items || []);
+        setExternalRegions(response.data.regions || []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch external machines:', err);
+    } finally {
+      setExternalLoading(false);
+    }
+  }, [externalFilters]);
+
+  const handleOpenExternalModal = () => {
+    setShowExternalModal(true);
+    setSelectedMachines(new Set());
+    setImportResult(null);
+    fetchExternalMachines();
+  };
+
+  const handleToggleMachine = (externalId: string) => {
+    const newSelected = new Set(selectedMachines);
+    if (newSelected.has(externalId)) {
+      newSelected.delete(externalId);
+    } else {
+      newSelected.add(externalId);
+    }
+    setSelectedMachines(newSelected);
+  };
+
+  const handleSelectAll = () => {
+    if (selectedMachines.size === externalMachines.length) {
+      setSelectedMachines(new Set());
+    } else {
+      setSelectedMachines(new Set(externalMachines.map(m => m.external_id)));
+    }
+  };
+
+  const handleImport = async () => {
+    if (selectedMachines.size === 0) {
+      alert('请选择要导入的机器');
+      return;
+    }
+
+    const selectedItems = externalMachines.filter(m => selectedMachines.has(m.external_id));
+    const importData = selectedItems.map(m => ({
+      external_id: m.external_id,
+      name: m.name,
+      bmc_ip: m.bmc_ip,
+      bmc_password: 'admin', // Default password
+      os_ip: m.os_ip,
+      os_password: 'root', // Default password
+      region: m.region,
+      os_type: m.os_type,
+      tags: m.tags,
+      metadata: {
+        owner: m.owner,
+        model: m.model,
+        cpu: m.cpu,
+        memory: m.memory,
+        storage: m.storage,
+      },
+    }));
+
+    setImporting(true);
+    try {
+      const response = await api.importExternalMachines(importData);
+      if (response.data) {
+        setImportResult(response.data);
+        if (response.data.success) {
+          fetchDuts(filters);
+          fetchRegions();
+        }
+      }
+    } catch (err) {
+      console.error('Failed to import machines:', err);
+      alert('导入失败');
+    } finally {
+      setImporting(false);
+    }
+  };
 
   useEffect(() => {
     fetchDuts(filters);
@@ -143,6 +237,9 @@ const DutManagement: React.FC = () => {
           </button>
           <button style={styles.actionBtn} onClick={() => fetchDuts(filters)} disabled={loading}>
             <span>↻</span> {loading ? '加载中' : '刷新'}
+          </button>
+          <button style={styles.actionBtn} onClick={handleOpenExternalModal}>
+            <span>📥</span> 导入外部系统
           </button>
           <button style={styles.createBtn} onClick={() => setShowCreateModal(true)}>
             <span>+</span> 新建 DUT
@@ -353,6 +450,25 @@ const DutManagement: React.FC = () => {
           submitting={submitting}
         />
       )}
+
+      {/* External System Import Modal */}
+      {showExternalModal && (
+        <ExternalImportModal
+          machines={externalMachines}
+          regions={externalRegions}
+          filters={externalFilters}
+          loading={externalLoading}
+          selectedMachines={selectedMachines}
+          importResult={importResult}
+          importing={importing}
+          onClose={() => { setShowExternalModal(false); setImportResult(null); }}
+          onFiltersChange={setExternalFilters}
+          onRefresh={fetchExternalMachines}
+          onToggle={handleToggleMachine}
+          onSelectAll={handleSelectAll}
+          onImport={handleImport}
+        />
+      )}
     </div>
   );
 };
@@ -472,6 +588,340 @@ const DutFormModal: React.FC<DutFormModalProps> = ({ dut, onClose, onSubmit, sub
       </div>
     </div>
   );
+};
+
+// External System Import Modal Component
+interface ExternalImportModalProps {
+  machines: ExternalMachineItem[];
+  regions: string[];
+  filters: { region: string; status: string; search: string };
+  loading: boolean;
+  selectedMachines: Set<string>;
+  importResult: ImportExternalMachinesResponse | null;
+  importing: boolean;
+  onClose: () => void;
+  onFiltersChange: (filters: { region: string; status: string; search: string }) => void;
+  onRefresh: () => void;
+  onToggle: (id: string) => void;
+  onSelectAll: () => void;
+  onImport: () => void;
+}
+
+const ExternalImportModal: React.FC<ExternalImportModalProps> = ({
+  machines,
+  regions,
+  filters,
+  loading,
+  selectedMachines,
+  importResult,
+  importing,
+  onClose,
+  onFiltersChange,
+  onRefresh,
+  onToggle,
+  onSelectAll,
+  onImport,
+}) => {
+  const getStatusLabel = (status: string) => {
+    const map: Record<string, string> = {
+      available: '可用',
+      in_use: '使用中',
+      maintenance: '维护中',
+      retired: '已退役',
+    };
+    return map[status] || status;
+  };
+
+  const getStatusStyle = (status: string) => {
+    const styleMap: Record<string, { bg: string; color: string }> = {
+      available: { bg: 'var(--status-success-bg)', color: 'var(--status-success)' },
+      in_use: { bg: 'var(--status-info-bg)', color: 'var(--status-info)' },
+      maintenance: { bg: 'var(--status-warning-bg)', color: 'var(--status-warning)' },
+      retired: { bg: 'var(--surface-tertiary)', color: 'var(--text-tertiary)' },
+    };
+    return styleMap[status] || { bg: 'var(--surface-tertiary)', color: 'var(--text-secondary)' };
+  };
+
+  return (
+    <div style={styles.modalOverlay} onClick={onClose}>
+      <div style={externalModalStyles.container} onClick={e => e.stopPropagation()}>
+        <div style={styles.modalHeader}>
+          <h2 style={styles.modalTitle}>从外部系统导入</h2>
+          <button style={styles.modalClose} onClick={onClose}>×</button>
+        </div>
+
+        {importResult ? (
+          <div style={externalModalStyles.resultContainer}>
+            <div style={importResult.success ? externalModalStyles.successBanner : externalModalStyles.errorBanner}>
+              <span style={externalModalStyles.resultIcon}>{importResult.success ? '✓' : '⚠'}</span>
+              <div>
+                <div style={externalModalStyles.resultTitle}>{importResult.message}</div>
+                <div style={externalModalStyles.resultStats}>
+                  <span>成功: {importResult.created_count}</span>
+                  <span>跳过: {importResult.skipped_count}</span>
+                  {importResult.error_count > 0 && <span style={{ color: 'var(--status-error)' }}>失败: {importResult.error_count}</span>}
+                </div>
+              </div>
+            </div>
+
+            <div style={externalModalStyles.resultsList}>
+              <h4 style={externalModalStyles.resultsTitle}>导入结果详情</h4>
+              {importResult.results.map((result, idx) => (
+                <div key={idx} style={{
+                  ...externalModalStyles.resultItem,
+                  borderLeftColor: result.status === 'created' ? 'var(--status-success)' :
+                                  result.status === 'skipped' ? 'var(--status-warning)' : 'var(--status-error)',
+                }}>
+                  <span style={externalModalStyles.resultName}>{result.name}</span>
+                  <span style={{
+                    ...externalModalStyles.resultStatus,
+                    color: result.status === 'created' ? 'var(--status-success)' :
+                           result.status === 'skipped' ? 'var(--status-warning)' : 'var(--status-error)',
+                  }}>
+                    {result.status === 'created' ? `已创建 (${result.dut_id})` :
+                     result.status === 'skipped' ? '已跳过' : `失败: ${result.reason}`}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            <div style={styles.modalFooter}>
+              <button style={styles.submitBtn} onClick={onClose}>关闭</button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div style={externalModalStyles.filterBar}>
+              <input
+                style={styles.filterInput}
+                placeholder="搜索名称/型号/区域..."
+                value={filters.search}
+                onChange={e => onFiltersChange({ ...filters, search: e.target.value })}
+              />
+              <select
+                style={styles.filterSelect}
+                value={filters.region}
+                onChange={e => onFiltersChange({ ...filters, region: e.target.value })}
+              >
+                <option value="">全部区域</option>
+                {regions.map(r => (
+                  <option key={r} value={r}>{r}</option>
+                ))}
+              </select>
+              <select
+                style={styles.filterSelect}
+                value={filters.status}
+                onChange={e => onFiltersChange({ ...filters, status: e.target.value })}
+              >
+                <option value="">全部状态</option>
+                <option value="available">可用</option>
+                <option value="in_use">使用中</option>
+                <option value="maintenance">维护中</option>
+                <option value="retired">已退役</option>
+              </select>
+              <button style={styles.actionBtn} onClick={onRefresh} disabled={loading}>
+                刷新
+              </button>
+            </div>
+
+            <div style={externalModalStyles.tableWrapper}>
+              {loading ? (
+                <div style={styles.loadingState}>
+                  <div style={styles.spinner} />
+                  <span>加载中...</span>
+                </div>
+              ) : machines.length === 0 ? (
+                <div style={styles.emptyState}>
+                  <span style={styles.emptyIcon}>📭</span>
+                  <p>未找到匹配的机器</p>
+                </div>
+              ) : (
+                <table style={styles.table}>
+                  <thead>
+                    <tr style={styles.tableHeader}>
+                      <th style={{ ...styles.th, width: '40px' }}>
+                        <input
+                          type="checkbox"
+                          checked={selectedMachines.size === machines.length && machines.length > 0}
+                          onChange={onSelectAll}
+                        />
+                      </th>
+                      <th style={styles.th}>机器名称</th>
+                      <th style={styles.th}>型号</th>
+                      <th style={styles.th}>BMC IP</th>
+                      <th style={styles.th}>OS IP</th>
+                      <th style={styles.th}>区域</th>
+                      <th style={styles.th}>OS</th>
+                      <th style={styles.th}>状态</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {machines.map((machine) => {
+                      const statusStyle = getStatusStyle(machine.status);
+                      return (
+                        <tr key={machine.external_id} style={styles.tr}>
+                          <td style={styles.td}>
+                            <input
+                              type="checkbox"
+                              checked={selectedMachines.has(machine.external_id)}
+                              onChange={() => onToggle(machine.external_id)}
+                            />
+                          </td>
+                          <td style={styles.td}>
+                            <div style={externalModalStyles.machineName}>{machine.name}</div>
+                            <div style={externalModalStyles.machineId}>{machine.external_id}</div>
+                          </td>
+                          <td style={styles.td}>{machine.model || '-'}</td>
+                          <td style={styles.td}>
+                            <span style={styles.ip}>{machine.bmc_ip}</span>
+                          </td>
+                          <td style={styles.td}>
+                            <span style={styles.ip}>{machine.os_ip}</span>
+                          </td>
+                          <td style={styles.td}>{machine.region}</td>
+                          <td style={styles.td}>{machine.os_type}</td>
+                          <td style={styles.td}>
+                            <span style={{ ...styles.statusBadge, backgroundColor: statusStyle.bg, color: statusStyle.color }}>
+                              {getStatusLabel(machine.status)}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            <div style={styles.modalFooter}>
+              <div style={externalModalStyles.selectedInfo}>
+                已选择 {selectedMachines.size} / {machines.length} 台机器
+              </div>
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <button style={styles.cancelBtn} onClick={onClose}>取消</button>
+                <button
+                  style={styles.submitBtn}
+                  onClick={onImport}
+                  disabled={selectedMachines.size === 0 || importing}
+                >
+                  {importing ? '导入中...' : `导入 ${selectedMachines.size} 台机器`}
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const externalModalStyles = {
+  container: {
+    width: '1000px',
+    maxWidth: '95vw',
+    maxHeight: '85vh',
+    display: 'flex',
+    flexDirection: 'column' as const,
+    backgroundColor: 'var(--bg-primary)',
+    borderRadius: 'var(--radius-xl)',
+    boxShadow: 'var(--shadow-lg)',
+    animation: 'scaleIn 0.2s ease',
+  },
+  filterBar: {
+    display: 'flex',
+    gap: '12px',
+    padding: '16px 20px',
+    borderBottom: '1px solid var(--border-subtle)',
+  },
+  tableWrapper: {
+    flex: 1,
+    overflowY: 'auto' as const,
+    backgroundColor: 'var(--bg-secondary)',
+    margin: '0 20px',
+    borderRadius: 'var(--radius-md)',
+  },
+  machineName: {
+    fontWeight: 500,
+    color: 'var(--text-primary)',
+  },
+  machineId: {
+    fontSize: '11px',
+    color: 'var(--text-tertiary)',
+    fontFamily: "'JetBrains Mono', monospace",
+  },
+  selectedInfo: {
+    fontSize: '14px',
+    color: 'var(--text-secondary)',
+  },
+  resultContainer: {
+    flex: 1,
+    padding: '20px',
+    overflowY: 'auto' as const,
+  },
+  successBanner: {
+    display: 'flex',
+    gap: '16px',
+    padding: '16px 20px',
+    backgroundColor: 'var(--status-success-bg)',
+    border: '1px solid var(--status-success)',
+    borderRadius: 'var(--radius-md)',
+    marginBottom: '20px',
+  },
+  errorBanner: {
+    display: 'flex',
+    gap: '16px',
+    padding: '16px 20px',
+    backgroundColor: 'var(--status-error-bg)',
+    border: '1px solid var(--status-error)',
+    borderRadius: 'var(--radius-md)',
+    marginBottom: '20px',
+  },
+  resultIcon: {
+    fontSize: '24px',
+    lineHeight: '24px',
+  },
+  resultTitle: {
+    fontSize: '16px',
+    fontWeight: 600,
+    color: 'var(--text-primary)',
+    marginBottom: '8px',
+  },
+  resultStats: {
+    display: 'flex',
+    gap: '20px',
+    fontSize: '14px',
+    color: 'var(--text-secondary)',
+  },
+  resultsList: {
+    backgroundColor: 'var(--bg-secondary)',
+    borderRadius: 'var(--radius-md)',
+    padding: '16px',
+    maxHeight: '400px',
+    overflowY: 'auto' as const,
+  },
+  resultsTitle: {
+    fontSize: '14px',
+    fontWeight: 600,
+    color: 'var(--text-primary)',
+    margin: '0 0 12px 0',
+  },
+  resultItem: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '10px 12px',
+    borderLeft: '3px solid',
+    backgroundColor: 'var(--bg-primary)',
+    borderRadius: '0 var(--radius-sm) var(--radius-sm) 0',
+    marginBottom: '8px',
+  },
+  resultName: {
+    fontSize: '13px',
+    color: 'var(--text-primary)',
+  },
+  resultStatus: {
+    fontSize: '12px',
+  },
 };
 
 const styles = {

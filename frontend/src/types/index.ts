@@ -666,3 +666,57 @@ export interface ListDutsParams {
   limit?: number;
   offset?: number;
 }
+
+// External system integration types
+export interface ExternalMachineItem {
+  external_id: string;
+  name: string;
+  bmc_ip: string;
+  os_ip: string;
+  region: string;
+  os_type: string;
+  status: string;
+  owner?: string;
+  model?: string;
+  cpu?: string;
+  memory?: string;
+  storage?: string;
+  tags: string[];
+}
+
+export interface ExternalMachinesResponse {
+  items: ExternalMachineItem[];
+  total: number;
+  regions: string[];
+}
+
+export interface ImportExternalMachineItem {
+  external_id: string;
+  name: string;
+  bmc_ip: string;
+  bmc_password: string;
+  os_ip: string;
+  os_password: string;
+  region: string;
+  os_type: string;
+  tags: string[];
+  metadata: Record<string, unknown>;
+}
+
+export interface ImportResultItem {
+  external_id: string;
+  name: string;
+  dut_id?: string;
+  status: 'created' | 'skipped' | 'error';
+  reason?: string;
+}
+
+export interface ImportExternalMachinesResponse {
+  success: boolean;
+  message: string;
+  total: number;
+  created_count: number;
+  skipped_count: number;
+  error_count: number;
+  results: ImportResultItem[];
+}

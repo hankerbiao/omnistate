@@ -33,7 +33,7 @@ class ExecutionTaskDispatcher:
         mode = command.dispatch_channel.strip().lower()
         if mode == "http":
             return await self._dispatch_via_http(command)
-        return self._dispatch_via_rabbitmq(command)
+        return await asyncio.to_thread(self._dispatch_via_rabbitmq, command)
 
     def _dispatch_via_rabbitmq(self, command: DispatchExecutionTaskCommand) -> DispatchResult:
         from app.shared.infrastructure import get_rabbitmq_manager

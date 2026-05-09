@@ -160,6 +160,14 @@ class ExecutionConfig(BaseModel):
     kafka_worker_heartbeat_interval_sec: int = 10
 
 
+class TmmsConfig(BaseModel):
+    """TMMS 外部系统配置。"""
+
+    api_base_url: str = "http://tmms.internal/api/v1"
+    api_timeout_sec: int = 30
+    api_token: str = ""
+
+
 class TerminalConfig(BaseModel):
     """终端配置。"""
 
@@ -198,6 +206,7 @@ class Settings(BaseModel):
     minio: MinIOConfig = Field(default_factory=MinIOConfig)
     jwt: JWTConfig = Field(default_factory=JWTConfig)
     execution: ExecutionConfig = Field(default_factory=ExecutionConfig)
+    tmms: TmmsConfig = Field(default_factory=TmmsConfig)
     terminal: TerminalConfig = Field(default_factory=TerminalConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
 
@@ -260,3 +269,8 @@ def load_kafka_config() -> KafkaConfig:
 def load_minio_config() -> MinIOConfig:
     """从 YAML 加载 MinIO 配置（兼容旧接口）。"""
     return get_settings().minio
+
+
+def load_tmms_config() -> TmmsConfig:
+    """从 YAML 加载 TMMS 配置。"""
+    return get_settings().tmms

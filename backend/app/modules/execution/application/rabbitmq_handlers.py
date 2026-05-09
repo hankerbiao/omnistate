@@ -40,12 +40,15 @@ class ExecutionRabbitMQHandlers:
         Args:
             body: RabbitMQ 消息体 (JSON 格式的字节)
             metadata: RabbitMQ 消费元数据
-
-        支持两种消息格式:
-        1. 单条事件: schema 结尾为 "-test-event@1"
-        2. 批量事件: schema 结尾为 "-test-event-batch@1"
         """
-        payload = json.loads(body.decode("utf-8"))
+        try:
+            payload = json.loads(body.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            logger.error(
+                f"Corrupt RabbitMQ message, discarding: "
+                f"routing_key={metadata.get('routing_key')}, error={exc}"
+            )
+            return
         topic = str(metadata.get("queue") or "rabbitmq-events")
 
         logger.info(
@@ -73,11 +76,16 @@ class ExecutionRabbitMQHandlers:
         Args:
             body: RabbitMQ 消息体 (JSON 格式的字节)
             metadata: RabbitMQ 消费元数据
-
-        当前实现只做日志记录，与 Kafka 行为一致。
         """
-        event_dict = json.loads(body.decode("utf-8"))
-        event = ExecutionResultEvent(**event_dict)
+        try:
+            event_dict = json.loads(body.decode("utf-8"))
+            event = ExecutionResultEvent(**event_dict)
+        except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+            logger.error(
+                f"Corrupt RabbitMQ result message, discarding: "
+                f"routing_key={metadata.get('routing_key')}, error={exc}"
+            )
+            return
 
         logger.info(
             "Received RabbitMQ execution result event: "

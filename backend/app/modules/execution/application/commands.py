@@ -37,14 +37,12 @@ class DispatchExecutionTaskCommand:
     # 任务配置
     framework: Optional[str] = None
     trigger_source: Optional[str] = None
-    callback_url: Optional[str] = None
     category: Optional[str] = None
     project_tag: Optional[str] = None
     repo_url: Optional[str] = None
     branch: Optional[str] = None
     pytest_options: Optional[Dict[str, Any]] = None
     timeout: Optional[int] = None
-    dut: Optional[Dict[str, Any]] = None
     attachments: Optional[List[Dict[str, Any]]] = None
 
     def _initialize_case_collections(self) -> None:
@@ -112,12 +110,13 @@ class DispatchExecutionTaskCommand:
     def _build_dispatch_task_data(self) -> Dict[str, Any]:
         """构建统一的任务下发数据。"""
         current_case_id = self.dispatch_case_id
-        current_case_config = self.dispatch_case_config
         current_case_payload = self.case_payloads[self.dispatch_case_index]
+        from app.shared.kafka import load_kafka_config
+        kafka_cfg = load_kafka_config()
         pytest_defaults = {
             "log_debug": False,
-            "kafka_server": "10.17.154.252:9092",
-            "kafka_topic": "test-events",
+            "kafka_server": ",".join(kafka_cfg.bootstrap_servers),
+            "kafka_topic": kafka_cfg.test_events_topic,
             "report_kafka": True,
             "maxfail": "3",
             "task_id": self.task_id,
@@ -125,14 +124,11 @@ class DispatchExecutionTaskCommand:
         pytest_options = {**pytest_defaults, **self.pytest_options}
         script_path = current_case_payload.get("script_path")
         script_name = current_case_payload.get("script_name")
-        case_parameters = current_case_payload.get("parameters")
+        case_parameters = dict(current_case_payload.get("parameters") or {})
         if not script_path:
             raise ValueError(f"script_path is required for dispatch case: {current_case_id}")
         if not script_name:
             raise ValueError(f"script_name is required for dispatch case: {current_case_id}")
-        if case_parameters is None:
-            case_parameters = current_case_config
-        case_parameters = dict(case_parameters or {})
         return {
             "task_id": self.task_id,
             "framework": self.framework,

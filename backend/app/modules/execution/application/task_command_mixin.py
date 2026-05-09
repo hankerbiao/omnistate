@@ -32,14 +32,12 @@ class ExecutionTaskCommandMixin:
             "trigger_source": command.trigger_source,
             "schedule_type": command.schedule_type,
             "planned_at": command.planned_at.isoformat() if command.planned_at else None,
-            "callback_url": command.callback_url,
             "category": command.category,
             "project_tag": command.project_tag,
             "repo_url": command.repo_url,
             "branch": command.branch,
             "pytest_options": command.pytest_options,
             "timeout": command.timeout,
-            "dut": command.dut,
             "attachments": command.attachments,
             "cases": sorted(
                 [
@@ -48,9 +46,8 @@ class ExecutionTaskCommandMixin:
                         "script_path": case_payload.get("script_path"),
                         "script_name": case_payload.get("script_name"),
                         "parameters": case_payload.get("parameters"),
-                        "config": case_config,
                     }
-                    for case_id, case_config, case_payload in zip(
+                    for case_id, _, case_payload in zip(
                         command.case_ids,
                         command.case_configs,
                         command.case_payloads,
@@ -116,28 +113,25 @@ class ExecutionTaskCommandMixin:
             "trigger_source": command.trigger_source,
             "schedule_type": command.schedule_type,
             "planned_at": command.planned_at.isoformat() if command.planned_at else None,
-            "callback_url": command.callback_url,
             "category": command.category,
             "project_tag": command.project_tag,
             "repo_url": command.repo_url,
             "branch": command.branch,
             "pytest_options": command.pytest_options,
             "timeout": command.timeout,
-            "dut": command.dut,
             "attachments": list(command.attachments or []),
             "cases": [
                 {
                     "case_id": case_id,
                     "auto_case_id": auto_case_id,
                     "script_entity_id": script_entity_id,
-                    "config": case_config,
                     "payload_case_id": case_payload.get("case_id"),
                     "script_path": case_payload.get("script_path"),
                     "script_name": case_payload.get("script_name"),
                     "parameters": case_payload.get("parameters"),
-                    "attachments": case_payload.get("attachments", []),  # 附件列表
+                    "attachments": case_payload.get("attachments", []),
                 }
-                for case_id, auto_case_id, script_entity_id, case_config, case_payload in zip(
+                for case_id, auto_case_id, script_entity_id, _, case_payload in zip(
                     command.case_ids,
                     command.auto_case_ids,
                     command.script_entity_ids,
@@ -194,7 +188,7 @@ class ExecutionTaskCommandMixin:
         case_ids = [binding.case_id for binding in dispatch_bindings]
         script_entity_ids = [binding.script_entity_id for binding in dispatch_bindings]
         auto_case_ids = [case["auto_case_id"] for case in cases]
-        case_configs = [dict(case.get("config") or {}) for case in cases]
+        case_configs = [{} for _ in cases]
         case_payloads = [
             {
                 "case_id": binding.case_id,
@@ -225,14 +219,12 @@ class ExecutionTaskCommandMixin:
             planned_at=planned_at,
             framework=request.framework if request.framework is not None else payload.get("framework"),
             trigger_source=request.trigger_source if request.trigger_source is not None else payload.get("trigger_source"),
-            callback_url=request.callback_url if request.callback_url is not None else payload.get("callback_url"),
             category=request.category if request.category is not None else payload.get("category"),
             project_tag=request.project_tag if request.project_tag is not None else payload.get("project_tag"),
             repo_url=request.repo_url if request.repo_url is not None else payload.get("repo_url"),
             branch=request.branch if request.branch is not None else payload.get("branch"),
             pytest_options=cls._resolve_override_dict(request.pytest_options, payload, "pytest_options"),
             timeout=request.timeout if request.timeout is not None else payload.get("timeout"),
-            dut=cls._resolve_override_dict(request.dut, payload, "dut"),
             attachments=attachments,
         )
 
@@ -243,7 +235,6 @@ class ExecutionTaskCommandMixin:
         return [
             {
                 "auto_case_id": item.auto_case_id,
-                "config": dict(item.config),
                 "parameters": dict(item.parameters),
             }
             for item in request.cases

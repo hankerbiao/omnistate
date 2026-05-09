@@ -32,8 +32,8 @@ class ExecutionTaskDispatchCoordinator:
         planned_at_normalizer,
     ) -> DispatchExecutionTaskCommand:
         """构建单 case 下发命令。"""
-        request_payload = dict(task_doc.request_payload)
-        planned_at = request_payload["planned_at"]
+        request_payload = dict(task_doc.request_payload or {})
+        planned_at = request_payload.get("planned_at")
         return DispatchExecutionTaskCommand(
             task_id=task_doc.task_id,
             dispatch_channel=task_doc.dispatch_channel,
@@ -53,14 +53,12 @@ class ExecutionTaskDispatchCoordinator:
             planned_at=planned_at_normalizer(planned_at) if planned_at else None,
             framework=request_payload.get("framework"),
             trigger_source=request_payload.get("trigger_source"),
-            callback_url=request_payload["callback_url"],
-            category=request_payload["category"],
-            project_tag=request_payload["project_tag"],
-            repo_url=request_payload["repo_url"],
-            branch=request_payload["branch"],
-            pytest_options=request_payload["pytest_options"],
-            timeout=request_payload["timeout"],
-            dut=request_payload["dut"],
+            category=request_payload.get("category"),
+            project_tag=request_payload.get("project_tag"),
+            repo_url=request_payload.get("repo_url"),
+            branch=request_payload.get("branch"),
+            pytest_options=request_payload.get("pytest_options"),
+            timeout=request_payload.get("timeout"),
             attachments=list(request_payload.get("attachments") or []),
         )
 
@@ -126,6 +124,7 @@ class ExecutionTaskDispatchCoordinator:
         case_doc = await ExecutionTaskCaseDoc.find_one({
             "task_id": task_doc.task_id,
             "case_id": command.dispatch_case_id,
+            "is_deleted": False,
         })
         dispatch_time = datetime.now(timezone.utc)
         task_doc.dispatch_channel = dispatch_result.channel

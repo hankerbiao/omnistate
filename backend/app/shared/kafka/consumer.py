@@ -141,7 +141,7 @@ class KafkaConsumerRunner:
                         f"Kafka handler failed, topic={record.topic}, offset={record.offset}, error={exc}"
                     )
                     # handler 失败时把原始消息、错误和消费元数据写入死信 topic，便于后续补偿。
-                    self.dead_letter_publisher.publish(
+                    dlq_success = self.dead_letter_publisher.publish(
                         DeadLetterMessage(
                             topic=record.topic,
                             key=record.key,
@@ -150,8 +150,16 @@ class KafkaConsumerRunner:
                             metadata=metadata,
                         )
                     )
-                    # 死信已记录后提交 offset，避免同一坏消息无限重试卡住后续消息。
-                    await asyncio.to_thread(runtime.consumer.commit)
+                    if dlq_success:
+                        # 死信记录成功后提交 offset，避免同一坏消息无限重试。
+                        await asyncio.to_thread(runtime.consumer.commit)
+                    else:
+                        # 死信发布失败时不提交 offset，避免永久丢失消息。
+                        log.critical(
+                            f"Dead-letter publish failed, offset NOT committed: "
+                            f"topic={record.topic}, offset={record.offset}. "
+                            f"Consumer will retry on restart."
+                        )
 
     @staticmethod
     def _parse_payload(raw_value: str | None) -> dict[str, Any]:

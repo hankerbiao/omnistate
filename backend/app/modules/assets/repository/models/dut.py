@@ -34,9 +34,15 @@ class DutDoc(Document):
     # 扩展信息
     metadata: Dict[str, Any] = Field(default_factory=dict, description="自定义字段")
 
+    # 来源追踪
+    source: str = Field(default="manual", description="数据来源: manual/tmms")
+    source_id: Optional[str] = Field(None, description="外部系统机器ID")
+    last_synced_at: Optional[datetime] = Field(None, description="最后同步时间")
+
     # 审计字段
     created_at: datetime = Field(default_factory=datetime.utcnow, description="创建时间")
     updated_at: datetime = Field(default_factory=datetime.utcnow, description="更新时间")
+    created_by: Optional[str] = Field(None, description="创建人")
 
     class Settings:
         name = "duts"
@@ -47,6 +53,8 @@ class DutDoc(Document):
             IndexModel("region"),
             IndexModel("bmc_ip"),
             IndexModel("os_ip"),
+            IndexModel("source"),
+            IndexModel([("source", 1), ("source_id", 1)]),
         ]
 
 
@@ -67,3 +75,7 @@ class DutCreateModel(BaseModel):
     os_password: str
     os_type: str = "Linux"
     metadata: Dict[str, Any] = {}
+    source: str = "manual"
+    source_id: Optional[str] = None
+    last_synced_at: Optional[datetime] = None
+    created_by: Optional[str] = None

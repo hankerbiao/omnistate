@@ -67,17 +67,14 @@ class ExecutionEventIngestService:
         )
         existing = await ExecutionEventDoc.find_one({"event_id": event.event_id})
         if existing is not None:
-            # 重复事件直接跳过，避免 Kafka 重投导致重复累计。
             logger.debug(
                 f"Skipping duplicate execution event: event_id={event.event_id}, task_id={event.task_id}"
             )
             return False
 
-        # 统一使用事件上报时间作为平台侧状态更新时间，避免混用本地接收时间。
         event_time = event.timestamp.astimezone(timezone.utc)
         task_doc = await ExecutionTaskDoc.find_one({"task_id": event.task_id, "is_deleted": False})
         if task_doc is None:
-            # 任务不存在时仍归档事件，方便后续排查来源或做补偿处理。
             logger.warning(
                 f"Execution task not found for event: task_id={event.task_id}, event_id={event.event_id}"
             )
@@ -90,21 +87,28 @@ class ExecutionEventIngestService:
             )
             return False
 
-        # 先归档再更新当前态。这样即使后续聚合逻辑有问题，原始事件也不会丢。
-        await self._archive_event(
-            topic=topic,
-            event=event,
-            metadata=metadata,
-            processed=True,
-            process_error=None,
-        )
+        # 先归档再更新当前态。用 try/except 处理并发重复插入。
+        try:
+            await self._archive_event(
+                topic=topic,
+                event=event,
+                metadata=metadata,
+                processed=True,
+                process_error=None,
+            )
+        except Exception:
+            logger.warning(
+                f"Duplicate event_id detected during insert (concurrent): "
+                f"event_id={event.event_id}, task_id={event.task_id}"
+            )
+            return False
 
         case_doc = None
         if event.case_id:
-            # case_id 是可选的，因为有些任务级事件不一定绑定到单条 case。
             case_doc = await ExecutionTaskCaseDoc.find_one({
                 "task_id": event.task_id,
                 "case_id": event.case_id,
+                "is_deleted": False,
             })
             if case_doc is None:
                 logger.warning(

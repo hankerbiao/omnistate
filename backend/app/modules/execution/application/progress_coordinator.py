@@ -43,7 +43,7 @@ class ExecutionProgressCoordinator:
             task_doc.finished_at = event_time
             task_doc.last_callback_at = event_time
             task_doc.overall_status = "FAILED" if task_doc.failed_case_count > 0 else "PASSED"
-            if task_doc.dispatch_status != "DISPATCH_FAILED":
+            if getattr(task_doc, "dispatch_status", None) not in {"DISPATCH_FAILED", "PENDING"}:
                 task_doc.dispatch_status = "COMPLETED"
             await task_doc.save()
             logger.info(
@@ -53,10 +53,36 @@ class ExecutionProgressCoordinator:
             )
             return
 
-        command = await self._dispatch_service.build_task_dispatch_command(task_doc, next_case_index)
-        logger.info(
-            "Auto-dispatching next execution case: "
-            f"task_id={task_doc.task_id}, finished_case_id={event.case_id}, "
-            f"next_case_id={command.dispatch_case_id}, next_case_index={next_case_index}"
-        )
-        await self._dispatch_service.dispatch_existing_task(task_doc, command)
+        try:
+            command = await self._dispatch_service.build_task_dispatch_command(
+                task_doc, next_case_index
+            )
+        except Exception as exc:
+            logger.error(
+                "Failed to build dispatch command for auto-advance: "
+                f"task_id={task_doc.task_id}, next_case_index={next_case_index}, error={exc}"
+            )
+            task_doc.dispatch_status = "DISPATCH_FAILED"
+            task_doc.dispatch_error = f"Auto-advance build failed: {exc}"
+            task_doc.overall_status = "FAILED"
+            task_doc.finished_at = event_time
+            await task_doc.save()
+            return
+
+        try:
+            logger.info(
+                "Auto-dispatching next execution case: "
+                f"task_id={task_doc.task_id}, finished_case_id={event.case_id}, "
+                f"next_case_id={command.dispatch_case_id}, next_case_index={next_case_index}"
+            )
+            await self._dispatch_service.dispatch_existing_task(task_doc, command)
+        except Exception as exc:
+            logger.error(
+                "Failed to dispatch next case during auto-advance: "
+                f"task_id={task_doc.task_id}, next_case_id={command.dispatch_case_id}, error={exc}"
+            )
+            task_doc.dispatch_status = "DISPATCH_FAILED"
+            task_doc.dispatch_error = f"Auto-advance dispatch failed: {exc}"
+            task_doc.overall_status = "FAILED"
+            task_doc.finished_at = event_time
+            await task_doc.save()

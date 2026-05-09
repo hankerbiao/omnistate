@@ -56,7 +56,7 @@ class RawTestEventEnvelope(BaseModel):
     """Raw Kafka payload for test-events topic, supporting single and batch envelopes."""
 
     payload: dict[str, Any]
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     @model_validator(mode="before")
     @classmethod

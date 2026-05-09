@@ -54,7 +54,6 @@ class ExecutionTaskCommandService(ExecutionTaskCommandMixin):
         task_id = f"ET-{year}-{str(seq).zfill(6)}"
 
         auto_case_ids = [item.auto_case_id for item in request.cases]
-        case_configs = [dict(item.config) for item in request.cases]
         attachments = await self._validate_and_enrich_attachments(
             [item.model_dump(exclude_none=True) for item in request.attachments]
         )
@@ -75,7 +74,7 @@ class ExecutionTaskCommandService(ExecutionTaskCommandMixin):
         logger.debug(
             "Dispatch task case bindings resolved: "
             f"task_id={task_id}, auto_case_ids={auto_case_ids}, case_ids={case_ids}, "
-            f"script_entity_ids={script_entity_ids}, case_configs={case_configs}, "
+            f"script_entity_ids={script_entity_ids}, "
             f"case_payloads={case_payloads}"
         )
 
@@ -87,20 +86,18 @@ class ExecutionTaskCommandService(ExecutionTaskCommandMixin):
             auto_case_ids=auto_case_ids,
             case_ids=case_ids,
             script_entity_ids=script_entity_ids,
-            case_configs=case_configs,
+            case_configs=[{}] * len(request.cases),
             case_payloads=case_payloads,
             schedule_type=request.schedule_type,
             planned_at=request.planned_at,
             framework=request.framework,
             trigger_source=request.trigger_source,
-            callback_url=request.callback_url,
             category=request.category,
             project_tag=request.project_tag,
             repo_url=request.repo_url,
             branch=request.branch,
             pytest_options=request.pytest_options,
             timeout=request.timeout,
-            dut=request.dut,
             attachments=attachments,
         )
 

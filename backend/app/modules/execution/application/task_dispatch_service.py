@@ -31,6 +31,8 @@ class ExecutionDispatchService(
     ) -> Dict[str, Any]:
         """创建执行任务，并在需要时立即触发首条 case 下发。"""
         self._ensure_actor_identity(actor_id, command.created_by)
+        if not command.case_ids:
+            raise ValueError("case_ids must not be empty")
         logger.info(
             "Creating execution task: "
             f"task_id={command.task_id}, agent_id={command.agent_id}, "

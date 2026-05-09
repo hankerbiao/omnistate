@@ -131,11 +131,17 @@ class ExecutionKafkaHandlers:
                 "schema": dict(item).get("schema") or event_schema_name,
             }
             event_metadata = {**metadata, "batch_index": index, "batch_size": len(events)}
-            await self._event_ingest_service.ingest_event(
-                topic=topic,
-                event_payload=event_payload,
-                metadata=event_metadata,
-            )
+            try:
+                await self._event_ingest_service.ingest_event(
+                    topic=topic,
+                    event_payload=event_payload,
+                    metadata=event_metadata,
+                )
+            except Exception as exc:
+                logger.error(
+                    f"Failed to ingest batch event item {index}/{len(events)}: "
+                    f"error={exc}, event_payload_keys={list(event_payload.keys())}"
+                )
 
     @staticmethod
     def _extract_batch_items(payload: dict[str, Any]) -> list[dict[str, Any]]:

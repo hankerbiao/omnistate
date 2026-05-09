@@ -76,8 +76,12 @@ class DutResponse(BaseModel):
     os_username: str = Field(..., description="OS 用户名")
     os_type: str = Field(..., description="操作系统类型")
     metadata: Dict[str, Any] = Field(..., description="自定义字段")
+    source: str = Field("manual", description="数据来源: manual/tmms/external")
+    source_id: Optional[str] = Field(None, description="外部系统机器ID")
+    last_synced_at: Optional[datetime] = Field(None, description="最后同步时间")
     created_at: datetime = Field(..., description="创建时间")
     updated_at: datetime = Field(..., description="更新时间")
+    created_by: Optional[str] = Field(None, description="创建人")
 
     model_config = {"from_attributes": True}
 
@@ -90,16 +94,83 @@ class DutDetailResponse(DutResponse):
 
 
 class SyncTmmsRequest(BaseModel):
-    """TMMS 同步请求体（预留）"""
+    """TMMS 同步请求体"""
 
-    tmms_api_url: Optional[str] = Field(None, description="TMMS API 地址")
-    force_sync: bool = Field(default=False, description="是否强制同步（覆盖本地修改）")
+    regions: Optional[List[str]] = Field(None, description="限定同步区域（为空则全量同步）")
+    conflict_strategy: str = Field(
+        default="skip",
+        description="冲突策略: skip=跳过已有记录, overwrite=覆盖本地, merge=合并（远程更新非敏感字段）",
+    )
+    prune_stale: bool = Field(default=False, description="是否将本地有但TMMS无的记录标记为RETIRED")
 
 
 class SyncTmmsResponse(BaseModel):
-    """TMMS 同步响应体（预留）"""
+    """TMMS 同步响应体"""
 
     success: bool = Field(..., description="同步是否成功")
     message: str = Field(..., description="同步结果信息")
-    synced_count: int = Field(default=0, description="同步数量")
+    synced_count: int = Field(default=0, description="成功同步总数")
+    created_count: int = Field(default=0, description="新建数量")
+    updated_count: int = Field(default=0, description="更新数量")
+    skipped_count: int = Field(default=0, description="跳过数量")
     error_count: int = Field(default=0, description="错误数量")
+    errors: List[Dict[str, Any]] = Field(default_factory=list, description="逐条错误详情")
+
+
+class ExternalMachineItem(BaseModel):
+    """外部系统机器数据项"""
+
+    external_id: str = Field(..., description="外部系统机器 ID")
+    name: str = Field(..., description="机器名称")
+    bmc_ip: str = Field(..., description="BMC IP 地址")
+    os_ip: str = Field(..., description="OS IP 地址")
+    region: str = Field(..., description="区域")
+    os_type: str = Field(default="Linux", description="操作系统类型")
+    status: str = Field(default="available", description="状态: available/in_use/maintenance/retired")
+    owner: Optional[str] = Field(None, description="负责人/团队")
+    model: Optional[str] = Field(None, description="机器型号")
+    cpu: Optional[str] = Field(None, description="CPU 型号")
+    memory: Optional[str] = Field(None, description="内存大小")
+    storage: Optional[str] = Field(None, description="存储配置")
+    tags: List[str] = Field(default_factory=list, description="标签列表")
+
+
+class ExternalMachinesResponse(BaseModel):
+    """外部系统机器列表响应"""
+
+    items: List[ExternalMachineItem] = Field(..., description="机器列表")
+    total: int = Field(..., description="总数")
+    regions: List[str] = Field(..., description="所有区域列表")
+
+
+class ImportExternalMachineItem(BaseModel):
+    """待导入的外部机器项（包含导入后的密码配置）"""
+
+    external_id: str = Field(..., description="外部系统机器 ID")
+    name: str = Field(..., description="机器名称")
+    bmc_ip: str = Field(..., description="BMC IP 地址")
+    bmc_password: str = Field(default="admin", description="BMC 密码")
+    os_ip: str = Field(..., description="OS IP 地址")
+    os_password: str = Field(default="root", description="OS 密码")
+    region: str = Field(default="default", description="区域")
+    os_type: OsType = Field(default=OsType.LINUX, description="操作系统类型")
+    tags: List[str] = Field(default_factory=list, description="标签列表")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="扩展元数据")
+
+
+class ImportExternalMachinesRequest(BaseModel):
+    """批量导入外部机器请求"""
+
+    items: List[ImportExternalMachineItem] = Field(..., description="待导入的机器列表", min_length=1)
+
+
+class ImportExternalMachinesResponse(BaseModel):
+    """批量导入响应"""
+
+    success: bool = Field(..., description="是否全部成功")
+    message: str = Field(..., description="结果描述")
+    total: int = Field(..., description="总数量")
+    created_count: int = Field(default=0, description="成功创建数量")
+    skipped_count: int = Field(default=0, description="跳过数量（已存在）")
+    error_count: int = Field(default=0, description="错误数量")
+    results: List[Dict[str, Any]] = Field(default_factory=list, description="每条的导入结果")

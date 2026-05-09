@@ -264,8 +264,12 @@ class RabbitMQConsumerRunner:
             handler = self.registry.get_handler(routing_key)
 
             if handler is None:
-                log.warning(f"No handler for routing_key: {routing_key}, message will be requeued")
-                # 没有处理器，不 ack，消息会被 requeue
+                log.warning(
+                    f"No handler registered for routing_key: {routing_key}, "
+                    f"message will be ACKed to avoid infinite requeue"
+                )
+                # 没有处理器，直接 ack 避免无限 requeue
+                await message.ack()
                 return
 
             try:
