@@ -13,6 +13,41 @@ class AttachmentService:
     def __init__(self):
         self.minio_client = get_minio_client()
 
+    async def enrich_for_dispatch(
+        self,
+        file_ids: List[str],
+    ) -> List[dict]:
+        """批量校验附件并补充 MinIO 元数据，供任务下发使用。
+
+        与逐条查询不同，这里一次 find 批量加载，避免 N+1。
+        缺失或已删除的附件会触发 KeyError。
+        """
+        if not file_ids:
+            return []
+
+        docs = await AttachmentDoc.find({
+            "file_id": {"$in": file_ids},
+            "is_deleted": False,
+        }).to_list()
+        doc_map = {doc.file_id: doc for doc in docs}
+
+        enriched: List[dict] = []
+        for file_id in file_ids:
+            doc = doc_map.get(file_id)
+            if not doc:
+                raise KeyError(f"attachment not found or deleted: {file_id}")
+            enriched.append({
+                "file_id": doc.file_id,
+                "original_filename": doc.original_filename,
+                "storage_path": f"{doc.bucket}/{doc.object_name}",
+                "bucket": doc.bucket,
+                "object_name": doc.object_name,
+                "size": doc.size,
+                "content_type": doc.content_type,
+                "uploaded_at": doc.uploaded_at.isoformat() if doc.uploaded_at else None,
+            })
+        return enriched
+
     async def upload_file(
         self,
         filename: str,

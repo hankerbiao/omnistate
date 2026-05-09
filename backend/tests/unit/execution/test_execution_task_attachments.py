@@ -5,16 +5,18 @@ from datetime import datetime, timezone
 
 import pytest
 
+from app.modules.attachments.repository.models import AttachmentDoc
+from app.modules.attachments.service.attachment_service import AttachmentService
 from app.modules.execution.application.commands import DispatchExecutionTaskCommand
-from app.modules.execution.application.task_command_service import ExecutionTaskCommandService
 from app.modules.execution.schemas import DispatchTaskRequest, RerunTaskRequest
 
 
-def _async_value(value):
-    async def _coro():
-        return value
+class _FakeFindResult:
+    def __init__(self, docs):
+        self._docs = docs
 
-    return _coro()
+    async def to_list(self):
+        return self._docs
 
 
 class _FakeAttachment:
@@ -49,16 +51,13 @@ def test_rerun_request_can_explicitly_clear_attachments() -> None:
     assert request.attachments == []
 
 
-def test_validate_and_enrich_attachments_reads_attachment_doc(monkeypatch) -> None:
+def test_enrich_for_dispatch_reads_attachment_docs(monkeypatch) -> None:
     monkeypatch.setattr(
-        "app.modules.execution.application.task_command_service.AttachmentDoc.find_one",
-        lambda *args, **kwargs: _async_value(_FakeAttachment()),
+        AttachmentDoc, "find", lambda *args, **kwargs: _FakeFindResult([_FakeAttachment()])
     )
 
     result = asyncio.run(
-        ExecutionTaskCommandService._validate_and_enrich_attachments(
-            [{"file_id": "file-1", "original_filename": "client-name.json"}]
-        )
+        AttachmentService().enrich_for_dispatch(["file-1"])
     )
 
     assert result == [
@@ -75,14 +74,13 @@ def test_validate_and_enrich_attachments_reads_attachment_doc(monkeypatch) -> No
     ]
 
 
-def test_validate_and_enrich_attachments_rejects_missing_attachment(monkeypatch) -> None:
+def test_enrich_for_dispatch_rejects_missing_attachment(monkeypatch) -> None:
     monkeypatch.setattr(
-        "app.modules.execution.application.task_command_service.AttachmentDoc.find_one",
-        lambda *args, **kwargs: _async_value(None),
+        AttachmentDoc, "find", lambda *args, **kwargs: _FakeFindResult([])
     )
 
     with pytest.raises(KeyError, match="attachment not found or deleted"):
-        asyncio.run(ExecutionTaskCommandService._validate_and_enrich_attachments([{"file_id": "missing"}]))
+        asyncio.run(AttachmentService().enrich_for_dispatch(["missing"]))
 
 
 def test_dispatch_task_data_adds_presigned_attachment_urls(monkeypatch) -> None:

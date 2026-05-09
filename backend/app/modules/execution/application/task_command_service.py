@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Dict
+from typing import Any
 
+from app.modules.attachments.service.attachment_service import AttachmentService
 from app.modules.execution.application.case_resolver import ExecutionCaseResolver
 from app.modules.execution.application.commands import DispatchExecutionTaskCommand
 from app.modules.execution.application.task_command_mixin import ExecutionTaskCommandMixin
 from app.modules.execution.application.task_dispatch_service import ExecutionDispatchService
 from app.modules.execution.repository.models import ExecutionTaskDoc
-from app.modules.attachments.repository.models import AttachmentDoc
 from app.modules.execution.schemas import DispatchTaskRequest, RerunTaskRequest
 from app.shared.core.logger import log as logger
 from app.shared.service import SequenceIdService
@@ -23,9 +23,11 @@ class ExecutionTaskCommandService(ExecutionTaskCommandMixin):
         self,
         dispatch_service: ExecutionDispatchService | None = None,
         case_resolver: ExecutionCaseResolver | None = None,
+        attachment_service: AttachmentService | None = None,
     ) -> None:
         self._dispatch_service = dispatch_service or ExecutionDispatchService()
         self._case_resolver = case_resolver or ExecutionCaseResolver()
+        self._attachment_service = attachment_service or AttachmentService()
 
     async def create_and_dispatch_task(
         self,
@@ -55,9 +57,8 @@ class ExecutionTaskCommandService(ExecutionTaskCommandMixin):
 
         auto_case_ids = [item.auto_case_id for item in request.cases]
         case_configs = [dict(item.config) for item in request.cases]
-        attachments = await self._validate_and_enrich_attachments(
-            [item.model_dump(exclude_none=True) for item in request.attachments]
-        )
+        file_ids = [item.file_id for item in request.attachments]
+        attachments = await self._attachment_service.enrich_for_dispatch(file_ids)
         dispatch_bindings = await self._case_resolver.resolve_case_dispatch_bindings_by_auto_case_ids(
             auto_case_ids
         )
@@ -141,7 +142,10 @@ class ExecutionTaskCommandService(ExecutionTaskCommandMixin):
             auto_case_ids = [case.auto_case_id for case in request.cases]
         else:
             payload_cases = list(dict(source_task_doc.request_payload or {}).get("cases", []))
-            auto_case_ids = [case["auto_case_id"] for case in payload_cases]
+            auto_case_ids = [
+                case["auto_case_id"] for case in payload_cases
+                if case.get("auto_case_id")
+            ]
         dispatch_bindings = await self._case_resolver.resolve_case_dispatch_bindings_by_auto_case_ids(
             auto_case_ids
         )
@@ -152,38 +156,12 @@ class ExecutionTaskCommandService(ExecutionTaskCommandMixin):
             actor_id=actor_id,
             dispatch_bindings=dispatch_bindings,
         )
-        command.attachments = await self._validate_and_enrich_attachments(command.attachments or [])
+        command.attachments = await self._attachment_service.enrich_for_dispatch(
+            [a.get("file_id") for a in (command.attachments or []) if a.get("file_id")]
+        )
         logger.info(
             "Rerunning execution task as new task: "
             f"source_task_id={source_task_id}, new_task_id={new_task_id}, actor_id={actor_id}"
         )
         return await self._dispatch_service.create_task_from_command(command, actor_id=actor_id)
 
-    @staticmethod
-    async def _validate_and_enrich_attachments(attachments: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Validate task attachments and store stable MinIO metadata in the task snapshot."""
-        if not attachments:
-            return []
-
-        enriched_attachments: list[dict[str, Any]] = []
-        for attachment_ref in attachments:
-            file_id = attachment_ref.get("file_id")
-            if not file_id:
-                raise ValueError("attachment missing required field: file_id")
-
-            attachment = await AttachmentDoc.find_one({"file_id": file_id, "is_deleted": False})
-            if not attachment:
-                raise KeyError(f"attachment not found or deleted: {file_id}")
-
-            enriched_attachments.append({
-                "file_id": attachment.file_id,
-                "original_filename": attachment.original_filename,
-                "storage_path": f"{attachment.bucket}/{attachment.object_name}",
-                "bucket": attachment.bucket,
-                "object_name": attachment.object_name,
-                "size": attachment.size,
-                "content_type": attachment.content_type,
-                "uploaded_at": attachment.uploaded_at.isoformat() if attachment.uploaded_at else None,
-            })
-
-        return enriched_attachments

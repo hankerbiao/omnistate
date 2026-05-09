@@ -27,72 +27,67 @@ class DispatchAttachmentItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class DispatchTaskRequest(BaseModel):
+class _TaskDispatchBase(BaseModel):
+    """下发任务请求公共字段。RerunTaskRequest 复用所有字段并全部可选。"""
+
     framework: Optional[str] = Field(None, description="执行框架，例如 pytest")
     trigger_source: Optional[str] = Field(None, description="触发来源，例如 web_ui")
     dispatch_channel: Optional[str] = Field(None, description="下发通道，可选 RABBITMQ 或 HTTP")
-    agent_id: Optional[str] = Field(None, description="目标执行代理 ID；由平台路由到指定 agent 时使用")
-    schedule_type: str = Field(default="IMMEDIATE", description="调度类型，只允许 IMMEDIATE 或 SCHEDULED")
-    planned_at: Optional[datetime] = Field(None, description="计划执行时间（UTC）；schedule_type 为 SCHEDULED 时必填")
+    agent_id: Optional[str] = Field(None, description="目标执行代理 ID")
+    schedule_type: Optional[str] = Field(None, description="调度类型：IMMEDIATE 或 SCHEDULED")
+    planned_at: Optional[datetime] = Field(None, description="计划执行时间（UTC）")
     category: Optional[str] = Field(None, description="任务分类，例如 bmc")
     project_tag: Optional[str] = Field(None, description="项目标签，例如 universal")
     repo_url: Optional[str] = Field(None, description="代码仓库地址")
     branch: Optional[str] = Field(None, description="代码分支")
-    pytest_options: Dict[str, Any] = Field(default_factory=dict, description="pytest 扩展选项")
+    pytest_options: Optional[Dict[str, Any]] = Field(None, description="pytest 扩展选项")
     timeout: Optional[int] = Field(None, description="任务超时时间，单位秒")
-    cases: List[DispatchCaseItem] = Field(default_factory=list, description="本次任务需要按顺序执行的测试用例列表")
-    attachments: List[DispatchAttachmentItem] = Field(default_factory=list, description="任务级共享附件列表")
 
     model_config = ConfigDict(extra="forbid")
 
-    @model_validator(mode="after")
-    def validate_dispatch_request(self) -> "DispatchTaskRequest":
-        auto_case_ids = [item.auto_case_id for item in self.cases]
+    def _validate_channel_and_agent(self) -> None:
+        if self.dispatch_channel and self.dispatch_channel.upper() not in {"RABBITMQ", "HTTP"}:
+            raise ValueError("dispatch_channel must be RABBITMQ or HTTP")
+        if (self.dispatch_channel or "").upper() == "HTTP" and not self.agent_id:
+            raise ValueError("agent_id is required when dispatch_channel is HTTP")
+
+    def _validate_schedule_type(self) -> None:
+        if self.schedule_type and self.schedule_type.upper() not in {"IMMEDIATE", "SCHEDULED"}:
+            raise ValueError("schedule_type must be IMMEDIATE or SCHEDULED")
+
+    @staticmethod
+    def _validate_cases_not_empty(cases: List[DispatchCaseItem]) -> None:
+        auto_case_ids = [item.auto_case_id for item in cases]
         if not auto_case_ids:
             raise ValueError("cases cannot be empty")
         if len(auto_case_ids) != len(set(auto_case_ids)):
             raise ValueError("cases must not contain duplicate auto_case_id")
-        if self.schedule_type.upper() not in {"IMMEDIATE", "SCHEDULED"}:
-            raise ValueError("schedule_type must be IMMEDIATE or SCHEDULED")
-        if self.dispatch_channel and self.dispatch_channel.upper() not in {"RABBITMQ", "HTTP"}:
-            raise ValueError("dispatch_channel must be RABBITMQ or HTTP")
-        if (self.dispatch_channel or "").upper() == "HTTP" and not self.agent_id:
-            raise ValueError("agent_id is required when dispatch_channel is HTTP")
+
+
+class DispatchTaskRequest(_TaskDispatchBase):
+    schedule_type: str = Field(default="IMMEDIATE", description="调度类型")
+    pytest_options: Dict[str, Any] = Field(default_factory=dict, description="pytest 扩展选项")
+    cases: List[DispatchCaseItem] = Field(default_factory=list, description="用例列表")
+    attachments: List[DispatchAttachmentItem] = Field(default_factory=list, description="附件列表")
+
+    @model_validator(mode="after")
+    def validate_dispatch_request(self) -> "DispatchTaskRequest":
+        self._validate_cases_not_empty(self.cases)
+        self._validate_schedule_type()
+        self._validate_channel_and_agent()
         return self
 
 
-class RerunTaskRequest(BaseModel):
-    framework: Optional[str] = Field(None, description="重跑任务使用的执行框架")
-    trigger_source: Optional[str] = Field(None, description="重跑触发来源")
-    dispatch_channel: Optional[str] = Field(None, description="重跑任务使用的下发通道")
-    agent_id: Optional[str] = Field(None, description="重跑任务使用的目标代理 ID")
-    schedule_type: Optional[str] = Field(None, description="重跑调度类型")
-    planned_at: Optional[datetime] = Field(None, description="重跑计划时间（UTC）")
-    category: Optional[str] = Field(None, description="任务分类")
-    project_tag: Optional[str] = Field(None, description="项目标签")
-    repo_url: Optional[str] = Field(None, description="代码仓库地址")
-    branch: Optional[str] = Field(None, description="代码分支")
-    pytest_options: Optional[Dict[str, Any]] = Field(None, description="pytest 扩展选项")
-    timeout: Optional[int] = Field(None, description="任务超时时间，单位秒")
-    cases: Optional[List[DispatchCaseItem]] = Field(None, description="重跑时覆盖的测试用例列表")
-    attachments: Optional[List[DispatchAttachmentItem]] = Field(None, description="重跑时覆盖的任务级共享附件列表")
-
-    model_config = ConfigDict(extra="forbid")
+class RerunTaskRequest(_TaskDispatchBase):
+    cases: Optional[List[DispatchCaseItem]] = Field(None, description="重跑时覆盖的用例列表")
+    attachments: Optional[List[DispatchAttachmentItem]] = Field(None, description="重跑时覆盖的附件列表")
 
     @model_validator(mode="after")
     def validate_rerun_request(self) -> "RerunTaskRequest":
-        if self.schedule_type and self.schedule_type.upper() not in {"IMMEDIATE", "SCHEDULED"}:
-            raise ValueError("schedule_type must be IMMEDIATE or SCHEDULED")
-        if self.dispatch_channel and self.dispatch_channel.upper() not in {"RABBITMQ", "HTTP"}:
-            raise ValueError("dispatch_channel must be RABBITMQ or HTTP")
-        if (self.dispatch_channel or "").upper() == "HTTP" and not self.agent_id:
-            raise ValueError("agent_id is required when dispatch_channel is HTTP")
+        self._validate_channel_and_agent()
+        self._validate_schedule_type()
         if self.cases is not None:
-            auto_case_ids = [item.auto_case_id for item in self.cases]
-            if not auto_case_ids:
-                raise ValueError("cases cannot be empty")
-            if len(auto_case_ids) != len(set(auto_case_ids)):
-                raise ValueError("cases must not contain duplicate auto_case_id")
+            self._validate_cases_not_empty(self.cases)
         return self
 
 

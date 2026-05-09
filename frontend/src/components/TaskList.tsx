@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { api } from '../services/api';
 import type {
   ExecutionTask,
@@ -13,6 +13,9 @@ import type {
   DispatchTaskResponse,
   RerunTaskRequest,
   AttachmentInfo,
+  ExecutionConfig,
+  StepFailurePolicy,
+  CaseFailurePolicy,
 } from '../types';
 
 interface TaskListProps {
@@ -33,13 +36,16 @@ interface DispatchModalState {
   attachmentUploading: boolean;
   attachments: AttachmentInfo[];
   error: string | null;
+  // 执行中配置
+  executionConfig: ExecutionConfig;
 }
 
-interface RerunEditModalState extends DispatchModalState {
+interface RerunEditModalState extends Omit<DispatchModalState, 'executionConfig'> {
   sourceTaskId: string | null;
   repoUrl: string;
   branch: string;
   timeout: string;
+  executionConfig: ExecutionConfig;
 }
 
 const DEFAULT_DISPATCH_CHANNEL: DispatchChannel = 'RABBITMQ';
@@ -159,6 +165,10 @@ const TaskList: React.FC<TaskListProps> = () => {
     attachmentUploading: false,
     attachments: [],
     error: null,
+    executionConfig: {
+      step_on_failure: 'CONTINUE',
+      case_on_failure: 'CONTINUE',
+    },
   });
   const [rerunEditModal, setRerunEditModal] = useState<RerunEditModalState>({
     isOpen: false,
@@ -178,6 +188,10 @@ const TaskList: React.FC<TaskListProps> = () => {
     attachmentUploading: false,
     attachments: [],
     error: null,
+    executionConfig: {
+      step_on_failure: 'CONTINUE',
+      case_on_failure: 'CONTINUE',
+    },
   });
   const [autoCases, setAutoCases] = useState<AutomationTestCaseResponse[]>([]);
   const [agents, setAgents] = useState<ExecutionAgent[]>([]);
@@ -247,6 +261,10 @@ const TaskList: React.FC<TaskListProps> = () => {
       attachmentUploading: false,
       attachments: [],
       error: null,
+      executionConfig: {
+        step_on_failure: 'CONTINUE',
+        case_on_failure: 'CONTINUE',
+      },
     });
     setCaseConfigs({});
     setConfigEditorCaseId(null);
@@ -271,6 +289,10 @@ const TaskList: React.FC<TaskListProps> = () => {
       attachmentUploading: false,
       attachments: [],
       error: null,
+      executionConfig: {
+        step_on_failure: 'CONTINUE',
+        case_on_failure: 'CONTINUE',
+      },
     });
     setCaseConfigs({});
     setConfigEditorCaseId(null);
@@ -387,7 +409,7 @@ const TaskList: React.FC<TaskListProps> = () => {
   );
 
   const handleDispatchSubmit = async () => {
-    const { dispatchChannel, agentId, scheduleType, plannedAt, selectedCases, category, projectTag } = dispatchModal;
+    const { dispatchChannel, agentId, scheduleType, plannedAt, selectedCases, category, projectTag, executionConfig } = dispatchModal;
     if (selectedCases.length === 0) {
       setDispatchModal(prev => ({ ...prev, error: '请选择至少一个用例' }));
       return;
@@ -438,6 +460,7 @@ const TaskList: React.FC<TaskListProps> = () => {
         timeout: firstSelectedCase?.report_meta?.timeout || 0,
         attachments: dispatchModal.attachments,
         cases,
+        execution_config: executionConfig,
       };
       await api.dispatchTask(requestData);
       closeDispatchModal();
@@ -488,6 +511,10 @@ const TaskList: React.FC<TaskListProps> = () => {
         loading: false,
         submitting: false,
         error: null,
+        executionConfig: payload.execution_config || {
+          step_on_failure: 'CONTINUE',
+          case_on_failure: 'CONTINUE',
+        },
       });
     } catch (err) {
       console.error('Open edit rerun modal error:', err);
@@ -496,7 +523,7 @@ const TaskList: React.FC<TaskListProps> = () => {
   };
 
   const handleEditRerunSubmit = async () => {
-    const { sourceTaskId, dispatchChannel, agentId, scheduleType, plannedAt, selectedCases, category, projectTag, repoUrl, branch, timeout } = rerunEditModal;
+    const { sourceTaskId, dispatchChannel, agentId, scheduleType, plannedAt, selectedCases, category, projectTag, repoUrl, branch, timeout, executionConfig } = rerunEditModal;
     if (!sourceTaskId) {
       setRerunEditModal(prev => ({ ...prev, error: '缺少来源任务 ID' }));
       return;
@@ -552,6 +579,7 @@ const TaskList: React.FC<TaskListProps> = () => {
         timeout: timeout ? Number(timeout) : undefined,
         attachments: rerunEditModal.attachments,
         cases,
+        execution_config: executionConfig,
       };
       const response = await api.rerunTask(sourceTaskId, requestData);
       const payload = response.data as DispatchTaskResponse | undefined;
@@ -989,9 +1017,8 @@ const TaskList: React.FC<TaskListProps> = () => {
                 const statusStyle = getStatusAppearance(task.overall_status);
                 const scheduleStyle = getStatusAppearance(task.schedule_type);
                 return (
-                  <>
+                  <React.Fragment key={task.task_id}>
                     <tr
-                      key={task.task_id}
                       style={styles.tr}
                       onClick={() => handleTaskClick(task.task_id)}
                       className="task-row"
@@ -1077,7 +1104,7 @@ const TaskList: React.FC<TaskListProps> = () => {
                         </div>
                       </td>
                     </tr>
-                  </>
+                  </React.Fragment>
                 );
               })}
             </tbody>
@@ -1206,6 +1233,64 @@ const TaskList: React.FC<TaskListProps> = () => {
                     </div>
                   </div>
                 </div>
+
+                {/* 执行配置展示 */}
+                {(selectedTask.request_payload?.execution_config || selectedTask.result_summary?.execution_config) && (
+                  <div style={styles.timeSection}>
+                    <h3 style={styles.sectionTitle}>执行配置</h3>
+                    <div style={styles.executionConfigDisplay}>
+                      {(() => {
+                        const execConfig = selectedTask.request_payload?.execution_config || selectedTask.result_summary?.execution_config;
+                        if (!execConfig) return null;
+
+                        const stepPolicyLabels: Record<string, string> = {
+                          CONTINUE: '继续后续步骤',
+                          STOP_WAIT: '停止等待',
+                          STOP_NOTIFY: '停止+通知',
+                          STOP_WAIT_MANUAL: '停止+等待人工继续',
+                          RETRY_UNTIL_SUCCESS: '重复运行直到成功',
+                          RETRY_N_TIMES_CONTINUE: `重复运行${execConfig.step_retry_count || 'N'}次后继续`,
+                        };
+
+                        const casePolicyLabels: Record<string, string> = {
+                          CONTINUE: '继续后续用例',
+                          STOP: '停止',
+                          STOP_NOTIFY: '停止+通知',
+                          STOP_WAIT_MANUAL: '停止+等待人工继续',
+                          RETRY_UNTIL_SUCCESS: '重复运行直到成功',
+                          RETRY_N_TIMES_CONTINUE: `重复运行${execConfig.case_retry_count || 'N'}次后继续`,
+                        };
+
+                        return (
+                          <>
+                            <div style={styles.executionConfigRow}>
+                              <span style={styles.executionConfigLabel}>步骤失败时:</span>
+                              <span style={{
+                                ...styles.executionConfigValue,
+                                color: execConfig.step_on_failure === 'CONTINUE' ? 'var(--status-success)' :
+                                       execConfig.step_on_failure.startsWith('RETRY') ? 'var(--status-warning)' :
+                                       'var(--status-error)',
+                              }}>
+                                {stepPolicyLabels[execConfig.step_on_failure] || execConfig.step_on_failure}
+                              </span>
+                            </div>
+                            <div style={styles.executionConfigRow}>
+                              <span style={styles.executionConfigLabel}>用例失败时:</span>
+                              <span style={{
+                                ...styles.executionConfigValue,
+                                color: execConfig.case_on_failure === 'CONTINUE' ? 'var(--status-success)' :
+                                       execConfig.case_on_failure.startsWith('RETRY') ? 'var(--status-warning)' :
+                                       'var(--status-error)',
+                              }}>
+                                {casePolicyLabels[execConfig.case_on_failure] || execConfig.case_on_failure}
+                              </span>
+                            </div>
+                          </>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                )}
 
                 <div style={styles.timeSection}>
                   <h3 style={styles.sectionTitle}>任务附件</h3>
@@ -1340,6 +1425,89 @@ const TaskList: React.FC<TaskListProps> = () => {
                         />
                         <span>定时下发</span>
                       </label>
+                    </div>
+                  </div>
+
+                  {/* 执行中配置 */}
+                  <div style={styles.formSection}>
+                    <label style={styles.formLabel}>执行中配置</label>
+                    <div style={styles.executionConfigContainer}>
+                      <div style={styles.executionConfigItem}>
+                        <label style={styles.executionConfigLabel}>步骤失败时</label>
+                        <select
+                          style={styles.select}
+                          value={dispatchModal.executionConfig.step_on_failure}
+                          onChange={(e) => setDispatchModal(prev => ({
+                            ...prev,
+                            executionConfig: {
+                              ...prev.executionConfig,
+                              step_on_failure: e.target.value as StepFailurePolicy,
+                            },
+                          }))}
+                        >
+                          <option value="CONTINUE">继续后续步骤</option>
+                          <option value="STOP_WAIT">停止等待</option>
+                          <option value="STOP_NOTIFY">停止+通知</option>
+                          <option value="STOP_WAIT_MANUAL">停止+等待人工继续</option>
+                          <option value="RETRY_UNTIL_SUCCESS">重复运行直到成功</option>
+                          <option value="RETRY_N_TIMES_CONTINUE">重复运行N次后继续</option>
+                        </select>
+                        {dispatchModal.executionConfig.step_on_failure === 'RETRY_N_TIMES_CONTINUE' && (
+                          <input
+                            type="number"
+                            style={{ ...styles.input, marginTop: '8px', width: '80px' }}
+                            placeholder="重试次数"
+                            min={1}
+                            max={10}
+                            value={dispatchModal.executionConfig.step_retry_count || ''}
+                            onChange={(e) => setDispatchModal(prev => ({
+                              ...prev,
+                              executionConfig: {
+                                ...prev.executionConfig,
+                                step_retry_count: parseInt(e.target.value) || undefined,
+                              },
+                            }))}
+                          />
+                        )}
+                      </div>
+                      <div style={styles.executionConfigItem}>
+                        <label style={styles.executionConfigLabel}>用例失败时</label>
+                        <select
+                          style={styles.select}
+                          value={dispatchModal.executionConfig.case_on_failure}
+                          onChange={(e) => setDispatchModal(prev => ({
+                            ...prev,
+                            executionConfig: {
+                              ...prev.executionConfig,
+                              case_on_failure: e.target.value as CaseFailurePolicy,
+                            },
+                          }))}
+                        >
+                          <option value="CONTINUE">继续后续用例</option>
+                          <option value="STOP">停止</option>
+                          <option value="STOP_NOTIFY">停止+通知</option>
+                          <option value="STOP_WAIT_MANUAL">停止+等待人工继续</option>
+                          <option value="RETRY_UNTIL_SUCCESS">重复运行直到成功</option>
+                          <option value="RETRY_N_TIMES_CONTINUE">重复运行N次后继续</option>
+                        </select>
+                        {dispatchModal.executionConfig.case_on_failure === 'RETRY_N_TIMES_CONTINUE' && (
+                          <input
+                            type="number"
+                            style={{ ...styles.input, marginTop: '8px', width: '80px' }}
+                            placeholder="重试次数"
+                            min={1}
+                            max={10}
+                            value={dispatchModal.executionConfig.case_retry_count || ''}
+                            onChange={(e) => setDispatchModal(prev => ({
+                              ...prev,
+                              executionConfig: {
+                                ...prev.executionConfig,
+                                case_retry_count: parseInt(e.target.value) || undefined,
+                              },
+                            }))}
+                          />
+                        )}
+                      </div>
                     </div>
                   </div>
 
@@ -1684,6 +1852,89 @@ const TaskList: React.FC<TaskListProps> = () => {
                         />
                         <span>定时下发</span>
                       </label>
+                    </div>
+                  </div>
+
+                  {/* 执行中配置 - 重跑编辑 */}
+                  <div style={styles.formSection}>
+                    <label style={styles.formLabel}>执行中配置</label>
+                    <div style={styles.executionConfigContainer}>
+                      <div style={styles.executionConfigItem}>
+                        <label style={styles.executionConfigLabel}>步骤失败时</label>
+                        <select
+                          style={styles.select}
+                          value={rerunEditModal.executionConfig.step_on_failure}
+                          onChange={(e) => setRerunEditModal(prev => ({
+                            ...prev,
+                            executionConfig: {
+                              ...prev.executionConfig,
+                              step_on_failure: e.target.value as StepFailurePolicy,
+                            },
+                          }))}
+                        >
+                          <option value="CONTINUE">继续后续步骤</option>
+                          <option value="STOP_WAIT">停止等待</option>
+                          <option value="STOP_NOTIFY">停止+通知</option>
+                          <option value="STOP_WAIT_MANUAL">停止+等待人工继续</option>
+                          <option value="RETRY_UNTIL_SUCCESS">重复运行直到成功</option>
+                          <option value="RETRY_N_TIMES_CONTINUE">重复运行N次后继续</option>
+                        </select>
+                        {rerunEditModal.executionConfig.step_on_failure === 'RETRY_N_TIMES_CONTINUE' && (
+                          <input
+                            type="number"
+                            style={{ ...styles.input, marginTop: '8px', width: '80px' }}
+                            placeholder="重试次数"
+                            min={1}
+                            max={10}
+                            value={rerunEditModal.executionConfig.step_retry_count || ''}
+                            onChange={(e) => setRerunEditModal(prev => ({
+                              ...prev,
+                              executionConfig: {
+                                ...prev.executionConfig,
+                                step_retry_count: parseInt(e.target.value) || undefined,
+                              },
+                            }))}
+                          />
+                        )}
+                      </div>
+                      <div style={styles.executionConfigItem}>
+                        <label style={styles.executionConfigLabel}>用例失败时</label>
+                        <select
+                          style={styles.select}
+                          value={rerunEditModal.executionConfig.case_on_failure}
+                          onChange={(e) => setRerunEditModal(prev => ({
+                            ...prev,
+                            executionConfig: {
+                              ...prev.executionConfig,
+                              case_on_failure: e.target.value as CaseFailurePolicy,
+                            },
+                          }))}
+                        >
+                          <option value="CONTINUE">继续后续用例</option>
+                          <option value="STOP">停止</option>
+                          <option value="STOP_NOTIFY">停止+通知</option>
+                          <option value="STOP_WAIT_MANUAL">停止+等待人工继续</option>
+                          <option value="RETRY_UNTIL_SUCCESS">重复运行直到成功</option>
+                          <option value="RETRY_N_TIMES_CONTINUE">重复运行N次后继续</option>
+                        </select>
+                        {rerunEditModal.executionConfig.case_on_failure === 'RETRY_N_TIMES_CONTINUE' && (
+                          <input
+                            type="number"
+                            style={{ ...styles.input, marginTop: '8px', width: '80px' }}
+                            placeholder="重试次数"
+                            min={1}
+                            max={10}
+                            value={rerunEditModal.executionConfig.case_retry_count || ''}
+                            onChange={(e) => setRerunEditModal(prev => ({
+                              ...prev,
+                              executionConfig: {
+                                ...prev.executionConfig,
+                                case_retry_count: parseInt(e.target.value) || undefined,
+                              },
+                            }))}
+                          />
+                        )}
+                      </div>
                     </div>
                   </div>
                   {rerunEditModal.scheduleType === 'SCHEDULED' && (
@@ -2246,6 +2497,48 @@ const styles = {
   radioGroup: {
     display: 'flex',
     gap: '20px',
+  } as const,
+  executionConfigContainer: {
+    display: 'flex',
+    gap: '20px',
+    flexWrap: 'wrap' as const,
+    padding: '14px',
+    backgroundColor: 'var(--bg-primary)',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+  } as const,
+  executionConfigItem: {
+    flex: 1,
+    minWidth: '200px',
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: '8px',
+  } as const,
+  executionConfigLabel: {
+    fontSize: '12px',
+    fontWeight: 600,
+    color: 'var(--text-secondary)',
+  } as const,
+  executionConfigDisplay: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: '10px',
+    padding: '14px',
+    backgroundColor: 'var(--bg-primary)',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+  } as const,
+  executionConfigRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+  } as const,
+  executionConfigValue: {
+    fontSize: '13px',
+    fontWeight: 600,
+    padding: '4px 10px',
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: 'var(--radius-sm)',
   } as const,
   radioLabel: {
     display: 'flex',

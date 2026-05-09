@@ -1,3 +1,7 @@
+"""任务执行进度协调器。
+
+负责当前 case 完成后决定：任务收口，还是自动推进下一条 case。
+"""
 from __future__ import annotations
 
 from typing import Any
@@ -8,6 +12,16 @@ from app.shared.core.logger import log as logger
 
 
 class ExecutionProgressCoordinator:
+    """串行编排的核心协调器。
+
+    职责：
+    1. 判断当前 case 是否已结束（event_type=progress + phase=case_finish）
+    2. 判断是否需要推进下一条 case
+    3. 如果是最后一条 → 收口任务状态
+    4. 如果还有下一条 → 重建下发命令并自动推进
+    5. 推进失败 → 标记任务为 FAILED
+    """
+
     def __init__(self, dispatch_service: ExecutionDispatchService | None = None) -> None:
         self._dispatch_service = dispatch_service or ExecutionDispatchService()
 
@@ -19,8 +33,22 @@ class ExecutionProgressCoordinator:
         event_time: Any,
         resolved_case_status: str | None,
     ) -> None:
+        """当前 case 完成后自动推进或收口。
+
+        触发条件（三项必须同时满足）：
+        1. event_type == "progress" 且 phase == "case_finish"
+        2. case 已进入终态（PASSED/FAILED/SKIPPED）
+        3. event.case_id 必须等于 task.current_case_id（非乱序事件）
+
+        三种分支：
+        A. 不满足触发条件 → 直接返回，不做任何操作
+        B. 已是最后一条 case → 收口任务
+        C. 还有下一条 case → 重建下发命令并自动推送
+        """
+        # 条件一：必须是 progress + case_finish
         if event.event_type != "progress" or event.phase != "case_finish":
             return
+        # 条件二：case 必须进入终态
         if case_doc is None or resolved_case_status not in FINAL_CASE_STATUSES:
             logger.debug(
                 "Skipping task auto-advance because case is not final: "
@@ -28,6 +56,7 @@ class ExecutionProgressCoordinator:
                 f"resolved_case_status={resolved_case_status}"
             )
             return
+        # 条件三：事件的 case_id 必须等于任务当前游标指向的 case_id
         if event.case_id != getattr(task_doc, "current_case_id", None):
             logger.debug(
                 "Skipping task auto-advance because event case is not current: "
@@ -36,6 +65,7 @@ class ExecutionProgressCoordinator:
             )
             return
 
+        # 分支 B：最后一条 case，收口任务
         next_case_index = getattr(task_doc, "current_case_index", 0) + 1
         if next_case_index >= task_doc.case_count:
             task_doc.current_case_id = None
@@ -53,6 +83,7 @@ class ExecutionProgressCoordinator:
             )
             return
 
+        # 分支 C：还有下一条 case，重建下发命令
         try:
             command = await self._dispatch_service.build_task_dispatch_command(
                 task_doc, next_case_index
@@ -69,6 +100,7 @@ class ExecutionProgressCoordinator:
             await task_doc.save()
             return
 
+        # 下发下一条 case
         try:
             logger.info(
                 "Auto-dispatching next execution case: "

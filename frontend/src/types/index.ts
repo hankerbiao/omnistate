@@ -254,6 +254,7 @@ export interface DispatchTaskRequest {
   dut?: Record<string, unknown>;
   cases: DispatchCaseItem[];
   attachments?: AttachmentInfo[];
+  execution_config?: ExecutionConfig;
 }
 
 export interface RerunTaskRequest {
@@ -271,6 +272,7 @@ export interface RerunTaskRequest {
   dut?: Record<string, unknown>;
   cases?: DispatchCaseItem[];
   attachments?: AttachmentInfo[];
+  execution_config?: ExecutionConfig;
 }
 
 export interface DispatchTaskResponse {
@@ -719,4 +721,28 @@ export interface ImportExternalMachinesResponse {
   skipped_count: number;
   error_count: number;
   results: ImportResultItem[];
+}
+
+// Execution failure handling policies
+export type StepFailurePolicy =
+  | 'CONTINUE'           // 继续后续步骤
+  | 'STOP_WAIT'          // 停止等待
+  | 'STOP_NOTIFY'        // 停止+通知
+  | 'STOP_WAIT_MANUAL'   // 停止+等待人工继续
+  | 'RETRY_UNTIL_SUCCESS' // 重复运行直到成功
+  | 'RETRY_N_TIMES_CONTINUE'; // 重复运行N次后继续
+
+export type CaseFailurePolicy =
+  | 'CONTINUE'           // 继续后续case
+  | 'STOP'               // 停止
+  | 'STOP_NOTIFY'        // 停止+通知
+  | 'STOP_WAIT_MANUAL'   // 停止+等待人工继续
+  | 'RETRY_UNTIL_SUCCESS' // 重复运行直到成功
+  | 'RETRY_N_TIMES_CONTINUE'; // 重复运行N次后继续
+
+export interface ExecutionConfig {
+  step_on_failure: StepFailurePolicy;
+  step_retry_count?: number;  // 当使用 RETRY_N_TIMES_CONTINUE 时有效
+  case_on_failure: CaseFailurePolicy;
+  case_retry_count?: number;  // 当使用 RETRY_N_TIMES_CONTINUE 时有效
 }

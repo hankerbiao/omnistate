@@ -2,7 +2,7 @@
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from beanie import Document
+from beanie import Document, Insert, Save, before_event
 from pydantic import BaseModel, Field
 from pymongo import IndexModel
 
@@ -43,6 +43,10 @@ class DutDoc(Document):
     created_at: datetime = Field(default_factory=datetime.utcnow, description="创建时间")
     updated_at: datetime = Field(default_factory=datetime.utcnow, description="更新时间")
     created_by: Optional[str] = Field(None, description="创建人")
+
+    @before_event([Save, Insert])
+    def update_updated_at(self):
+        self.updated_at = datetime.utcnow()
 
     class Settings:
         name = "duts"
