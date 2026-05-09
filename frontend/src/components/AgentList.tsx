@@ -10,6 +10,27 @@ const AgentList: React.FC<AgentListProps> = () => {
   const [agents, setAgents] = useState<ExecutionAgent[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const handleDeleteAgent = useCallback(async (agentId: string) => {
+    if (!window.confirm(`确定要删除代理 ${agentId} 吗？`)) {
+      return;
+    }
+
+    setDeletingId(agentId);
+    setDeleteError(null);
+
+    try {
+      await api.deleteAgent(agentId);
+      setAgents(prev => prev.filter(a => a.agent_id !== agentId));
+    } catch (err) {
+      setDeleteError(`删除代理失败: ${agentId}`);
+      console.error('Delete agent error:', err);
+    } finally {
+      setDeletingId(null);
+    }
+  }, []);
 
   const fetchAgents = useCallback(async () => {
     setLoading(true);
@@ -90,6 +111,12 @@ const AgentList: React.FC<AgentListProps> = () => {
         </div>
       )}
 
+      {deleteError && (
+        <div style={styles.errorBanner}>
+          <span>⚠</span> {deleteError}
+        </div>
+      )}
+
       <div style={styles.grid}>
         {loading ? (
           <div style={styles.loadingState}>
@@ -159,6 +186,17 @@ const AgentList: React.FC<AgentListProps> = () => {
                       {new Date(agent.last_heartbeat_at).toLocaleString('zh-CN')}
                     </span>
                   </div>
+                  <button
+                    style={{
+                      ...styles.deleteBtn,
+                      opacity: deletingId === agent.agent_id ? 0.6 : 1,
+                      cursor: deletingId === agent.agent_id ? 'not-allowed' : 'pointer',
+                    }}
+                    onClick={() => handleDeleteAgent(agent.agent_id)}
+                    disabled={deletingId === agent.agent_id}
+                  >
+                    {deletingId === agent.agent_id ? '删除中...' : '删除'}
+                  </button>
                 </div>
               </div>
             );
@@ -356,11 +394,23 @@ const styles = {
     padding: '14px 20px',
     borderTop: '1px solid var(--border-muted)',
     backgroundColor: 'var(--bg-primary)',
-  } as const,
-  timeInfo: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
+  } as const,
+  timeInfo: {
+    display: 'flex',
+    alignItems: 'center',
+  } as const,
+  deleteBtn: {
+    padding: '6px 14px',
+    fontSize: '12px',
+    fontWeight: 500,
+    color: 'var(--accent-red)',
+    backgroundColor: 'transparent',
+    border: '1px solid var(--accent-red)',
+    borderRadius: 'var(--radius-sm)',
+    transition: 'all var(--transition-fast)',
   } as const,
   timeLabel: {
     fontSize: '12px',

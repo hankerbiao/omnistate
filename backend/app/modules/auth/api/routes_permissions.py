@@ -10,7 +10,7 @@ from app.modules.auth.schemas import (
 )
 from app.modules.auth.service import PermissionNotFoundError
 from app.shared.api.schemas.base import APIResponse
-from app.shared.auth import require_permission
+from app.shared.auth import get_current_user, require_permission
 
 router = APIRouter()
 
@@ -55,7 +55,7 @@ async def get_permission(
 )
 async def list_permissions(
     service: PermissionServiceDep,
-    _=Depends(require_permission("permissions:read")),
+    _=Depends(get_current_user),  # 任何登录用户都可以查看权限列表
     limit: int = Query(100, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ):

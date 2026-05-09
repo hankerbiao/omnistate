@@ -234,6 +234,25 @@ async def get_agent(
         raise HTTPException(status_code=404, detail=str(exc))
 
 
+@router.delete(
+    "/agents/{agent_id}",
+    response_model=APIResponse[dict],
+    summary="删除执行代理",
+    dependencies=[Depends(require_permission("execution_agents:write"))],
+)
+async def delete_agent(
+        agent_id: str,
+        service: ExecutionAgentServiceDep,
+        current_user=Depends(get_current_user),
+):
+    """删除执行代理（逻辑删除）。"""
+    try:
+        data = await service.delete_agent(agent_id)
+        return APIResponse(data=data)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
 @router.get(
     "/tasks",
     response_model=APIResponse[list[ExecutionTaskListItem]],

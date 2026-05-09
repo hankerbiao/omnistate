@@ -524,8 +524,6 @@ export interface PermissionResponse {
   permission_id: string;
   name: string;
   code: string;
-  resource: string;
-  action: string;
   description?: string;
   created_at: string;
   updated_at: string;
@@ -600,6 +598,71 @@ export interface UpdateUserRolesRequest {
 export interface ListUsersParams {
   status?: string;
   role_id?: string;
+  limit?: number;
+  offset?: number;
+}
+
+// DUT types
+export interface DutResponse {
+  id: string;
+  dut_id: string;
+  name: string;
+  status: string;
+  region: string;
+  description?: string;
+  tags: string[];
+  bmc_ip: string;
+  bmc_username: string;
+  os_ip: string;
+  os_username: string;
+  os_type: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DutDetailResponse extends DutResponse {
+  bmc_password: string;
+  os_password: string;
+}
+
+export interface CreateDutRequest {
+  name: string;
+  dut_id?: string;
+  status?: string;
+  region?: string;
+  description?: string;
+  tags?: string[];
+  bmc_ip: string;
+  bmc_username?: string;
+  bmc_password: string;
+  os_ip: string;
+  os_username?: string;
+  os_password: string;
+  os_type?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface UpdateDutRequest {
+  name?: string;
+  status?: string;
+  region?: string;
+  description?: string;
+  tags?: string[];
+  bmc_ip?: string;
+  bmc_username?: string;
+  bmc_password?: string;
+  os_ip?: string;
+  os_username?: string;
+  os_password?: string;
+  os_type?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface ListDutsParams {
+  status?: string;
+  region?: string;
+  search?: string;
   limit?: number;
   offset?: number;
 }

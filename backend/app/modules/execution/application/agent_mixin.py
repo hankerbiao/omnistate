@@ -249,3 +249,26 @@ class ExecutionAgentMixin:
         if not agent_doc:
             raise KeyError(f"Agent not found: {agent_id}")
         return self._serialize_agent_doc(agent_doc)
+
+    async def delete_agent(self, agent_id: str) -> Dict[str, Any]:
+        """删除指定代理（逻辑删除）。
+
+        Args:
+            agent_id: 目标代理 ID
+
+        Returns:
+            删除结果，包含代理ID
+
+        Raises:
+            KeyError: 代理不存在时抛出
+        """
+        agent_doc = await ExecutionAgentDoc.find_one({
+            "agent_id": agent_id,
+            "is_deleted": False,
+        })
+        if not agent_doc:
+            raise KeyError(f"Agent not found: {agent_id}")
+
+        agent_doc.is_deleted = True
+        await agent_doc.save()
+        return {"agent_id": agent_id, "deleted": True}

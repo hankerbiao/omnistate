@@ -499,7 +499,10 @@ input, select, textarea {
 
 /* Workspace layout */
 .workspace {
+  display: flex;
+  gap: var(--space-6);
   padding: var(--space-6);
+  height: calc(100vh - var(--topbar-height));
 }
 
 .workspace-header {

@@ -3,9 +3,10 @@ interface TopbarProps {
   description?: string
   onLogout: () => void
   currentUser?: string
+  onUserClick?: () => void
 }
 
-const Topbar: React.FC<TopbarProps> = ({ title, description, onLogout, currentUser }) => {
+const Topbar: React.FC<TopbarProps> = ({ title, description, onLogout, currentUser, onUserClick }) => {
   return (
     <header style={styles.topbar}>
       <div style={styles.left}>
@@ -15,7 +16,13 @@ const Topbar: React.FC<TopbarProps> = ({ title, description, onLogout, currentUs
         )}
       </div>
       <div style={styles.right}>
-        <div style={styles.userInfo}>
+        <div
+          style={styles.userInfo}
+          onClick={onUserClick}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => e.key === 'Enter' && onUserClick?.()}
+        >
           <div style={styles.avatar}>
             {(currentUser || 'U').charAt(0).toUpperCase()}
           </div>
@@ -64,6 +71,10 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     gap: '10px',
+    cursor: 'pointer',
+    padding: '4px 8px',
+    borderRadius: 'var(--radius-md)',
+    transition: 'background-color var(--transition-fast)',
   },
   avatar: {
     width: '32px',

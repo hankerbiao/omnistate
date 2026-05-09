@@ -20,9 +20,20 @@ from app.modules.auth.schemas import (
 )
 from app.modules.auth.service import RoleNotFoundError, UserNotFoundError
 from app.shared.api.schemas.base import APIResponse
-from app.shared.auth import require_any_permission, require_permission
+from app.shared.auth import get_current_user, require_any_permission, require_permission
 
 router = APIRouter()
+
+
+@router.get("/users/me", response_model=APIResponse[UserResponse], summary="获取当前用户信息")
+async def get_current_user_info(
+    service: UserServiceDep,
+    current_user: dict = Depends(get_current_user),
+):
+    try:
+        return APIResponse(data=await service.get_user(current_user["user_id"]))
+    except UserNotFoundError:
+        raise HTTPException(status_code=404, detail="user not found")
 
 
 @router.post("/users", response_model=APIResponse[UserResponse], status_code=201, summary="创建用户")
