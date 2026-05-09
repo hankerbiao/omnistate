@@ -40,14 +40,6 @@ rabbitmq:
   task_exchange: ""
   task_routing_key: "dml_task_queue"
 
-  event_queue: "dml_test_events"
-  event_exchange: "dml_test_exchange"
-  event_routing_key: "test.event.#"
-
-  result_queue: "dml_test_results"
-  result_exchange: "dml_results_exchange"
-  result_routing_key: "test.result"
-
   prefetch_count: 10
 
 # =============================================================================
@@ -89,6 +81,7 @@ minio:
   secret_key: "minioadmin"
   bucket: "attachments"
   secure: false
+  presigned_url_expires_seconds: 604800
 
 # =============================================================================
 # JWT 认证配置（重要：生产环境必须修改 secret_key）
@@ -108,6 +101,8 @@ execution:
   agent_dispatch_path: "/api/v1/tasks"
   http_timeout_sec: 10
   scheduler_interval_sec: 60
+  default_repo_url: ""
+  default_branch: "master"
   kafka_worker_agent_id: "execution-kafka-worker"
   kafka_worker_heartbeat_ttl_sec: 30
   kafka_worker_heartbeat_interval_sec: 10

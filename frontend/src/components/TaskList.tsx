@@ -132,7 +132,6 @@ const buildDispatchCaseItems = (
     const matchedCase = autoCaseMap.get(autoCaseId);
     return {
       auto_case_id: autoCaseId,
-      config: caseConfigs[autoCaseId] || buildDefaultCaseConfig(matchedCase),
       parameters: caseConfigs[autoCaseId] || buildDefaultCaseConfig(matchedCase),
     };
   });

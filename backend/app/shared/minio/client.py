@@ -7,8 +7,6 @@ from minio.error import S3Error
 
 from ..minio.config import MinIOConfig, load_minio_config
 
-DEFAULT_PRESIGNED_URL_EXPIRES_SECONDS = 7 * 24 * 60 * 60
-
 
 class MinIOClientWrapper:
     """MinIO客户端封装"""
@@ -115,8 +113,10 @@ class MinIOClientWrapper:
     def presigned_get_object(
         self,
         object_name: str,
-        expires_seconds: int = DEFAULT_PRESIGNED_URL_EXPIRES_SECONDS,
+        expires_seconds: int | None = None,
     ) -> str:
+        if expires_seconds is None:
+            expires_seconds = self.config.presigned_url_expires_seconds
         """生成预签名下载链接
 
         Args:

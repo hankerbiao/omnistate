@@ -76,16 +76,6 @@ class RabbitMQConfig(BaseModel):
     task_exchange: str = ""
     task_routing_key: str = "dml_task_queue"
 
-    # 测试事件队列
-    event_queue: str = "dml_test_events"
-    event_exchange: str = "dml_test_exchange"
-    event_routing_key: str = "test.event.#"
-
-    # 测试结果队列
-    result_queue: str = "dml_test_results"
-    result_exchange: str = "dml_results_exchange"
-    result_routing_key: str = "test.result"
-
     # 消费者预取数量
     prefetch_count: int = 10
 
@@ -136,6 +126,7 @@ class MinIOConfig(BaseModel):
     secret_key: str = "minioadmin"
     bucket: str = "attachments"
     secure: bool = False
+    presigned_url_expires_seconds: int = 7 * 24 * 60 * 60
 
 
 class JWTConfig(BaseModel):
@@ -158,6 +149,8 @@ class ExecutionConfig(BaseModel):
     kafka_worker_agent_id: str = "execution-kafka-worker"
     kafka_worker_heartbeat_ttl_sec: int = 30
     kafka_worker_heartbeat_interval_sec: int = 10
+    default_repo_url: str = ""
+    default_branch: str = "master"
 
 
 class TmmsConfig(BaseModel):
@@ -253,24 +246,3 @@ def get_settings() -> Settings:
     return Settings(**config_data)
 
 
-# =============================================================================
-# 兼容性别名（供现有代码使用）
-# =============================================================================
-def load_rabbitmq_config() -> RabbitMQConfig:
-    """从 YAML 加载 RabbitMQ 配置（兼容旧接口）。"""
-    return get_settings().rabbitmq
-
-
-def load_kafka_config() -> KafkaConfig:
-    """从 YAML 加载 Kafka 配置（兼容旧接口）。"""
-    return get_settings().kafka
-
-
-def load_minio_config() -> MinIOConfig:
-    """从 YAML 加载 MinIO 配置（兼容旧接口）。"""
-    return get_settings().minio
-
-
-def load_tmms_config() -> TmmsConfig:
-    """从 YAML 加载 TMMS 配置。"""
-    return get_settings().tmms

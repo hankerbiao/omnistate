@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict, List
 
 from app.modules.execution.application.case_resolver import AutoCaseDispatchBinding, ExecutionCaseResolver
 from app.modules.execution.repository.models import ExecutionTaskCaseDoc, ExecutionTaskDoc
-from app.modules.test_specs.repository.models import TestCaseDoc
+from app.modules.test_specs.repository.models import AutomationTestCaseDoc, TestCaseDoc
+
+logger = logging.getLogger(__name__)
 
 
 class ExecutionTaskCaseCoordinator:
@@ -17,7 +20,7 @@ class ExecutionTaskCaseCoordinator:
 
     @staticmethod
     async def load_case_docs(case_ids: List[str]) -> Dict[str, Any]:
-        """加载并校验任务关联的测试用例。"""
+        """加载任务关联的测试用例，缺失时降级为最小化占位文档。"""
         docs = await TestCaseDoc.find({
             "case_id": {"$in": case_ids},
             "is_deleted": False,
@@ -25,7 +28,12 @@ class ExecutionTaskCaseCoordinator:
         doc_map = {doc.case_id: doc for doc in docs}
         missing = [cid for cid in case_ids if cid not in doc_map]
         if missing:
-            raise KeyError(f"Test cases not found: {missing}")
+            logger.warning(
+                "Some manual test cases not found, using placeholder snapshots: missing=%s",
+                missing,
+            )
+            for case_id in missing:
+                doc_map[case_id] = _PlaceholderCaseDoc(case_id=case_id)
         return doc_map
 
     async def resolve_case_dispatch_bindings_by_auto_case_ids(
@@ -164,3 +172,24 @@ class ExecutionTaskCaseCoordinator:
                 last_seq=0,
                 result_data={},
             ).insert()
+
+
+class _PlaceholderCaseDoc:
+    """当手工用例不存在时的最小化占位文档，用于快照构建不中断。"""
+
+    def __init__(self, case_id: str) -> None:
+        self.case_id = case_id
+        self.ref_req_id: str | None = None
+        self.title: str = case_id
+        self.version: str = "1.0"
+        self.status: str = "draft"
+        self.priority: str = "medium"
+        self.tags: List[str] = []
+        self.test_category: str = ""
+        self.estimated_duration_sec: int = 0
+        self.required_env: Dict[str, Any] = {}
+        self.is_destructive: bool = False
+        self.pre_condition: str = ""
+        self.post_condition: str = ""
+        self.custom_fields: Dict[str, Any] = {}
+        self.attachments: List[Any] = []

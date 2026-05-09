@@ -54,6 +54,7 @@ class ExecutionTaskCommandService(ExecutionTaskCommandMixin):
         task_id = f"ET-{year}-{str(seq).zfill(6)}"
 
         auto_case_ids = [item.auto_case_id for item in request.cases]
+        case_configs = [dict(item.config) for item in request.cases]
         attachments = await self._validate_and_enrich_attachments(
             [item.model_dump(exclude_none=True) for item in request.attachments]
         )
@@ -74,7 +75,7 @@ class ExecutionTaskCommandService(ExecutionTaskCommandMixin):
         logger.debug(
             "Dispatch task case bindings resolved: "
             f"task_id={task_id}, auto_case_ids={auto_case_ids}, case_ids={case_ids}, "
-            f"script_entity_ids={script_entity_ids}, "
+            f"script_entity_ids={script_entity_ids}, case_configs={case_configs}, "
             f"case_payloads={case_payloads}"
         )
 
@@ -86,7 +87,7 @@ class ExecutionTaskCommandService(ExecutionTaskCommandMixin):
             auto_case_ids=auto_case_ids,
             case_ids=case_ids,
             script_entity_ids=script_entity_ids,
-            case_configs=[{}] * len(request.cases),
+            case_configs=case_configs,
             case_payloads=case_payloads,
             schedule_type=request.schedule_type,
             planned_at=request.planned_at,

@@ -7,8 +7,7 @@ Kafka 的真实配置来源只保留 `config.yaml`，本模块只负责把统一
 from dataclasses import dataclass, field
 from typing import Any
 
-from app.shared.config import KafkaConfig as BaseKafkaConfig
-from app.shared.config import load_kafka_config as load_base_kafka_config
+from app.shared.config import KafkaConfig as BaseKafkaConfig, get_settings
 
 
 @dataclass(slots=True)
@@ -76,7 +75,7 @@ def _to_runtime_config(base_config: BaseKafkaConfig) -> KafkaConfig:
 
 def load_kafka_config() -> KafkaConfig:
     """从统一配置加载 Kafka 配置，并转换成 Kafka 模块运行时结构。"""
-    return _to_runtime_config(load_base_kafka_config())
+    return _to_runtime_config(get_settings().kafka)
 
 
 __all__ = ["KafkaConfig", "ConsumerSubscription", "load_kafka_config"]

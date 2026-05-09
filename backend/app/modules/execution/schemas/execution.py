@@ -10,6 +10,7 @@ class DispatchCaseItem(BaseModel):
         ...,
         description="自动化测试用例业务 ID，用于标识本次任务包含的单条 case",
     )
+    config: Dict[str, Any] = Field(default_factory=dict, description="该测试用例本次执行的参数配置（兼容旧字段）")
     parameters: Dict[str, Any] = Field(default_factory=dict, description="执行端用例参数")
 
     model_config = ConfigDict(extra="forbid")

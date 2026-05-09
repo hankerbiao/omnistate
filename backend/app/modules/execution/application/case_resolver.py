@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import List
 
-from app.modules.test_specs.repository.models import AutomationTestCaseDoc, TestCaseDoc
+from app.modules.test_specs.repository.models import AutomationTestCaseDoc
 
 
 @dataclass(frozen=True)
@@ -20,7 +20,7 @@ class AutoCaseDispatchBinding:
 
 
 class ExecutionCaseResolver:
-    """解析测试用例与自动化用例的下发绑定关系。"""
+    """解析自动化用例的下发绑定关系。"""
 
     async def resolve_case_dispatch_bindings_by_auto_case_ids(
         self,
@@ -39,49 +39,9 @@ class ExecutionCaseResolver:
         if missing_auto_case_ids:
             raise KeyError(f"Automation test cases not found: {missing_auto_case_ids}")
 
-        source_case_ids = [auto_doc_mapping[auto_case_id].dml_manual_case_id for auto_case_id in auto_case_ids]
-        docs = await TestCaseDoc.find({
-            "case_id": {"$in": source_case_ids},
-            "is_deleted": False,
-        }).to_list()
-
-        found_case_ids = {getattr(doc, "case_id", None) for doc in docs}
-        missing_source_case_ids = [
-            source_case_id for source_case_id in source_case_ids if source_case_id not in found_case_ids
-        ]
-        if missing_source_case_ids:
-            missing_bindings = [
-                {
-                    "auto_case_id": auto_case_id,
-                    "dml_manual_case_id": auto_doc_mapping[auto_case_id].dml_manual_case_id,
-                }
-                for auto_case_id in auto_case_ids
-                if auto_doc_mapping[auto_case_id].dml_manual_case_id in missing_source_case_ids
-            ]
-            raise KeyError(
-                "Automation test cases linked manual cases not found: "
-                f"{missing_bindings}"
-            )
-
-        mapping: dict[str, List[str]] = {}
-        for doc in docs:
-            source_case_id = getattr(doc, "case_id", None)
-            if not source_case_id:
-                continue
-            mapping.setdefault(source_case_id, []).append(doc.case_id)
-
-        ambiguous = {
-            source_case_id: case_ids
-            for source_case_id, case_ids in mapping.items()
-            if len(case_ids) > 1
-        }
-        if ambiguous:
-            raise ValueError(f"Automation test cases linked to multiple test cases: {ambiguous}")
-
         bindings: List[AutoCaseDispatchBinding] = []
         for auto_case_id in auto_case_ids:
             auto_doc = auto_doc_mapping[auto_case_id]
-            case_id = mapping[auto_doc.dml_manual_case_id][0]
             script_path = getattr(auto_doc, "script_path", None)
             script_name = getattr(auto_doc, "script_name", None)
             if not script_path:
@@ -91,7 +51,7 @@ class ExecutionCaseResolver:
             bindings.append(
                 AutoCaseDispatchBinding(
                     auto_case_id=auto_case_id,
-                    case_id=case_id,
+                    case_id=auto_doc.dml_manual_case_id,
                     script_entity_id=getattr(getattr(auto_doc, "script_ref", None), "entity_id", None),
                     script_path=script_path,
                     script_name=script_name,

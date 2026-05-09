@@ -37,20 +37,10 @@ rabbitmq:
   retry_delay: 2.0
   ssl_enabled: false
 
-  # 任务下发队列（生产者：后端 -> 测试代理）
+  # 任务下发队列（生产者：backend -> agent）
   task_queue: "dml_task_queue"
   task_exchange: ""
   task_routing_key: "dml_task_queue"
-
-  # 测试事件队列（消费者：测试代理 -> 后端）
-  event_queue: "dml_test_events"
-  event_exchange: "dml_test_exchange"
-  event_routing_key: "test.event.#"
-
-  # 测试结果队列（消费者：测试代理 -> 后端）
-  result_queue: "dml_test_results"
-  result_exchange: "dml_results_exchange"
-  result_routing_key: "test.result"
 
   # 消费者预取数量
   prefetch_count: 10
@@ -98,6 +88,7 @@ minio:
   secret_key: "kk123123"
   bucket: "attachments"
   secure: false
+  presigned_url_expires_seconds: 604800  # 7天
 
 # =============================================================================
 # JWT 认证配置
@@ -117,6 +108,8 @@ execution:
   agent_dispatch_path: "/api/v1/tasks"
   http_timeout_sec: 10
   scheduler_interval_sec: 60
+  default_repo_url: "http://10.17.55.151:6600/litaiqing/bmc-case.git"
+  default_branch: "master"
 
   # Kafka Worker 配置（仅当 dispatch_mode=kafka 时使用）
   kafka_worker_agent_id: "execution-kafka-worker"

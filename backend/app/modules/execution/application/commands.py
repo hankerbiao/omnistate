@@ -4,10 +4,6 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 from datetime import datetime
 
-from app.modules.execution.application.constants import (
-    DEFAULT_EXECUTION_BRANCH,
-    DEFAULT_EXECUTION_REPO_URL,
-)
 
 
 @dataclass
@@ -70,10 +66,12 @@ class DispatchExecutionTaskCommand:
             self.repo_url = None
         if isinstance(self.branch, str) and not self.branch.strip():
             self.branch = None
+        from app.shared.config import get_settings
+        execution_cfg = get_settings().execution
         if self.repo_url is None:
-            self.repo_url = DEFAULT_EXECUTION_REPO_URL
+            self.repo_url = execution_cfg.default_repo_url or None
         if self.branch is None:
-            self.branch = DEFAULT_EXECUTION_BRANCH
+            self.branch = execution_cfg.default_branch
         if self.category is None:
             self.category = ""
         if self.project_tag is None:

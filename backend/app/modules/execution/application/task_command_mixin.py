@@ -125,13 +125,14 @@ class ExecutionTaskCommandMixin:
                     "case_id": case_id,
                     "auto_case_id": auto_case_id,
                     "script_entity_id": script_entity_id,
+                    "config": case_config,
                     "payload_case_id": case_payload.get("case_id"),
                     "script_path": case_payload.get("script_path"),
                     "script_name": case_payload.get("script_name"),
                     "parameters": case_payload.get("parameters"),
                     "attachments": case_payload.get("attachments", []),
                 }
-                for case_id, auto_case_id, script_entity_id, _, case_payload in zip(
+                for case_id, auto_case_id, script_entity_id, case_config, case_payload in zip(
                     command.case_ids,
                     command.auto_case_ids,
                     command.script_entity_ids,
@@ -188,7 +189,7 @@ class ExecutionTaskCommandMixin:
         case_ids = [binding.case_id for binding in dispatch_bindings]
         script_entity_ids = [binding.script_entity_id for binding in dispatch_bindings]
         auto_case_ids = [case["auto_case_id"] for case in cases]
-        case_configs = [{} for _ in cases]
+        case_configs = [dict(case.get("config") or {}) for case in cases]
         case_payloads = [
             {
                 "case_id": binding.case_id,
@@ -235,6 +236,7 @@ class ExecutionTaskCommandMixin:
         return [
             {
                 "auto_case_id": item.auto_case_id,
+                "config": dict(item.config),
                 "parameters": dict(item.parameters),
             }
             for item in request.cases

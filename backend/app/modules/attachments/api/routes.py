@@ -11,7 +11,6 @@ from app.modules.attachments.schemas.attachment import (
 )
 from app.modules.attachments.service import AttachmentService
 from app.shared.auth import get_current_user
-from app.shared.minio.client import DEFAULT_PRESIGNED_URL_EXPIRES_SECONDS
 
 router = APIRouter(prefix="/attachments", tags=["附件管理"])
 
@@ -87,7 +86,7 @@ async def get_attachment(
 @router.get("/{file_id}/download", response_model=DownloadResponse)
 async def get_download_url(
     file_id: str,
-    expires_seconds: int = DEFAULT_PRESIGNED_URL_EXPIRES_SECONDS,
+    expires_seconds: int | None = None,
     current_user: CurrentUser = None,
 ):
     """获取下载链接

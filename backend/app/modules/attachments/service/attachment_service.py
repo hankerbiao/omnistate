@@ -4,7 +4,6 @@ from typing import List, Optional
 
 from app.modules.attachments.repository.models import AttachmentDoc
 from app.modules.attachments.schemas.attachment import AttachmentInfo, UploadResponse
-from app.shared.minio.client import DEFAULT_PRESIGNED_URL_EXPIRES_SECONDS
 from app.shared.minio import get_minio_client
 
 
@@ -145,7 +144,7 @@ class AttachmentService:
     async def get_download_url(
         self,
         file_id: str,
-        expires_seconds: int = DEFAULT_PRESIGNED_URL_EXPIRES_SECONDS,
+        expires_seconds: int | None = None,
     ) -> Optional[str]:
         """获取下载链接
 
