@@ -5,7 +5,6 @@ from typing import Any
 from beanie import init_beanie
 
 from app.modules.attachments.repository.models import DOCUMENT_MODELS as ATTACHMENT_DOCUMENT_MODELS
-from app.modules.assets.repository.models import DOCUMENT_MODELS as ASSETS_DOCUMENT_MODELS
 from app.modules.auth.repository.models import DOCUMENT_MODELS as AUTH_DOCUMENT_MODELS
 from app.modules.execution.repository.models import DOCUMENT_MODELS as EXECUTION_DOCUMENT_MODELS
 from app.modules.test_specs.repository.models import DOCUMENT_MODELS as TEST_SPECS_DOCUMENT_MODELS
@@ -26,7 +25,6 @@ def get_document_models() -> list[type[Any]]:
         *EXECUTION_DOCUMENT_MODELS,
         *AUTH_DOCUMENT_MODELS,
         *ATTACHMENT_DOCUMENT_MODELS,
-        *ASSETS_DOCUMENT_MODELS,
     ]
 
 

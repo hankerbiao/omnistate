@@ -1,4 +1,4 @@
-import type { LoginRequest, LoginResponse, ApiResponse, CreateRequirementRequest, RequirementResponse, ListRequirementsParams, CreateTestCaseRequest, TestCaseResponse, ListTestCasesParams, DispatchTaskRequest, DispatchTaskResponse, ExecutionAgent, ListAgentsParams, CreateAutomationTestCaseRequest, AutomationTestCaseResponse, ListAutomationTestCasesParams, ExecutionTask, ListTasksParams, TaskStatus, RerunTaskRequest, AttachmentInfo, WorkflowTransitionRequest, WorkflowTransitionResponse, WorkflowTransitionsResponse, RoleResponse, PermissionResponse, CreateRoleRequest, UpdateRoleRequest, UpdateRolePermissionsRequest, CurrentUserPermissionsResponse, UserResponse, CreateUserRequest, UpdateUserRequest, UpdateUserRolesRequest, ListUsersParams, DutResponse, DutDetailResponse, CreateDutRequest, UpdateDutRequest, ListDutsParams, ExternalMachineItem, ImportExternalMachinesResponse } from '../types';
+import type { LoginRequest, LoginResponse, ApiResponse, CreateRequirementRequest, RequirementResponse, ListRequirementsParams, CreateTestCaseRequest, TestCaseResponse, ListTestCasesParams, DispatchTaskRequest, DispatchTaskResponse, ExecutionAgent, ListAgentsParams, CreateAutomationTestCaseRequest, AutomationTestCaseResponse, ListAutomationTestCasesParams, ExecutionTask, ListTasksParams, TaskStatus, RerunTaskRequest, AttachmentInfo, WorkflowTransitionRequest, WorkflowTransitionResponse, WorkflowTransitionsResponse, RoleResponse, PermissionResponse, CreateRoleRequest, UpdateRoleRequest, UpdateRolePermissionsRequest, CurrentUserPermissionsResponse, UserResponse, CreateUserRequest, UpdateUserRequest, UpdateUserRolesRequest, ListUsersParams } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
 
@@ -366,98 +366,6 @@ class ApiClient {
     return this.request<UserResponse>(`/auth/users/${userId}/roles`, {
       method: 'PATCH',
       body: JSON.stringify(data),
-    });
-  }
-
-  // DUT APIs
-  async listDuts(params: ListDutsParams = {}): Promise<ApiResponse<DutResponse[]>> {
-    const queryParams = new URLSearchParams();
-
-    Object.entries(params).forEach(([key, value]) => {
-      if (value !== undefined && value !== null && value !== '') {
-        queryParams.append(key, String(value));
-      }
-    });
-
-    const queryString = queryParams.toString();
-    const endpoint = `/assets/duts${queryString ? `?${queryString}` : ''}`;
-
-    return this.request<DutResponse[]>(endpoint, {
-      method: 'GET',
-    });
-  }
-
-  async getDut(dutId: string): Promise<ApiResponse<DutDetailResponse>> {
-    return this.request<DutDetailResponse>(`/assets/duts/${dutId}`, {
-      method: 'GET',
-    });
-  }
-
-  async createDut(data: CreateDutRequest): Promise<ApiResponse<DutResponse>> {
-    return this.request<DutResponse>('/assets/duts', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-  }
-
-  async updateDut(dutId: string, data: UpdateDutRequest): Promise<ApiResponse<DutResponse>> {
-    return this.request<DutResponse>(`/assets/duts/${dutId}`, {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    });
-  }
-
-  async deleteDut(dutId: string): Promise<ApiResponse<{ deleted: boolean; dut_id: string }>> {
-    return this.request<{ deleted: boolean; dut_id: string }>(`/assets/duts/${dutId}`, {
-      method: 'DELETE',
-    });
-  }
-
-  async listDutRegions(): Promise<ApiResponse<string[]>> {
-    return this.request<string[]>('/assets/duts/regions', {
-      method: 'GET',
-    });
-  }
-
-  // External system integration
-  async getExternalMachines(params: {
-    region?: string;
-    status?: string;
-    search?: string;
-  } = {}): Promise<ApiResponse<{ items: ExternalMachineItem[]; total: number; regions: string[] }>> {
-    const queryParams = new URLSearchParams();
-
-    Object.entries(params).forEach(([key, value]) => {
-      if (value !== undefined && value !== null && value !== '') {
-        queryParams.append(key, String(value));
-      }
-    });
-
-    const queryString = queryParams.toString();
-    const endpoint = `/assets/duts/external-machines${queryString ? `?${queryString}` : ''}`;
-
-    return this.request(endpoint, {
-      method: 'GET',
-    });
-  }
-
-  async importExternalMachines(
-    items: Array<{
-      external_id: string;
-      name: string;
-      bmc_ip: string;
-      bmc_password: string;
-      os_ip: string;
-      os_password: string;
-      region: string;
-      os_type: string;
-      tags: string[];
-      metadata: Record<string, unknown>;
-    }>
-  ): Promise<ApiResponse<ImportExternalMachinesResponse>> {
-    return this.request<ImportExternalMachinesResponse>('/assets/duts/import-external-machines', {
-      method: 'POST',
-      body: JSON.stringify({ items }),
     });
   }
 }

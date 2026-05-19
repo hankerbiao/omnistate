@@ -52,5 +52,4 @@ def test_bootstrap_exports_document_models_in_startup_order() -> None:
         "PermissionDoc",
         "NavigationPageDoc",
         "AttachmentDoc",
-        "DutDoc",
     ]

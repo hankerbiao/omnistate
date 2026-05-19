@@ -41,11 +41,10 @@ npm run dev                         # Start dev server (port 3000)
 /Users/libiao/Desktop/github/dmlv4/
 ├── backend/                          # Python FastAPI backend
 │   ├── app/
-│   │   ├── modules/                  # Business modules (workflow, auth, test_specs, assets)
+│   │   ├── modules/                  # Business modules (workflow, auth, test_specs)
 │   │   │   ├── workflow/             # Core workflow/state machine
 │   │   │   ├── auth/                 # RBAC (User, Role, Permission)
-│   │   │   ├── test_specs/           # Test requirements & cases
-│   │   │   └── assets/               # Component library & DUT management
+│   │   │   └── test_specs/           # Test requirements & cases
 │   │   ├── shared/                   # Shared infrastructure
 │   │   │   ├── api/                  # Routes, errors, schemas
 │   │   │   ├── core/                 # Logger, Mongo client
@@ -97,7 +96,6 @@ npm run dev                         # Start dev server (port 3000)
 **Module-Specific Documents**:
 - `TestRequirementDoc`, `TestCaseDoc` (test_specs module)
 - `UserDoc`, `RoleDoc`, `PermissionDoc` (auth module - RBAC)
-- `ComponentLibraryDoc`, `DutDoc`, `TestPlanComponentDoc` (assets module)
 
 ### Core Services
 
@@ -182,9 +180,6 @@ The React app uses a single-file architecture with view state management in `src
 
 **Auth Module** (`/auth/users`, `/auth/roles`, `/auth/permissions`):
 - RBAC management (users, roles, permissions, role assignments)
-
-**Assets Module** (`/assets/components`, `/assets/duts`):
-- Component library and DUT (Device Under Test) management
 
 **Common**:
 - `GET /health` - Health check

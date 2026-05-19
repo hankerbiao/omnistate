@@ -22,7 +22,6 @@ backend/
 │   │   ├── workflow/              # 配置驱动工作流
 │   │   ├── test_specs/            # 测试需求、测试用例、自动化测试用例
 │   │   ├── execution/             # 测试执行编排
-│   │   ├── assets/                # 资产与部件管理
 │   │   └── auth/                  # 用户、角色、权限、导航
 │   └── shared/
 │       ├── api/                   # 通用路由、错误处理、响应模型
@@ -74,16 +73,6 @@ backend/
 
 详细设计见
 [app/modules/execution/README.md](/Users/libiao/Desktop/github/dmlv4/backend/app/modules/execution/README.md)。
-
-### assets
-
-资产管理模块。
-
-职责：
-
-- 管理 Component Library
-- 管理 DUT 资产
-- 管理测试计划与部件的关联关系
 
 ### auth
 

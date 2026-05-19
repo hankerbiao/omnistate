@@ -6,7 +6,6 @@ const PAGE_TITLES: Record<PageType, { title: string; description?: string }> = {
   requirements: { title: '测试需求', description: '管理和跟踪测试需求' },
   manualTestCases: { title: '测试用例', description: '查看和管理手工测试用例' },
   testCases: { title: '自动化用例', description: '查看和管理自动化测试用例' },
-  duts: { title: 'DUT 管理', description: '管理测试机器信息' },
   agents: { title: '执行代理', description: '监控代理运行状态' },
   tasks: { title: '执行任务', description: '下发和管理测试任务' },
   terminal: { title: '终端调试', description: '开发调试工具' },

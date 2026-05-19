@@ -11,14 +11,12 @@ import TerminalPage from './components/TerminalPage'
 import RoleManagement from './components/RoleManagement'
 import UserManagement from './components/UserManagement'
 import ProfilePage from './components/ProfilePage'
-import DutManagement from './components/DutManagement'
 import type { PageType, NavItem } from './types/app'
 import './App.css'
 
 const navItems: NavItem[] = [
   { key: 'requirements', label: '测试需求', icon: '▣' },
   { key: 'manualTestCases', label: '测试用例', icon: '📋' },
-  { key: 'duts', label: 'DUT 管理', icon: '🖥' },
   { key: 'testCases', label: '自动化用例', icon: '⚡' },
   { key: 'agents', label: '执行代理', icon: '◉' },
   { key: 'tasks', label: '执行任务', icon: '▸' },
@@ -92,8 +90,6 @@ function App() {
         >
           {currentPage === 'profile' ? (
             <ProfilePage />
-          ) : currentPage === 'duts' ? (
-            <DutManagement />
           ) : currentPage === 'testCases' ? (
             <TestCaseList />
           ) : currentPage === 'manualTestCases' ? (
