@@ -45,6 +45,7 @@ class WorkItemResponse(BaseModel):
     creator_id: str
     created_at: datetime
     updated_at: datetime
+    req_id: Optional[str] = Field(None, description="需求业务编号（仅 REQUIREMENT 类型有值）")
 
     model_config = ConfigDict(from_attributes=True)
 

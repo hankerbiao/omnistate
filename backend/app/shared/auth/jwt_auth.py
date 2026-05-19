@@ -160,8 +160,15 @@ async def get_permissions_by_role_ids(role_ids: List[str]) -> List[str]:
     return sorted({perm.code for perm in perms})
 
 
+def _normalize_role_id(role_id: str) -> str:
+    normalized = role_id.strip().upper()
+    if normalized.startswith("ROLE_"):
+        normalized = normalized[5:]
+    return normalized
+
+
 def is_admin_role(role_ids: List[str]) -> bool:
-    return any("ADMIN" in str(role_id).upper() for role_id in role_ids)
+    return any(_normalize_role_id(str(rid)) == "ADMIN" for rid in role_ids)
 
 
 def require_permission(permission_code: str) -> Callable:

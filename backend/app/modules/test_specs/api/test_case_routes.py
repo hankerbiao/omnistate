@@ -14,6 +14,7 @@ from app.modules.test_specs.application import (
     LinkAutomationCaseCommand,
     UpdateTestCaseCommand,
 )
+from app.modules.test_specs.domain.exceptions import TestCaseNotFoundError
 from app.modules.test_specs.schemas import (
     CreateTestCaseRequest,
     LinkAutomationCaseRequest,
@@ -126,6 +127,8 @@ async def update_test_case(
         if str(e) == "'requirement not found'":
             raise HTTPException(status_code=404, detail="requirement not found")
         raise HTTPException(status_code=404, detail="test case not found")
+    except TestCaseNotFoundError:
+        raise HTTPException(status_code=404, detail="test case not found")
 
 
 @router.delete(
@@ -148,6 +151,8 @@ async def delete_test_case(
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
     except KeyError:
+        raise HTTPException(status_code=404, detail="test case not found")
+    except TestCaseNotFoundError:
         raise HTTPException(status_code=404, detail="test case not found")
 
 
@@ -178,4 +183,6 @@ async def link_automation_case(
     except KeyError as e:
         if str(e) == "'automation test case not found'":
             raise HTTPException(status_code=404, detail="automation test case not found")
+        raise HTTPException(status_code=404, detail="test case not found")
+    except TestCaseNotFoundError:
         raise HTTPException(status_code=404, detail="test case not found")

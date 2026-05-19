@@ -96,7 +96,7 @@ class WorkflowMutationService:
             )
             await new_item.insert(session=session)
             logger.success(f"业务事项创建成功: ID={new_item.id}, state={new_item.current_state}")
-            return serialize_work_item(new_item)
+            return await serialize_work_item(new_item)
         except DuplicateKeyError as exc:
             logger.warning(f"业务事项并发创建冲突(type_code={type_code}, title={title}): {exc}")
             raise ValueError(f"已存在相同标题的{type_code}: {title}")
@@ -198,7 +198,7 @@ class WorkflowMutationService:
         await insert_doc(log_entry, session=session)
 
         logger.success(f"状态流转完成: ID={work_item_id}, new_state={new_state}")
-        item_dict = serialize_work_item(item_doc)
+        item_dict = await serialize_work_item(item_doc)
         return {
             "work_item_id": str(item_doc.id),
             "from_state": old_state,
@@ -311,4 +311,4 @@ class WorkflowMutationService:
 
         item_doc.current_owner_id = target_owner_id
         await item_doc.save()
-        return serialize_work_item(item_doc)
+        return await serialize_work_item(item_doc)

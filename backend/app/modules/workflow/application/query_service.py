@@ -54,7 +54,7 @@ class WorkflowQueryService:
     ) -> list[dict[str, Any]]:
         query = base_item_query(type_code, state, owner_id, creator_id)
         docs = await query.sort("-created_at").skip(offset).limit(limit).to_list()
-        return docs_to_dicts(docs)
+        return await docs_to_dicts(docs)
 
     async def list_items_sorted(
         self,
@@ -69,7 +69,7 @@ class WorkflowQueryService:
     ) -> list[dict[str, Any]]:
         query = base_item_query(type_code, state, owner_id, creator_id)
         docs = await query.sort(normalize_sort(order_by, direction)).skip(offset).limit(limit).to_list()
-        return docs_to_dicts(docs)
+        return await docs_to_dicts(docs)
 
     async def search_items(
         self,
@@ -103,7 +103,7 @@ class WorkflowQueryService:
                 }
             )
             docs = await fallback_query.sort("-created_at").skip(offset).limit(limit).to_list()
-        return docs_to_dicts(docs)
+        return await docs_to_dicts(docs)
 
     async def get_item_by_id(self, item_id: str) -> dict[str, Any] | None:
         try:
@@ -111,7 +111,7 @@ class WorkflowQueryService:
                 return None
             doc = await BusWorkItemDoc.get(item_id)
             if doc and not doc.is_deleted:
-                return serialize_work_item(doc)
+                return await serialize_work_item(doc)
         except Exception as exc:
             logger.warning(f"获取事项 {item_id} 时发生错误: {exc}")
         return None
@@ -200,7 +200,7 @@ class WorkflowQueryService:
             BusWorkItemDoc.type_code == "TEST_CASE",
             BusWorkItemDoc.parent_item_id == PydanticObjectId(requirement_id),
         ).sort("-created_at").to_list()
-        return docs_to_dicts(docs)
+        return await docs_to_dicts(docs)
 
     async def get_requirement_for_test_case(self, test_case_id: str) -> dict[str, Any] | None:
         doc = await BusWorkItemDoc.get(test_case_id)

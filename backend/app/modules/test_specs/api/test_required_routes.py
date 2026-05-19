@@ -13,6 +13,7 @@ from app.modules.test_specs.application import (
     DeleteRequirementCommand,
     UpdateRequirementCommand,
 )
+from app.modules.test_specs.domain.exceptions import RequirementNotFoundError
 from app.modules.test_specs.schemas import (
     CreateRequirementRequest,
     RequirementResponse,
@@ -119,6 +120,8 @@ async def update_requirement(
         raise HTTPException(status_code=409, detail=str(e))
     except KeyError:
         raise HTTPException(status_code=404, detail="requirement not found")
+    except RequirementNotFoundError:
+        raise HTTPException(status_code=404, detail="requirement not found")
 
 
 @router.delete(
@@ -141,4 +144,6 @@ async def delete_requirement(
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
     except KeyError:
+        raise HTTPException(status_code=404, detail="requirement not found")
+    except RequirementNotFoundError:
         raise HTTPException(status_code=404, detail="requirement not found")

@@ -7,6 +7,17 @@ from pymongo.asynchronous.client_session import AsyncClientSession
 
 from app.modules.workflow.repository.models import BusWorkItemDoc
 
+# 延迟导入避免循环依赖
+_test_requirement_doc = None
+
+
+def _get_test_requirement_doc():
+    global _test_requirement_doc
+    if _test_requirement_doc is None:
+        from app.modules.test_specs.repository.models import TestRequirementDoc
+        _test_requirement_doc = TestRequirementDoc
+    return _test_requirement_doc
+
 
 def base_item_query(
     type_code: str | None = None,
@@ -36,19 +47,33 @@ def base_item_query(
     return query
 
 
-def docs_to_dicts(docs: list[BusWorkItemDoc]) -> list[dict[str, Any]]:
-    # 批量序列化工作项文档，统一输出结构。
-    return [serialize_work_item(doc) for doc in docs]
+async def docs_to_dicts(docs: list[BusWorkItemDoc]) -> list[dict[str, Any]]:
+    """批量序列化工作项文档，统一输出结构。"""
+    return [await serialize_work_item(doc) for doc in docs]
 
 
-def serialize_work_item(doc: BusWorkItemDoc) -> dict[str, Any]:
-    # 将 Beanie 文档转换为前端/接口更易消费的字典结构。
+async def serialize_work_item(doc: BusWorkItemDoc) -> dict[str, Any]:
+    """将 Beanie 文档转换为前端/接口更易消费的字典结构。"""
     data = doc.model_dump()
     data["id"] = str(doc.id)
     # 保留 item_id 字段，兼容历史接口或调用方约定。
     data["item_id"] = str(doc.id)
     if data.get("parent_item_id") is not None:
         data["parent_item_id"] = str(data["parent_item_id"])
+
+    # 对于 REQUIREMENT 类型，查询并填充 req_id
+    if doc.type_code == "REQUIREMENT":
+        try:
+            TestRequirementDoc = _get_test_requirement_doc()
+            requirement = await TestRequirementDoc.find_one(
+                {"workflow_item_id": str(doc.id), "is_deleted": False}
+            )
+            if requirement:
+                data["req_id"] = requirement.req_id
+        except Exception:
+            # 忽略查询失败，不阻塞主流程
+            pass
+
     return data
 
 

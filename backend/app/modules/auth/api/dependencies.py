@@ -10,7 +10,7 @@ from app.modules.auth.service import (
     RoleService,
     UserService,
 )
-from app.shared.auth import get_current_user
+from app.shared.auth import get_current_user, is_admin_role
 
 
 def get_user_service() -> UserService:
@@ -45,8 +45,7 @@ NavigationAccessServiceDep = Annotated[
 
 
 def is_admin_user(current_user: dict) -> bool:
-    role_ids = current_user.get("role_ids", [])
-    return any("ADMIN" in str(role_id).upper() for role_id in role_ids)
+    return is_admin_role(current_user.get("role_ids", []))
 
 
 async def require_admin_user(current_user=Depends(get_current_user)):
