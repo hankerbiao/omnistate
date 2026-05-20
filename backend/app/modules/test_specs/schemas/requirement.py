@@ -75,3 +75,8 @@ class RequirementResponse(BaseModel):
     attachments: List[Dict[str, Any]] = Field(..., description="附件列表")
     created_at: datetime = Field(..., description="创建时间")
     updated_at: datetime = Field(..., description="更新时间")
+    # 工作流相关字段
+    creator: Optional[str] = Field(None, description="工作流创建人 ID")
+    creator_name: Optional[str] = Field(None, description="工作流创建人名称")
+    current_owner: Optional[str] = Field(None, description="工作流当前负责人 ID")
+    current_owner_name: Optional[str] = Field(None, description="工作流当前负责人名称")

@@ -24,6 +24,14 @@ const RequirementsPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<ActiveTab>('workflow');
   const [transitionModal, setTransitionModal] = useState<{ open: boolean; transition?: WorkflowTransition }>({ open: false });
   const [transitionFormData, setTransitionFormData] = useState<Record<string, string>>({});
+  const [ownerSuggestions, setOwnerSuggestions] = useState<{ user_id: string; username: string }[]>([]);
+  const [ownerSearchQuery, setOwnerSearchQuery] = useState('');
+  const [showOwnerDropdown, setShowOwnerDropdown] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; reqId?: string; title?: string }>({ open: false });
+  const [deleting, setDeleting] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [batchDeleteConfirm, setBatchDeleteConfirm] = useState(false);
+  const [deleteCaseConfirm, setDeleteCaseConfirm] = useState<{ open: boolean; caseId?: string; title?: string }>({ open: false });
 
   const selectedRequirement = useMemo(
     () => requirements.find((item) => item.req_id === selectedRequirementId) || null,
@@ -83,6 +91,34 @@ const RequirementsPage: React.FC = () => {
     } finally {
       setLoadingWorkflow(false);
     }
+  }, []);
+
+  // 搜索用户作为目标处理人
+  const searchUsers = useCallback(async (query: string) => {
+    if (!query.trim()) {
+      // 无搜索词时加载所有用户
+      try {
+        const response = await api.listUsers({ limit: 50 });
+        setOwnerSuggestions(response.data || []);
+      } catch (err) {
+        console.error('Search users error:', err);
+      }
+      return;
+    }
+
+    try {
+      const response = await api.listUsers({ search: query, limit: 20 });
+      setOwnerSuggestions(response.data || []);
+    } catch (err) {
+      console.error('Search users error:', err);
+    }
+  }, []);
+
+  // 选择目标用户
+  const handleSelectOwner = useCallback((user: { user_id: string; username: string }) => {
+    setTransitionFormData(prev => ({ ...prev, target_owner_id: user.user_id }));
+    setOwnerSearchQuery(user.username);
+    setShowOwnerDropdown(false);
   }, []);
 
   useEffect(() => {
@@ -165,8 +201,15 @@ const RequirementsPage: React.FC = () => {
   const openTransitionModal = (transition: WorkflowTransition) => {
     const initialData: Record<string, string> = {};
     for (const field of transition.required_fields) {
-      initialData[field] = field === 'priority' ? selectedRequirement?.priority || '' : '';
+      if (field === 'priority') {
+        initialData[field] = selectedRequirement?.priority || '';
+      } else if (field === 'target_owner_id') {
+        initialData[field] = '';
+        // 预加载用户列表
+        searchUsers('');
+      }
     }
+    setOwnerSearchQuery('');
     setTransitionFormData(initialData);
     setTransitionModal({ open: true, transition });
   };
@@ -201,6 +244,87 @@ const RequirementsPage: React.FC = () => {
 
   const onlineCount = requirements.filter(r => r.status === 'RELEASED').length;
 
+  const handleDeleteRequirement = async () => {
+    if (!deleteConfirm.reqId || !selectedRequirement?.workflow_item_id) return;
+
+    setDeleting(true);
+    setError(null);
+    try {
+      await api.deleteRequirement(deleteConfirm.reqId);
+      setDeleteConfirm({ open: false });
+      // 重新获取列表
+      await fetchRequirements();
+    } catch (err) {
+      setError('删除需求失败');
+      console.error('Delete requirement error:', err);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const openDeleteConfirm = (reqId: string, title: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setDeleteConfirm({ open: true, reqId, title });
+  };
+
+  // 批量选择
+  const toggleSelect = (reqId: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(reqId)) {
+        next.delete(reqId);
+      } else {
+        next.add(reqId);
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === requirements.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(requirements.map(r => r.req_id)));
+    }
+  };
+
+  const handleBatchDelete = async () => {
+    if (selectedIds.size === 0) return;
+
+    setDeleting(true);
+    setError(null);
+    try {
+      // 逐个删除
+      const deletePromises = Array.from(selectedIds).map(id => api.deleteRequirement(id));
+      await Promise.all(deletePromises);
+      setBatchDeleteConfirm(false);
+      setSelectedIds(new Set());
+      await fetchRequirements();
+    } catch (err) {
+      setError('批量删除失败');
+      console.error('Batch delete error:', err);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const handleDeleteTestCase = async () => {
+    if (!deleteCaseConfirm.caseId || !selectedRequirementId) return;
+
+    setDeleting(true);
+    setError(null);
+    try {
+      await api.deleteTestCase(deleteCaseConfirm.caseId);
+      setDeleteCaseConfirm({ open: false });
+      await fetchTestCases(selectedRequirementId);
+    } catch (err) {
+      setError('删除测试用例失败');
+      console.error('Delete test case error:', err);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
     <div className="workspace">
       {/* Left Panel - Requirements List */}
@@ -208,9 +332,22 @@ const RequirementsPage: React.FC = () => {
         <div style={styles.panelHeader}>
           <div>
             <h2 style={styles.panelTitle}>需求列表</h2>
-            <span style={styles.panelHint}>{requirements.length} 个需求，已发布 {onlineCount}</span>
+            <span style={styles.panelHint}>
+              {selectedIds.size > 0
+                ? `已选择 ${selectedIds.size} 项`
+                : `${requirements.length} 个需求，已发布 ${onlineCount}`}
+            </span>
           </div>
           <div style={styles.panelActions}>
+            {selectedIds.size > 0 && (
+              <button
+                className="btn btn--sm"
+                style={{ backgroundColor: 'var(--status-error)', color: 'white' }}
+                onClick={() => setBatchDeleteConfirm(true)}
+              >
+                删除 ({selectedIds.size})
+              </button>
+            )}
             <button className="btn btn--ghost btn--sm" onClick={() => fetchRequirements()} disabled={loadingRequirements}>
               ↻
             </button>
@@ -231,23 +368,54 @@ const RequirementsPage: React.FC = () => {
           </div>
         ) : (
           <div style={styles.list}>
+            {/* Select All Header */}
+            <div style={styles.selectAllRow}>
+              <label style={styles.checkboxLabel}>
+                <input
+                  type="checkbox"
+                  checked={selectedIds.size === requirements.length && requirements.length > 0}
+                  onChange={toggleSelectAll}
+                  style={styles.checkbox}
+                />
+                <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>全选</span>
+              </label>
+            </div>
             {requirements.map((requirement) => {
               const priorityStyle = getPriorityStyle(requirement.priority);
               const isSelected = selectedRequirementId === requirement.req_id;
+              const isChecked = selectedIds.has(requirement.req_id);
               return (
                 <div
                   key={requirement.req_id}
-                  className={`requirement-item ${isSelected ? 'requirement-item--selected' : ''}`}
+                  className={`requirement-item ${isSelected ? 'requirement-item--selected' : ''} ${isChecked ? 'requirement-item--checked' : ''}`}
                   onClick={() => setSelectedRequirementId(requirement.req_id)}
                 >
                   <div style={styles.itemHeader}>
-                    <span style={styles.itemId}>{requirement.req_id}</span>
-                    <span
-                      className="status-badge"
-                      style={{ backgroundColor: priorityStyle.bg, color: priorityStyle.color }}
-                    >
-                      {requirement.priority}
-                    </span>
+                    <div style={styles.itemHeaderLeft}>
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={() => toggleSelect(requirement.req_id)}
+                        onClick={(e) => e.stopPropagation()}
+                        style={styles.checkbox}
+                      />
+                      <span style={styles.itemId}>{requirement.req_id}</span>
+                    </div>
+                    <div style={styles.itemHeaderRight}>
+                      <span
+                        className="status-badge"
+                        style={{ backgroundColor: priorityStyle.bg, color: priorityStyle.color }}
+                      >
+                        {requirement.priority}
+                      </span>
+                      <button
+                        style={styles.deleteBtn}
+                        onClick={(e) => openDeleteConfirm(requirement.req_id, requirement.title, e)}
+                        title="删除"
+                      >
+                        ×
+                      </button>
+                    </div>
                   </div>
                   <div style={styles.itemTitle}>{requirement.title}</div>
                   <div style={styles.itemMeta}>
@@ -345,6 +513,34 @@ const RequirementsPage: React.FC = () => {
                             {workflowState || selectedRequirement.status}
                           </span>
                         </div>
+                        <div style={styles.workflowInfoItem}>
+                          <span style={styles.workflowInfoLabel}>创建人</span>
+                          <span style={styles.workflowInfoValue}>
+                            {selectedRequirement.creator_name || selectedRequirement.creator || '-'}
+                          </span>
+                        </div>
+                        <div style={styles.workflowInfoItem}>
+                          <span style={styles.workflowInfoLabel}>当前负责人</span>
+                          <span style={styles.workflowInfoValue}>
+                            {selectedRequirement.owner_name || selectedRequirement.current_owner || '-'}
+                          </span>
+                        </div>
+                        <div style={styles.workflowInfoItem}>
+                          <span style={styles.workflowInfoLabel}>创建时间</span>
+                          <span style={styles.workflowInfoValue}>
+                            {selectedRequirement.created_at
+                              ? new Date(selectedRequirement.created_at).toLocaleString('zh-CN')
+                              : '-'}
+                          </span>
+                        </div>
+                        <div style={styles.workflowInfoItem}>
+                          <span style={styles.workflowInfoLabel}>更新时间</span>
+                          <span style={styles.workflowInfoValue}>
+                            {selectedRequirement.updated_at
+                              ? new Date(selectedRequirement.updated_at).toLocaleString('zh-CN')
+                              : '-'}
+                          </span>
+                        </div>
                       </div>
 
                       <div style={styles.workflowActions}>
@@ -397,11 +593,12 @@ const RequirementsPage: React.FC = () => {
                     <table className="data-table">
                       <thead>
                         <tr>
-                          <th>用例ID</th>
+                          <th style={{ width: '120px' }}>用例ID</th>
                           <th>名称</th>
-                          <th>优先级</th>
-                          <th>状态</th>
-                          <th>创建时间</th>
+                          <th style={{ width: '60px' }}>优先级</th>
+                          <th style={{ width: '80px' }}>状态</th>
+                          <th style={{ width: '90px' }}>创建时间</th>
+                          <th style={{ width: '60px' }}>操作</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -428,6 +625,18 @@ const RequirementsPage: React.FC = () => {
                             </td>
                             <td className="mono">
                               {new Date(testCase.created_at).toLocaleDateString('zh-CN')}
+                            </td>
+                            <td>
+                              <button
+                                style={styles.deleteBtn}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setDeleteCaseConfirm({ open: true, caseId: testCase.case_id, title: testCase.title });
+                                }}
+                                title="删除"
+                              >
+                                ×
+                              </button>
                             </td>
                           </tr>
                         ))}
@@ -503,6 +712,48 @@ const RequirementsPage: React.FC = () => {
                       <option value="P2">P2 - 中</option>
                       <option value="P3">P3 - 低</option>
                     </select>
+                  ) : field === 'target_owner_id' ? (
+                    <div style={{ position: 'relative' }}>
+                      <input
+                        className="form-input"
+                        type="text"
+                        value={ownerSearchQuery}
+                        onChange={e => {
+                          setOwnerSearchQuery(e.target.value);
+                          searchUsers(e.target.value);
+                          setShowOwnerDropdown(true);
+                        }}
+                        onFocus={() => {
+                          searchUsers(ownerSearchQuery);
+                          setShowOwnerDropdown(true);
+                        }}
+                        placeholder="搜索用户..."
+                        autoComplete="off"
+                      />
+                      {showOwnerDropdown && ownerSuggestions.length > 0 && (
+                        <div style={styles.ownerDropdown}>
+                          {ownerSuggestions.map(user => (
+                            <div
+                              key={user.user_id}
+                              style={styles.ownerDropdownItem}
+                              onClick={() => handleSelectOwner(user)}
+                              onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--surface-hover)')}
+                              onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
+                            >
+                              <span style={{ fontWeight: 500 }}>{user.username}</span>
+                              <span style={styles.ownerId}>{user.user_id}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {showOwnerDropdown && ownerSuggestions.length === 0 && ownerSearchQuery && (
+                        <div style={styles.ownerDropdown}>
+                          <div style={{ ...styles.ownerDropdownItem, color: 'var(--text-tertiary)', cursor: 'default' }}>
+                            未找到匹配用户
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   ) : (
                     <input
                       className="form-input"
@@ -531,6 +782,105 @@ const RequirementsPage: React.FC = () => {
         </div>
       )}
 
+      {/* Delete Confirm Modal */}
+      {deleteConfirm.open && (
+        <div className="modal-overlay" onClick={() => setDeleteConfirm({ open: false })}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal__header">
+              <h3 className="modal__title">确认删除</h3>
+              <button className="modal__close" onClick={() => setDeleteConfirm({ open: false })}>×</button>
+            </div>
+            <div className="modal__body">
+              <p style={{ color: 'var(--text-primary)', marginBottom: '8px' }}>
+                确定要删除需求 <strong>"{deleteConfirm.title}"</strong> 吗？
+              </p>
+              <p style={{ color: 'var(--status-error)', fontSize: '13px' }}>
+                此操作不可恢复，相关测试用例也将一并删除。
+              </p>
+            </div>
+            <div className="modal__footer">
+              <button className="btn btn--secondary" onClick={() => setDeleteConfirm({ open: false })}>
+                取消
+              </button>
+              <button
+                className="btn"
+                style={{ backgroundColor: 'var(--status-error)', color: 'white' }}
+                onClick={handleDeleteRequirement}
+                disabled={deleting}
+              >
+                {deleting ? '删除中...' : '删除'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Batch Delete Confirm Modal */}
+      {batchDeleteConfirm && (
+        <div className="modal-overlay" onClick={() => setBatchDeleteConfirm(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal__header">
+              <h3 className="modal__title">确认批量删除</h3>
+              <button className="modal__close" onClick={() => setBatchDeleteConfirm(false)}>×</button>
+            </div>
+            <div className="modal__body">
+              <p style={{ color: 'var(--text-primary)', marginBottom: '8px' }}>
+                确定要删除选中的 <strong>{selectedIds.size}</strong> 个需求吗？
+              </p>
+              <p style={{ color: 'var(--status-error)', fontSize: '13px' }}>
+                此操作不可恢复，相关测试用例也将一并删除。
+              </p>
+            </div>
+            <div className="modal__footer">
+              <button className="btn btn--secondary" onClick={() => setBatchDeleteConfirm(false)}>
+                取消
+              </button>
+              <button
+                className="btn"
+                style={{ backgroundColor: 'var(--status-error)', color: 'white' }}
+                onClick={handleBatchDelete}
+                disabled={deleting}
+              >
+                {deleting ? '删除中...' : `删除 ${selectedIds.size} 项`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Test Case Confirm Modal */}
+      {deleteCaseConfirm.open && (
+        <div className="modal-overlay" onClick={() => setDeleteCaseConfirm({ open: false })}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal__header">
+              <h3 className="modal__title">确认删除测试用例</h3>
+              <button className="modal__close" onClick={() => setDeleteCaseConfirm({ open: false })}>×</button>
+            </div>
+            <div className="modal__body">
+              <p style={{ color: 'var(--text-primary)', marginBottom: '8px' }}>
+                确定要删除测试用例 <strong>"{deleteCaseConfirm.title}"</strong> 吗？
+              </p>
+              <p style={{ color: 'var(--status-error)', fontSize: '13px' }}>
+                此操作不可恢复。
+              </p>
+            </div>
+            <div className="modal__footer">
+              <button className="btn btn--secondary" onClick={() => setDeleteCaseConfirm({ open: false })}>
+                取消
+              </button>
+              <button
+                className="btn"
+                style={{ backgroundColor: 'var(--status-error)', color: 'white' }}
+                onClick={handleDeleteTestCase}
+                disabled={deleting}
+              >
+                {deleting ? '删除中...' : '删除'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <style>{`
         .requirement-item {
           padding: 14px 16px;
@@ -548,6 +898,13 @@ const RequirementsPage: React.FC = () => {
         .requirement-item--selected {
           border-color: var(--accent-primary);
           background-color: rgba(37, 99, 235, 0.04);
+        }
+        .requirement-item--checked {
+          background-color: rgba(37, 99, 235, 0.08);
+        }
+        .requirement-item button:hover {
+          color: var(--status-error);
+          background-color: var(--status-error-bg);
         }
       `}</style>
     </div>
@@ -599,11 +956,40 @@ const styles = {
     overflow: 'auto',
     padding: '12px',
   },
+  selectAllRow: {
+    display: 'flex',
+    alignItems: 'center',
+    padding: '8px 4px',
+    marginBottom: '8px',
+    borderBottom: '1px solid var(--border-subtle)',
+  },
+  checkboxLabel: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    cursor: 'pointer',
+  },
+  checkbox: {
+    width: '16px',
+    height: '16px',
+    cursor: 'pointer',
+    accentColor: 'var(--accent-primary)',
+  },
   itemHeader: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: '8px',
+  },
+  itemHeaderLeft: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+  },
+  itemHeaderRight: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '4px',
   },
   itemId: {
     fontSize: '12px',
@@ -724,6 +1110,49 @@ const styles = {
     border: 'none',
     color: 'var(--status-error)',
     cursor: 'pointer',
+  },
+  ownerDropdown: {
+    position: 'absolute' as const,
+    top: '100%',
+    left: 0,
+    right: 0,
+    maxHeight: '200px',
+    overflowY: 'auto' as const,
+    backgroundColor: 'var(--surface-primary)',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+    zIndex: 100,
+    marginTop: '4px',
+  },
+  ownerDropdownItem: {
+    padding: '10px 12px',
+    cursor: 'pointer',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderBottom: '1px solid var(--border-subtle)',
+  },
+  ownerId: {
+    fontSize: '11px',
+    color: 'var(--text-tertiary)',
+    fontFamily: "'JetBrains Mono', monospace",
+  },
+  deleteBtn: {
+    width: '20px',
+    height: '20px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '14px',
+    fontWeight: 600,
+    color: 'var(--text-tertiary)',
+    background: 'transparent',
+    border: 'none',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    transition: 'all var(--transition-fast)',
+    padding: 0,
   },
 };
 

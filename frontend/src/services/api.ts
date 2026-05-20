@@ -1,4 +1,4 @@
-import type { LoginRequest, LoginResponse, ApiResponse, CreateRequirementRequest, RequirementResponse, ListRequirementsParams, CreateTestCaseRequest, TestCaseResponse, ListTestCasesParams, DispatchTaskRequest, DispatchTaskResponse, ExecutionAgent, ListAgentsParams, CreateAutomationTestCaseRequest, AutomationTestCaseResponse, ListAutomationTestCasesParams, ExecutionTask, ListTasksParams, TaskStatus, RerunTaskRequest, AttachmentInfo, WorkflowTransitionRequest, WorkflowTransitionResponse, WorkflowTransitionsResponse, RoleResponse, PermissionResponse, CreateRoleRequest, UpdateRoleRequest, UpdateRolePermissionsRequest, CurrentUserPermissionsResponse, UserResponse, CreateUserRequest, UpdateUserRequest, UpdateUserRolesRequest, ListUsersParams } from '../types';
+import type { LoginRequest, LoginResponse, ApiResponse, CreateRequirementRequest, RequirementResponse, ListRequirementsParams, CreateTestCaseRequest, TestCaseResponse, ListTestCasesParams, DispatchTaskRequest, DispatchTaskResponse, ExecutionAgent, ListAgentsParams, CreateAutomationTestCaseRequest, AutomationTestCaseResponse, ListAutomationTestCasesParams, ExecutionTask, ListTasksParams, TaskStatus, RerunTaskRequest, AttachmentInfo, WorkflowTransitionRequest, WorkflowTransitionResponse, WorkflowTransitionsResponse, RoleResponse, PermissionResponse, CreateRoleRequest, UpdateRoleRequest, UpdateRolePermissionsRequest, CurrentUserPermissionsResponse, UserResponse, CreateUserRequest, UpdateUserRequest, UpdateUserRolesRequest, UpdateUserPasswordRequest, ListUsersParams, WorkItem } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
 
@@ -102,6 +102,12 @@ class ApiClient {
     });
   }
 
+  async deleteTestCase(caseId: string): Promise<ApiResponse<{ deleted: boolean }>> {
+    return this.request<{ deleted: boolean }>(`/test-cases/${caseId}`, {
+      method: 'DELETE',
+    });
+  }
+
   async listRequirements(params: ListRequirementsParams = {}): Promise<ApiResponse<RequirementResponse[]>> {
     const queryParams = new URLSearchParams();
 
@@ -126,6 +132,12 @@ class ApiClient {
     });
   }
 
+  async deleteRequirement(reqId: string): Promise<ApiResponse<{ req_id: string; deleted: boolean }>> {
+    return this.request<{ req_id: string; deleted: boolean }>(`/requirements/${reqId}`, {
+      method: 'DELETE',
+    });
+  }
+
   async getWorkflowTransitions(itemId: string): Promise<ApiResponse<WorkflowTransitionsResponse>> {
     return this.request<WorkflowTransitionsResponse>(`/work-items/${itemId}/transitions`, {
       method: 'GET',
@@ -139,6 +151,12 @@ class ApiClient {
     return this.request<WorkflowTransitionResponse>(`/work-items/${itemId}/transition`, {
       method: 'POST',
       body: JSON.stringify(data),
+    });
+  }
+
+  async listMyWorkItems(userId: string): Promise<ApiResponse<WorkItem[]>> {
+    return this.request<WorkItem[]>(`/work-items/sorted?owner_id=${userId}&order_by=updated_at&direction=desc&limit=100`, {
+      method: 'GET',
     });
   }
 
@@ -306,9 +324,28 @@ class ApiClient {
     });
   }
 
+  async deleteRole(roleId: string): Promise<void> {
+    await this.request<void>(`/auth/roles/${roleId}`, {
+      method: 'DELETE',
+    });
+  }
+
   async listPermissions(): Promise<ApiResponse<PermissionResponse[]>> {
     return this.request<PermissionResponse[]>('/auth/permissions', {
       method: 'GET',
+    });
+  }
+
+  async createPermission(data: { perm_id: string; code: string; name: string; description?: string }): Promise<ApiResponse<PermissionResponse>> {
+    return this.request<PermissionResponse>('/auth/permissions', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deletePermission(permId: string): Promise<void> {
+    await this.request<void>(`/auth/permissions/${permId}`, {
+      method: 'DELETE',
     });
   }
 
@@ -366,6 +403,19 @@ class ApiClient {
     return this.request<UserResponse>(`/auth/users/${userId}/roles`, {
       method: 'PATCH',
       body: JSON.stringify(data),
+    });
+  }
+
+  async updateUserPassword(userId: string, data: UpdateUserPasswordRequest): Promise<ApiResponse<UserResponse>> {
+    return this.request<UserResponse>(`/auth/users/${userId}/password`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteUser(userId: string): Promise<void> {
+    await this.request<void>(`/auth/users/${userId}`, {
+      method: 'DELETE',
     });
   }
 }

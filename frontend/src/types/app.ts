@@ -1,4 +1,4 @@
-export type PageType = 'requirements' | 'manualTestCases' | 'testCases' | 'agents' | 'tasks' | 'terminal' | 'roles' | 'users' | 'profile'
+export type PageType = 'requirements' | 'manualTestCases' | 'testCases' | 'agents' | 'tasks' | 'terminal' | 'roles' | 'users' | 'profile' | 'myTasks' | 'permissions' | 'dashboard'
 
 export interface NavItem {
   key: PageType

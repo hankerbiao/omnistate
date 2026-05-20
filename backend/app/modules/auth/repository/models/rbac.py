@@ -50,6 +50,8 @@ class RoleDoc(Document):
     """角色 - 数据库模型（角色聚合多个权限）"""
     role_id: str = Field(..., description="角色唯一 ID")
     name: str = Field(..., description="角色名称")
+    description: Optional[str] = Field(None, description="角色描述")
+    is_system: bool = Field(default=False, description="是否系统角色（系统角色不可删除）")
     # 角色绑定权限集合
     permission_ids: List[str] = Field(default_factory=list, description="权限 ID 列表")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="创建时间")
@@ -112,6 +114,8 @@ class RoleModel(BaseModel):
     id: Optional[str] = Field(None, description="文档唯一标识 ID")
     role_id: str = Field(..., description="角色唯一 ID")
     name: str = Field(..., description="角色名称")
+    description: Optional[str] = Field(None, description="角色描述")
+    is_system: bool = Field(False, description="是否系统角色")
     permission_ids: List[str] = Field(..., description="权限 ID 列表")
     created_at: datetime = Field(..., description="创建时间")
     updated_at: datetime = Field(..., description="更新时间")

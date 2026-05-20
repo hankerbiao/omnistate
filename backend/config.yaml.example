@@ -13,6 +13,9 @@ app:
   port: 8000
   cors_origins:
     - "http://localhost:3000"
+  # 开发模式免认证配置（生产环境务必设为 false）
+  dev_bypass_auth: false  # 设为 true 时跳过 JWT 验证，方便前端调试
+  dev_user_id: "dev_admin"  # 免认证时使用的默认用户 ID（需在数据库中存在）
 
 # =============================================================================
 # MongoDB 配置

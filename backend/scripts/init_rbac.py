@@ -49,124 +49,44 @@ DEFAULT_PERMISSIONS = [
     ("navigation:write", "Navigation write"),
 ]
 
+# 公共权限分组
+_READ = ["users:read", "requirements:read", "test_cases:read", "work_items:read", "navigation:read"]
+_WORKFLOW = ["work_items:write", "work_items:transition"]
+_EXEC_READ = ["execution_tasks:read", "execution_agents:read"]
+_EXEC_WRITE = ["execution_tasks:write", "execution_agents:write"]
+
 DEFAULT_ROLES = {
     "ADMIN": {
-        "name": "ADMIN",
+        "name": "ADMIN", "description": "系统管理员，拥有所有权限", "is_system": True,
         "permission_ids": [code for code, _ in DEFAULT_PERMISSIONS],
     },
     "TPM": {
-        "name": "TPM",
-        "permission_ids": [
-            "users:read",
-            "requirements:read",
-            "requirements:write",
-            "test_cases:read",
-            "work_items:read",
-            "work_items:write",
-            "work_items:transition",
-            "execution_tasks:read",
-            "execution_tasks:write",
-            "execution_agents:read",
-            "execution_agents:write",
-            "terminal:connect",
-            "navigation:read",
-            "navigation:write",
-        ],
+        "name": "TPM", "description": "测试项目管理员，负责项目管理和协调", "is_system": True,
+        "permission_ids": [*_READ, "requirements:write", *_WORKFLOW, *_EXEC_READ, *_EXEC_WRITE, "terminal:connect", "navigation:write"],
     },
     "REVIEWER": {
-        "name": "REVIEWER",
-        "permission_ids": [
-            "users:read",
-            "requirements:read",
-            "requirements:write",
-            "test_cases:read",
-            "test_cases:write",
-            "work_items:read",
-            "work_items:write",
-            "work_items:transition",
-            "execution_tasks:read",
-            "navigation:read",
-        ],
+        "name": "REVIEWER", "description": "评审者，审核需求和测试用例", "is_system": True,
+        "permission_ids": ["users:read", "requirements:read", "requirements:write", "test_cases:read", "test_cases:write", "work_items:read", *_WORKFLOW, "execution_tasks:read", "navigation:read"],
     },
     "MANUAL_DEV": {
-        "name": "MANUAL_DEV",
-        "permission_ids": [
-            "users:read",
-            "requirements:read",
-            "test_cases:read",
-            "test_cases:write",
-            "work_items:read",
-            "work_items:write",
-            "work_items:transition",
-            "execution_tasks:read",
-            "execution_agents:read",
-            "navigation:read",
-        ],
+        "name": "MANUAL_DEV", "description": "手动测试开发工程师", "is_system": True,
+        "permission_ids": ["users:read", "requirements:read", "test_cases:read", "test_cases:write", "work_items:read", *_WORKFLOW, *_EXEC_READ, "navigation:read"],
     },
     "QA": {
-        "name": "QA",
-        "permission_ids": [
-            "users:read",
-            "requirements:read",
-            "requirements:write",
-            "test_cases:read",
-            "test_cases:write",
-            "work_items:read",
-            "work_items:write",
-            "work_items:transition",
-            "execution_tasks:read",
-            "execution_tasks:write",
-            "execution_agents:read",
-            "execution_agents:write",
-            "navigation:read",
-        ],
+        "name": "QA", "description": "质量保证工程师", "is_system": True,
+        "permission_ids": [*_READ, "requirements:write", "test_cases:write", *_WORKFLOW, *_EXEC_READ, *_EXEC_WRITE],
     },
     "TESTER": {
-        "name": "TESTER",
-        "permission_ids": [
-            "users:read",
-            "requirements:read",
-            "test_cases:read",
-            "test_cases:write",
-            "work_items:read",
-            "work_items:write",
-            "work_items:transition",
-            "execution_tasks:read",
-            "terminal:connect",
-            "navigation:read",
-            "navigation:write",
-        ],
+        "name": "TESTER", "description": "测试执行工程师", "is_system": True,
+        "permission_ids": [*_READ, "test_cases:write", *_WORKFLOW, "execution_tasks:read", "terminal:connect", "navigation:write"],
     },
     "AUTO_DEV": {
-        "name": "AUTO_DEV",
-        "permission_ids": [
-            "users:read",
-            "test_cases:read",
-            "test_cases:write",
-            "work_items:read",
-            "work_items:write",
-            "work_items:transition",
-            "execution_tasks:read",
-            "execution_tasks:write",
-            "execution_agents:read",
-            "execution_agents:write",
-            "navigation:read",
-        ],
+        "name": "AUTO_DEV", "description": "自动化测试开发工程师", "is_system": True,
+        "permission_ids": [_READ[0], "test_cases:read", "test_cases:write", "work_items:read", *_WORKFLOW, *_EXEC_READ, *_EXEC_WRITE, "navigation:read"],
     },
     "AUTOMATION": {
-        "name": "AUTOMATION",
-        "permission_ids": [
-            "users:read",
-            "test_cases:read",
-            "test_cases:write",
-            "work_items:read",
-            "work_items:write",
-            "execution_tasks:read",
-            "execution_agents:read",
-            "terminal:connect",
-            "navigation:read",
-            "navigation:write",
-        ],
+        "name": "AUTOMATION", "description": "自动化测试运行角色", "is_system": True,
+        "permission_ids": [*_READ, "test_cases:write", "work_items:write", *_EXEC_READ, "terminal:connect", "navigation:write"],
     },
 }
 
@@ -193,8 +113,11 @@ async def init_roles() -> None:
     for role_id, cfg in DEFAULT_ROLES.items():
         existing = await RoleDoc.find_one(RoleDoc.role_id == role_id)
         if existing:
-            # 如果角色已存在，更新名称和权限
+            # 如果角色已存在，更新字段（但保留系统角色标志）
             existing.name = cfg["name"]
+            existing.description = cfg.get("description")
+            if not existing.is_system:  # 不覆盖系统角色的 is_system 标志
+                existing.is_system = cfg.get("is_system", False)
             existing.permission_ids = cfg["permission_ids"]
             await existing.save()
         else:
@@ -202,6 +125,8 @@ async def init_roles() -> None:
             new_role = RoleDoc(
                 role_id=role_id,
                 name=cfg["name"],
+                description=cfg.get("description"),
+                is_system=cfg.get("is_system", False),
                 permission_ids=cfg["permission_ids"]
             )
             await new_role.insert()

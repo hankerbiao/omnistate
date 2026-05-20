@@ -120,6 +120,21 @@ async def update_user_password(
         raise HTTPException(status_code=404, detail="user not found")
 
 
+@router.delete("/users/{user_id}", status_code=204, summary="删除用户（软删除）")
+async def delete_user(
+    user_id: str,
+    service: UserServiceDep,
+    current_user: dict = Depends(get_current_user),
+    _=Depends(require_admin_user),
+):
+    try:
+        await service.delete_user(user_id, current_user["user_id"])
+    except UserNotFoundError:
+        raise HTTPException(status_code=404, detail="user not found")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
 @router.get(
     "/admin/users/{user_id}/navigation",
     response_model=APIResponse[UserNavigationResponse],

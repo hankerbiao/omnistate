@@ -38,7 +38,7 @@ class CreateTestCaseRequest(BaseModel):
         None,
         description="唯一业务编号（可选，前端不应提供，默认由后端生成）",
     )
-    ref_req_id: str = Field(..., description="关联需求 req_id（外键引用 Requirement.req_id）")
+    ref_req_id: Optional[str] = Field(None, description="关联需求 req_id（可选，不填则不关联需求）")
     title: str = Field(..., description="用例名称")
     version: int = Field(1, description="用例版本号，默认值为 1")
     is_active: bool = Field(True, description="用例是否激活状态")

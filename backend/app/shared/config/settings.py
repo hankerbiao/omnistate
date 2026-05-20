@@ -48,6 +48,9 @@ class AppConfig(BaseModel):
     host: str = "0.0.0.0"
     port: int = 8000
     cors_origins: list[str] = Field(default_factory=lambda: ["*"])
+    # 开发模式免认证配置
+    dev_bypass_auth: bool = False  # 设为 true 时跳过 JWT 验证
+    dev_user_id: str = "dev_admin"  # 免认证时使用的默认用户 ID
 
 
 class MongoDBConfig(BaseModel):

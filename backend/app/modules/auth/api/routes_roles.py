@@ -85,3 +85,17 @@ async def update_role_permissions(
         raise HTTPException(status_code=404, detail="permission not found")
     except RoleNotFoundError:
         raise HTTPException(status_code=404, detail="role not found")
+
+
+@router.delete("/roles/{role_id}", status_code=204, summary="删除角色")
+async def delete_role(
+    role_id: str,
+    service: RoleServiceDep,
+    _=Depends(require_admin_user),
+):
+    try:
+        await service.delete_role(role_id)
+    except RoleNotFoundError:
+        raise HTTPException(status_code=404, detail="role not found")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))

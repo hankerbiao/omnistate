@@ -6,9 +6,10 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List
 
-from app.modules.auth.repository.models import RoleDoc
+from app.modules.auth.repository.models import RoleDoc, UserDoc
 from app.modules.auth.service.exceptions import RoleNotFoundError
 from app.modules.auth.service.support import AuthServiceSupport
 
@@ -21,13 +22,14 @@ class RoleService(AuthServiceSupport):
     """
 
     # 角色允许更新的字段集合，用于控制哪些字段可通过 update_role 修改
-    _ROLE_UPDATABLE_FIELDS = {"name"}
+    _ROLE_UPDATABLE_FIELDS = {"name", "description"}
 
     async def create_role(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """创建新角色。
 
         Args:
             data: 包含 role_id、name、permission_ids 等字段的角色数据
+                  如果 role_id 未提供，将自动从 name 生成
 
         Returns:
             创建成功后的角色字典
@@ -35,6 +37,9 @@ class RoleService(AuthServiceSupport):
         Raises:
             ValueError: 当 role_id 已存在时抛出
         """
+        # 自动生成 role_id（如果未提供）
+        if "role_id" not in data or not data["role_id"]:
+            data["role_id"] = self._generate_role_id(data["name"])
         existing = await RoleDoc.find_one(RoleDoc.role_id == data["role_id"])
         if existing:
             raise ValueError("role_id already exists")
@@ -44,21 +49,25 @@ class RoleService(AuthServiceSupport):
         await doc.insert()
         return self._doc_to_dict(doc)
 
-    async def get_role(self, role_id: str) -> Dict[str, Any]:
-        """根据 role_id 获取单个角色。
+    @staticmethod
+    def _generate_role_id(name: str) -> str:
+        """从角色名称生成 role_id。
 
         Args:
-            role_id: 角色的唯一标识符
+            name: 角色名称
 
         Returns:
-            角色信息字典
-
-        Raises:
-            RoleNotFoundError: 当角色不存在时抛出
+            slugified 的 role_id
         """
-        doc = await RoleDoc.find_one(RoleDoc.role_id == role_id)
-        if not doc:
-            raise RoleNotFoundError("role not found")
+        # 转小写，空格和特殊字符替换为下划线
+        slug = name.lower().strip()
+        slug = re.sub(r"[^\w\s-]", "", slug)
+        slug = re.sub(r"[_\s]+", "_", slug)
+        return slug
+
+    async def get_role(self, role_id: str) -> Dict[str, Any]:
+        """根据 role_id 获取单个角色。"""
+        doc = await self._find_or_raise(RoleDoc, RoleDoc.role_id == role_id, RoleNotFoundError)
         return self._doc_to_dict(doc)
 
     async def list_roles(self, limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
@@ -75,46 +84,31 @@ class RoleService(AuthServiceSupport):
         return [self._doc_to_dict(doc) for doc in docs]
 
     async def update_role(self, role_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
-        """更新角色基本信息。
-
-        Args:
-            role_id: 要更新的角色唯一标识符
-            data: 包含更新字段的字典，仅允许更新 _ROLE_UPDATABLE_FIELDS 中的字段
-
-        Returns:
-            更新后的角色字典
-
-        Raises:
-            RoleNotFoundError: 当角色不存在时抛出
-        """
-        doc = await RoleDoc.find_one(RoleDoc.role_id == role_id)
-        if not doc:
-            raise RoleNotFoundError("role not found")
-        # 仅应用允许更新的字段（当前仅 name）
+        """更新角色基本信息。"""
+        doc = await self._find_or_raise(RoleDoc, RoleDoc.role_id == role_id, RoleNotFoundError)
         self._apply_updates(doc, data, self._ROLE_UPDATABLE_FIELDS)
         await doc.save()
         return self._doc_to_dict(doc)
 
     async def update_role_permissions(self, role_id: str, permission_ids: List[str]) -> Dict[str, Any]:
-        """更新角色的权限列表。
-
-        将角色的所有权限替换为新的权限列表（整体替换而非增量）。
-
-        Args:
-            role_id: 要更新的角色唯一标识符
-            permission_ids: 新的权限 ID 列表，会完全替换原有权限
-
-        Returns:
-            更新后的角色字典
-
-        Raises:
-            RoleNotFoundError: 当角色不存在时抛出
-        """
-        doc = await RoleDoc.find_one(RoleDoc.role_id == role_id)
-        if not doc:
-            raise RoleNotFoundError("role not found")
-        # 确保所有权限 ID 都是有效的
+        """更新角色的权限列表（整体替换）。"""
+        doc = await self._find_or_raise(RoleDoc, RoleDoc.role_id == role_id, RoleNotFoundError)
         await self._ensure_permissions_exist(permission_ids)
         doc.permission_ids = permission_ids
         await doc.save()
         return self._doc_to_dict(doc)
+
+    async def delete_role(self, role_id: str) -> None:
+        """删除角色。
+
+        Raises:
+            RoleNotFoundError: 当角色不存在时抛出
+            ValueError: 当角色是系统角色时抛出，或当有用户绑定此角色时抛出
+        """
+        doc = await self._find_or_raise(RoleDoc, RoleDoc.role_id == role_id, RoleNotFoundError)
+        if doc.is_system:
+            raise ValueError("cannot delete system role")
+        user_count = await UserDoc.find({"role_ids": role_id}).count()
+        if user_count > 0:
+            raise ValueError(f"cannot delete role: {user_count} user(s) are assigned to this role")
+        await doc.delete()

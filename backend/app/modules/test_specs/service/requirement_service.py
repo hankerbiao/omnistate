@@ -16,13 +16,16 @@ from datetime import datetime
 from pymongo import AsyncMongoClient
 from app.modules.test_specs.repository.models import TestRequirementDoc, TestCaseDoc
 from app.modules.test_specs.service._service_support import (
-    apply_workflow_status_projection,
+    apply_workflow_details_projection,
     create_with_workflow_transaction,
     ensure_safe_generic_update,
     load_workflow_states_for_entities,
     workflow_aware_soft_delete,
 )
-from app.modules.test_specs.service._workflow_status_support import enrich_projected_status
+from app.modules.test_specs.service._workflow_status_support import (
+    enrich_projected_status,
+    get_workflow_details,
+)
 from app.modules.workflow.application import WorkflowItemGateway
 from app.shared.core.logger import log as logger
 from app.shared.core.mongo_client import get_mongo_client
@@ -61,6 +64,15 @@ class RequirementService(BaseService):
             ids=req_ids,
             id_field="req_id",
         )
+
+    async def _get_workflow_details_for_requirements(self, req_ids: List[str]) -> Dict[str, Dict[str, Any]]:
+        """批量获取需求的工作流详情。"""
+        from beanie.operators import In as InOp
+        docs = await TestRequirementDoc.find(
+            InOp(TestRequirementDoc.req_id, req_ids),
+            {"is_deleted": False},
+        ).to_list()
+        return await get_workflow_details(docs, "req_id")
 
     async def create_requirement(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """创建测试需求（仅事务模式）。
@@ -128,17 +140,18 @@ class RequirementService(BaseService):
             query = query.find(TestRequirementDoc.auto_dev_id == auto_dev_id)
 
         # 获取候选文档（如果需要状态过滤，先获取更大的集合）
+        workflow_details: Dict[str, Dict[str, Any]] = {}
         if status:
             docs = await query.sort("-created_at").to_list()
             if not docs:
                 return []
 
             req_ids = [doc.req_id for doc in docs]
-            workflow_states = await self._get_workflow_states_for_requirements(req_ids)
+            workflow_details = await self._get_workflow_details_for_requirements(req_ids)
             filtered_docs = [
                 doc for doc in docs
-                if workflow_states.get(doc.req_id) == status
-                or (workflow_states.get(doc.req_id) is None and status == "未开始")
+                if workflow_details.get(doc.req_id, {}).get("status") == status
+                or (doc.req_id not in workflow_details and status == "未开始")
             ]
             docs = filtered_docs[offset:offset + limit]
         else:
@@ -148,13 +161,14 @@ class RequirementService(BaseService):
         if not docs:
             return []
 
-        req_ids = [doc.req_id for doc in docs]
-        workflow_states = await self._get_workflow_states_for_requirements(req_ids)
-        return await apply_workflow_status_projection(
+        if not workflow_details:
+            req_ids = [doc.req_id for doc in docs]
+            workflow_details = await self._get_workflow_details_for_requirements(req_ids)
+        return apply_workflow_details_projection(
             docs=docs,
             id_getter=lambda doc: doc.req_id,
             to_dict=self._doc_to_dict,
-            workflow_states=workflow_states,
+            workflow_details=workflow_details,
         )
 
     async def update_requirement(self, req_id: str, data: Dict[str, Any]) -> Dict[str, Any]:

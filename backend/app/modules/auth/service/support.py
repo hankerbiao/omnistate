@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Type
 
 from app.modules.auth.repository.models import PermissionDoc, RoleDoc
 from app.modules.auth.service.exceptions import PermissionNotFoundError, RoleNotFoundError
@@ -22,6 +22,14 @@ class AuthServiceSupport(BaseService):
 
     # 默认导航视图列表，用户登录后默认可见的页面
     _DEFAULT_NAV_VIEWS = ["req_list", "case_list", "my_tasks"]
+
+    @staticmethod
+    async def _find_or_raise(model_cls: Type, condition, error_cls: Type[Exception], error_msg: str = "not found"):
+        """查找文档，不存在时抛出指定异常。"""
+        doc = await model_cls.find_one(condition)
+        if not doc:
+            raise error_cls(error_msg)
+        return doc
 
     async def _ensure_roles_exist(self, role_ids: List[str]) -> None:
         """验证角色 IDs 是否全部存在。

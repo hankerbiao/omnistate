@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { api } from './services/api'
 import LoginPage from './components/LoginPage'
 import AppShell from './components/AppShell'
@@ -11,10 +11,16 @@ import TerminalPage from './components/TerminalPage'
 import RoleManagement from './components/RoleManagement'
 import UserManagement from './components/UserManagement'
 import ProfilePage from './components/ProfilePage'
+import MyTasksPage from './components/MyTasksPage'
+import PermissionManagement from './components/PermissionManagement'
+import DashboardPage from './components/DashboardPage'
+import { SWITCHABLE_USERS } from './config/users'
 import type { PageType, NavItem } from './types/app'
 import './App.css'
 
 const navItems: NavItem[] = [
+  { key: 'dashboard', label: '数据统计', icon: '📊' },
+  { key: 'myTasks', label: '我的任务', icon: '☰' },
   { key: 'requirements', label: '测试需求', icon: '▣' },
   { key: 'manualTestCases', label: '测试用例', icon: '📋' },
   { key: 'testCases', label: '自动化用例', icon: '⚡' },
@@ -23,6 +29,7 @@ const navItems: NavItem[] = [
   { key: 'terminal', label: '终端调试', icon: '⌘' },
   { key: 'users', label: '用户管理', icon: '👤', permission: 'users:read' },
   { key: 'roles', label: '角色管理', icon: '👥', permission: 'roles:read' },
+  { key: 'permissions', label: '权限管理', icon: '🔑', permission: 'permissions:read' },
 ]
 
 function App() {
@@ -38,6 +45,7 @@ function App() {
   const [currentPage, setCurrentPage] = useState<PageType>('requirements')
   const [userPermissions, setUserPermissions] = useState<string[]>([])
   const [currentUsername, setCurrentUsername] = useState<string>('')
+  const [currentUserId, setCurrentUserId] = useState<string>('')
 
   const fetchUserPermissions = async () => {
     try {
@@ -59,6 +67,9 @@ function App() {
       } else if (userRes.data?.user_id) {
         setCurrentUsername(userRes.data.user_id)
       }
+      if (userRes.data?.user_id) {
+        setCurrentUserId(userRes.data.user_id)
+      }
     } catch (err) {
       console.error('Failed to fetch current user:', err)
     }
@@ -70,7 +81,28 @@ function App() {
     setIsAuthenticated(false)
     setUserPermissions([])
     setCurrentUsername('')
+    setCurrentUserId('')
   }
+
+  const handleSwitchUser = useCallback(async (userId: string, password: string) => {
+    try {
+      const loginRes = await api.login({ user_id: userId, password })
+      api.setToken(loginRes.data.access_token)
+      const userRes = await api.getCurrentUser()
+      if (userRes.data?.username) {
+        setCurrentUsername(userRes.data.username)
+      } else if (userRes.data?.user_id) {
+        setCurrentUsername(userRes.data.user_id)
+      }
+      if (userRes.data?.user_id) {
+        setCurrentUserId(userRes.data.user_id)
+      }
+      const permRes = await api.getCurrentUserPermissions()
+      setUserPermissions(permRes.data?.permissions || [])
+    } catch (err) {
+      console.error('Switch user failed:', err)
+    }
+  }, [])
 
   const visibleNavItems = navItems.filter(item => {
     if (!item.permission) return true
@@ -87,25 +119,33 @@ function App() {
           onLogout={handleLogout}
           currentUser={currentUsername}
           onUserClick={() => setCurrentPage('profile')}
+          onSwitchUser={handleSwitchUser}
+          switchableUsers={SWITCHABLE_USERS}
         >
-          {currentPage === 'profile' ? (
-            <ProfilePage />
+          {currentPage === 'dashboard' ? (
+            <DashboardPage key={currentUserId} />
+          ) : currentPage === 'profile' ? (
+            <ProfilePage key={currentUserId} />
+          ) : currentPage === 'myTasks' ? (
+            <MyTasksPage key={currentUserId} userId={currentUserId} />
           ) : currentPage === 'testCases' ? (
-            <TestCaseList />
+            <TestCaseList key={currentUserId} />
           ) : currentPage === 'manualTestCases' ? (
-            <ManualTestCaseList />
+            <ManualTestCaseList key={currentUserId} />
           ) : currentPage === 'requirements' ? (
-            <RequirementsPage />
+            <RequirementsPage key={currentUserId} />
           ) : currentPage === 'agents' ? (
-            <AgentList onLogout={handleLogout} />
+            <AgentList key={currentUserId} onLogout={handleLogout} />
           ) : currentPage === 'terminal' ? (
-            <TerminalPage />
+            <TerminalPage key={currentUserId} />
           ) : currentPage === 'users' ? (
-            <UserManagement />
+            <UserManagement key={currentUserId} />
           ) : currentPage === 'roles' ? (
-            <RoleManagement />
+            <RoleManagement key={currentUserId} />
+          ) : currentPage === 'permissions' ? (
+            <PermissionManagement key={currentUserId} />
           ) : (
-            <TaskList onLogout={handleLogout} />
+            <TaskList key={currentUserId} onLogout={handleLogout} />
           )}
         </AppShell>
       ) : (

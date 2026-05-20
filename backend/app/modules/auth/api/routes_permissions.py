@@ -80,3 +80,17 @@ async def update_permission(
         return APIResponse(data=await service.update_permission(perm_id, payload))
     except PermissionNotFoundError:
         raise HTTPException(status_code=404, detail="permission not found")
+
+
+@router.delete("/permissions/{perm_id}", status_code=204, summary="删除权限")
+async def delete_permission(
+    perm_id: str,
+    service: PermissionServiceDep,
+    _=Depends(require_permission("permissions:write")),
+):
+    try:
+        await service.delete_permission(perm_id)
+    except PermissionNotFoundError:
+        raise HTTPException(status_code=404, detail="permission not found")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))

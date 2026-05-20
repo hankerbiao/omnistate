@@ -117,6 +117,20 @@ export interface WorkflowTransitionResponse {
   new_owner_id?: string;
 }
 
+export interface WorkItem {
+  item_id: string;
+  type_code: string;
+  title: string;
+  content: string;
+  parent_item_id?: string;
+  current_state: string;
+  current_owner_id?: string;
+  creator_id: string;
+  created_at: string;
+  updated_at: string;
+  req_id?: string;
+}
+
 export interface TestCaseStep {
   step_id: string;
   name: string;
@@ -441,6 +455,7 @@ export interface TaskStatus {
     timeout?: number;
     dut?: Record<string, unknown>;
     attachments?: AttachmentInfo[];
+    execution_config?: ExecutionConfig;
     cases?: Array<{
       auto_case_id?: string;
       script_entity_id?: string;
@@ -604,6 +619,10 @@ export interface UpdateUserRequest {
 
 export interface UpdateUserRolesRequest {
   role_ids: string[];
+}
+
+export interface UpdateUserPasswordRequest {
+  new_password: string;
 }
 
 export interface ListUsersParams {

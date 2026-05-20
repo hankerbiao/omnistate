@@ -141,8 +141,10 @@ class UpdateUserNavigationRequest(BaseModel):
 class CreateRoleRequest(BaseModel):
     """数据模型：创建角色请求体。"""
 
-    role_id: str = Field(..., description="角色唯一 ID")
+    role_id: Optional[str] = Field(default=None, description="角色唯一 ID（可选，不提供时自动生成）")
     name: str = Field(..., description="角色名称")
+    description: Optional[str] = Field(default=None, description="角色描述")
+    is_system: bool = Field(default=False, description="是否系统角色")
     permission_ids: List[str] = Field(default_factory=list, description="角色绑定的权限 ID 列表")
 
 
@@ -150,6 +152,7 @@ class UpdateRoleRequest(BaseModel):
     """数据模型：更新角色基础信息请求体（不含权限）。"""
 
     name: Optional[str] = Field(default=None, description="角色名称")
+    description: Optional[str] = Field(default=None, description="角色描述")
 
 
 class UpdateRolePermissionsRequest(BaseModel):
@@ -164,6 +167,8 @@ class RoleResponse(BaseModel):
     id: str = Field(..., description="数据库文档 ID")
     role_id: str = Field(..., description="角色唯一 ID")
     name: str = Field(..., description="角色名称")
+    description: Optional[str] = Field(default=None, description="角色描述")
+    is_system: bool = Field(default=False, description="是否系统角色")
     permission_ids: List[str] = Field(..., description="权限 ID 列表")
     created_at: datetime = Field(..., description="创建时间")
     updated_at: datetime = Field(..., description="更新时间")

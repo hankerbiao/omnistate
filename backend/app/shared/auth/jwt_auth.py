@@ -9,10 +9,10 @@ import json
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Callable
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from app.shared.db.config import settings
+from app.shared.config import get_settings
 from app.modules.auth.repository.models import UserDoc, RoleDoc, PermissionDoc
 
 
@@ -37,21 +37,22 @@ def create_access_token(subject: str, expires_minutes: Optional[int] = None) -> 
     expires_minutes 为 token 有效期（分钟），为空则使用配置默认值。
     """
     now = datetime.now(timezone.utc)
-    expire = now + timedelta(minutes=expires_minutes or settings.JWT_EXPIRE_MINUTES)
+    _jwt = get_settings().jwt
+    expire = now + timedelta(minutes=expires_minutes or _jwt.expire_minutes)
 
     header = {"alg": "HS256", "typ": "JWT"}
     payload = {
         "sub": subject,
         "iat": int(now.timestamp()),
         "exp": int(expire.timestamp()),
-        "iss": settings.JWT_ISSUER,
-        "aud": settings.JWT_AUDIENCE,
+        "iss": _jwt.issuer,
+        "aud": _jwt.audience,
     }
 
     header_b64 = _b64url_encode(json.dumps(header, separators=(",", ":")).encode("utf-8"))
     payload_b64 = _b64url_encode(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
     signing_input = f"{header_b64}.{payload_b64}".encode("utf-8")
-    signature_b64 = _sign_hs256(signing_input, settings.JWT_SECRET_KEY)
+    signature_b64 = _sign_hs256(signing_input, _jwt.secret_key)
     return f"{header_b64}.{payload_b64}.{signature_b64}"
 
 
@@ -63,7 +64,7 @@ def decode_token(token: str) -> Dict[str, Any]:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid token")
 
     signing_input = f"{header_b64}.{payload_b64}".encode("utf-8")
-    expected_sig = _sign_hs256(signing_input, settings.JWT_SECRET_KEY)
+    expected_sig = _sign_hs256(signing_input, get_settings().jwt.secret_key)
     if not hmac.compare_digest(signature_b64, expected_sig):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid token")
 
@@ -90,9 +91,10 @@ def decode_token(token: str) -> Dict[str, Any]:
 
     if now_ts >= exp_ts:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="token expired")
-    if payload.get("iss") != settings.JWT_ISSUER:
+    _jwt = get_settings().jwt
+    if payload.get("iss") != _jwt.issuer:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid issuer")
-    if payload.get("aud") != settings.JWT_AUDIENCE:
+    if payload.get("aud") != _jwt.audience:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid audience")
 
     return payload
@@ -100,16 +102,42 @@ def decode_token(token: str) -> Dict[str, Any]:
 
 # ===== FastAPI 依赖 =====
 
-bearer_scheme = HTTPBearer(auto_error=True)
+bearer_scheme = HTTPBearer(auto_error=False)
 
 
 async def get_current_user(
-        credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+        request: Request,
+        credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
 ) -> Dict[str, Any]:
     """解析 JWT 并返回用户信息
 
     返回结构为 dict，包含 id/user_id/username/role_ids 等字段。
+
+    开发模式（app.dev_bypass_auth=true）下跳过认证，返回配置的默认用户。
     """
+    app_settings = get_settings()
+
+    # 开发模式免认证：跳过 JWT 验证，返回模拟用户
+    if app_settings.app.dev_bypass_auth:
+        dev_user_id = app_settings.app.dev_user_id or "dev_admin"
+        user = await UserDoc.find_one(UserDoc.user_id == dev_user_id)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=f"dev_user_id '{dev_user_id}' not found. 请先创建该用户或检查配置。",
+            )
+        data = user.model_dump()
+        data["id"] = str(user.id)
+        return data
+
+    # 正式模式：必须提供有效 token
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     token = credentials.credentials
     payload = decode_token(token)
     user_id = payload.get("sub")

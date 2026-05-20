@@ -4,7 +4,7 @@ from typing import Any, Awaitable, Callable, Iterable
 
 from pymongo import AsyncMongoClient
 
-from app.modules.test_specs.service._workflow_status_support import get_workflow_states
+from app.modules.test_specs.service._workflow_status_support import get_workflow_states, get_workflow_details
 
 
 async def load_workflow_states_for_entities(
@@ -26,7 +26,7 @@ async def load_workflow_states_for_entities(
     return await get_workflow_states(docs, id_field)
 
 
-async def apply_workflow_status_projection(
+def apply_workflow_status_projection(
     *,
     docs: list[Any],
     id_getter: Callable[[Any], str],
@@ -35,10 +35,29 @@ async def apply_workflow_status_projection(
     default_status: str = "未开始",
 ) -> list[dict[str, Any]]:
     """Project workflow states into serialized entity payloads."""
+    details = {k: {"status": v} for k, v in workflow_states.items()}
+    return apply_workflow_details_projection(
+        docs=docs, id_getter=id_getter, to_dict=to_dict,
+        workflow_details=details, default_status=default_status,
+    )
+
+
+def apply_workflow_details_projection(
+    *,
+    docs: list[Any],
+    id_getter: Callable[[Any], str],
+    to_dict: Callable[[Any], dict[str, Any]],
+    workflow_details: dict[str, dict[str, Any]],
+    default_status: str = "未开始",
+) -> list[dict[str, Any]]:
+    """Project workflow details (status, creator, current_owner) into serialized entity payloads."""
     result: list[dict[str, Any]] = []
     for doc in docs:
         doc_dict = to_dict(doc)
-        doc_dict["status"] = workflow_states.get(id_getter(doc), default_status)
+        details = workflow_details.get(id_getter(doc), {})
+        doc_dict["status"] = details.get("status", default_status)
+        doc_dict["creator"] = details.get("creator")
+        doc_dict["current_owner"] = details.get("current_owner")
         result.append(doc_dict)
     return result
 

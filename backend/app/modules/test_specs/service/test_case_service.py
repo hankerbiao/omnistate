@@ -140,6 +140,7 @@ class TestCaseService(BaseService):
             query = query.find(TestCaseDoc.is_active == is_active)
 
         # 获取候选文档（如果需要状态过滤，先获取更大的集合）
+        workflow_states: Dict[str, str] = {}
         if status:
             docs = await query.sort("-created_at").to_list()
             if not docs:
@@ -151,7 +152,7 @@ class TestCaseService(BaseService):
                 doc for doc in docs
                 if (
                     workflow_states.get(doc.case_id) == status
-                    or (workflow_states.get(doc.case_id) is None and status == "未开始")
+                    or (doc.case_id not in workflow_states and status == "未开始")
                 )
             ]
             docs = filtered_docs[offset:offset + limit]
@@ -162,9 +163,10 @@ class TestCaseService(BaseService):
         if not docs:
             return []
 
-        case_ids = [doc.case_id for doc in docs]
-        workflow_states = await self._get_workflow_states_for_test_cases(case_ids)
-        return await apply_workflow_status_projection(
+        if not workflow_states:
+            case_ids = [doc.case_id for doc in docs]
+            workflow_states = await self._get_workflow_states_for_test_cases(case_ids)
+        return apply_workflow_status_projection(
             docs=docs,
             id_getter=lambda doc: doc.case_id,
             to_dict=self._doc_to_dict,
@@ -349,8 +351,9 @@ class TestCaseService(BaseService):
                     data["attachments"],
                     session=session,
                 )
-            requirement = await self._ensure_requirement_exists(data["ref_req_id"], session=session)
-            data["_parent_workflow_item_id"] = requirement.workflow_item_id
+            if data.get("ref_req_id"):
+                requirement = await self._ensure_requirement_exists(data["ref_req_id"], session=session)
+                data["_parent_workflow_item_id"] = requirement.workflow_item_id
 
         def _workflow_item_factory(data: Dict[str, Any]) -> Dict[str, Any]:
             return {
@@ -358,7 +361,7 @@ class TestCaseService(BaseService):
                 "title": data["title"],
                 "content": data.get("pre_condition") or data.get("post_condition") or data["title"],
                 "creator_id": data.get("owner_id") or data.get("reviewer_id") or "system",
-                "parent_item_id": data.pop("_parent_workflow_item_id"),
+                "parent_item_id": data.pop("_parent_workflow_item_id", None),
             }
 
         return await create_with_workflow_transaction(

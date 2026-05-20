@@ -39,9 +39,7 @@ class UserService(AuthServiceSupport):
         return self._doc_to_dict(user)
 
     async def get_user(self, user_id: str) -> Dict[str, Any]:
-        doc = await UserDoc.find_one(UserDoc.user_id == user_id)
-        if not doc:
-            raise UserNotFoundError("user not found")
+        doc = await self._find_or_raise(UserDoc, UserDoc.user_id == user_id, UserNotFoundError)
         return self._doc_to_dict(doc)
 
     async def list_users(
@@ -69,43 +67,53 @@ class UserService(AuthServiceSupport):
         return [self._doc_to_dict(doc) for doc in docs]
 
     async def update_user(self, user_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
-        doc = await UserDoc.find_one(UserDoc.user_id == user_id)
-        if not doc:
-            raise UserNotFoundError("user not found")
+        doc = await self._find_or_raise(UserDoc, UserDoc.user_id == user_id, UserNotFoundError)
         self._apply_updates(doc, data, self._USER_UPDATABLE_FIELDS)
         await doc.save()
         return self._doc_to_dict(doc)
 
     async def update_user_roles(self, user_id: str, role_ids: List[str]) -> Dict[str, Any]:
-        doc = await UserDoc.find_one(UserDoc.user_id == user_id)
-        if not doc:
-            raise UserNotFoundError("user not found")
+        doc = await self._find_or_raise(UserDoc, UserDoc.user_id == user_id, UserNotFoundError)
         await self._ensure_roles_exist(role_ids)
         doc.role_ids = role_ids
         await doc.save()
         return self._doc_to_dict(doc)
 
-    async def update_user_password(self, user_id: str, new_password: str) -> Dict[str, Any]:
-        doc = await UserDoc.find_one(UserDoc.user_id == user_id)
-        if not doc:
-            raise UserNotFoundError("user not found")
+    async def _set_password(self, doc, new_password: str) -> None:
         salt, pwd_hash = hash_password(new_password)
         doc.password_salt = salt
         doc.password_hash = pwd_hash
+
+    async def update_user_password(self, user_id: str, new_password: str) -> Dict[str, Any]:
+        doc = await self._find_or_raise(UserDoc, UserDoc.user_id == user_id, UserNotFoundError)
+        await self._set_password(doc, new_password)
         await doc.save()
         return self._doc_to_dict(doc)
 
     async def change_password(self, user_id: str, old_password: str, new_password: str) -> Dict[str, Any]:
-        doc = await UserDoc.find_one(UserDoc.user_id == user_id)
-        if not doc:
-            raise UserNotFoundError("user not found")
+        doc = await self._find_or_raise(UserDoc, UserDoc.user_id == user_id, UserNotFoundError)
         if not verify_password(old_password, doc.password_salt, doc.password_hash):
             raise ValueError("invalid credentials")
-        salt, pwd_hash = hash_password(new_password)
-        doc.password_salt = salt
-        doc.password_hash = pwd_hash
+        await self._set_password(doc, new_password)
         await doc.save()
         return self._doc_to_dict(doc)
+
+    async def delete_user(self, user_id: str, current_user_id: str) -> None:
+        """删除用户（软删除，设置 status 为 DISABLED）。"""
+        doc = await self._find_or_raise(UserDoc, UserDoc.user_id == user_id, UserNotFoundError)
+        # 禁止删除自己
+        if user_id == current_user_id:
+            raise ValueError("cannot delete yourself")
+        # 检查是否是最后一个 ADMIN
+        admin_users = await UserDoc.find({"role_ids": "ADMIN"}).count()
+        if admin_users <= 1 and "ADMIN" in (doc.role_ids or []):
+            # 检查当前用户是否是 ADMIN，如果不是，禁止删除最后一个 ADMIN
+            current_user = await UserDoc.find_one(UserDoc.user_id == current_user_id)
+            if current_user and "ADMIN" not in (current_user.role_ids or []):
+                raise ValueError("cannot delete the last admin user")
+        # 软删除：设置状态为 DISABLED
+        doc.status = "DISABLED"
+        await doc.save()
 
     async def get_effective_permissions(self, user_id: str) -> Dict[str, Any]:
         user = await UserDoc.find_one(UserDoc.user_id == user_id)

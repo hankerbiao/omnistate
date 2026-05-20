@@ -94,18 +94,16 @@ class _FakeDocCollection:
 def test_apply_workflow_status_projection_adds_status_from_state_map() -> None:
     docs = [_FakeDoc(req_id="REQ-1"), _FakeDoc(req_id="REQ-2")]
 
-    result = asyncio.run(
-        apply_workflow_status_projection(
-            docs=docs,
-            id_getter=lambda doc: doc.payload["req_id"],
-            to_dict=lambda doc: {"req_id": doc.payload["req_id"]},
-            workflow_states={"REQ-1": "IN_REVIEW"},
-        )
+    result = apply_workflow_status_projection(
+        docs=docs,
+        id_getter=lambda doc: doc.payload["req_id"],
+        to_dict=lambda doc: {"req_id": doc.payload["req_id"]},
+        workflow_states={"REQ-1": "IN_REVIEW"},
     )
 
     assert result == [
-        {"req_id": "REQ-1", "status": "IN_REVIEW"},
-        {"req_id": "REQ-2", "status": "未开始"},
+        {"req_id": "REQ-1", "status": "IN_REVIEW", "creator": None, "current_owner": None},
+        {"req_id": "REQ-2", "status": "未开始", "creator": None, "current_owner": None},
     ]
 
 
