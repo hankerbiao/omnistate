@@ -75,7 +75,7 @@ export interface RequirementResponse {
   creator?: string;
   creator_name?: string;
   current_owner?: string;
-  owner_name?: string;
+  current_owner_name?: string;
 }
 
 export interface ListRequirementsParams {
@@ -260,11 +260,7 @@ export interface AutomationConfigField {
   extra_props?: Record<string, unknown>;
 }
 
-export type DispatchChannel = 'RABBITMQ' | 'HTTP';
-
 export interface DispatchTaskRequest {
-  dispatch_channel?: DispatchChannel;
-  agent_id?: string;
   schedule_type?: string;
   planned_at?: string;
   callback_url?: string;
@@ -281,8 +277,6 @@ export interface DispatchTaskRequest {
 }
 
 export interface RerunTaskRequest {
-  dispatch_channel?: DispatchChannel;
-  agent_id?: string;
   schedule_type?: string;
   planned_at?: string;
   callback_url?: string;
@@ -442,8 +436,6 @@ export interface TaskStatus {
   error_message?: string;
   result_summary?: Record<string, unknown>;
   request_payload?: {
-    dispatch_channel?: DispatchChannel | string;
-    agent_id?: string;
     schedule_type?: string;
     planned_at?: string;
     callback_url?: string;

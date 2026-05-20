@@ -58,6 +58,8 @@ def apply_workflow_details_projection(
         doc_dict["status"] = details.get("status", default_status)
         doc_dict["creator"] = details.get("creator")
         doc_dict["current_owner"] = details.get("current_owner")
+        doc_dict["creator_name"] = details.get("creator_name")
+        doc_dict["current_owner_name"] = details.get("current_owner_name")
         result.append(doc_dict)
     return result
 

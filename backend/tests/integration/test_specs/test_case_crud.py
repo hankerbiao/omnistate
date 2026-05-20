@@ -5,7 +5,7 @@ from httpx import AsyncClient
 from tests.integration.utils.helpers import create_test_case_data, unique_id
 
 
-async def create_test_case_with_req(client: AsyncClient, ref_req_id: str | None = None) -> dict | None:
+async def create_test_case_with_req(client: AsyncClient, test_data_registry=None, ref_req_id: str | None = None) -> dict | None:
     """Helper to create a test case with a valid ref_req_id."""
     if ref_req_id is None:
         # Create a requirement first using test_specs module
@@ -15,6 +15,8 @@ async def create_test_case_with_req(client: AsyncClient, ref_req_id: str | None 
         )
         if req_resp.status_code == 201:
             ref_req_id = req_resp.json()["data"]["req_id"]
+            if test_data_registry:
+                test_data_registry.register_requirement(ref_req_id)
         else:
             # If requirement creation fails, use a placeholder
             ref_req_id = f"MOCK-REQ-{unique_id()}"
@@ -24,7 +26,10 @@ async def create_test_case_with_req(client: AsyncClient, ref_req_id: str | None 
         json={"title": f"Test Case {unique_id()}", "ref_req_id": ref_req_id},
     )
     if resp.status_code == 201:
-        return resp.json()["data"]
+        data = resp.json()["data"]
+        if test_data_registry:
+            test_data_registry.register_test_case(data["case_id"])
+        return data
     return None
 
 

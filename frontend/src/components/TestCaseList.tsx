@@ -1,7 +1,15 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../services/api';
-import type { AutomationTestCaseResponse, ExecutionAgent } from '../types';
+import type { AutomationTestCaseResponse } from '../types';
 import CreateAutomationTestCaseForm from './CreateAutomationTestCaseForm';
+
+// 自动化用例状态中文映射
+const AUTO_CASE_STATUS_LABELS: Record<string, string> = {
+  ACTIVE: '激活',
+  INACTIVE: '未激活',
+  DRAFT: '草稿',
+  DEPRECATED: '已弃用',
+};
 
 const TestCaseList: React.FC = () => {
   const [testCases, setTestCases] = useState<AutomationTestCaseResponse[]>([]);
@@ -9,9 +17,7 @@ const TestCaseList: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [showCreateAutomationForm, setShowCreateAutomationForm] = useState(false);
   const [selectedCases, setSelectedCases] = useState<Set<string>>(new Set());
-  const [agents, setAgents] = useState<ExecutionAgent[]>([]);
   const [showDispatchModal, setShowDispatchModal] = useState(false);
-  const [selectedAgentId, setSelectedAgentId] = useState<string>('');
   const [dispatching, setDispatching] = useState(false);
   const [dispatchError, setDispatchError] = useState<string | null>(null);
   const [dispatchSuccess, setDispatchSuccess] = useState<string | null>(null);
@@ -31,22 +37,9 @@ const TestCaseList: React.FC = () => {
     }
   }, []);
 
-  const fetchAgents = useCallback(async () => {
-    try {
-      const response = await api.listAgents({ online_only: true });
-      setAgents(response.data || []);
-      if (response.data && response.data.length > 0) {
-        setSelectedAgentId(response.data[0].agent_id);
-      }
-    } catch (err) {
-      console.error('Fetch agents error:', err);
-    }
-  }, []);
-
   useEffect(() => {
     fetchTestCases();
-    fetchAgents();
-  }, [fetchTestCases, fetchAgents]);
+  }, [fetchTestCases]);
 
   const handleSelectCase = (caseId: string) => {
     const newSelected = new Set(selectedCases);
@@ -71,10 +64,6 @@ const TestCaseList: React.FC = () => {
       setDispatchError('请选择至少一个测试用例');
       return;
     }
-    if (!selectedAgentId) {
-      setDispatchError('请选择执行代理');
-      return;
-    }
 
     setDispatching(true);
     setDispatchError(null);
@@ -82,7 +71,6 @@ const TestCaseList: React.FC = () => {
 
     try {
       const response = await api.dispatchTask({
-        agent_id: selectedAgentId,
         cases: Array.from(selectedCases).map((auto_case_id) => ({ auto_case_id })),
       });
 
@@ -218,7 +206,7 @@ const TestCaseList: React.FC = () => {
                           color: statusStyle.text,
                         }}
                       >
-                        {testCase.status}
+                        {AUTO_CASE_STATUS_LABELS[testCase.status] || testCase.status}
                       </span>
                     </td>
                     <td style={styles.td}>
@@ -263,25 +251,6 @@ const TestCaseList: React.FC = () => {
             <h2 style={styles.modalTitle}>下发任务</h2>
             <p style={styles.modalDesc}>已选择 {selectedCases.size} 个测试用例</p>
 
-            <div style={styles.formGroup}>
-              <label style={styles.label}>选择执行代理</label>
-              <select
-                style={styles.select}
-                value={selectedAgentId}
-                onChange={e => setSelectedAgentId(e.target.value)}
-              >
-                {agents.length === 0 ? (
-                  <option value="">暂无在线代理</option>
-                ) : (
-                  agents.map(agent => (
-                    <option key={agent.agent_id} value={agent.agent_id}>
-                      {agent.hostname} ({agent.ip}) - {agent.region}
-                    </option>
-                  ))
-                )}
-              </select>
-            </div>
-
             {dispatchError && (
               <div style={styles.errorBanner}>
                 <span>⚠</span> {dispatchError}
@@ -305,7 +274,7 @@ const TestCaseList: React.FC = () => {
               <button
                 style={styles.confirmBtn}
                 onClick={handleDispatch}
-                disabled={dispatching || agents.length === 0}
+                disabled={dispatching}
               >
                 {dispatching ? '下发中...' : '确认下发'}
               </button>

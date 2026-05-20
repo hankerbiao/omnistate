@@ -38,7 +38,6 @@ class ExecutionTaskCommandMixin:
             "branch": command.branch,
             "pytest_options": command.pytest_options,
             "timeout": command.timeout,
-            "attachments": command.attachments,
             "cases": sorted(
                 [
                     {
@@ -119,7 +118,6 @@ class ExecutionTaskCommandMixin:
             "branch": command.branch,
             "pytest_options": command.pytest_options,
             "timeout": command.timeout,
-            "attachments": list(command.attachments or []),
             "cases": [
                 {
                     "case_id": case_id,
@@ -130,7 +128,6 @@ class ExecutionTaskCommandMixin:
                     "script_path": case_payload.get("script_path"),
                     "script_name": case_payload.get("script_name"),
                     "parameters": case_payload.get("parameters"),
-                    "attachments": case_payload.get("attachments", []),
                 }
                 for case_id, auto_case_id, script_entity_id, case_config, case_payload in zip(
                     command.case_ids,
@@ -196,11 +193,9 @@ class ExecutionTaskCommandMixin:
                 "script_path": binding.script_path,
                 "script_name": binding.script_name,
                 "parameters": dict(case.get("parameters") or {}),
-                "attachments": list(case.get("attachments", [])),
             }
             for case, binding in zip(cases, dispatch_bindings)
         ]
-        attachments = cls._resolve_rerun_attachments(payload, request)
         dispatch_channel = request.dispatch_channel or payload.get("dispatch_channel")
         agent_id = request.agent_id if request.agent_id is not None else payload.get("agent_id")
         schedule_type = request.schedule_type or "IMMEDIATE"
@@ -226,7 +221,7 @@ class ExecutionTaskCommandMixin:
             branch=request.branch if request.branch is not None else payload.get("branch"),
             pytest_options=cls._resolve_override_dict(request.pytest_options, payload, "pytest_options"),
             timeout=request.timeout if request.timeout is not None else payload.get("timeout"),
-            attachments=attachments,
+            attachments=[],
         )
 
     @staticmethod
@@ -241,15 +236,6 @@ class ExecutionTaskCommandMixin:
             }
             for item in request.cases
         ]
-
-    @staticmethod
-    def _resolve_rerun_attachments(payload: Dict[str, Any], request: RerunTaskRequest) -> list[dict[str, Any]]:
-        if "attachments" in request.model_fields_set:
-            return [
-                item.model_dump(exclude_none=True)
-                for item in (request.attachments or [])
-            ]
-        return list(payload.get("attachments") or [])
 
     @staticmethod
     def _resolve_override_dict(

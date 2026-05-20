@@ -48,6 +48,24 @@ class AttachmentService:
             })
         return enriched
 
+    async def enrich_single(self, file_id: str) -> dict:
+        """Enrich a single file for per-case dispatch, including a fresh presigned download URL."""
+        doc = await AttachmentDoc.find_one({"file_id": file_id, "is_deleted": False})
+        if not doc:
+            raise KeyError(f"attachment not found or deleted: {file_id}")
+        download_url = self.minio_client.presigned_get_object(doc.object_name)
+        return {
+            "file_id": doc.file_id,
+            "original_filename": doc.original_filename,
+            "storage_path": f"{doc.bucket}/{doc.object_name}",
+            "bucket": doc.bucket,
+            "object_name": doc.object_name,
+            "size": doc.size,
+            "content_type": doc.content_type,
+            "uploaded_at": doc.uploaded_at.isoformat() if doc.uploaded_at else None,
+            "download_url": download_url,
+        }
+
     async def upload_file(
         self,
         filename: str,

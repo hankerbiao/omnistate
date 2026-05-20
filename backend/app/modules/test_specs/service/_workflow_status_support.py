@@ -1,8 +1,25 @@
 from typing import Any, Dict, Iterable, Optional
 
+from beanie import PydanticObjectId
+
 from app.modules.workflow.repository.models.business import BusWorkItemDoc
 
 DEFAULT_PROJECTED_STATUS = "未开始"
+
+
+async def _enrich_user_names(data: Dict[str, Any]) -> None:
+    """根据 creator / current_owner 的 user_id 查询并填充显示名称。"""
+    from app.modules.auth.repository.models.rbac import UserDoc
+
+    user_ids = [uid for uid in [data.get("creator"), data.get("current_owner")] if uid]
+    if not user_ids:
+        return
+    users = await UserDoc.find({"user_id": {"$in": user_ids}}).to_list()
+    user_map = {u.user_id: u.username for u in users}
+    if data.get("creator"):
+        data["creator_name"] = user_map.get(data["creator"])
+    if data.get("current_owner"):
+        data["current_owner_name"] = user_map.get(data["current_owner"])
 
 
 async def enrich_projected_status(data: Dict[str, Any]) -> Dict[str, Any]:
@@ -15,9 +32,9 @@ async def enrich_projected_status(data: Dict[str, Any]) -> Dict[str, Any]:
     work_item = await BusWorkItemDoc.get(workflow_item_id)
     if work_item and not work_item.is_deleted:
         data["status"] = work_item.current_state
-        # 添加工作流创建人和负责人信息
         data["creator"] = work_item.creator_id
         data["current_owner"] = work_item.current_owner_id
+        await _enrich_user_names(data)
     else:
         data["status"] = DEFAULT_PROJECTED_STATUS
     return data
@@ -71,7 +88,7 @@ async def get_workflow_details(docs: Iterable[Any], key_attr: str) -> Dict[str, 
         return {}
 
     work_items = await BusWorkItemDoc.find({
-        "id": {"$in": list(workflow_id_map.keys())},
+        "_id": {"$in": [PydanticObjectId(wid) for wid in workflow_id_map.keys()]},
         "is_deleted": False,
     }).to_list()
 
@@ -82,6 +99,7 @@ async def get_workflow_details(docs: Iterable[Any], key_attr: str) -> Dict[str, 
     }
 
     result: Dict[str, Dict[str, Any]] = {}
+    all_user_ids: set[str] = set()
     for workflow_id, entity_id in workflow_id_map.items():
         work_item = work_item_by_id.get(workflow_id)
         if work_item:
@@ -90,5 +108,21 @@ async def get_workflow_details(docs: Iterable[Any], key_attr: str) -> Dict[str, 
                 "creator": work_item.creator_id,
                 "current_owner": work_item.current_owner_id,
             }
+            if work_item.creator_id:
+                all_user_ids.add(work_item.creator_id)
+            if work_item.current_owner_id:
+                all_user_ids.add(work_item.current_owner_id)
+
+    # 批量查询用户名称
+    if all_user_ids:
+        from app.modules.auth.repository.models.rbac import UserDoc
+
+        users = await UserDoc.find({"user_id": {"$in": list(all_user_ids)}}).to_list()
+        user_map = {u.user_id: u.username for u in users}
+        for details in result.values():
+            if details.get("creator"):
+                details["creator_name"] = user_map.get(details["creator"])
+            if details.get("current_owner"):
+                details["current_owner_name"] = user_map.get(details["current_owner"])
 
     return result

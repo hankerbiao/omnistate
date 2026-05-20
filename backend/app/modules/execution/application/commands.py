@@ -123,6 +123,8 @@ class DispatchExecutionTaskCommand:
         script_path = current_case_payload.get("script_path")
         script_name = current_case_payload.get("script_name")
         case_parameters = dict(current_case_payload.get("parameters") or {})
+        # Refresh download URLs for file-type params (URLs may have expired since stored)
+        case_parameters = self._refresh_file_param_urls(case_parameters)
         if not script_path:
             raise ValueError(f"script_path is required for dispatch case: {current_case_id}")
         if not script_name:
@@ -135,7 +137,6 @@ class DispatchExecutionTaskCommand:
             "project_tag": self.project_tag,
             "repo_url": self.repo_url,
             "branch": self.branch,
-            "attachments": self._build_dispatch_attachments(),
             "cases": [{
                 "case_id": current_case_payload["case_id"],
                 "script_path": script_path,
@@ -146,21 +147,19 @@ class DispatchExecutionTaskCommand:
             "timeout": self.timeout,
         }
 
-    def _build_dispatch_attachments(self) -> List[Dict[str, Any]]:
-        """Build task-level attachment payload with fresh presigned URLs when possible."""
-        if not self.attachments:
-            return []
-
+    @staticmethod
+    def _refresh_file_param_urls(parameters: Dict[str, Any]) -> Dict[str, Any]:
+        """Regenerate download URLs for file-type parameters. Gracefully handles MinIO failures."""
+        result = dict(parameters)
         from app.shared.minio import get_minio_client
-
-        minio_client = get_minio_client()
-        dispatch_attachments: List[Dict[str, Any]] = []
-        for attachment in self.attachments:
-            item = dict(attachment)
-            object_name = item.get("object_name")
-            if object_name:
-                item["download_url"] = minio_client.presigned_get_object(object_name)
-            item.pop("object_name", None)
-            item.pop("bucket", None)
-            dispatch_attachments.append(item)
-        return dispatch_attachments
+        try:
+            minio_client = get_minio_client()
+            for key, value in result.items():
+                if isinstance(value, dict) and value.get("type") == "file" and "object_name" in value:
+                    result[key] = {
+                        **value,
+                        "download_url": minio_client.presigned_get_object(value["object_name"]),
+                    }
+        except Exception:
+            pass  # Keep existing URLs if MinIO refresh fails
+        return result

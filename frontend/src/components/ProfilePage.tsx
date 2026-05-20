@@ -2,6 +2,13 @@ import { useState, useEffect, useCallback } from 'react';
 import { api } from '../services/api';
 import type { UserResponse, CurrentUserPermissionsResponse, PermissionResponse } from '../types';
 
+// 用户状态中文映射
+const USER_STATUS_LABELS: Record<string, string> = {
+  ACTIVE: '启用',
+  INACTIVE: '禁用',
+  PENDING: '待激活',
+};
+
 const ProfilePage: React.FC = () => {
   const [userInfo, setUserInfo] = useState<UserResponse | null>(null);
   const [permissionsInfo, setPermissionsInfo] = useState<CurrentUserPermissionsResponse | null>(null);
@@ -135,7 +142,7 @@ const ProfilePage: React.FC = () => {
                   className="status-badge"
                   style={getStatusStyle(userInfo.status)}
                 >
-                  {userInfo.status}
+                  {USER_STATUS_LABELS[userInfo.status] || userInfo.status}
                 </span>
               </div>
             </div>
@@ -157,7 +164,7 @@ const ProfilePage: React.FC = () => {
                 <span style={styles.infoLabel}>状态</span>
                 <span style={styles.infoValue}>
                   <span className="status-badge" style={getStatusStyle(userInfo.status)}>
-                    {userInfo.status}
+                    {USER_STATUS_LABELS[userInfo.status] || userInfo.status}
                   </span>
                 </span>
               </div>

@@ -59,7 +59,6 @@ class ExecutionTaskDispatchCoordinator:
             branch=request_payload.get("branch"),
             pytest_options=request_payload.get("pytest_options"),
             timeout=request_payload.get("timeout"),
-            attachments=list(request_payload.get("attachments") or []),
         )
 
     async def build_task_dispatch_command(

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Dict
 
 from app.modules.attachments.service.attachment_service import AttachmentService
 from app.modules.execution.application.case_resolver import ExecutionCaseResolver
@@ -28,6 +28,20 @@ class ExecutionTaskCommandService(ExecutionTaskCommandMixin):
         self._dispatch_service = dispatch_service or ExecutionDispatchService()
         self._case_resolver = case_resolver or ExecutionCaseResolver()
         self._attachment_service = attachment_service or AttachmentService()
+
+    @staticmethod
+    async def _enrich_case_file_params(parameters: Dict[str, Any], attachment_service: AttachmentService) -> Dict[str, Any]:
+        """Detect file-type parameters and enrich with download URLs.
+
+        Looks for values like {"type": "file", "file_id": "xxx"} in parameters
+        and replaces them with enriched data including download_url.
+        """
+        result = dict(parameters)
+        for key, value in result.items():
+            if isinstance(value, dict) and value.get("type") == "file" and value.get("file_id"):
+                enriched = await attachment_service.enrich_single(value["file_id"])
+                result[key] = {**value, **enriched}
+        return result
 
     async def create_and_dispatch_task(
         self,
@@ -57,8 +71,6 @@ class ExecutionTaskCommandService(ExecutionTaskCommandMixin):
 
         auto_case_ids = [item.auto_case_id for item in request.cases]
         case_configs = [dict(item.config) for item in request.cases]
-        file_ids = [item.file_id for item in request.attachments]
-        attachments = await self._attachment_service.enrich_for_dispatch(file_ids)
         dispatch_bindings = await self._case_resolver.resolve_case_dispatch_bindings_by_auto_case_ids(
             auto_case_ids
         )
@@ -73,6 +85,9 @@ class ExecutionTaskCommandService(ExecutionTaskCommandMixin):
             }
             for item, binding in zip(request.cases, dispatch_bindings)
         ]
+        # Per-case file parameter enrichment: detect type=file params and inject download_url
+        for payload in case_payloads:
+            payload["parameters"] = await self._enrich_case_file_params(payload["parameters"], self._attachment_service)
         logger.debug(
             "Dispatch task case bindings resolved: "
             f"task_id={task_id}, auto_case_ids={auto_case_ids}, case_ids={case_ids}, "
@@ -100,7 +115,7 @@ class ExecutionTaskCommandService(ExecutionTaskCommandMixin):
             branch=request.branch,
             pytest_options=request.pytest_options,
             timeout=request.timeout,
-            attachments=attachments,
+            attachments=[],
         )
 
         data = await self._dispatch_service.create_task_from_command(command, actor_id=actor_id)
@@ -156,9 +171,11 @@ class ExecutionTaskCommandService(ExecutionTaskCommandMixin):
             actor_id=actor_id,
             dispatch_bindings=dispatch_bindings,
         )
-        command.attachments = await self._attachment_service.enrich_for_dispatch(
-            [a.get("file_id") for a in (command.attachments or []) if a.get("file_id")]
-        )
+        # Re-enrich file-type params in each case (refresh download URLs)
+        for i in range(len(command.case_payloads)):
+            params = command.case_payloads[i].get("parameters") or {}
+            command.case_payloads[i]["parameters"] = await self._enrich_case_file_params(params, self._attachment_service)
+        command.attachments = []
         logger.info(
             "Rerunning execution task as new task: "
             f"source_task_id={source_task_id}, new_task_id={new_task_id}, actor_id={actor_id}"

@@ -102,8 +102,8 @@ def test_apply_workflow_status_projection_adds_status_from_state_map() -> None:
     )
 
     assert result == [
-        {"req_id": "REQ-1", "status": "IN_REVIEW", "creator": None, "current_owner": None},
-        {"req_id": "REQ-2", "status": "未开始", "creator": None, "current_owner": None},
+        {"req_id": "REQ-1", "status": "IN_REVIEW", "creator": None, "current_owner": None, "creator_name": None, "current_owner_name": None},
+        {"req_id": "REQ-2", "status": "未开始", "creator": None, "current_owner": None, "creator_name": None, "current_owner_name": None},
     ]
 
 

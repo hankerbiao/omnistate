@@ -83,7 +83,7 @@ def test_enrich_for_dispatch_rejects_missing_attachment(monkeypatch) -> None:
         asyncio.run(AttachmentService().enrich_for_dispatch(["missing"]))
 
 
-def test_dispatch_task_data_adds_presigned_attachment_urls(monkeypatch) -> None:
+def test_dispatch_task_data_refreshes_file_param_urls(monkeypatch) -> None:
     monkeypatch.setattr("app.shared.minio.get_minio_client", lambda: _FakeMinioClient())
 
     command = DispatchExecutionTaskCommand(
@@ -96,30 +96,47 @@ def test_dispatch_task_data_adds_presigned_attachment_urls(monkeypatch) -> None:
             "case_id": "TC-1",
             "script_path": "tests/test_demo.py",
             "script_name": "test_demo",
-            "parameters": {},
-        }],
-        attachments=[{
-            "file_id": "file-1",
-            "original_filename": "input.json",
-            "storage_path": "attachments/attachments/file-1.json",
-            "bucket": "attachments",
-            "object_name": "attachments/file-1.json",
-            "size": 128,
-            "content_type": "application/json",
-            "uploaded_at": "2026-04-30T08:00:00+00:00",
+            "parameters": {
+                "threshold": "0.5",
+                "firmware": {
+                    "type": "file",
+                    "file_id": "file-1",
+                    "object_name": "attachments/file-1.json",
+                    "original_filename": "fw.bin",
+                },
+            },
         }],
     )
 
     payload = command.dispatch_task_data
 
-    assert payload["attachments"] == [
-        {
+    # Task-level attachments should not exist
+    assert "attachments" not in payload
+
+    # File param should have refreshed download_url in case parameters
+    firmware_param = payload["cases"][0]["parameters"]["firmware"]
+    assert firmware_param["type"] == "file"
+    assert firmware_param["file_id"] == "file-1"
+    assert firmware_param["download_url"] == "http://minio.local/attachments/file-1.json?expires=604800"
+
+
+def test_refresh_file_param_urls_graceful_minio_failure(monkeypatch) -> None:
+    def _failing_minio():
+        raise RuntimeError("MinIO unavailable")
+
+    monkeypatch.setattr("app.shared.minio.get_minio_client", _failing_minio)
+
+    params = {
+        "threshold": "0.5",
+        "firmware": {
+            "type": "file",
             "file_id": "file-1",
-            "original_filename": "input.json",
-            "storage_path": "attachments/attachments/file-1.json",
-            "size": 128,
-            "content_type": "application/json",
-            "uploaded_at": "2026-04-30T08:00:00+00:00",
-            "download_url": "http://minio.local/attachments/file-1.json?expires=604800",
-        }
-    ]
+            "object_name": "attachments/file-1.json",
+            "download_url": "http://old-url/fw.bin",
+        },
+    }
+
+    result = DispatchExecutionTaskCommand._refresh_file_param_urls(params)
+
+    # Should keep original URL when MinIO fails
+    assert result["firmware"]["download_url"] == "http://old-url/fw.bin"

@@ -6,13 +6,14 @@ from tests.integration.utils.helpers import create_user_data, unique_id
 
 
 @pytest.mark.asyncio
-async def test_admin_create_user(client_admin: AsyncClient):
+async def test_admin_create_user(client_admin: AsyncClient, test_data_registry):
     """2.1 - ADMIN can create user with users:write permission."""
     user_data = create_user_data()
     resp = await client_admin.post("/api/v1/auth/users", json=user_data)
     assert resp.status_code == 201, f"Create user failed: {resp.text}"
     data = resp.json()["data"]
     assert data["user_id"] == user_data["user_id"]
+    test_data_registry.register_user(data["user_id"])
 
 
 @pytest.mark.asyncio

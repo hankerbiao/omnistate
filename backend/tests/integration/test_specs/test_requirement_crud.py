@@ -17,7 +17,7 @@ def create_requirement_data(title: str | None = None, status: str | None = None)
 
 
 @pytest.mark.asyncio
-async def test_create_requirement(client_admin: AsyncClient):
+async def test_create_requirement(client_admin: AsyncClient, test_data_registry):
     """7.1 - Create requirement should return 201."""
     resp = await client_admin.post(
         "/api/v1/requirements",
@@ -26,10 +26,11 @@ async def test_create_requirement(client_admin: AsyncClient):
     assert resp.status_code == 201, f"Create requirement failed: {resp.text}"
     data = resp.json()["data"]
     assert "req_id" in data
+    test_data_registry.register_requirement(data["req_id"])
 
 
 @pytest.mark.asyncio
-async def test_get_requirement(client_admin: AsyncClient):
+async def test_get_requirement(client_admin: AsyncClient, test_data_registry):
     """7.2 - Get requirement by ID should return 200."""
     # Create requirement first with unique title to avoid conflicts
     create_resp = await client_admin.post(
@@ -38,6 +39,7 @@ async def test_get_requirement(client_admin: AsyncClient):
     )
     assert create_resp.status_code == 201, f"Create failed: {create_resp.text}"
     req_id = create_resp.json()["data"]["req_id"]
+    test_data_registry.register_requirement(req_id)
 
     # Get requirement
     resp = await client_admin.get(f"/api/v1/requirements/{req_id}")
@@ -84,7 +86,7 @@ async def test_list_requirements_pagination(client_admin: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_update_requirement(client_admin: AsyncClient):
+async def test_update_requirement(client_admin: AsyncClient, test_data_registry):
     """7.7 - Update requirement should return 200."""
     # Create requirement with unique title to avoid conflicts
     create_resp = await client_admin.post(
@@ -93,6 +95,7 @@ async def test_update_requirement(client_admin: AsyncClient):
     )
     assert create_resp.status_code == 201
     req_id = create_resp.json()["data"]["req_id"]
+    test_data_registry.register_requirement(req_id)
 
     # Update requirement
     resp = await client_admin.put(
@@ -115,7 +118,7 @@ async def test_update_requirement_not_found(client_admin: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_update_requirement_empty_fields(client_admin: AsyncClient):
+async def test_update_requirement_empty_fields(client_admin: AsyncClient, test_data_registry):
     """7.9 - Update requirement with no fields should return 400."""
     # Create requirement
     create_resp = await client_admin.post(
@@ -124,6 +127,7 @@ async def test_update_requirement_empty_fields(client_admin: AsyncClient):
     )
     assert create_resp.status_code == 201
     req_id = create_resp.json()["data"]["req_id"]
+    test_data_registry.register_requirement(req_id)
 
     # Update with empty body
     resp = await client_admin.put(f"/api/v1/requirements/{req_id}", json={})
@@ -131,7 +135,7 @@ async def test_update_requirement_empty_fields(client_admin: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_delete_requirement(client_admin: AsyncClient):
+async def test_delete_requirement(client_admin: AsyncClient, test_data_registry):
     """7.10 - Delete requirement should return 200."""
     # Create requirement with unique title to avoid conflicts
     create_resp = await client_admin.post(
@@ -140,6 +144,7 @@ async def test_delete_requirement(client_admin: AsyncClient):
     )
     assert create_resp.status_code == 201, f"Create failed: {create_resp.text}"
     req_id = create_resp.json()["data"]["req_id"]
+    test_data_registry.register_requirement(req_id)
 
     # Delete requirement
     resp = await client_admin.delete(f"/api/v1/requirements/{req_id}")

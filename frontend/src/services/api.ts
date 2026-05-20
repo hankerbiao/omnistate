@@ -54,7 +54,23 @@ class ApiClient {
       const response = await fetch(url, config);
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        let detail = `HTTP error! status: ${response.status}`;
+        try {
+          const errBody = await response.json();
+          if (errBody?.data?.detail) {
+            detail = errBody.data.detail;
+          } else if (errBody?.message) {
+            detail = errBody.message;
+          }
+        } catch {
+          // 解析失败就用默认错误消息
+        }
+        throw new Error(detail);
+      }
+
+      // 204 No Content 无响应体，直接返回
+      if (response.status === 204) {
+        return undefined as unknown as ApiResponse<T>;
       }
 
       const data = await response.json();
@@ -129,6 +145,12 @@ class ApiClient {
     return this.request<RequirementResponse>('/requirements', {
       method: 'POST',
       body: JSON.stringify(data),
+    });
+  }
+
+  async getRequirement(reqId: string): Promise<ApiResponse<RequirementResponse>> {
+    return this.request<RequirementResponse>(`/requirements/${reqId}`, {
+      method: 'GET',
     });
   }
 

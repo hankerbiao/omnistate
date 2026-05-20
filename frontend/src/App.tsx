@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { api } from './services/api'
 import LoginPage from './components/LoginPage'
 import AppShell from './components/AppShell'
@@ -56,6 +56,35 @@ function App() {
       setUserPermissions([])
     }
   }
+
+  // 应用启动时（页面刷新或首次加载），从 token 恢复用户信息
+  useEffect(() => {
+    if (isAuthenticated && !currentUserId) {
+      const initUser = async () => {
+        try {
+          const userRes = await api.getCurrentUser()
+          if (userRes.data?.username) {
+            setCurrentUsername(userRes.data.username)
+          } else if (userRes.data?.user_id) {
+            setCurrentUsername(userRes.data.user_id)
+          }
+          if (userRes.data?.user_id) {
+            setCurrentUserId(userRes.data.user_id)
+          }
+        } catch (err) {
+          console.error('Failed to restore current user:', err)
+          api.clearToken()
+          setIsAuthenticated(false)
+          setUserPermissions([])
+          setCurrentUsername('')
+          setCurrentUserId('')
+          return
+        }
+        fetchUserPermissions()
+      }
+      initUser()
+    }
+  }, [isAuthenticated])
 
   const handleLoginSuccess = async () => {
     setIsAuthenticated(true)

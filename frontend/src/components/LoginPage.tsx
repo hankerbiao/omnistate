@@ -7,13 +7,22 @@ interface LoginPageProps {
 }
 
 const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
-  const [formData, setFormData] = useState<LoginRequest>({
-    user_id: '',
-    password: '',
+  const [formData, setFormData] = useState<LoginRequest>(() => {
+    // 尝试从 localStorage 恢复保存的凭据
+    const savedUserId = localStorage.getItem('saved_user_id') || '';
+    const savedPassword = localStorage.getItem('saved_password') || '';
+    return {
+      user_id: savedUserId,
+      password: savedPassword,
+    };
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [rememberPassword, setRememberPassword] = useState(() => {
+    // 检查是否有保存的凭据
+    return !!localStorage.getItem('saved_user_id');
+  });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -23,11 +32,20 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
 
     try {
       const response = await api.login(formData);
-      console.log('Login successful:', response);
 
       const token = response.data.access_token;
       localStorage.setItem('jwt_token', token);
       api.setToken(token);
+
+      // 根据是否勾选"保存密码"来决定是否保存凭据
+      if (rememberPassword) {
+        localStorage.setItem('saved_user_id', formData.user_id);
+        localStorage.setItem('saved_password', formData.password);
+      } else {
+        // 取消勾选时清除已保存的凭据
+        localStorage.removeItem('saved_user_id');
+        localStorage.removeItem('saved_password');
+      }
 
       setSuccess(true);
 
@@ -110,6 +128,26 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
               placeholder="请输入密码"
               required
             />
+          </div>
+
+          <div style={styles.checkboxGroup}>
+            <label style={styles.checkboxLabel}>
+              <input
+                type="checkbox"
+                checked={rememberPassword}
+                onChange={(e) => setRememberPassword(e.target.checked)}
+                style={styles.checkboxInput}
+              />
+              <span
+                style={{
+                  ...styles.checkboxCustom,
+                  ...(rememberPassword ? styles.checkboxCustomChecked : {}),
+                }}
+              >
+                {rememberPassword && <span style={styles.checkmark}>✓</span>}
+              </span>
+              <span style={styles.checkboxText}>保存密码</span>
+            </label>
           </div>
 
           <button
@@ -246,6 +284,50 @@ const styles = {
   labelIcon: {
     color: 'var(--accent-cyan)',
     fontSize: '12px',
+  } as const,
+  checkboxGroup: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    marginTop: '-12px',
+  },
+  checkboxLabel: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    cursor: 'pointer',
+    userSelect: 'none' as const,
+  },
+  checkboxInput: {
+    position: 'absolute',
+    opacity: 0,
+    width: 0,
+    height: 0,
+  },
+  checkboxCustom: {
+    width: '18px',
+    height: '18px',
+    borderRadius: '4px',
+    border: '2px solid var(--border-default)',
+    backgroundColor: 'var(--bg-primary)',
+    transition: 'all var(--transition-fast)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  checkboxCustomChecked: {
+    backgroundColor: 'var(--accent-cyan)',
+    borderColor: 'var(--accent-cyan)',
+  },
+  checkmark: {
+    color: 'var(--bg-primary)',
+    fontSize: '12px',
+    fontWeight: 'bold',
+  },
+  checkboxText: {
+    fontSize: '13px',
+    color: 'var(--text-secondary)',
   } as const,
   input: {
     width: '100%',

@@ -28,7 +28,10 @@ class AutomationTestCaseService(BaseService):
             {"is_deleted": False},
         )
         if existing:
-            raise ValueError("automation test case already exists")
+            for key, value in payload.items():
+                setattr(existing, key, value)
+            await existing.save()
+            return self._doc_to_dict(existing)
 
         doc = AutomationTestCaseDoc(**payload)
         await doc.insert()

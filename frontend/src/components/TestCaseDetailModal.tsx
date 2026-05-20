@@ -1,5 +1,15 @@
 import type { TestCaseResponse } from '../types';
 
+// 手工用例状态中文映射
+const CASE_STATUS_LABELS: Record<string, string> = {
+  DRAFT: '草稿',
+  PENDING_REVIEW: '待审核',
+  APPROVED: '已通过',
+  REJECTED: '已拒绝',
+  ACTIVE: '激活',
+  DEPRECATED: '已弃用',
+};
+
 interface TestCaseDetailModalProps {
   testCase: TestCaseResponse;
   onClose: () => void;
@@ -93,7 +103,7 @@ const TestCaseDetailModal: React.FC<TestCaseDetailModalProps> = ({ testCase, onC
             {renderField('用例ID', testCase.case_id)}
             {renderField('关联需求ID', testCase.ref_req_id)}
             {renderField('版本', `v${testCase.version}`)}
-            {renderField('状态', testCase.status)}
+            {renderField('状态', CASE_STATUS_LABELS[testCase.status] || testCase.status)}
             {renderField('是否激活', testCase.is_active ? '是' : '否')}
             {renderField('优先级', testCase.priority || '-')}
             {renderField('测试类别', testCase.test_category || '-')}

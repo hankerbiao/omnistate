@@ -46,10 +46,8 @@ class _TaskDispatchBase(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     def _validate_channel_and_agent(self) -> None:
-        if self.dispatch_channel and self.dispatch_channel.upper() not in {"RABBITMQ", "HTTP"}:
-            raise ValueError("dispatch_channel must be RABBITMQ or HTTP")
-        if (self.dispatch_channel or "").upper() == "HTTP" and not self.agent_id:
-            raise ValueError("agent_id is required when dispatch_channel is HTTP")
+        # 固定使用 RabbitMQ 下发，忽略 dispatch_channel 字段
+        pass
 
     def _validate_schedule_type(self) -> None:
         if self.schedule_type and self.schedule_type.upper() not in {"IMMEDIATE", "SCHEDULED"}:

@@ -5,8 +5,6 @@ import type {
   TaskStatus,
   AutomationTestCaseResponse,
   AutomationConfigField,
-  DispatchChannel,
-  ExecutionAgent,
   DispatchCaseItem,
   ExecutionTaskCaseSummary,
   ExecutionAssertionItem,
@@ -24,8 +22,6 @@ interface TaskListProps {
 
 interface DispatchModalState {
   isOpen: boolean;
-  dispatchChannel: DispatchChannel;
-  agentId: string;
   scheduleType: 'IMMEDIATE' | 'SCHEDULED';
   plannedAt: string;
   selectedCases: string[];
@@ -48,7 +44,6 @@ interface RerunEditModalState extends Omit<DispatchModalState, 'executionConfig'
   executionConfig: ExecutionConfig;
 }
 
-const DEFAULT_DISPATCH_CHANNEL: DispatchChannel = 'RABBITMQ';
 const TASK_TABLE_COLUMNS = 6;
 type StatusAppearance = {
   bg: string;
@@ -111,13 +106,6 @@ const getFieldDisplayLabel = (field: AutomationConfigField) => {
   return field.label || field.name;
 };
 
-const normalizeDispatchChannel = (dispatchChannel?: string): DispatchChannel => {
-  if (dispatchChannel === 'HTTP') {
-    return dispatchChannel;
-  }
-  return 'RABBITMQ';
-};
-
 const formatAttachmentSize = (size: number) => {
   if (size < 1024) {
     return `${size} B`;
@@ -153,8 +141,6 @@ const TaskList: React.FC<TaskListProps> = () => {
   const [rerunningTaskId, setRerunningTaskId] = useState<string | null>(null);
   const [dispatchModal, setDispatchModal] = useState<DispatchModalState>({
     isOpen: false,
-    dispatchChannel: DEFAULT_DISPATCH_CHANNEL,
-    agentId: '',
     scheduleType: 'IMMEDIATE',
     plannedAt: '',
     selectedCases: [],
@@ -173,8 +159,6 @@ const TaskList: React.FC<TaskListProps> = () => {
   const [rerunEditModal, setRerunEditModal] = useState<RerunEditModalState>({
     isOpen: false,
     sourceTaskId: null,
-    dispatchChannel: DEFAULT_DISPATCH_CHANNEL,
-    agentId: '',
     scheduleType: 'IMMEDIATE',
     plannedAt: '',
     selectedCases: [],
@@ -194,7 +178,6 @@ const TaskList: React.FC<TaskListProps> = () => {
     },
   });
   const [autoCases, setAutoCases] = useState<AutomationTestCaseResponse[]>([]);
-  const [agents, setAgents] = useState<ExecutionAgent[]>([]);
   const [expandedCaseKeys, setExpandedCaseKeys] = useState<string[]>([]);
   const [caseConfigs, setCaseConfigs] = useState<Record<string, Record<string, unknown>>>({});
   const [configEditorCaseId, setConfigEditorCaseId] = useState<string | null>(null);
@@ -221,36 +204,26 @@ const TaskList: React.FC<TaskListProps> = () => {
   const openDispatchModal = async () => {
     setDispatchModal(prev => ({ ...prev, isOpen: true, loading: true, error: null }));
     try {
-      const [casesRes, agentsRes] = await Promise.all([
-        api.listAutomationTestCases({ limit: 100 }),
-        api.listAgents({ online_only: true }),
-      ]);
+      const casesRes = await api.listAutomationTestCases({ limit: 100 });
       setAutoCases(casesRes.data || []);
-      setAgents(agentsRes.data || []);
       setCaseConfigs({});
       setConfigEditorCaseId(null);
     } catch (err) {
       console.error('Fetch dispatch data error:', err);
-      setDispatchModal(prev => ({ ...prev, error: '获取用例和代理失败' }));
+      setDispatchModal(prev => ({ ...prev, error: '获取用例失败' }));
     } finally {
       setDispatchModal(prev => ({ ...prev, loading: false }));
     }
   };
 
   const loadRerunResources = useCallback(async () => {
-    const [casesRes, agentsRes] = await Promise.all([
-      api.listAutomationTestCases({ limit: 100 }),
-      api.listAgents({ online_only: true }),
-    ]);
+    const casesRes = await api.listAutomationTestCases({ limit: 100 });
     setAutoCases(casesRes.data || []);
-    setAgents(agentsRes.data || []);
   }, []);
 
   const closeDispatchModal = () => {
     setDispatchModal({
       isOpen: false,
-      dispatchChannel: DEFAULT_DISPATCH_CHANNEL,
-      agentId: '',
       scheduleType: 'IMMEDIATE',
       plannedAt: '',
       selectedCases: [],
@@ -274,8 +247,6 @@ const TaskList: React.FC<TaskListProps> = () => {
     setRerunEditModal({
       isOpen: false,
       sourceTaskId: null,
-      dispatchChannel: DEFAULT_DISPATCH_CHANNEL,
-      agentId: '',
       scheduleType: 'IMMEDIATE',
       plannedAt: '',
       selectedCases: [],
@@ -409,13 +380,9 @@ const TaskList: React.FC<TaskListProps> = () => {
   );
 
   const handleDispatchSubmit = async () => {
-    const { dispatchChannel, agentId, scheduleType, plannedAt, selectedCases, category, projectTag, executionConfig } = dispatchModal;
+    const { scheduleType, plannedAt, selectedCases, category, projectTag, executionConfig } = dispatchModal;
     if (selectedCases.length === 0) {
       setDispatchModal(prev => ({ ...prev, error: '请选择至少一个用例' }));
-      return;
-    }
-    if (dispatchChannel === 'HTTP' && !agentId) {
-      setDispatchModal(prev => ({ ...prev, error: 'HTTP 下发必须选择目标代理' }));
       return;
     }
     if (scheduleType === 'SCHEDULED' && !plannedAt) {
@@ -448,8 +415,6 @@ const TaskList: React.FC<TaskListProps> = () => {
       const cases = buildDispatchCaseItems(selectedCases, autoCases, caseConfigs);
       const firstSelectedCase = autoCases.find(caseItem => caseItem.auto_case_id === selectedCases[0]);
       const requestData = {
-        dispatch_channel: dispatchChannel,
-        agent_id: agentId || undefined,
         schedule_type: scheduleType,
         planned_at: scheduleType === 'SCHEDULED' ? plannedAt : undefined,
         category,
@@ -496,8 +461,6 @@ const TaskList: React.FC<TaskListProps> = () => {
       setRerunEditModal({
         isOpen: true,
         sourceTaskId: selectedTask.task_id,
-        dispatchChannel: normalizeDispatchChannel(payload.dispatch_channel),
-        agentId: payload.agent_id || selectedTask.agent_id || '',
         scheduleType: payload.schedule_type === 'SCHEDULED' ? 'SCHEDULED' : 'IMMEDIATE',
         plannedAt: payload.planned_at ? payload.planned_at.slice(0, 16) : '',
         selectedCases,
@@ -523,17 +486,13 @@ const TaskList: React.FC<TaskListProps> = () => {
   };
 
   const handleEditRerunSubmit = async () => {
-    const { sourceTaskId, dispatchChannel, agentId, scheduleType, plannedAt, selectedCases, category, projectTag, repoUrl, branch, timeout, executionConfig } = rerunEditModal;
+    const { sourceTaskId, scheduleType, plannedAt, selectedCases, category, projectTag, repoUrl, branch, timeout, executionConfig } = rerunEditModal;
     if (!sourceTaskId) {
       setRerunEditModal(prev => ({ ...prev, error: '缺少来源任务 ID' }));
       return;
     }
     if (selectedCases.length === 0) {
       setRerunEditModal(prev => ({ ...prev, error: '请选择至少一个用例' }));
-      return;
-    }
-    if (dispatchChannel === 'HTTP' && !agentId) {
-      setRerunEditModal(prev => ({ ...prev, error: 'HTTP 下发必须选择目标代理' }));
       return;
     }
     if (scheduleType === 'SCHEDULED' && !plannedAt) {
@@ -568,8 +527,6 @@ const TaskList: React.FC<TaskListProps> = () => {
     try {
       const cases = buildDispatchCaseItems(selectedCases, autoCases, caseConfigs);
       const requestData: RerunTaskRequest = {
-        dispatch_channel: dispatchChannel,
-        agent_id: agentId || undefined,
         schedule_type: scheduleType,
         planned_at: scheduleType === 'SCHEDULED' ? plannedAt : undefined,
         category,
@@ -650,7 +607,7 @@ const TaskList: React.FC<TaskListProps> = () => {
   };
 
   const handleRerunTask = async (
-    task: Pick<ExecutionTask, 'task_id' | 'dispatch_channel' | 'agent_id'>,
+    task: Pick<ExecutionTask, 'task_id'>,
     e?: React.MouseEvent,
   ) => {
     e?.stopPropagation();
@@ -658,10 +615,7 @@ const TaskList: React.FC<TaskListProps> = () => {
     setSuccessMessage(null);
     setRerunningTaskId(task.task_id);
     try {
-      const response = await api.rerunTask(task.task_id, {
-        dispatch_channel: normalizeDispatchChannel(task.dispatch_channel),
-        agent_id: task.agent_id || undefined,
-      });
+      const response = await api.rerunTask(task.task_id, {});
       const payload = response.data as DispatchTaskResponse | undefined;
       const newTaskId = payload?.task_id || '';
       setSuccessMessage(newTaskId ? `已创建重跑任务 ${newTaskId}` : `任务 ${task.task_id} 已重新运行`);
@@ -965,7 +919,7 @@ const TaskList: React.FC<TaskListProps> = () => {
       </div>
 
       {error && (
-        <div className="error-banner" style={{ margin: '16px 24px' }}>
+        <div className="error-banner" style={{ margin: '16px 28px' }}>
           <span>⚠</span> {error}
         </div>
       )}
@@ -973,7 +927,7 @@ const TaskList: React.FC<TaskListProps> = () => {
       {successMessage && (
         <div
           style={{
-            margin: '16px 24px',
+            margin: '16px 28px',
             display: 'flex',
             alignItems: 'center',
             gap: '10px',
@@ -989,7 +943,7 @@ const TaskList: React.FC<TaskListProps> = () => {
         </div>
       )}
 
-      <div style={{ padding: '0 24px 24px' }}>
+      <div style={{ padding: '0 28px 28px' }}>
         <div className="data-panel">
           {loading ? (
             <div className="loading-overlay">
@@ -1360,50 +1314,6 @@ const TaskList: React.FC<TaskListProps> = () => {
                 </div>
               ) : (
                 <>
-                  <div style={styles.formSection}>
-                    <label style={styles.formLabel}>下发通道</label>
-                    <div style={styles.radioGroup}>
-                      <label style={styles.radioLabel}>
-                        <input
-                          type="radio"
-                          name="dispatchChannel"
-                          checked={dispatchModal.dispatchChannel === 'RABBITMQ'}
-                          onChange={() => setDispatchModal(prev => ({ ...prev, dispatchChannel: 'RABBITMQ' }))}
-                        />
-                        <span>RabbitMQ 下发</span>
-                      </label>
-                      <label style={styles.radioLabel}>
-                        <input
-                          type="radio"
-                          name="dispatchChannel"
-                          checked={dispatchModal.dispatchChannel === 'HTTP'}
-                          onChange={() => setDispatchModal(prev => ({ ...prev, dispatchChannel: 'HTTP' }))}
-                        />
-                        <span>HTTP 下发</span>
-                      </label>
-                    </div>
-                  </div>
-
-                  <div style={styles.formSection}>
-                    <label style={styles.formLabel}>
-                      目标代理 {dispatchModal.dispatchChannel === 'HTTP' ? '(必选)' : '(可选)'}
-                    </label>
-                    <select
-                      style={styles.select}
-                      value={dispatchModal.agentId}
-                      onChange={(e) => setDispatchModal(prev => ({ ...prev, agentId: e.target.value }))}
-                    >
-                      <option value="">
-                        {dispatchModal.dispatchChannel === 'HTTP' ? '请选择代理' : '自动分配'}
-                      </option>
-                      {agents.map(agent => (
-                        <option key={agent.agent_id} value={agent.agent_id}>
-                          {agent.agent_id} ({agent.hostname})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
                   <div style={styles.formSection}>
                     <label style={styles.formLabel}>下发方式</label>
                     <div style={styles.radioGroup}>
@@ -1789,48 +1699,6 @@ const TaskList: React.FC<TaskListProps> = () => {
                 </div>
               ) : (
                 <>
-                  <div style={styles.formSection}>
-                    <label style={styles.formLabel}>下发通道</label>
-                    <div style={styles.radioGroup}>
-                      <label style={styles.radioLabel}>
-                        <input
-                          type="radio"
-                          name="rerunDispatchChannel"
-                          checked={rerunEditModal.dispatchChannel === 'RABBITMQ'}
-                          onChange={() => setRerunEditModal(prev => ({ ...prev, dispatchChannel: 'RABBITMQ' }))}
-                        />
-                        <span>RabbitMQ 下发</span>
-                      </label>
-                      <label style={styles.radioLabel}>
-                        <input
-                          type="radio"
-                          name="rerunDispatchChannel"
-                          checked={rerunEditModal.dispatchChannel === 'HTTP'}
-                          onChange={() => setRerunEditModal(prev => ({ ...prev, dispatchChannel: 'HTTP' }))}
-                        />
-                        <span>HTTP 下发</span>
-                      </label>
-                    </div>
-                  </div>
-                  <div style={styles.formSection}>
-                    <label style={styles.formLabel}>
-                      目标代理 {rerunEditModal.dispatchChannel === 'HTTP' ? '(必选)' : '(可选)'}
-                    </label>
-                    <select
-                      style={styles.select}
-                      value={rerunEditModal.agentId}
-                      onChange={(e) => setRerunEditModal(prev => ({ ...prev, agentId: e.target.value }))}
-                    >
-                      <option value="">
-                        {rerunEditModal.dispatchChannel === 'HTTP' ? '请选择代理' : '自动分配'}
-                      </option>
-                      {agents.map(agent => (
-                        <option key={agent.agent_id} value={agent.agent_id}>
-                          {agent.agent_id} ({agent.hostname})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
                   <div style={styles.formSection}>
                     <label style={styles.formLabel}>下发方式</label>
                     <div style={styles.radioGroup}>
@@ -2302,7 +2170,7 @@ const styles = {
     gap: '20px',
   } as const,
   title: {
-    fontSize: '28px',
+    fontSize: '30px',
     fontWeight: 700,
     color: 'var(--text-primary)',
     letterSpacing: '-0.5px',
@@ -2310,11 +2178,11 @@ const styles = {
   } as const,
   statsRow: {
     display: 'flex',
-    gap: '10px',
+    gap: '14px',
   } as const,
   statBadge: {
-    padding: '5px 12px',
-    fontSize: '12px',
+    padding: '6px 14px',
+    fontSize: '13px',
     fontWeight: 500,
     borderRadius: '12px',
     border: '1px solid transparent',
@@ -2327,9 +2195,9 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     gap: '6px',
-    padding: '10px 16px',
-    fontSize: '13px',
-    fontWeight: 500,
+    padding: '12px 20px',
+    fontSize: '14px',
+    fontWeight: 600,
     color: '#fff',
     backgroundColor: 'var(--accent-cyan)',
     border: 'none',
@@ -2341,9 +2209,9 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     gap: '6px',
-    padding: '10px 16px',
-    fontSize: '13px',
-    fontWeight: 500,
+    padding: '12px 20px',
+    fontSize: '14px',
+    fontWeight: 600,
     color: 'var(--text-secondary)',
     backgroundColor: 'var(--bg-secondary)',
     border: '1px solid var(--border-default)',
@@ -2383,28 +2251,28 @@ const styles = {
     borderRadius: 'var(--radius-lg)',
     border: '1px solid var(--border-default)',
     width: '90%',
-    maxWidth: '520px',
+    maxWidth: '680px',
     maxHeight: '85vh',
     overflow: 'auto',
     boxShadow: 'var(--shadow-lg)',
     animation: 'scaleIn 0.3s ease',
   } as const,
   dispatchModalBody: {
-    padding: '24px',
+    padding: '28px',
   } as const,
   formSection: {
-    marginBottom: '20px',
+    marginBottom: '24px',
   } as const,
   formLabel: {
     display: 'block',
-    fontSize: '13px',
+    fontSize: '14px',
     fontWeight: 600,
     color: 'var(--text-secondary)',
     marginBottom: '8px',
   } as const,
   select: {
     width: '100%',
-    padding: '10px 14px',
+    padding: '12px 16px',
     fontSize: '14px',
     color: 'var(--text-primary)',
     backgroundColor: 'var(--bg-primary)',
@@ -2415,7 +2283,7 @@ const styles = {
   } as const,
   input: {
     width: '100%',
-    padding: '10px 14px',
+    padding: '12px 16px',
     fontSize: '14px',
     color: 'var(--text-primary)',
     backgroundColor: 'var(--bg-primary)',
@@ -2427,14 +2295,14 @@ const styles = {
     border: '1px solid var(--border-default)',
     borderRadius: 'var(--radius-md)',
     backgroundColor: 'var(--bg-primary)',
-    padding: '12px',
+    padding: '16px',
   } as const,
   attachmentUploadButton: {
     display: 'inline-flex',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: '9px 13px',
-    fontSize: '13px',
+    padding: '10px 16px',
+    fontSize: '14px',
     fontWeight: 600,
     color: 'var(--accent-cyan)',
     backgroundColor: 'rgba(57, 208, 214, 0.08)',
@@ -2453,15 +2321,15 @@ const styles = {
   attachmentList: {
     display: 'flex',
     flexDirection: 'column' as const,
-    gap: '8px',
-    marginTop: '12px',
+    gap: '10px',
+    marginTop: '14px',
   } as const,
   attachmentItem: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: '12px',
-    padding: '10px 12px',
+    padding: '12px 14px',
     border: '1px solid var(--border-muted)',
     borderRadius: 'var(--radius-md)',
     backgroundColor: 'var(--bg-secondary)',
@@ -2496,13 +2364,13 @@ const styles = {
   } as const,
   radioGroup: {
     display: 'flex',
-    gap: '20px',
+    gap: '28px',
   } as const,
   executionConfigContainer: {
     display: 'flex',
-    gap: '20px',
+    gap: '24px',
     flexWrap: 'wrap' as const,
-    padding: '14px',
+    padding: '18px',
     backgroundColor: 'var(--bg-primary)',
     border: '1px solid var(--border-default)',
     borderRadius: 'var(--radius-md)',
@@ -2522,8 +2390,8 @@ const styles = {
   executionConfigDisplay: {
     display: 'flex',
     flexDirection: 'column' as const,
-    gap: '10px',
-    padding: '14px',
+    gap: '12px',
+    padding: '16px',
     backgroundColor: 'var(--bg-primary)',
     border: '1px solid var(--border-default)',
     borderRadius: 'var(--radius-md)',
@@ -2531,7 +2399,7 @@ const styles = {
   executionConfigRow: {
     display: 'flex',
     alignItems: 'center',
-    gap: '12px',
+    gap: '14px',
   } as const,
   executionConfigValue: {
     fontSize: '13px',
@@ -2549,7 +2417,7 @@ const styles = {
     cursor: 'pointer',
   } as const,
   caseList: {
-    maxHeight: '200px',
+    maxHeight: '260px',
     overflowY: 'auto',
     border: '1px solid var(--border-default)',
     borderRadius: 'var(--radius-md)',
@@ -2564,16 +2432,17 @@ const styles = {
   caseItem: {
     display: 'flex',
     alignItems: 'center',
-    gap: '10px',
-    padding: '10px 14px',
+    gap: '12px',
+    padding: '12px 16px',
     borderBottom: '1px solid var(--border-muted)',
     cursor: 'pointer',
-    fontSize: '13px',
+    fontSize: '14px',
     color: 'var(--text-primary)',
   } as const,
   caseName: {
     flex: 1,
     fontFamily: "'JetBrains Mono', monospace",
+    fontWeight: 600,
   } as const,
   caseScriptName: {
     minWidth: '140px',
@@ -2592,7 +2461,7 @@ const styles = {
     display: 'flex',
     justifyContent: 'flex-end',
     gap: '12px',
-    marginTop: '24px',
+    marginTop: '28px',
   } as const,
   cancelBtn: {
     padding: '10px 20px',
@@ -2628,7 +2497,7 @@ const styles = {
     backgroundColor: 'var(--bg-tertiary)',
   } as const,
   th: {
-    padding: '14px 20px',
+    padding: '16px 28px',
     fontSize: '12px',
     fontWeight: 600,
     color: 'var(--text-secondary)',
@@ -2646,25 +2515,25 @@ const styles = {
     backgroundColor: 'rgba(255, 255, 255, 0.02)',
   } as const,
   td: {
-    padding: '16px 20px',
+    padding: '20px 28px',
     fontSize: '14px',
     color: 'var(--text-primary)',
   } as const,
   caseSummaryCell: {
-    padding: '0 20px 18px',
+    padding: '0 28px 24px',
   } as const,
   caseSummaryWrap: {
-    borderRadius: '14px',
+    borderRadius: '16px',
     border: '1px solid var(--border-muted)',
     backgroundColor: 'var(--bg-primary)',
-    padding: '14px',
+    padding: '20px',
   } as const,
   caseSummaryHeading: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: '12px',
-    fontSize: '12px',
+    marginBottom: '16px',
+    fontSize: '13px',
     fontWeight: 600,
     color: 'var(--text-secondary)',
     letterSpacing: '0.4px',
@@ -2675,12 +2544,12 @@ const styles = {
   } as const,
   caseSummaryList: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-    gap: '10px',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+    gap: '14px',
   } as const,
   caseSummaryCard: {
-    padding: '12px',
-    borderRadius: '12px',
+    padding: '18px',
+    borderRadius: '14px',
     border: '1px solid var(--border-muted)',
     backgroundColor: 'var(--bg-secondary)',
   } as const,
@@ -2688,23 +2557,23 @@ const styles = {
     display: 'flex',
     alignItems: 'flex-start',
     justifyContent: 'space-between',
-    gap: '10px',
-    marginBottom: '8px',
+    gap: '14px',
+    marginBottom: '14px',
   } as const,
   caseSummaryTitleBlock: {
     display: 'flex',
     flexDirection: 'column' as const,
-    gap: '4px',
+    gap: '6px',
     minWidth: 0,
   } as const,
   caseSummaryTitle: {
-    fontSize: '13px',
+    fontSize: '14px',
     fontWeight: 600,
     color: 'var(--text-primary)',
     lineHeight: 1.4,
   } as const,
   caseSummaryMeta: {
-    fontSize: '11px',
+    fontSize: '12px',
     color: 'var(--text-muted)',
     fontFamily: "'JetBrains Mono', monospace",
   } as const,
@@ -2712,41 +2581,41 @@ const styles = {
     display: 'inline-flex',
     alignItems: 'center',
     flexShrink: 0,
-    padding: '4px 8px',
+    padding: '5px 10px',
     borderRadius: '999px',
-    fontSize: '11px',
+    fontSize: '12px',
     fontWeight: 600,
     border: '1px solid transparent',
   } as const,
   caseSummaryInfoRow: {
     display: 'flex',
     flexWrap: 'wrap' as const,
-    gap: '10px',
-    fontSize: '11px',
+    gap: '14px',
+    fontSize: '12px',
     color: 'var(--text-secondary)',
   } as const,
   caseSummaryMetrics: {
     display: 'grid',
     gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
-    gap: '8px',
-    marginBottom: '10px',
+    gap: '12px',
+    marginBottom: '14px',
   } as const,
   caseMetricPill: {
     display: 'flex',
     flexDirection: 'column' as const,
-    gap: '3px',
-    padding: '8px 10px',
-    borderRadius: '10px',
+    gap: '4px',
+    padding: '12px 14px',
+    borderRadius: '12px',
     backgroundColor: 'rgba(255, 255, 255, 0.03)',
     border: '1px solid var(--border-muted)',
   } as const,
   caseMetricLabel: {
-    fontSize: '10px',
+    fontSize: '12px',
     color: 'var(--text-muted)',
     letterSpacing: '0.2px',
   } as const,
   caseMetricValue: {
-    fontSize: '12px',
+    fontSize: '15px',
     fontWeight: 700,
     color: 'var(--text-primary)',
     fontFamily: "'JetBrains Mono', monospace",
@@ -2754,26 +2623,26 @@ const styles = {
   inlineStatusBadge: {
     display: 'inline-flex',
     alignItems: 'center',
-    padding: '3px 8px',
+    padding: '4px 10px',
     borderRadius: '999px',
-    fontSize: '11px',
+    fontSize: '12px',
     fontWeight: 600,
     border: '1px solid transparent',
   } as const,
   caseMetricItem: {
     display: 'inline-flex',
     alignItems: 'center',
-    padding: '3px 0',
+    padding: '4px 0',
   } as const,
   caseFailureText: {
-    marginTop: '8px',
-    fontSize: '11px',
+    marginTop: '10px',
+    fontSize: '13px',
     lineHeight: 1.5,
     color: 'var(--accent-red)',
   } as const,
   caseDetailSection: {
-    marginTop: '10px',
-    paddingTop: '10px',
+    marginTop: '16px',
+    paddingTop: '16px',
     borderTop: '1px dashed var(--border-muted)',
   } as const,
   caseDetailToggle: {
@@ -2785,45 +2654,45 @@ const styles = {
     backgroundColor: 'transparent',
     border: 'none',
     cursor: 'pointer',
-    marginBottom: '8px',
+    marginBottom: '12px',
   } as const,
   caseDetailTitle: {
-    fontSize: '11px',
+    fontSize: '12px',
     fontWeight: 700,
     color: 'var(--text-secondary)',
     letterSpacing: '0.3px',
   } as const,
   caseDetailToggleText: {
-    fontSize: '11px',
+    fontSize: '12px',
     color: 'var(--accent-cyan)',
     fontWeight: 600,
   } as const,
   caseDetailGrid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-    gap: '8px',
-    marginBottom: '10px',
+    gap: '12px',
+    marginBottom: '14px',
   } as const,
   caseDetailBlock: {
     display: 'flex',
     flexDirection: 'column' as const,
-    gap: '3px',
-    padding: '8px 10px',
-    borderRadius: '10px',
+    gap: '4px',
+    padding: '12px 14px',
+    borderRadius: '12px',
     backgroundColor: 'rgba(255, 255, 255, 0.03)',
     border: '1px solid var(--border-muted)',
   } as const,
   caseDetailBlockLabel: {
-    fontSize: '10px',
+    fontSize: '12px',
     color: 'var(--text-muted)',
   } as const,
   caseDetailBlockValue: {
-    fontSize: '11px',
+    fontSize: '13px',
     color: 'var(--text-primary)',
     lineHeight: 1.4,
   } as const,
   caseDetailBlockValueMono: {
-    fontSize: '11px',
+    fontSize: '13px',
     color: 'var(--text-primary)',
     lineHeight: 1.4,
     fontFamily: "'JetBrains Mono', monospace",
@@ -2832,30 +2701,30 @@ const styles = {
   caseDetailMetaRow: {
     display: 'flex',
     flexWrap: 'wrap' as const,
-    gap: '8px',
-    marginBottom: '8px',
+    gap: '10px',
+    marginBottom: '10px',
   } as const,
   caseSectionGroup: {
-    marginTop: '10px',
+    marginTop: '14px',
   } as const,
   caseSectionTitle: {
-    marginBottom: '6px',
-    fontSize: '11px',
+    marginBottom: '8px',
+    fontSize: '12px',
     color: 'var(--text-secondary)',
     fontWeight: 600,
   } as const,
   caseDetailText: {
-    fontSize: '11px',
+    fontSize: '12px',
     color: 'var(--text-secondary)',
   } as const,
   assertionList: {
     display: 'flex',
     flexDirection: 'column' as const,
-    gap: '8px',
+    gap: '10px',
   } as const,
   assertionItem: {
-    padding: '8px 10px',
-    borderRadius: '10px',
+    padding: '12px 14px',
+    borderRadius: '12px',
     backgroundColor: 'rgba(255, 255, 255, 0.03)',
     border: '1px solid var(--border-muted)',
   } as const,
@@ -2863,45 +2732,45 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: '8px',
+    gap: '10px',
   } as const,
   assertionName: {
-    fontSize: '11px',
+    fontSize: '13px',
     fontWeight: 600,
     color: 'var(--text-primary)',
     lineHeight: 1.4,
   } as const,
   assertionError: {
-    marginTop: '6px',
-    fontSize: '11px',
+    marginTop: '8px',
+    fontSize: '12px',
     lineHeight: 1.5,
     color: 'var(--accent-red)',
   } as const,
   assertionMeta: {
     marginTop: '4px',
-    fontSize: '10px',
+    fontSize: '12px',
     color: 'var(--text-muted)',
     fontFamily: "'JetBrains Mono', monospace",
   } as const,
   caseDetailCode: {
-    marginTop: '8px',
+    marginTop: '10px',
     marginBottom: 0,
-    padding: '10px',
-    borderRadius: '10px',
+    padding: '12px',
+    borderRadius: '12px',
     backgroundColor: 'rgba(15, 23, 42, 0.55)',
     color: '#dbeafe',
-    fontSize: '11px',
+    fontSize: '12px',
     lineHeight: 1.5,
     fontFamily: "'JetBrains Mono', monospace",
     whiteSpace: 'pre-wrap' as const,
     wordBreak: 'break-word' as const,
   } as const,
   caseSummaryEmpty: {
-    padding: '12px',
-    borderRadius: '10px',
+    padding: '16px',
+    borderRadius: '12px',
     backgroundColor: 'var(--bg-secondary)',
     color: 'var(--text-muted)',
-    fontSize: '12px',
+    fontSize: '13px',
     textAlign: 'center' as const,
   } as const,
   deleteBtn: {
@@ -2935,8 +2804,8 @@ const styles = {
   } as const,
   taskId: {
     fontFamily: "'JetBrains Mono', monospace",
-    fontSize: '13px',
-    fontWeight: 600,
+    fontSize: '14px',
+    fontWeight: 700,
     color: 'var(--accent-cyan)',
   } as const,
   taskIdBlock: {
@@ -2949,7 +2818,7 @@ const styles = {
     alignSelf: 'flex-start',
     padding: '3px 8px',
     borderRadius: '999px',
-    fontSize: '10px',
+    fontSize: '11px',
     fontWeight: 600,
     color: 'var(--accent-cyan)',
     backgroundColor: 'rgba(57, 208, 214, 0.12)',
@@ -2958,8 +2827,8 @@ const styles = {
   } as const,
   statusBadge: {
     display: 'inline-flex',
-    padding: '4px 10px',
-    fontSize: '11px',
+    padding: '6px 12px',
+    fontSize: '12px',
     fontWeight: 600,
     borderRadius: '10px',
     textTransform: 'uppercase' as const,
@@ -2968,8 +2837,8 @@ const styles = {
   statusBadgeLarge: {
     display: 'inline-flex',
     alignItems: 'center',
-    gap: '6px',
-    padding: '6px 14px',
+    gap: '8px',
+    padding: '8px 16px',
     fontSize: '12px',
     fontWeight: 600,
     borderRadius: '14px',
@@ -2982,12 +2851,12 @@ const styles = {
   } as const,
   caseCount: {
     fontFamily: "'JetBrains Mono', monospace",
-    fontSize: '14px',
-    fontWeight: 500,
+    fontSize: '15px',
+    fontWeight: 700,
     color: 'var(--accent-orange)',
   } as const,
   timeText: {
-    fontSize: '12px',
+    fontSize: '13px',
     color: 'var(--text-muted)',
     fontFamily: "'JetBrains Mono', monospace",
   } as const,
@@ -3036,7 +2905,7 @@ const styles = {
     borderRadius: 'var(--radius-lg)',
     border: '1px solid var(--border-default)',
     width: '90%',
-    maxWidth: '640px',
+    maxWidth: '800px',
     maxHeight: '85vh',
     overflow: 'auto',
     boxShadow: 'var(--shadow-lg)',
@@ -3046,7 +2915,7 @@ const styles = {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: '20px 24px',
+    padding: '24px 28px',
     borderBottom: '1px solid var(--border-default)',
     backgroundColor: 'var(--bg-tertiary)',
   } as const,
@@ -3079,7 +2948,7 @@ const styles = {
     padding: '60px',
   } as const,
   modalBody: {
-    padding: '24px',
+    padding: '28px',
   } as const,
   caseConfigEditorModal: {
     backgroundColor: 'var(--bg-secondary)',
@@ -3095,20 +2964,20 @@ const styles = {
   caseConfigList: {
     display: 'flex',
     flexDirection: 'column' as const,
-    gap: '12px',
+    gap: '16px',
   } as const,
   caseConfigCard: {
     border: '1px solid var(--border-default)',
     borderRadius: 'var(--radius-md)',
     backgroundColor: 'var(--bg-primary)',
-    padding: '14px',
+    padding: '18px',
   } as const,
   caseConfigHeader: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: '12px',
-    marginBottom: '14px',
+    marginBottom: '16px',
   } as const,
   caseConfigTitleBlock: {
     display: 'flex',
@@ -3129,7 +2998,7 @@ const styles = {
   } as const,
   caseConfigCount: {
     flexShrink: 0,
-    fontSize: '11px',
+    fontSize: '12px',
     color: 'var(--accent-cyan)',
     backgroundColor: 'rgba(57, 208, 214, 0.12)',
     border: '1px solid rgba(57, 208, 214, 0.24)',
@@ -3144,13 +3013,13 @@ const styles = {
   caseConfigFields: {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
-    gap: '12px',
+    gap: '14px',
   } as const,
   caseConfigField: {
     border: '1px solid var(--border-muted)',
     borderRadius: 'var(--radius-md)',
     backgroundColor: 'var(--bg-secondary)',
-    padding: '12px',
+    padding: '14px',
   } as const,
   caseConfigFieldHeader: {
     display: 'flex',
@@ -3199,8 +3068,8 @@ const styles = {
   detailGrid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(2, 1fr)',
-    gap: '16px',
-    marginBottom: '24px',
+    gap: '20px',
+    marginBottom: '28px',
   } as const,
   detailItem: {
     display: 'flex',
@@ -3219,7 +3088,7 @@ const styles = {
     fontFamily: "'JetBrains Mono', monospace",
   } as const,
   statusSection: {
-    marginBottom: '24px',
+    marginBottom: '28px',
   } as const,
   sectionTitle: {
     fontSize: '13px',
@@ -3227,12 +3096,12 @@ const styles = {
     color: 'var(--text-secondary)',
     textTransform: 'uppercase' as const,
     letterSpacing: '0.5px',
-    marginBottom: '14px',
+    marginBottom: '16px',
   } as const,
   statusGrid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(4, 1fr)',
-    gap: '12px',
+    gap: '16px',
   } as const,
   statusItem: {
     display: 'flex',
@@ -3251,7 +3120,7 @@ const styles = {
   timeGrid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(2, 1fr)',
-    gap: '16px',
+    gap: '20px',
   } as const,
   timeLabel: {
     display: 'block',
@@ -3265,13 +3134,13 @@ const styles = {
     color: 'var(--text-secondary)',
   } as const,
   errorSection: {
-    marginTop: '8px',
+    marginTop: '12px',
   } as const,
   detailActions: {
     display: 'flex',
     justifyContent: 'flex-end',
-    gap: '10px',
-    marginBottom: '20px',
+    gap: '12px',
+    marginBottom: '24px',
   } as const,
   secondaryActionBtn: {
     padding: '10px 16px',

@@ -7,6 +7,24 @@ import TestCaseDetailModal from './TestCaseDetailModal';
 
 type ActiveTab = 'workflow' | 'testcases';
 
+// 需求/用例状态中文映射
+const STATUS_LABELS: Record<string, string> = {
+  DRAFT: '草稿',
+  PENDING_REVIEW: '待审核',
+  PENDING_DEVELOP: '待开发',
+  DEVELOPING: '开发中',
+  PENDING_TEST: '待测试',
+  PENDING_UAT: '待验收',
+  PENDING_RELEASE: '待发布',
+  RELEASED: '已发布',
+  APPROVED: '已通过',
+  REJECTED: '已驳回',
+  CLOSED: '已关闭',
+  ACTIVE: '激活',
+  INACTIVE: '未激活',
+  DEPRECATED: '已弃用',
+};
+
 const RequirementsPage: React.FC = () => {
   const [requirements, setRequirements] = useState<RequirementResponse[]>([]);
   const [testCases, setTestCases] = useState<TestCaseResponse[]>([]);
@@ -235,7 +253,7 @@ const RequirementsPage: React.FC = () => {
       await fetchWorkflowTransitions(selectedRequirement.workflow_item_id);
       setTransitionModal({ open: false });
     } catch (err) {
-      setError('工作流流转失败');
+      setError(err instanceof Error ? err.message : '工作流流转失败');
       console.error('Workflow transition error:', err);
     } finally {
       setTransitioningAction(null);
@@ -255,7 +273,7 @@ const RequirementsPage: React.FC = () => {
       // 重新获取列表
       await fetchRequirements();
     } catch (err) {
-      setError('删除需求失败');
+      setError(err instanceof Error ? err.message : '删除需求失败');
       console.error('Delete requirement error:', err);
     } finally {
       setDeleting(false);
@@ -301,7 +319,7 @@ const RequirementsPage: React.FC = () => {
       setSelectedIds(new Set());
       await fetchRequirements();
     } catch (err) {
-      setError('批量删除失败');
+      setError(err instanceof Error ? err.message : '批量删除失败');
       console.error('Batch delete error:', err);
     } finally {
       setDeleting(false);
@@ -318,7 +336,7 @@ const RequirementsPage: React.FC = () => {
       setDeleteCaseConfirm({ open: false });
       await fetchTestCases(selectedRequirementId);
     } catch (err) {
-      setError('删除测试用例失败');
+      setError(err instanceof Error ? err.message : '删除测试用例失败');
       console.error('Delete test case error:', err);
     } finally {
       setDeleting(false);
@@ -423,7 +441,7 @@ const RequirementsPage: React.FC = () => {
                       className="status-badge status-badge--neutral"
                       style={{ fontSize: '10px' }}
                     >
-                      {requirement.status}
+                      {STATUS_LABELS[requirement.status] || requirement.status}
                     </span>
                     <span style={styles.metaTime}>
                       {new Date(requirement.created_at).toLocaleDateString('zh-CN')}
@@ -460,6 +478,9 @@ const RequirementsPage: React.FC = () => {
                     {selectedRequirement.priority}
                   </span>
                 </div>
+                {selectedRequirement.description && (
+                  <p style={styles.description}>{selectedRequirement.description}</p>
+                )}
               </div>
             </div>
 
@@ -522,7 +543,7 @@ const RequirementsPage: React.FC = () => {
                         <div style={styles.workflowInfoItem}>
                           <span style={styles.workflowInfoLabel}>当前负责人</span>
                           <span style={styles.workflowInfoValue}>
-                            {selectedRequirement.owner_name || selectedRequirement.current_owner || '-'}
+                            {selectedRequirement.current_owner_name || selectedRequirement.current_owner || '-'}
                           </span>
                         </div>
                         <div style={styles.workflowInfoItem}>
@@ -559,7 +580,7 @@ const RequirementsPage: React.FC = () => {
                                 disabled={Boolean(transitioningAction)}
                               >
                                 <span style={styles.actionName}>{getActionLabel(transition.action)}</span>
-                                <span style={styles.actionArrow}>→ {transition.to_state}</span>
+                                <span style={styles.actionArrow}>→ {STATUS_LABELS[transition.to_state] || transition.to_state}</span>
                               </button>
                             ))}
                           </div>
@@ -620,7 +641,7 @@ const RequirementsPage: React.FC = () => {
                             </td>
                             <td>
                               <span className="status-badge status-badge--neutral">
-                                {testCase.status}
+                                {STATUS_LABELS[testCase.status] || testCase.status}
                               </span>
                             </td>
                             <td className="mono">
@@ -1031,6 +1052,13 @@ const styles = {
   detailId: {
     fontSize: '12px',
     color: 'var(--text-tertiary)',
+  },
+  description: {
+    marginTop: '12px',
+    fontSize: '13px',
+    color: 'var(--text-secondary)',
+    lineHeight: 1.6,
+    whiteSpace: 'pre-wrap' as const,
   },
   tabContent: {
     flex: 1,
