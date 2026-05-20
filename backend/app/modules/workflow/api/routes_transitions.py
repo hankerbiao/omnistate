@@ -197,6 +197,10 @@ async def get_available_transitions(
                     AvailableTransitionResponse(**transition)
                     for transition in result["available_transitions"]
                 ],
+                creator=item.get("creator_id"),
+                current_owner=item.get("current_owner_id"),
+                created_at=item.get("created_at"),
+                updated_at=item.get("updated_at"),
             )
         )
     except WorkItemNotFoundError as exc:

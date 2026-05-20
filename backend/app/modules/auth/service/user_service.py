@@ -48,6 +48,7 @@ class UserService(AuthServiceSupport):
         self,
         status: Optional[str] = None,
         role_id: Optional[str] = None,
+        search: Optional[str] = None,
         limit: int = 20,
         offset: int = 0,
     ) -> List[Dict[str, Any]]:
@@ -56,6 +57,14 @@ class UserService(AuthServiceSupport):
             query = query.find(UserDoc.status == status)
         if role_id:
             query = query.find({"role_ids": role_id})
+        if search:
+            # 支持搜索用户名或用户ID
+            query = query.find(
+                {"$or": [
+                    {"username": {"$regex": search, "$options": "i"}},
+                    {"user_id": {"$regex": search, "$options": "i"}},
+                ]}
+            )
         docs = await query.sort("-created_at").skip(offset).limit(limit).to_list()
         return [self._doc_to_dict(doc) for doc in docs]
 

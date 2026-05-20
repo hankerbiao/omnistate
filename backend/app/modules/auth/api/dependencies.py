@@ -10,7 +10,8 @@ from app.modules.auth.service import (
     RoleService,
     UserService,
 )
-from app.shared.auth import get_current_user, is_admin_role
+from app.shared.auth import get_current_user
+from app.shared.auth.jwt_auth import is_admin_role
 
 
 def get_user_service() -> UserService:

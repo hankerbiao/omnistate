@@ -69,10 +69,11 @@ async def list_users(
     _=Depends(require_any_permission(["users:read", "work_items:read"])),
     status: Optional[str] = Query(None),
     role_id: Optional[str] = Query(None),
-    limit: int = Query(20, ge=1, le=200),
+    search: Optional[str] = Query(None, description="搜索用户名或用户ID"),
+    limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ):
-    return APIResponse(data=await service.list_users(status=status, role_id=role_id, limit=limit, offset=offset))
+    return APIResponse(data=await service.list_users(status=status, role_id=role_id, search=search, limit=limit, offset=offset))
 
 
 @router.put("/users/{user_id}", response_model=APIResponse[UserResponse], summary="更新用户信息")

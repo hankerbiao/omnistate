@@ -14,7 +14,6 @@ from app.modules.test_specs.api import (
 from app.modules.execution.api import execution_router
 from app.modules.auth.api import router as auth_router
 from app.modules.attachments.api import router as attachments_router
-from app.modules.assets.api import router as assets_router
 from app.modules.terminal.api import terminal_router
 from app.shared.api.routes import health_router
 
@@ -31,5 +30,4 @@ api_router.include_router(automation_test_case_router, prefix="/api/v1", tags=["
 api_router.include_router(execution_router, prefix="/api/v1", tags=["Execution"])
 api_router.include_router(auth_router, prefix="/api/v1", tags=["Auth"])
 api_router.include_router(attachments_router, prefix="/api/v1", tags=["Attachments"])
-api_router.include_router(assets_router, prefix="/api/v1", tags=["Assets"])
 api_router.include_router(terminal_router, prefix="/api/v1", tags=["Terminal"])

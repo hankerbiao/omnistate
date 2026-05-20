@@ -71,6 +71,11 @@ export interface RequirementResponse {
   attachments: Record<string, unknown>[];
   created_at: string;
   updated_at: string;
+  // Workflow related fields
+  creator?: string;
+  creator_name?: string;
+  current_owner?: string;
+  owner_name?: string;
 }
 
 export interface ListRequirementsParams {
@@ -93,6 +98,10 @@ export interface WorkflowTransitionsResponse {
   item_id: string;
   current_state: string;
   available_transitions: WorkflowTransition[];
+  creator?: string;
+  current_owner?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface WorkflowTransitionRequest {
@@ -600,6 +609,7 @@ export interface UpdateUserRolesRequest {
 export interface ListUsersParams {
   status?: string;
   role_id?: string;
+  search?: string;
   limit?: number;
   offset?: number;
 }

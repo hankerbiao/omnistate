@@ -90,6 +90,10 @@ class AvailableTransitionsResponse(BaseModel):
     item_id: str
     current_state: str
     available_transitions: List[AvailableTransitionResponse]
+    creator: Optional[str] = Field(None, description="创建人ID")
+    current_owner: Optional[str] = Field(None, description="当前负责人ID")
+    created_at: Optional[datetime] = Field(None, description="创建时间")
+    updated_at: Optional[datetime] = Field(None, description="更新时间")
 
 
 class DeleteWorkItemData(BaseModel):
