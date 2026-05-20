@@ -1235,12 +1235,12 @@ const TaskList: React.FC<TaskListProps> = () => {
                 </div>
 
                 {/* 执行配置展示 */}
-                {(selectedTask.request_payload?.execution_config || selectedTask.result_summary?.execution_config) && (
+                {(selectedTask.request_payload?.execution_config || (selectedTask.result_summary as { execution_config?: ExecutionConfig } | undefined)?.execution_config) && (
                   <div style={styles.timeSection}>
                     <h3 style={styles.sectionTitle}>执行配置</h3>
                     <div style={styles.executionConfigDisplay}>
                       {(() => {
-                        const execConfig = selectedTask.request_payload?.execution_config || selectedTask.result_summary?.execution_config;
+                        const execConfig: ExecutionConfig | undefined = selectedTask.request_payload?.execution_config || (selectedTask.result_summary as { execution_config?: ExecutionConfig } | undefined)?.execution_config;
                         if (!execConfig) return null;
 
                         const stepPolicyLabels: Record<string, string> = {

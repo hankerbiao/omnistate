@@ -33,14 +33,27 @@ const UserManagement: React.FC = () => {
   const [newUser, setNewUser] = useState(emptyNewUser);
   const [creating, setCreating] = useState(false);
   const [filterStatus, setFilterStatus] = useState<string>('');
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [batchDeleteConfirm, setBatchDeleteConfirm] = useState(false);
+  const [batchDeleting, setBatchDeleting] = useState(false);
+  const [passwordModal, setPasswordModal] = useState(false);
+  const [passwordValue, setPasswordValue] = useState('');
+  const [resetting, setResetting] = useState(false);
+  const [togglingStatus, setTogglingStatus] = useState(false);
 
   const fetchUsers = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const params: { status?: string; limit?: number } = { limit: 200 };
+      const params: { status?: string; search?: string; limit?: number } = { limit: 200 };
       if (filterStatus) {
         params.status = filterStatus;
+      }
+      if (searchQuery.trim()) {
+        params.search = searchQuery.trim();
       }
       const response = await api.listUsers(params);
       const nextUsers = response.data || [];
@@ -55,7 +68,7 @@ const UserManagement: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [filterStatus]);
+  }, [filterStatus, searchQuery]);
 
   const fetchRoles = useCallback(async () => {
     try {
@@ -167,6 +180,100 @@ const UserManagement: React.FC = () => {
     }
   };
 
+  const handleDeleteUser = async () => {
+    if (!deleteConfirm) return;
+    setDeleting(true);
+    setError(null);
+    try {
+      await api.deleteUser(deleteConfirm);
+      setDeleteConfirm(null);
+      if (selectedUser?.user_id === deleteConfirm) setSelectedUser(null);
+      await fetchUsers();
+    } catch (err) {
+      setError(getErrorMessage(err, '删除用户失败'));
+      console.error('Delete user error:', err);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const toggleSelect = (userId: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(userId)) {
+        next.delete(userId);
+      } else {
+        next.add(userId);
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === users.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(users.map(u => u.user_id)));
+    }
+  };
+
+  const handleBatchDelete = async () => {
+    if (selectedIds.size === 0) return;
+    setBatchDeleting(true);
+    setError(null);
+    try {
+      const deletePromises = Array.from(selectedIds).map(id => api.deleteUser(id));
+      await Promise.all(deletePromises);
+      setBatchDeleteConfirm(false);
+      setSelectedIds(new Set());
+      if (selectedUser && selectedIds.has(selectedUser.user_id)) {
+        setSelectedUser(null);
+      }
+      await fetchUsers();
+    } catch (err) {
+      setError(getErrorMessage(err, '批量删除失败'));
+      console.error('Batch delete error:', err);
+    } finally {
+      setBatchDeleting(false);
+    }
+  };
+
+  const handlePasswordReset = async () => {
+    if (!selectedUser || !passwordValue.trim()) return;
+    if (passwordValue.trim().length < 6) {
+      setError('密码长度至少6位');
+      return;
+    }
+    setResetting(true);
+    setError(null);
+    try {
+      await api.updateUserPassword(selectedUser.user_id, { new_password: passwordValue.trim() });
+      setPasswordModal(false);
+      setPasswordValue('');
+    } catch (err) {
+      setError(getErrorMessage(err, '密码重置失败'));
+      console.error('Password reset error:', err);
+    } finally {
+      setResetting(false);
+    }
+  };
+
+  const handleToggleStatus = async () => {
+    if (!selectedUser) return;
+    const newStatus = selectedUser.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
+    setTogglingStatus(true);
+    setError(null);
+    try {
+      await api.updateUser(selectedUser.user_id, { status: newStatus });
+      await fetchUsers();
+    } catch (err) {
+      setError(getErrorMessage(err, '状态切换失败'));
+      console.error('Toggle status error:', err);
+    } finally {
+      setTogglingStatus(false);
+    }
+  };
+
   const getStatusStyle = (status: string) => {
     if (status === 'ACTIVE') {
       return {
@@ -194,14 +301,35 @@ const UserManagement: React.FC = () => {
         <div style={styles.panelHeader}>
           <div>
             <h2 style={styles.panelTitle}>用户列表</h2>
-            <span style={styles.panelHint}>{users.length} 个用户</span>
+            <span style={styles.panelHint}>
+              {selectedIds.size > 0
+                ? `已选择 ${selectedIds.size} 项`
+                : `${users.length} 个用户`}
+            </span>
           </div>
-          <button className="btn btn--primary btn--sm" onClick={() => setCreateModalOpen(true)}>
-            + 新建
-          </button>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            {selectedIds.size > 0 && (
+              <button
+                className="btn btn--sm"
+                style={{ backgroundColor: 'var(--status-error)', color: 'white' }}
+                onClick={() => setBatchDeleteConfirm(true)}
+              >
+                删除 ({selectedIds.size})
+              </button>
+            )}
+            <button className="btn btn--primary btn--sm" onClick={() => setCreateModalOpen(true)}>
+              + 新建
+            </button>
+          </div>
         </div>
 
         <div style={styles.filterRow}>
+          <input
+            style={styles.searchInput}
+            placeholder="搜索用户名或ID..."
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+          />
           <select
             style={styles.filterSelect}
             value={filterStatus}
@@ -222,6 +350,17 @@ const UserManagement: React.FC = () => {
           </div>
         ) : (
           <div style={styles.userList}>
+            <div style={styles.selectAllRow}>
+              <label style={styles.checkboxLabel}>
+                <input
+                  type="checkbox"
+                  checked={selectedIds.size === users.length && users.length > 0}
+                  onChange={toggleSelectAll}
+                  style={styles.checkbox}
+                />
+                <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>全选</span>
+              </label>
+            </div>
             {users.map(user => {
               const status = getStatusStyle(user.status);
               return (
@@ -233,8 +372,17 @@ const UserManagement: React.FC = () => {
                   }}
                   onClick={() => handleSelectUser(user)}
                 >
-                  <div style={styles.userItemHeader}>
-                    <span style={styles.userName}>{user.username}</span>
+                  <div style={styles.itemHeader}>
+                    <div style={styles.itemHeaderLeft}>
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(user.user_id)}
+                        onChange={() => toggleSelect(user.user_id)}
+                        onClick={e => e.stopPropagation()}
+                        style={styles.checkbox}
+                      />
+                      <span style={styles.userName}>{user.username}</span>
+                    </div>
                     <span
                       style={{
                         ...styles.statusBadge,
@@ -344,6 +492,37 @@ const UserManagement: React.FC = () => {
                     禁用
                   </span>
                 )}
+              </div>
+            </div>
+
+            <div style={styles.detailSection}>
+              <label style={styles.label}>操作</label>
+              <div style={styles.actionRow}>
+                <button
+                  style={{
+                    ...styles.actionBtn,
+                    backgroundColor: selectedUser.status === 'ACTIVE'
+                      ? 'var(--status-warning-bg)' : 'var(--status-success-bg)',
+                    color: selectedUser.status === 'ACTIVE'
+                      ? 'var(--status-warning)' : 'var(--status-success)',
+                  }}
+                  onClick={handleToggleStatus}
+                  disabled={togglingStatus}
+                >
+                  {togglingStatus ? '处理中...' : selectedUser.status === 'ACTIVE' ? '禁用' : '启用'}
+                </button>
+                <button
+                  style={{ ...styles.actionBtn, backgroundColor: 'var(--status-info-bg)', color: 'var(--status-info)' }}
+                  onClick={() => { setPasswordValue(''); setPasswordModal(true); }}
+                >
+                  重置密码
+                </button>
+                <button
+                  style={{ ...styles.actionBtn, backgroundColor: 'var(--status-error-bg)', color: 'var(--status-error)' }}
+                  onClick={() => setDeleteConfirm(selectedUser.user_id)}
+                >
+                  删除用户
+                </button>
               </div>
             </div>
 
@@ -494,6 +673,104 @@ const UserManagement: React.FC = () => {
         </div>
       )}
 
+      {/* Delete Confirmation Modal */}
+      {deleteConfirm && (
+        <div style={styles.modalOverlay} onClick={() => setDeleteConfirm(null)}>
+          <div style={styles.modal} onClick={e => e.stopPropagation()}>
+            <div style={styles.modalHeader}>
+              <h3 style={styles.modalTitle}>确认删除</h3>
+              <button style={styles.modalClose} onClick={() => setDeleteConfirm(null)}>×</button>
+            </div>
+            <div style={styles.modalBody}>
+              <p style={{ fontSize: '14px', color: 'var(--text-primary)', margin: 0 }}>
+                确定要删除用户 <strong>{deleteConfirm}</strong> 吗？此操作不可恢复。
+              </p>
+            </div>
+            <div style={styles.modalFooter}>
+              <button style={styles.cancelBtn} onClick={() => setDeleteConfirm(null)}>取消</button>
+              <button
+                style={{
+                  ...styles.dangerBtn,
+                  ...(deleting ? { opacity: 0.6, cursor: 'wait' } : {}),
+                }}
+                onClick={handleDeleteUser}
+                disabled={deleting}
+              >
+                {deleting ? '删除中...' : '确认删除'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Batch Delete Confirmation Modal */}
+      {batchDeleteConfirm && (
+        <div style={styles.modalOverlay} onClick={() => setBatchDeleteConfirm(false)}>
+          <div style={styles.modal} onClick={e => e.stopPropagation()}>
+            <div style={styles.modalHeader}>
+              <h3 style={styles.modalTitle}>确认批量删除</h3>
+              <button style={styles.modalClose} onClick={() => setBatchDeleteConfirm(false)}>×</button>
+            </div>
+            <div style={styles.modalBody}>
+              <p style={{ fontSize: '14px', color: 'var(--text-primary)', margin: 0 }}>
+                确定要删除选中的 <strong>{selectedIds.size}</strong> 个用户吗？此操作不可恢复。
+              </p>
+            </div>
+            <div style={styles.modalFooter}>
+              <button style={styles.cancelBtn} onClick={() => setBatchDeleteConfirm(false)}>取消</button>
+              <button
+                style={{
+                  ...styles.dangerBtn,
+                  ...(batchDeleting ? { opacity: 0.6, cursor: 'wait' } : {}),
+                }}
+                onClick={handleBatchDelete}
+                disabled={batchDeleting}
+              >
+                {batchDeleting ? '删除中...' : `删除 ${selectedIds.size} 项`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Password Reset Modal */}
+      {passwordModal && (
+        <div style={styles.modalOverlay} onClick={() => setPasswordModal(false)}>
+          <div style={styles.modal} onClick={e => e.stopPropagation()}>
+            <div style={styles.modalHeader}>
+              <h3 style={styles.modalTitle}>重置密码</h3>
+              <button style={styles.modalClose} onClick={() => setPasswordModal(false)}>×</button>
+            </div>
+            <div style={styles.modalBody}>
+              <p style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginBottom: '12px' }}>
+                为用户 <strong>{selectedUser?.username}</strong> 设置新密码
+              </p>
+              <input
+                style={styles.input}
+                type="password"
+                value={passwordValue}
+                onChange={e => setPasswordValue(e.target.value)}
+                placeholder="输入新密码（至少6位）"
+                autoFocus
+              />
+            </div>
+            <div style={styles.modalFooter}>
+              <button style={styles.cancelBtn} onClick={() => setPasswordModal(false)}>取消</button>
+              <button
+                style={{
+                  ...styles.saveBtn,
+                  ...(resetting ? { opacity: 0.6, cursor: 'wait' } : {}),
+                }}
+                onClick={handlePasswordReset}
+                disabled={resetting || !passwordValue.trim()}
+              >
+                {resetting ? '重置中...' : '确认重置'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <style>{`
         @keyframes spin {
           to { transform: rotate(360deg); }
@@ -539,6 +816,12 @@ const styles = {
     color: 'var(--text-primary)',
     margin: 0,
   },
+  panelHint: {
+    fontSize: '12px',
+    color: 'var(--text-tertiary)',
+    marginTop: '2px',
+    display: 'block',
+  },
   createBtn: {
     padding: '8px 14px',
     fontSize: '13px',
@@ -555,8 +838,19 @@ const styles = {
     padding: '12px 16px',
     borderBottom: '1px solid var(--border-muted)',
   },
+  searchInput: {
+    flex: '1 1 160px',
+    padding: '8px 12px',
+    fontSize: '13px',
+    color: 'var(--text-primary)',
+    backgroundColor: 'var(--bg-primary)',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+    outline: 'none',
+    minWidth: 0,
+  },
   filterSelect: {
-    flex: 1,
+    flex: '0 0 auto',
     padding: '8px 12px',
     fontSize: '13px',
     color: 'var(--text-primary)',
@@ -595,6 +889,30 @@ const styles = {
     flex: 1,
     overflowY: 'auto' as const,
     padding: '12px',
+  },
+  selectAllRow: {
+    display: 'flex',
+    alignItems: 'center',
+    padding: '8px 4px',
+    marginBottom: '8px',
+    borderBottom: '1px solid var(--border-muted)',
+  },
+  checkboxLabel: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    cursor: 'pointer',
+  },
+  itemHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '6px',
+  },
+  itemHeaderLeft: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
   },
   userItem: {
     padding: '14px 16px',
@@ -711,6 +1029,29 @@ const styles = {
     borderRadius: 'var(--radius-md)',
     cursor: 'pointer',
   },
+  dangerBtn: {
+    padding: '10px 18px',
+    fontSize: '13px',
+    fontWeight: 500,
+    color: 'white',
+    backgroundColor: 'var(--status-error)',
+    border: 'none',
+    borderRadius: 'var(--radius-md)',
+    cursor: 'pointer',
+  },
+  actionRow: {
+    display: 'flex',
+    gap: '10px',
+    flexWrap: 'wrap' as const,
+  },
+  actionBtn: {
+    padding: '8px 16px',
+    fontSize: '13px',
+    fontWeight: 500,
+    border: 'none',
+    borderRadius: 'var(--radius-md)',
+    cursor: 'pointer',
+  },
   editBtn: {
     padding: '6px 12px',
     fontSize: '12px',
@@ -754,6 +1095,7 @@ const styles = {
     width: '16px',
     height: '16px',
     cursor: 'pointer',
+    accentColor: 'var(--accent-cyan)',
   },
   saveRolesBtn: {
     padding: '10px 18px',

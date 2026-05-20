@@ -2,6 +2,11 @@ import { useState, useEffect, useCallback } from 'react';
 import { api } from '../services/api';
 import type { RoleResponse, PermissionResponse } from '../types';
 
+const getErrorMessage = (err: unknown, fallback: string) => {
+  if (err instanceof Error) return `${fallback}: ${err.message}`;
+  return fallback;
+};
+
 const RoleManagement: React.FC = () => {
   const [roles, setRoles] = useState<RoleResponse[]>([]);
   const [permissions, setPermissions] = useState<PermissionResponse[]>([]);
@@ -10,12 +15,19 @@ const RoleManagement: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [editingName, setEditingName] = useState(false);
   const [editName, setEditName] = useState('');
+  const [editingDesc, setEditingDesc] = useState(false);
+  const [editDesc, setEditDesc] = useState('');
   const [selectedPermissionIds, setSelectedPermissionIds] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [newRoleName, setNewRoleName] = useState('');
   const [newRoleDesc, setNewRoleDesc] = useState('');
   const [creating, setCreating] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [batchDeleteConfirm, setBatchDeleteConfirm] = useState(false);
+  const [batchDeleting, setBatchDeleting] = useState(false);
 
   const fetchRoles = useCallback(async (roleIdToRefresh?: string) => {
     setLoading(true);
@@ -137,6 +149,87 @@ const RoleManagement: React.FC = () => {
     }
   };
 
+  const handleDeleteRole = async () => {
+    if (!deleteConfirm) return;
+    setDeleting(true);
+    setError(null);
+    try {
+      await api.deleteRole(deleteConfirm);
+      setDeleteConfirm(null);
+      if (selectedRole?.role_id === deleteConfirm) setSelectedRole(null);
+      await fetchRoles();
+    } catch (err) {
+      setError(getErrorMessage(err, '删除角色失败'));
+      console.error('Delete role error:', err);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const toggleSelect = (roleId: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(roleId)) {
+        next.delete(roleId);
+      } else {
+        next.add(roleId);
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    const selectable = roles.filter(r => !r.is_system);
+    if (selectedIds.size === selectable.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(selectable.map(r => r.role_id)));
+    }
+  };
+
+  const handleBatchDelete = async () => {
+    if (selectedIds.size === 0) return;
+    setBatchDeleting(true);
+    setError(null);
+    try {
+      const deletePromises = Array.from(selectedIds).map(id => api.deleteRole(id));
+      await Promise.all(deletePromises);
+      setBatchDeleteConfirm(false);
+      setSelectedIds(new Set());
+      if (selectedRole && selectedIds.has(selectedRole.role_id)) {
+        setSelectedRole(null);
+      }
+      await fetchRoles();
+    } catch (err) {
+      setError(getErrorMessage(err, '批量删除失败'));
+      console.error('Batch delete error:', err);
+    } finally {
+      setBatchDeleting(false);
+    }
+  };
+
+  const handleEditDesc = () => {
+    if (selectedRole) {
+      setEditDesc(selectedRole.description || '');
+      setEditingDesc(true);
+    }
+  };
+
+  const handleSaveDesc = async () => {
+    if (!selectedRole) return;
+    setSaving(true);
+    try {
+      await api.updateRole(selectedRole.role_id, { description: editDesc.trim() || undefined });
+      await fetchRoles(selectedRole.role_id);
+      setEditingDesc(false);
+    } catch (err) {
+      setError('保存描述失败');
+      console.error('Update role description error:', err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="workspace">
       {/* Left Panel - Role List */}
@@ -144,11 +237,26 @@ const RoleManagement: React.FC = () => {
         <div style={styles.panelHeader}>
           <div>
             <h2 style={styles.panelTitle}>角色列表</h2>
-            <span style={styles.panelHint}>{roles.length} 个角色</span>
+            <span style={styles.panelHint}>
+              {selectedIds.size > 0
+                ? `已选择 ${selectedIds.size} 项`
+                : `${roles.length} 个角色`}
+            </span>
           </div>
-          <button className="btn btn--primary btn--sm" onClick={() => setCreateModalOpen(true)}>
-            + 新建
-          </button>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            {selectedIds.size > 0 && (
+              <button
+                className="btn btn--sm"
+                style={{ backgroundColor: 'var(--status-error)', color: 'white' }}
+                onClick={() => setBatchDeleteConfirm(true)}
+              >
+                删除 ({selectedIds.size})
+              </button>
+            )}
+            <button className="btn btn--primary btn--sm" onClick={() => setCreateModalOpen(true)}>
+              + 新建
+            </button>
+          </div>
         </div>
 
         {loading && roles.length === 0 ? (
@@ -157,6 +265,17 @@ const RoleManagement: React.FC = () => {
           </div>
         ) : (
           <div style={styles.roleList}>
+            <div style={styles.selectAllRow}>
+              <label style={styles.checkboxLabel}>
+                <input
+                  type="checkbox"
+                  checked={selectedIds.size > 0 && selectedIds.size === roles.filter(r => !r.is_system).length}
+                  onChange={toggleSelectAll}
+                  style={styles.checkbox}
+                />
+                <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>全选</span>
+              </label>
+            </div>
             {roles.map(role => (
               <div
                 key={role.role_id}
@@ -166,11 +285,20 @@ const RoleManagement: React.FC = () => {
                 }}
                 onClick={() => handleSelectRole(role)}
               >
-                <div style={styles.roleItemHeader}>
-                  <span style={styles.roleName}>{role.name}</span>
-                  {role.is_system && (
-                    <span style={styles.systemBadge}>系统</span>
-                  )}
+                <div style={styles.itemHeader}>
+                  <div style={styles.itemHeaderLeft}>
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(role.role_id)}
+                      onChange={() => toggleSelect(role.role_id)}
+                      onClick={e => e.stopPropagation()}
+                      style={styles.checkbox}
+                    />
+                    <span style={styles.roleName}>{role.name}</span>
+                    {role.is_system && (
+                      <span style={styles.systemBadge}>系统</span>
+                    )}
+                  </div>
                 </div>
                 {role.description && (
                   <div style={styles.roleDesc}>{role.description}</div>
@@ -188,8 +316,16 @@ const RoleManagement: React.FC = () => {
       <div style={styles.rightPanel}>
         {selectedRole ? (
           <div className="data-panel">
-            <div className="data-panel-header">
+            <div className="data-panel-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h3 className="data-panel-title">角色详情 - {selectedRole.name}</h3>
+              {!selectedRole.is_system && (
+                <button
+                  style={styles.deleteRoleBtn}
+                  onClick={() => setDeleteConfirm(selectedRole.role_id)}
+                >
+                  删除角色
+                </button>
+              )}
             </div>
 
             {error && (
@@ -235,9 +371,35 @@ const RoleManagement: React.FC = () => {
 
             <div style={styles.detailSection}>
               <label style={styles.label}>角色描述</label>
-              <div style={styles.descValue}>
-                {selectedRole.description || '暂无描述'}
-              </div>
+              {editingDesc ? (
+                <div style={styles.editNameRow}>
+                  <textarea
+                    style={styles.textarea}
+                    value={editDesc}
+                    onChange={e => setEditDesc(e.target.value)}
+                    placeholder="输入角色描述"
+                    rows={3}
+                    autoFocus
+                  />
+                  <button style={styles.saveBtn} onClick={handleSaveDesc} disabled={saving}>
+                    {saving ? '保存中...' : '保存'}
+                  </button>
+                  <button style={styles.cancelBtn} onClick={() => setEditingDesc(false)}>
+                    取消
+                  </button>
+                </div>
+              ) : (
+                <div style={styles.nameDisplay}>
+                  <span style={styles.descValue}>
+                    {selectedRole.description || '暂无描述'}
+                  </span>
+                  {!selectedRole.is_system && (
+                    <button style={styles.editNameBtn} onClick={handleEditDesc}>
+                      编辑
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
 
             <div style={styles.detailSection}>
@@ -255,32 +417,35 @@ const RoleManagement: React.FC = () => {
                 </button>
               </div>
               <div style={styles.permissionGrid}>
-                {permissions.map(perm => (
-                  <div
-                    key={perm.id}
-                    style={{
-                      ...styles.permissionItem,
-                      ...(selectedPermissionIds.has(perm.id) ? styles.permissionItemSelected : {}),
-                    }}
-                    onClick={() => !selectedRole.is_system && handleTogglePermission(perm.id)}
-                    className={!selectedRole.is_system ? 'perm-item' : ''}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selectedPermissionIds.has(perm.id)}
-                      onChange={() => handleTogglePermission(perm.id)}
-                      disabled={selectedRole.is_system}
-                      style={styles.permissionCheckbox}
-                    />
-                    <div style={styles.permissionContent}>
-                      <div style={styles.permissionName}>{perm.name}</div>
-                      <div style={styles.permissionCode}>{perm.code}</div>
-                      {perm.description && (
-                        <div style={styles.permissionDesc}>{perm.description}</div>
-                      )}
+                {permissions.map(perm => {
+                  const permKey = perm.permission_id || perm.id;
+                  return (
+                    <div
+                      key={perm.id}
+                      style={{
+                        ...styles.permissionItem,
+                        ...(selectedPermissionIds.has(permKey) ? styles.permissionItemSelected : {}),
+                      }}
+                      onClick={() => !selectedRole.is_system && handleTogglePermission(permKey)}
+                      className={!selectedRole.is_system ? 'perm-item' : ''}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedPermissionIds.has(permKey)}
+                        onChange={() => handleTogglePermission(permKey)}
+                        disabled={selectedRole.is_system}
+                        style={styles.permissionCheckbox}
+                      />
+                      <div style={styles.permissionContent}>
+                        <div style={styles.permissionName}>{perm.name}</div>
+                        <div style={styles.permissionCode}>{perm.code}</div>
+                        {perm.description && (
+                          <div style={styles.permissionDesc}>{perm.description}</div>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           </div>
@@ -335,6 +500,66 @@ const RoleManagement: React.FC = () => {
                 disabled={creating || !newRoleName.trim()}
               >
                 {creating ? '创建中...' : '创建'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteConfirm && (
+        <div style={styles.modalOverlay} onClick={() => setDeleteConfirm(null)}>
+          <div style={styles.modal} onClick={e => e.stopPropagation()}>
+            <div style={styles.modalHeader}>
+              <h3 style={styles.modalTitle}>确认删除</h3>
+              <button style={styles.modalClose} onClick={() => setDeleteConfirm(null)}>×</button>
+            </div>
+            <div style={styles.modalBody}>
+              <p style={{ fontSize: '14px', color: 'var(--text-primary)', margin: 0 }}>
+                确定要删除角色 <strong>{deleteConfirm}</strong> 吗？此操作不可恢复。
+              </p>
+            </div>
+            <div style={styles.modalFooter}>
+              <button style={styles.cancelBtn} onClick={() => setDeleteConfirm(null)}>取消</button>
+              <button
+                style={{
+                  ...styles.dangerBtn,
+                  ...(deleting ? { opacity: 0.6, cursor: 'wait' } : {}),
+                }}
+                onClick={handleDeleteRole}
+                disabled={deleting}
+              >
+                {deleting ? '删除中...' : '确认删除'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Batch Delete Confirmation Modal */}
+      {batchDeleteConfirm && (
+        <div style={styles.modalOverlay} onClick={() => setBatchDeleteConfirm(false)}>
+          <div style={styles.modal} onClick={e => e.stopPropagation()}>
+            <div style={styles.modalHeader}>
+              <h3 style={styles.modalTitle}>确认批量删除</h3>
+              <button style={styles.modalClose} onClick={() => setBatchDeleteConfirm(false)}>×</button>
+            </div>
+            <div style={styles.modalBody}>
+              <p style={{ fontSize: '14px', color: 'var(--text-primary)', margin: 0 }}>
+                确定要删除选中的 <strong>{selectedIds.size}</strong> 个角色吗？此操作不可恢复。
+              </p>
+            </div>
+            <div style={styles.modalFooter}>
+              <button style={styles.cancelBtn} onClick={() => setBatchDeleteConfirm(false)}>取消</button>
+              <button
+                style={{
+                  ...styles.dangerBtn,
+                  ...(batchDeleting ? { opacity: 0.6, cursor: 'wait' } : {}),
+                }}
+                onClick={handleBatchDelete}
+                disabled={batchDeleting}
+              >
+                {batchDeleting ? '删除中...' : `删除 ${selectedIds.size} 项`}
               </button>
             </div>
           </div>
@@ -425,6 +650,36 @@ const styles = {
     overflowY: 'auto' as const,
     padding: '12px',
   },
+  selectAllRow: {
+    display: 'flex',
+    alignItems: 'center',
+    padding: '8px 4px',
+    marginBottom: '8px',
+    borderBottom: '1px solid var(--border-muted)',
+  },
+  checkboxLabel: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    cursor: 'pointer',
+  },
+  checkbox: {
+    width: '16px',
+    height: '16px',
+    cursor: 'pointer',
+    accentColor: 'var(--accent-cyan)',
+  },
+  itemHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '6px',
+  },
+  itemHeaderLeft: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+  },
   roleItem: {
     padding: '14px 16px',
     marginBottom: '8px',
@@ -499,6 +754,26 @@ const styles = {
     backgroundColor: 'var(--bg-secondary)',
     border: '1px solid var(--border-default)',
     borderRadius: 'var(--radius-sm)',
+    cursor: 'pointer',
+  },
+  deleteRoleBtn: {
+    padding: '6px 14px',
+    fontSize: '12px',
+    fontWeight: 500,
+    color: 'var(--status-error)',
+    backgroundColor: 'transparent',
+    border: '1px solid var(--status-error)',
+    borderRadius: 'var(--radius-md)',
+    cursor: 'pointer',
+  },
+  dangerBtn: {
+    padding: '10px 18px',
+    fontSize: '13px',
+    fontWeight: 500,
+    color: 'white',
+    backgroundColor: 'var(--status-error)',
+    border: 'none',
+    borderRadius: 'var(--radius-md)',
     cursor: 'pointer',
   },
   editNameRow: {

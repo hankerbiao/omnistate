@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../services/api';
 import type { TestCaseResponse, ListTestCasesParams } from '../types';
+import TestCaseDetailModal from './TestCaseDetailModal';
 
 interface FilterParams {
   ref_req_id?: string;
@@ -40,6 +41,7 @@ const ManualTestCaseList: React.FC = () => {
 
   const [filters, setFilters] = useState<FilterParams>({});
   const [showFilters, setShowFilters] = useState(false);
+  const [selectedTestCase, setSelectedTestCase] = useState<TestCaseResponse | null>(null);
 
   const fetchTestCases = useCallback(async (filterParams: FilterParams, offset: number) => {
     setLoading(true);
@@ -252,8 +254,10 @@ const ManualTestCaseList: React.FC = () => {
                   return (
                     <tr
                       key={testCase.id}
+                      onClick={() => setSelectedTestCase(testCase)}
                       style={{
                         ...styles.tr,
+                        cursor: 'pointer',
                         animationDelay: `${index * 20}ms`,
                       }}
                     >
@@ -347,6 +351,13 @@ const ManualTestCaseList: React.FC = () => {
           </>
         )}
       </div>
+
+      {selectedTestCase && (
+        <TestCaseDetailModal
+          testCase={selectedTestCase}
+          onClose={() => setSelectedTestCase(null)}
+        />
+      )}
     </div>
   );
 };
