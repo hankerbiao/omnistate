@@ -7,13 +7,8 @@ import type {
   AutomationConfigField,
   DispatchCaseItem,
   ExecutionTaskCaseSummary,
-  ExecutionAssertionItem,
   DispatchTaskResponse,
-  RerunTaskRequest,
   AttachmentInfo,
-  ExecutionConfig,
-  StepFailurePolicy,
-  CaseFailurePolicy,
 } from '../types';
 
 interface TaskListProps {
@@ -29,69 +24,25 @@ interface DispatchModalState {
   projectTag: string;
   loading: boolean;
   submitting: boolean;
-  attachmentUploading: boolean;
-  attachments: AttachmentInfo[];
   error: string | null;
-  // 执行中配置
-  executionConfig: ExecutionConfig;
 }
-
-interface RerunEditModalState extends Omit<DispatchModalState, 'executionConfig'> {
-  sourceTaskId: string | null;
-  repoUrl: string;
-  branch: string;
-  timeout: string;
-  executionConfig: ExecutionConfig;
-}
-
-const TASK_TABLE_COLUMNS = 6;
-type StatusAppearance = {
-  bg: string;
-  color: string;
-  label: string;
-  border?: string;
-  glow?: string;
-};
-
-const formatJsonPreview = (value: Record<string, unknown> | undefined) => {
-  if (!value || Object.keys(value).length === 0) {
-    return '';
-  }
-  return JSON.stringify(value, null, 2);
-};
-
-const getAssertionStatusText = (status?: string) => {
-  if (!status) {
-    return '未上报';
-  }
-  return getStatusAppearance(status).label;
-};
 
 const getConfigFieldInputType = (fieldType?: string) => {
-  const normalizedType = (fieldType || 'str').toLowerCase();
-  if (normalizedType === 'int' || normalizedType === 'float' || normalizedType === 'number') {
-    return 'number';
-  }
+  const t = (fieldType || 'str').toLowerCase();
+  if (t === 'int' || t === 'float' || t === 'number') return 'number';
   return 'text';
 };
 
-const normalizeConfigValue = (
-  rawValue: string | boolean,
-  field: AutomationConfigField,
-): string | number | boolean => {
-  const normalizedType = (field.type || 'str').toLowerCase();
-  if (normalizedType === 'bool' || normalizedType === 'boolean') {
-    return Boolean(rawValue);
+const normalizeConfigValue = (rawValue: unknown, field: AutomationConfigField) => {
+  const t = (field.type || 'str').toLowerCase();
+  if (t === 'bool' || t === 'boolean') return Boolean(rawValue);
+  if (rawValue === '' || rawValue === null || rawValue === undefined) return '';
+  // 如果是 file 类型或对象，保持原样
+  if (t === 'file' || (typeof rawValue === 'object' && rawValue !== null)) {
+    return rawValue;
   }
-  if (rawValue === '') {
-    return '';
-  }
-  if (normalizedType === 'int' || normalizedType === 'number') {
-    return Number.parseInt(String(rawValue), 10);
-  }
-  if (normalizedType === 'float') {
-    return Number.parseFloat(String(rawValue));
-  }
+  if (t === 'int' || t === 'number') return Number.parseInt(String(rawValue), 10);
+  if (t === 'float') return Number.parseFloat(String(rawValue));
   return String(rawValue);
 };
 
@@ -102,33 +53,62 @@ const buildDefaultCaseConfig = (caseItem?: AutomationTestCaseResponse): Record<s
   }, {});
 };
 
-const getFieldDisplayLabel = (field: AutomationConfigField) => {
-  return field.label || field.name;
-};
-
-const formatAttachmentSize = (size: number) => {
-  if (size < 1024) {
-    return `${size} B`;
-  }
-  if (size < 1024 * 1024) {
-    return `${(size / 1024).toFixed(1)} KB`;
-  }
-  return `${(size / 1024 / 1024).toFixed(1)} MB`;
-};
-
 const buildDispatchCaseItems = (
   selectedCaseIds: string[],
   autoCases: AutomationTestCaseResponse[],
   caseConfigs: Record<string, Record<string, unknown>>,
 ): DispatchCaseItem[] => {
-  const autoCaseMap = new Map(autoCases.map(caseItem => [caseItem.auto_case_id, caseItem]));
-  return selectedCaseIds.map((autoCaseId) => {
-    const matchedCase = autoCaseMap.get(autoCaseId);
-    return {
-      auto_case_id: autoCaseId,
-      parameters: caseConfigs[autoCaseId] || buildDefaultCaseConfig(matchedCase),
-    };
-  });
+  const map = new Map(autoCases.map(c => [c.auto_case_id, c]));
+  return selectedCaseIds.map(id => ({
+    auto_case_id: id,
+    parameters: caseConfigs[id] || buildDefaultCaseConfig(map.get(id)),
+  }));
+};
+
+const formatAttachmentSize = (size: number) => {
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  return `${(size / 1024 / 1024).toFixed(1)} MB`;
+};
+
+const STATUS_THEME: Record<string, { color: string; bg: string; label: string; dot?: string }> = {
+  PENDING: { color: '#eab308', bg: 'rgba(234,179,8,0.1)', label: '待处理', dot: '#eab308' },
+  QUEUED: { color: '#f59e0b', bg: 'rgba(245,158,11,0.1)', label: '排队中', dot: '#f59e0b' },
+  READY: { color: '#60a5fa', bg: 'rgba(96,165,250,0.1)', label: '就绪', dot: '#60a5fa' },
+  RUNNING: { color: '#38bdf8', bg: 'rgba(56,189,248,0.1)', label: '运行中', dot: '#38bdf8' },
+  SUCCESS: { color: '#22c55e', bg: 'rgba(34,197,94,0.1)', label: '成功', dot: '#22c55e' },
+  PASSED: { color: '#22c55e', bg: 'rgba(34,197,94,0.1)', label: '已通过', dot: '#22c55e' },
+  FAILED: { color: '#ef4444', bg: 'rgba(239,68,68,0.1)', label: '失败', dot: '#ef4444' },
+  DISPATCH_FAILED: { color: '#ef4444', bg: 'rgba(239,68,68,0.1)', label: '下发失败', dot: '#ef4444' },
+  CANCELLED: { color: '#94a3b8', bg: 'rgba(148,163,184,0.1)', label: '已取消', dot: '#94a3b8' },
+  SCHEDULED: { color: '#a78bfa', bg: 'rgba(167,139,250,0.1)', label: '定时', dot: '#a78bfa' },
+  IMMEDIATE: { color: '#39d0d6', bg: 'rgba(57,208,214,0.1)', label: '立即', dot: '#39d0d6' },
+  DISPATCHED: { color: '#39d0d6', bg: 'rgba(57,208,214,0.1)', label: '已下发', dot: '#39d0d6' },
+  COMPLETED: { color: '#22c55e', bg: 'rgba(34,197,94,0.1)', label: '已完成', dot: '#22c55e' },
+  CONSUMED: { color: '#34d399', bg: 'rgba(52,211,153,0.1)', label: '已消费', dot: '#34d399' },
+  NOT_CONSUMED: { color: '#94a3b8', bg: 'rgba(148,163,184,0.1)', label: '未消费', dot: '#94a3b8' },
+};
+
+const getStatus = (s: string) => STATUS_THEME[s?.toUpperCase()] || { color: '#94a3b8', bg: 'rgba(148,163,184,0.1)', label: s || '-', dot: '#94a3b8' };
+
+const FILTER_TABS = [
+  { key: null, label: '全部' },
+  { key: 'RUNNING', label: '运行中' },
+  { key: 'PENDING', label: '待处理' },
+  { key: 'COMPLETED', label: '已完成' },
+  { key: 'FAILED', label: '失败' },
+];
+
+const TASK_CARD_STATUS_BORDERS: Record<string, string> = {
+  RUNNING: '#38bdf8',
+  PENDING: '#eab308',
+  QUEUED: '#f59e0b',
+  SUCCESS: '#22c55e',
+  PASSED: '#22c55e',
+  FAILED: '#ef4444',
+  DISPATCH_FAILED: '#ef4444',
+  COMPLETED: '#22c55e',
+  CANCELLED: '#64748b',
 };
 
 const TaskList: React.FC<TaskListProps> = () => {
@@ -139,6 +119,9 @@ const TaskList: React.FC<TaskListProps> = () => {
   const [selectedTask, setSelectedTask] = useState<TaskStatus | null>(null);
   const [modalLoading, setModalLoading] = useState(false);
   const [rerunningTaskId, setRerunningTaskId] = useState<string | null>(null);
+  const [activeFilter, setActiveFilter] = useState<string | null>('RUNNING');
+  const [searchQuery, setSearchQuery] = useState('');
+
   const [dispatchModal, setDispatchModal] = useState<DispatchModalState>({
     isOpen: false,
     scheduleType: 'IMMEDIATE',
@@ -148,239 +131,104 @@ const TaskList: React.FC<TaskListProps> = () => {
     projectTag: 'universal',
     loading: false,
     submitting: false,
-    attachmentUploading: false,
-    attachments: [],
     error: null,
-    executionConfig: {
-      step_on_failure: 'CONTINUE',
-      case_on_failure: 'CONTINUE',
-    },
   });
-  const [rerunEditModal, setRerunEditModal] = useState<RerunEditModalState>({
-    isOpen: false,
-    sourceTaskId: null,
-    scheduleType: 'IMMEDIATE',
-    plannedAt: '',
-    selectedCases: [],
-    category: 'bmc',
-    projectTag: 'universal',
-    repoUrl: '',
-    branch: '',
-    timeout: '',
-    loading: false,
-    submitting: false,
-    attachmentUploading: false,
-    attachments: [],
-    error: null,
-    executionConfig: {
-      step_on_failure: 'CONTINUE',
-      case_on_failure: 'CONTINUE',
-    },
-  });
+
   const [autoCases, setAutoCases] = useState<AutomationTestCaseResponse[]>([]);
-  const [expandedCaseKeys, setExpandedCaseKeys] = useState<string[]>([]);
+  const [caseSearchQuery, setCaseSearchQuery] = useState('');
   const [caseConfigs, setCaseConfigs] = useState<Record<string, Record<string, unknown>>>({});
-  const [configEditorCaseId, setConfigEditorCaseId] = useState<string | null>(null);
+  const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
+  const [expandedCaseKeys, setExpandedCaseKeys] = useState<string[]>([]);
+  const [caseFileUploading, setCaseFileUploading] = useState<Record<string, boolean>>({});
+  const [caseFileAttachments, setCaseFileAttachments] = useState<Record<string, AttachmentInfo>>({});
 
   const fetchTasks = useCallback(async () => {
     setLoading(true);
     setError(null);
-
     try {
-      const response = await api.listTasks({ limit: 50 });
-      setTasks(response.data || []);
-    } catch (err) {
+      const res = await api.listTasks({ limit: 50 });
+      setTasks(res.data || []);
+    } catch {
       setError('获取任务列表失败');
-      console.error('Fetch tasks error:', err);
     } finally {
       setLoading(false);
     }
   }, []);
 
-  useEffect(() => {
-    fetchTasks();
-  }, [fetchTasks]);
+  useEffect(() => { fetchTasks(); }, [fetchTasks]);
 
   const openDispatchModal = async () => {
     setDispatchModal(prev => ({ ...prev, isOpen: true, loading: true, error: null }));
     try {
-      const casesRes = await api.listAutomationTestCases({ limit: 100 });
-      setAutoCases(casesRes.data || []);
+      const res = await api.listAutomationTestCases({ limit: 200 });
+      setAutoCases(res.data || []);
       setCaseConfigs({});
-      setConfigEditorCaseId(null);
-    } catch (err) {
-      console.error('Fetch dispatch data error:', err);
+      setCaseSearchQuery('');
+    } catch {
       setDispatchModal(prev => ({ ...prev, error: '获取用例失败' }));
     } finally {
       setDispatchModal(prev => ({ ...prev, loading: false }));
     }
   };
 
-  const loadRerunResources = useCallback(async () => {
-    const casesRes = await api.listAutomationTestCases({ limit: 100 });
-    setAutoCases(casesRes.data || []);
-  }, []);
-
   const closeDispatchModal = () => {
     setDispatchModal({
-      isOpen: false,
-      scheduleType: 'IMMEDIATE',
-      plannedAt: '',
-      selectedCases: [],
-      category: 'bmc',
-      projectTag: 'universal',
-      loading: false,
-      submitting: false,
-      attachmentUploading: false,
-      attachments: [],
+      isOpen: false, scheduleType: 'IMMEDIATE', plannedAt: '', selectedCases: [],
+      category: 'bmc', projectTag: 'universal', loading: false, submitting: false,
       error: null,
-      executionConfig: {
-        step_on_failure: 'CONTINUE',
-        case_on_failure: 'CONTINUE',
-      },
     });
     setCaseConfigs({});
-    setConfigEditorCaseId(null);
   };
 
-  const closeRerunEditModal = () => {
-    setRerunEditModal({
-      isOpen: false,
-      sourceTaskId: null,
-      scheduleType: 'IMMEDIATE',
-      plannedAt: '',
-      selectedCases: [],
-      category: 'bmc',
-      projectTag: 'universal',
-      repoUrl: '',
-      branch: '',
-      timeout: '',
-      loading: false,
-      submitting: false,
-      attachmentUploading: false,
-      attachments: [],
-      error: null,
-      executionConfig: {
-        step_on_failure: 'CONTINUE',
-        case_on_failure: 'CONTINUE',
-      },
-    });
-    setCaseConfigs({});
-    setConfigEditorCaseId(null);
-  };
-
-  const uploadAttachments = async (files: FileList | null, target: 'dispatch' | 'rerun') => {
-    if (!files || files.length === 0) {
-      return;
-    }
-
-    if (target === 'dispatch') {
-      setDispatchModal(prev => ({ ...prev, attachmentUploading: true, error: null }));
-    } else {
-      setRerunEditModal(prev => ({ ...prev, attachmentUploading: true, error: null }));
-    }
-    try {
-      const uploaded = await Promise.all(Array.from(files).map(file => api.uploadAttachment(file)));
-      const appendAttachments = <T extends { attachments: AttachmentInfo[]; attachmentUploading: boolean }>(prev: T): T => {
-        const existingIds = new Set(prev.attachments.map(attachment => attachment.file_id));
-        const nextAttachments = [
-          ...prev.attachments,
-          ...uploaded.filter(attachment => !existingIds.has(attachment.file_id)),
-        ];
-        return {
-          ...prev,
-          attachments: nextAttachments,
-          attachmentUploading: false,
-        };
-      };
-      if (target === 'dispatch') {
-        setDispatchModal(prev => appendAttachments(prev));
-      } else {
-        setRerunEditModal(prev => appendAttachments(prev));
-      }
-    } catch (err) {
-      console.error('Upload attachments error:', err);
-      if (target === 'dispatch') {
-        setDispatchModal(prev => ({
-          ...prev,
-          attachmentUploading: false,
-          error: '附件上传失败',
-        }));
-      } else {
-        setRerunEditModal(prev => ({
-          ...prev,
-          attachmentUploading: false,
-          error: '附件上传失败',
-        }));
-      }
-    }
-  };
-
-  const removeAttachment = (fileId: string, target: 'dispatch' | 'rerun') => {
-    if (target === 'dispatch') {
-      setDispatchModal(prev => ({
-        ...prev,
-        attachments: prev.attachments.filter(attachment => attachment.file_id !== fileId),
-      }));
-      return;
-    }
-    setRerunEditModal(prev => ({
+  const toggleCaseSelection = (caseId: string) => {
+    const selected = dispatchModal.selectedCases.includes(caseId);
+    setDispatchModal(prev => ({
       ...prev,
-      attachments: prev.attachments.filter(attachment => attachment.file_id !== fileId),
+      selectedCases: selected ? prev.selectedCases.filter(id => id !== caseId) : [...prev.selectedCases, caseId],
+    }));
+    if (!selected) {
+      const c = autoCases.find(item => item.auto_case_id === caseId);
+      setCaseConfigs(prev => ({ ...prev, [caseId]: buildDefaultCaseConfig(c) }));
+    } else {
+      setCaseConfigs(prev => { const n = { ...prev }; delete n[caseId]; return n; });
+    }
+  };
+
+  const uploadCaseConfigFile = async (autoCaseId: string, field: AutomationConfigField, file: File) => {
+    const key = `${autoCaseId}|${field.name}`;
+    setCaseFileUploading(prev => ({ ...prev, [key]: true }));
+    try {
+      const result = await api.uploadAttachment(file);
+      setCaseFileAttachments(prev => ({ ...prev, [key]: result }));
+      // 存储完整的文件信息，供后端提取到 files 字段
+      handleCaseConfigChange(autoCaseId, field, {
+        type: "file",
+        file_id: result.file_id,
+        object_name: result.storage_path,
+        sha256: result.sha256,
+      });
+    } catch {
+      // upload failed silently
+    } finally {
+      setCaseFileUploading(prev => ({ ...prev, [key]: false }));
+    }
+  };
+
+  const removeCaseConfigFile = (autoCaseId: string, field: AutomationConfigField) => {
+    const key = `${autoCaseId}|${field.name}`;
+    setCaseFileAttachments(prev => { const n = { ...prev }; delete n[key]; return n; });
+    handleCaseConfigChange(autoCaseId, field, '');
+  };
+
+  const handleCaseConfigChange = (autoCaseId: string, field: AutomationConfigField, rawValue: unknown) => {
+    setCaseConfigs(prev => ({
+      ...prev,
+      [autoCaseId]: { ...(prev[autoCaseId] || {}), [field.name]: normalizeConfigValue(rawValue, field) },
     }));
   };
 
-  const renderAttachmentUploader = (
-    target: 'dispatch' | 'rerun',
-    attachments: AttachmentInfo[],
-    uploading: boolean,
-  ) => (
-    <div style={styles.formSection}>
-      <label style={styles.formLabel}>任务附件</label>
-      <div style={styles.attachmentPanel}>
-        <label style={styles.attachmentUploadButton}>
-          <input
-            type="file"
-            multiple
-            style={styles.hiddenFileInput}
-            disabled={uploading}
-            onChange={(e) => {
-              uploadAttachments(e.currentTarget.files, target);
-              e.currentTarget.value = '';
-            }}
-          />
-          <span>{uploading ? '上传中...' : '选择并上传附件'}</span>
-        </label>
-        {attachments.length === 0 ? (
-          <div style={styles.attachmentEmpty}>尚未上传附件</div>
-        ) : (
-          <div style={styles.attachmentList}>
-            {attachments.map(attachment => (
-              <div key={attachment.file_id} style={styles.attachmentItem}>
-                <div style={styles.attachmentInfo}>
-                  <span style={styles.attachmentName}>{attachment.original_filename}</span>
-                  <span style={styles.attachmentMeta}>
-                    {formatAttachmentSize(attachment.size)} · {attachment.content_type || 'application/octet-stream'}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  style={styles.attachmentRemoveBtn}
-                  onClick={() => removeAttachment(attachment.file_id, target)}
-                  disabled={uploading}
-                >
-                  移除
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-
   const handleDispatchSubmit = async () => {
-    const { scheduleType, plannedAt, selectedCases, category, projectTag, executionConfig } = dispatchModal;
+    const { scheduleType, plannedAt, selectedCases, category, projectTag } = dispatchModal;
     if (selectedCases.length === 0) {
       setDispatchModal(prev => ({ ...prev, error: '请选择至少一个用例' }));
       return;
@@ -389,22 +237,15 @@ const TaskList: React.FC<TaskListProps> = () => {
       setDispatchModal(prev => ({ ...prev, error: '请选择计划执行时间' }));
       return;
     }
-    const autoCaseMap = new Map(autoCases.map(caseItem => [caseItem.auto_case_id, caseItem]));
-    for (const autoCaseId of selectedCases) {
-      const caseItem = autoCaseMap.get(autoCaseId);
-      if (!caseItem) {
-        setDispatchModal(prev => ({ ...prev, error: `未找到用例信息：${autoCaseId}` }));
-        return;
-      }
-      const configValues = caseConfigs[autoCaseId] || buildDefaultCaseConfig(caseItem);
-      for (const field of caseItem.param_spec || []) {
-        const value = configValues[field.name];
-        const isEmptyString = typeof value === 'string' && value.trim() === '';
-        if (field.required && (value === undefined || value === null || isEmptyString)) {
-          setDispatchModal(prev => ({
-            ...prev,
-            error: `请填写 ${caseItem.auto_case_id} 的配置项：${getFieldDisplayLabel(field)}`,
-          }));
+    const caseMap = new Map(autoCases.map(c => [c.auto_case_id, c]));
+    for (const id of selectedCases) {
+      const c = caseMap.get(id);
+      if (!c) { setDispatchModal(prev => ({ ...prev, error: `未找到用例：${id}` })); return; }
+      const vals = caseConfigs[id] || buildDefaultCaseConfig(c);
+      for (const f of c.param_spec || []) {
+        const v = vals[f.name];
+        if (f.required && (v === undefined || v === null || (typeof v === 'string' && v.trim() === ''))) {
+          setDispatchModal(prev => ({ ...prev, error: `请填写 ${c.auto_case_id} 的配置项：${f.label || f.name}` }));
           return;
         }
       }
@@ -413,436 +254,313 @@ const TaskList: React.FC<TaskListProps> = () => {
     setDispatchModal(prev => ({ ...prev, submitting: true, error: null }));
     try {
       const cases = buildDispatchCaseItems(selectedCases, autoCases, caseConfigs);
-      const firstSelectedCase = autoCases.find(caseItem => caseItem.auto_case_id === selectedCases[0]);
-      const requestData = {
+      const first = autoCases.find(c => c.auto_case_id === selectedCases[0]);
+      await api.dispatchTask({
         schedule_type: scheduleType,
         planned_at: scheduleType === 'SCHEDULED' ? plannedAt : undefined,
-        category,
-        project_tag: projectTag,
-        repo_url: firstSelectedCase?.repo_url || undefined,
-        branch: firstSelectedCase?.code_snapshot?.branch || undefined,
-        pytest_options: {},
-        timeout: firstSelectedCase?.report_meta?.timeout || 0,
-        attachments: dispatchModal.attachments,
+        category, project_tag: projectTag,
+        repo_url: first?.repo_url || undefined,
+        branch: first?.code_snapshot?.branch || undefined,
+        pytest_options: {}, timeout: first?.report_meta?.timeout || 0,
         cases,
-        execution_config: executionConfig,
-      };
-      await api.dispatchTask(requestData);
+      });
       closeDispatchModal();
       fetchTasks();
-    } catch (err) {
-      console.error('Dispatch task error:', err);
+    } catch {
       setDispatchModal(prev => ({ ...prev, error: '下发任务失败' }));
     } finally {
       setDispatchModal(prev => ({ ...prev, submitting: false }));
     }
   };
 
-  const openEditRerunModal = async () => {
-    if (!selectedTask?.request_payload) {
-      setError('当前任务缺少可编辑的重跑配置');
-      return;
-    }
-    setRerunEditModal(prev => ({ ...prev, isOpen: true, loading: true, error: null, sourceTaskId: selectedTask.task_id }));
-    try {
-      await loadRerunResources();
-      const payload = selectedTask.request_payload;
-      const payloadCases = payload.cases || [];
-      const selectedCases = payloadCases
-        .map(caseItem => caseItem.auto_case_id)
-        .filter((value): value is string => Boolean(value));
-      const nextCaseConfigs = payloadCases.reduce<Record<string, Record<string, unknown>>>((acc, caseItem) => {
-        if (caseItem.auto_case_id) {
-          acc[caseItem.auto_case_id] = { ...(caseItem.config || {}) };
-        }
-        return acc;
-      }, {});
-      setCaseConfigs(nextCaseConfigs);
-      setRerunEditModal({
-        isOpen: true,
-        sourceTaskId: selectedTask.task_id,
-        scheduleType: payload.schedule_type === 'SCHEDULED' ? 'SCHEDULED' : 'IMMEDIATE',
-        plannedAt: payload.planned_at ? payload.planned_at.slice(0, 16) : '',
-        selectedCases,
-        category: payload.category || 'bmc',
-        projectTag: payload.project_tag || 'universal',
-        repoUrl: payload.repo_url || '',
-        branch: payload.branch || '',
-        timeout: payload.timeout ? String(payload.timeout) : '',
-        attachments: payload.attachments || [],
-        attachmentUploading: false,
-        loading: false,
-        submitting: false,
-        error: null,
-        executionConfig: payload.execution_config || {
-          step_on_failure: 'CONTINUE',
-          case_on_failure: 'CONTINUE',
-        },
-      });
-    } catch (err) {
-      console.error('Open edit rerun modal error:', err);
-      setRerunEditModal(prev => ({ ...prev, loading: false, error: '加载重跑配置失败' }));
-    }
-  };
-
-  const handleEditRerunSubmit = async () => {
-    const { sourceTaskId, scheduleType, plannedAt, selectedCases, category, projectTag, repoUrl, branch, timeout, executionConfig } = rerunEditModal;
-    if (!sourceTaskId) {
-      setRerunEditModal(prev => ({ ...prev, error: '缺少来源任务 ID' }));
-      return;
-    }
-    if (selectedCases.length === 0) {
-      setRerunEditModal(prev => ({ ...prev, error: '请选择至少一个用例' }));
-      return;
-    }
-    if (scheduleType === 'SCHEDULED' && !plannedAt) {
-      setRerunEditModal(prev => ({ ...prev, error: '请选择计划执行时间' }));
-      return;
-    }
-    const autoCaseMap = new Map(autoCases.map(caseItem => [caseItem.auto_case_id, caseItem]));
-    for (const autoCaseId of selectedCases) {
-      const caseItem = autoCaseMap.get(autoCaseId);
-      if (!caseItem) {
-        setRerunEditModal(prev => ({ ...prev, error: `未找到用例信息：${autoCaseId}` }));
-        return;
-      }
-      const configValues = caseConfigs[autoCaseId] || buildDefaultCaseConfig(caseItem);
-      for (const field of caseItem.param_spec || []) {
-        const value = configValues[field.name];
-        const isEmptyString = typeof value === 'string' && value.trim() === '';
-        if (field.required && (value === undefined || value === null || isEmptyString)) {
-          setRerunEditModal(prev => ({
-            ...prev,
-            error: `请填写 ${caseItem.auto_case_id} 的配置项：${getFieldDisplayLabel(field)}`,
-          }));
-          return;
-        }
-      }
-    }
-
-    setRerunEditModal(prev => ({ ...prev, submitting: true, error: null }));
-    setError(null);
-    setSuccessMessage(null);
-    setRerunningTaskId(sourceTaskId);
-    try {
-      const cases = buildDispatchCaseItems(selectedCases, autoCases, caseConfigs);
-      const requestData: RerunTaskRequest = {
-        schedule_type: scheduleType,
-        planned_at: scheduleType === 'SCHEDULED' ? plannedAt : undefined,
-        category,
-        project_tag: projectTag,
-        repo_url: repoUrl || undefined,
-        branch: branch || undefined,
-        timeout: timeout ? Number(timeout) : undefined,
-        attachments: rerunEditModal.attachments,
-        cases,
-        execution_config: executionConfig,
-      };
-      const response = await api.rerunTask(sourceTaskId, requestData);
-      const payload = response.data as DispatchTaskResponse | undefined;
-      setSuccessMessage(payload?.task_id ? `已创建编辑后重跑任务 ${payload.task_id}` : `任务 ${sourceTaskId} 已重新运行`);
-      closeRerunEditModal();
-      await fetchTasks();
-    } catch (err) {
-      console.error('Edit rerun task error:', err);
-      setRerunEditModal(prev => ({ ...prev, error: `编辑后重跑任务 ${sourceTaskId} 失败` }));
-    } finally {
-      setRerunningTaskId(null);
-      setRerunEditModal(prev => ({ ...prev, submitting: false }));
-    }
-  };
-
-  const toggleCaseSelection = (caseId: string) => {
-    const isSelected = dispatchModal.selectedCases.includes(caseId);
-    setDispatchModal(prev => ({
-      ...prev,
-      selectedCases: prev.selectedCases.includes(caseId)
-        ? prev.selectedCases.filter(id => id !== caseId)
-        : [...prev.selectedCases, caseId],
-    }));
-    setCaseConfigs(prev => {
-      if (prev[caseId]) {
-        const next = { ...prev };
-        delete next[caseId];
-        return next;
-      }
-      const caseItem = autoCases.find(item => item.auto_case_id === caseId);
-      return {
-        ...prev,
-        [caseId]: buildDefaultCaseConfig(caseItem),
-      };
-    });
-    setConfigEditorCaseId(isSelected ? null : caseId);
-  };
-
-  const handleCaseConfigChange = (
-    autoCaseId: string,
-    field: AutomationConfigField,
-    rawValue: string | boolean,
-  ) => {
-    setCaseConfigs(prev => ({
-      ...prev,
-      [autoCaseId]: {
-        ...(prev[autoCaseId] || {}),
-        [field.name]: normalizeConfigValue(rawValue, field),
-      },
-    }));
-  };
-
-  const editingCase = configEditorCaseId
-    ? autoCases.find(item => item.auto_case_id === configEditorCaseId) || null
-    : null;
-
   const handleTaskClick = async (taskId: string) => {
     setModalLoading(true);
     try {
-      const response = await api.getTaskStatus(taskId);
-      setSelectedTask(response.data);
-    } catch (err) {
-      console.error('Fetch task status error:', err);
+      const res = await api.getTaskStatus(taskId);
+      setSelectedTask(res.data);
+    } catch {
       alert('获取任务详情失败');
     } finally {
       setModalLoading(false);
     }
   };
 
-  const handleRerunTask = async (
-    task: Pick<ExecutionTask, 'task_id'>,
-    e?: React.MouseEvent,
-  ) => {
+  const handleRerunTask = async (task: Pick<ExecutionTask, 'task_id'>, e?: React.MouseEvent) => {
     e?.stopPropagation();
     setError(null);
     setSuccessMessage(null);
     setRerunningTaskId(task.task_id);
     try {
-      const response = await api.rerunTask(task.task_id, {});
-      const payload = response.data as DispatchTaskResponse | undefined;
-      const newTaskId = payload?.task_id || '';
-      setSuccessMessage(newTaskId ? `已创建重跑任务 ${newTaskId}` : `任务 ${task.task_id} 已重新运行`);
+      const res = await api.rerunTask(task.task_id, {});
+      const payload = res.data as DispatchTaskResponse | undefined;
+      setSuccessMessage(payload?.task_id ? `已创建重跑任务 ${payload.task_id}` : `任务已重新运行`);
+      setTimeout(() => setSuccessMessage(null), 3000);
       await fetchTasks();
       if (selectedTask?.task_id === task.task_id) {
-        const statusResponse = await api.getTaskStatus(task.task_id);
-        setSelectedTask(statusResponse.data);
+        const sr = await api.getTaskStatus(task.task_id);
+        setSelectedTask(sr.data);
       }
-    } catch (err) {
-      console.error('Rerun task error:', err);
-      setError(`重新运行任务 ${task.task_id} 失败`);
+    } catch {
+      setError(`重新运行任务失败`);
     } finally {
       setRerunningTaskId(null);
     }
   };
 
+  const toggleCaseDetails = (caseKey: string) => {
+    setExpandedCaseKeys(prev => prev.includes(caseKey) ? prev.filter(k => k !== caseKey) : [...prev, caseKey]);
+  };
+
   const handleDeleteTask = async (taskId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!confirm(`确定要删除任务 ${taskId} 吗？`)) {
-      return;
-    }
+    if (!confirm(`确定删除任务 ${taskId}？`)) return;
     try {
       await api.deleteTask(taskId);
       fetchTasks();
-    } catch (err) {
-      console.error('Delete task error:', err);
+    } catch {
       alert('删除任务失败');
     }
   };
 
-  const toggleCaseDetails = (caseKey: string) => {
-    setExpandedCaseKeys(prev => (
-      prev.includes(caseKey)
-        ? prev.filter(key => key !== caseKey)
-        : [...prev, caseKey]
-    ));
+  const filteredTasks = tasks.filter(task => {
+    if (activeFilter === 'FAILED') return task.overall_status === 'FAILED' || task.overall_status === 'DISPATCH_FAILED';
+    if (activeFilter === 'PENDING') return task.overall_status === 'PENDING' || task.overall_status === 'QUEUED';
+    if (activeFilter === 'COMPLETED') return task.overall_status === 'COMPLETED' || task.overall_status === 'SUCCESS' || task.overall_status === 'PASSED';
+    if (activeFilter) return task.overall_status === activeFilter;
+    return true;
+  }).filter(task => {
+    if (!searchQuery) return true;
+    const q = searchQuery.toLowerCase();
+    return task.task_id.toLowerCase().includes(q) || task.source_task_id?.toLowerCase().includes(q);
+  });
+
+  const statusCounts = tasks.reduce((acc, t) => {
+    acc[t.overall_status] = (acc[t.overall_status] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+
+  const getFilterCount = (key: string | null) => {
+    if (!key) return tasks.length;
+    if (key === 'FAILED') return (statusCounts['FAILED'] || 0) + (statusCounts['DISPATCH_FAILED'] || 0);
+    if (key === 'PENDING') return (statusCounts['PENDING'] || 0) + (statusCounts['QUEUED'] || 0);
+    if (key === 'COMPLETED') return (statusCounts['COMPLETED'] || 0) + (statusCounts['SUCCESS'] || 0) + (statusCounts['PASSED'] || 0);
+    return statusCounts[key] || 0;
+  };
+
+  const renderConfigField = (autoCaseId: string, caseItem: AutomationTestCaseResponse, field: AutomationConfigField) => {
+    const configValues = caseConfigs[autoCaseId] || buildDefaultCaseConfig(caseItem);
+    const currentValue = configValues[field.name];
+    const normalizedType = (field.type || 'str').toLowerCase();
+
+    if (field.options && field.options.length > 0) {
+      return (
+        <select
+          style={s.fieldSelect}
+          value={String(currentValue ?? '')}
+          onChange={e => handleCaseConfigChange(autoCaseId, field, e.target.value)}
+        >
+          <option value="">请选择</option>
+          {field.options.map((opt, i) => (
+            <option key={i} value={String(opt.value)}>{opt.label || String(opt.value)}</option>
+          ))}
+        </select>
+      );
+    }
+    if (normalizedType === 'bool' || normalizedType === 'boolean') {
+      return (
+        <label style={s.toggleLabel}>
+          <input type="checkbox" checked={Boolean(currentValue)} onChange={e => handleCaseConfigChange(autoCaseId, field, e.target.checked)} />
+          <span style={s.toggleSwitch} />
+        </label>
+      );
+    }
+    if (normalizedType === 'file') {
+      const key = `${autoCaseId}|${field.name}`;
+      const uploaded = caseFileAttachments[key];
+      const uploading = caseFileUploading[key];
+      if (uploaded) {
+        return (
+          <div style={s.fileChip}>
+            <span>{uploaded.original_filename}</span>
+            <button style={s.fileChipRemove} onClick={() => removeCaseConfigFile(autoCaseId, field)}>×</button>
+          </div>
+        );
+      }
+      return (
+        <label style={s.fileBtn}>
+          <input type="file" style={{ display: 'none' }} disabled={uploading}
+            onChange={e => { const f = e.currentTarget.files?.[0]; if (f) uploadCaseConfigFile(autoCaseId, field, f); e.currentTarget.value = ''; }}
+          />
+          {uploading ? '上传中...' : '选择文件'}
+        </label>
+      );
+    }
+    return (
+      <input
+        type={getConfigFieldInputType(field.type)}
+        style={s.fieldInput}
+        value={String(currentValue ?? '')}
+        onChange={e => handleCaseConfigChange(autoCaseId, field, e.target.value)}
+        placeholder={field.default !== undefined ? String(field.default) : ''}
+      />
+    );
+  };
+
+  const renderCaseConfig = (autoCaseId: string) => {
+    const caseItem = autoCases.find(c => c.auto_case_id === autoCaseId);
+    if (!caseItem) return null;
+    const fields = caseItem.param_spec || [];
+    return (
+      <div style={s.configCard}>
+        <div style={s.configCardHeader}>
+          <div>
+            <div style={s.configCardTitle}>{caseItem.auto_case_id}</div>
+            <div style={s.configCardSub}>{caseItem.script_name || caseItem.name}</div>
+          </div>
+          <span style={s.configCardBadge}>{fields.length} 项</span>
+        </div>
+        {fields.length === 0 ? (
+          <div style={s.configEmpty}>无配置项</div>
+        ) : (
+          <div style={s.configFields}>
+            {fields.map(field => (
+              <div key={field.name} style={s.configField}>
+                <div style={s.configFieldLabel}>
+                  {field.label || field.name}
+                  {field.required && <span style={{ color: '#ef4444', marginLeft: 4 }}>*</span>}
+                  <span style={s.configFieldType}>{field.type || 'str'}</span>
+                </div>
+                {field.description && <div style={s.configFieldDesc}>{field.description}</div>}
+                {renderConfigField(autoCaseId, caseItem, field)}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
   };
 
   const renderTaskCases = (cases: ExecutionTaskCaseSummary[] | undefined) => {
-    if (!cases || cases.length === 0) {
-      return <div style={styles.caseSummaryEmpty}>暂无用例执行信息</div>;
-    }
-
+    if (!cases?.length) return <div style={s.emptySmall}>暂无用例执行信息</div>;
     return (
-      <div style={styles.caseSummaryList}>
-        {cases.map((caseItem) => {
-          const caseKey = `${caseItem.task_id}-${caseItem.case_id}`;
-          const caseStatusStyle = getStatusAppearance(caseItem.status);
-          const dispatchStatusStyle = getStatusAppearance(caseItem.dispatch_status);
-          const latestEventStyle = getStatusAppearance(caseItem.result_data?.status || caseItem.status);
-          const assertions = caseItem.result_data?.assertions || [];
+      <div style={s.caseGrid}>
+        {cases.map(c => {
+          const caseKey = `${c.task_id}-${c.case_id}`;
+          const st = getStatus(c.status);
+          const dispatchSt = getStatus(c.dispatch_status);
+          const resultSt = getStatus(c.result_data?.status || c.status);
+          const assertions = c.result_data?.assertions || [];
+          const progressText = typeof c.progress_percent === 'number' ? `${Math.round(c.progress_percent)}%` : '-';
           const isExpanded = expandedCaseKeys.includes(caseKey);
-          const resultDataPreview = formatJsonPreview(caseItem.result_data?.data);
-          const resultErrorPreview = formatJsonPreview(caseItem.result_data?.error);
           const hasDetail =
-            Boolean(caseItem.result_data?.event_type) ||
-            Boolean(caseItem.result_data?.phase) ||
+            Boolean(c.result_data?.event_type) ||
+            Boolean(c.result_data?.phase) ||
             assertions.length > 0 ||
-            Boolean(caseItem.result_data?.error && Object.keys(caseItem.result_data.error).length > 0) ||
-            Boolean(caseItem.result_data?.data && Object.keys(caseItem.result_data.data).length > 0);
-          const progressText = typeof caseItem.progress_percent === 'number'
-            ? `${Math.round(caseItem.progress_percent)}%`
-            : '-';
-
+            Boolean(c.result_data?.error && Object.keys(c.result_data.error).length > 0) ||
+            Boolean(c.result_data?.data && Object.keys(c.result_data.data).length > 0);
           return (
-            <div key={caseKey} style={styles.caseSummaryCard}>
-              <div style={styles.caseSummaryHeader}>
-                <div style={styles.caseSummaryTitleBlock}>
-                  <span style={styles.caseSummaryTitle}>{caseItem.title || caseItem.case_id}</span>
-                  <span style={styles.caseSummaryMeta}>
-                    {caseItem.auto_case_id || caseItem.case_id}
-                  </span>
+            <div key={caseKey} style={s.caseCard}>
+              <div style={s.caseCardTop}>
+                <div>
+                  <div style={s.caseCardTitle}>{c.title || c.case_id}</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: "'JetBrains Mono', monospace" }}>
+                    {c.auto_case_id || c.case_id}
+                  </div>
                 </div>
-                <span
-                  style={{
-                    ...styles.caseStatusBadge,
-                    backgroundColor: caseStatusStyle.bg,
-                    color: caseStatusStyle.color,
-                    border: caseStatusStyle.border,
-                    boxShadow: caseStatusStyle.glow,
-                  }}
-                >
-                  {caseStatusStyle.label}
-                </span>
+                <span style={{ ...s.caseBadge, background: st.bg, color: st.color }}>{st.label}</span>
               </div>
-              <div style={styles.caseSummaryMetrics}>
-                <div style={styles.caseMetricPill}>
-                  <span style={styles.caseMetricLabel}>进度</span>
-                  <span style={styles.caseMetricValue}>{progressText}</span>
+              <div style={s.caseMetrics}>
+                <div style={s.caseMetric}>
+                  <span style={s.caseMetricLabel}>进度</span>
+                  <span style={s.caseMetricValue}>{progressText}</span>
                 </div>
-                <div style={styles.caseMetricPill}>
-                  <span style={styles.caseMetricLabel}>下发次数</span>
-                  <span style={styles.caseMetricValue}>{caseItem.dispatch_attempts}</span>
+                <div style={s.caseMetric}>
+                  <span style={s.caseMetricLabel}>下发</span>
+                  <span style={s.caseMetricValue}>{c.dispatch_attempts}</span>
                 </div>
-                <div style={styles.caseMetricPill}>
-                  <span style={styles.caseMetricLabel}>事件数</span>
-                  <span style={styles.caseMetricValue}>{caseItem.event_count}</span>
+                <div style={s.caseMetric}>
+                  <span style={s.caseMetricLabel}>事件</span>
+                  <span style={s.caseMetricValue}>{c.event_count}</span>
                 </div>
-                <div style={styles.caseMetricPill}>
-                  <span style={styles.caseMetricLabel}>断言数</span>
-                  <span style={styles.caseMetricValue}>{assertions.length}</span>
+                <div style={s.caseMetric}>
+                  <span style={s.caseMetricLabel}>断言</span>
+                  <span style={s.caseMetricValue}>{assertions.length}</span>
                 </div>
               </div>
-              <div style={styles.caseSummaryInfoRow}>
-                <span
-                  style={{
-                    ...styles.inlineStatusBadge,
-                    backgroundColor: dispatchStatusStyle.bg,
-                    color: dispatchStatusStyle.color,
-                    border: dispatchStatusStyle.border,
-                    boxShadow: dispatchStatusStyle.glow,
-                  }}
-                >
-                  下发 {dispatchStatusStyle.label}
+              <div style={s.caseInfoRow}>
+                <span style={{ ...s.caseInfoBadge, background: dispatchSt.bg, color: dispatchSt.color }}>
+                  下发 {dispatchSt.label}
                 </span>
-                {caseItem.last_event_at && (
-                  <span style={styles.caseMetricItem}>
-                    最近回报 {new Date(caseItem.last_event_at).toLocaleString('zh-CN')}
+                {c.last_event_at && (
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: "'JetBrains Mono', monospace" }}>
+                    {new Date(c.last_event_at).toLocaleString('zh-CN')}
                   </span>
                 )}
               </div>
-              {caseItem.failure_message && (
-                <div style={styles.caseFailureText}>{caseItem.failure_message}</div>
-              )}
+              {c.failure_message && <div style={s.caseError}>{c.failure_message}</div>}
               {hasDetail && (
-                <div style={styles.caseDetailSection}>
-                  <button
-                    type="button"
-                    style={styles.caseDetailToggle}
-                    onClick={() => toggleCaseDetails(caseKey)}
-                  >
-                    <span style={styles.caseDetailTitle}>当前执行细节</span>
-                    <span style={styles.caseDetailToggleText}>{isExpanded ? '收起' : '展开'}</span>
+                <div style={s.caseDetailWrap}>
+                  <button style={s.caseDetailToggle} onClick={() => toggleCaseDetails(caseKey)}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)' }}>执行细节</span>
+                    <span style={{ fontSize: 12, color: 'var(--accent-cyan)', fontWeight: 600 }}>
+                      {isExpanded ? '收起 ▲' : '展开 ▼'}
+                    </span>
                   </button>
                   {isExpanded && (
-                    <>
-                      <div style={styles.caseDetailGrid}>
-                        <div style={styles.caseDetailBlock}>
-                          <span style={styles.caseDetailBlockLabel}>开始时间</span>
-                          <span style={styles.caseDetailBlockValue}>
-                            {caseItem.started_at ? new Date(caseItem.started_at).toLocaleString('zh-CN') : '-'}
-                          </span>
+                    <div style={{ marginTop: 12 }}>
+                      <div style={s.caseDetailGrid2}>
+                        <div style={s.caseDetailBlock2}>
+                          <span style={s.caseDetailBlockLabel2}>开始时间</span>
+                          <span style={s.caseDetailBlockVal2}>{c.started_at ? new Date(c.started_at).toLocaleString('zh-CN') : '-'}</span>
                         </div>
-                        <div style={styles.caseDetailBlock}>
-                          <span style={styles.caseDetailBlockLabel}>结束时间</span>
-                          <span style={styles.caseDetailBlockValue}>
-                            {caseItem.finished_at ? new Date(caseItem.finished_at).toLocaleString('zh-CN') : '-'}
-                          </span>
+                        <div style={s.caseDetailBlock2}>
+                          <span style={s.caseDetailBlockLabel2}>结束时间</span>
+                          <span style={s.caseDetailBlockVal2}>{c.finished_at ? new Date(c.finished_at).toLocaleString('zh-CN') : '-'}</span>
                         </div>
-                        <div style={styles.caseDetailBlock}>
-                          <span style={styles.caseDetailBlockLabel}>最近事件ID</span>
-                          <span style={styles.caseDetailBlockValueMono}>{caseItem.last_event_id || '-'}</span>
+                        <div style={s.caseDetailBlock2}>
+                          <span style={s.caseDetailBlockLabel2}>最近事件</span>
+                          <span style={{ ...s.caseDetailBlockVal2, fontFamily: "'JetBrains Mono', monospace" }}>{c.last_event_id || '-'}</span>
                         </div>
-                        <div style={styles.caseDetailBlock}>
-                          <span style={styles.caseDetailBlockLabel}>最近事件时间</span>
-                          <span style={styles.caseDetailBlockValue}>
-                            {caseItem.last_event_at ? new Date(caseItem.last_event_at).toLocaleString('zh-CN') : '-'}
-                          </span>
+                        <div style={s.caseDetailBlock2}>
+                          <span style={s.caseDetailBlockLabel2}>最近上报</span>
+                          <span style={s.caseDetailBlockVal2}>{c.last_event_at ? new Date(c.last_event_at).toLocaleString('zh-CN') : '-'}</span>
                         </div>
                       </div>
-                      <div style={styles.caseDetailMetaRow}>
-                        {caseItem.result_data?.event_type && (
-                          <span style={styles.caseDetailText}>
-                            事件 {caseItem.result_data.event_type}
-                          </span>
-                        )}
-                        {caseItem.result_data?.phase && (
-                          <span style={styles.caseDetailText}>
-                            阶段 {caseItem.result_data.phase}
-                          </span>
-                        )}
-                        {caseItem.result_data?.status && (
-                          <span
-                            style={{
-                              ...styles.inlineStatusBadge,
-                              backgroundColor: latestEventStyle.bg,
-                              color: latestEventStyle.color,
-                              border: latestEventStyle.border,
-                              boxShadow: latestEventStyle.glow,
-                            }}
-                          >
-                            回报 {latestEventStyle.label}
-                          </span>
+                      <div style={s.caseMetaRow}>
+                        {c.result_data?.event_type && <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>事件 {c.result_data.event_type}</span>}
+                        {c.result_data?.phase && <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>阶段 {c.result_data.phase}</span>}
+                        {c.result_data?.status && (
+                          <span style={{ ...s.caseInfoBadge, background: resultSt.bg, color: resultSt.color }}>回报 {resultSt.label}</span>
                         )}
                       </div>
-
                       {assertions.length > 0 && (
-                        <div style={styles.caseSectionGroup}>
-                          <div style={styles.caseSectionTitle}>断言步骤</div>
-                          <div style={styles.assertionList}>
-                            {assertions.map((assertion: ExecutionAssertionItem, index) => {
-                              const assertionStyle = getStatusAppearance(assertion.status || '');
-                              const assertionMessage = typeof assertion.error?.message === 'string'
-                                ? assertion.error.message
-                                : '';
-                              const assertionDataPreview = formatJsonPreview(assertion.data);
-                              const assertionErrorPreview = formatJsonPreview(assertion.error);
+                        <div style={{ marginTop: 12 }}>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 8 }}>断言步骤</div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                            {assertions.map((a, i) => {
+                              const aSt = getStatus(a.status || '');
+                              const msg = typeof a.error?.message === 'string' ? a.error.message : '';
                               return (
-                                <div key={`${caseItem.case_id}-assert-${index}`} style={styles.assertionItem}>
-                                  <div style={styles.assertionHeader}>
-                                    <span style={styles.assertionName}>
-                                      {assertion.seq ? `#${assertion.seq} ` : ''}{assertion.name || '未命名断言'}
+                                <div key={`${c.case_id}-assert-${i}`} style={s.assertionItem}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>
+                                      {a.seq ? `#${a.seq} ` : ''}{a.name || '未命名断言'}
                                     </span>
-                                    <span
-                                      style={{
-                                        ...styles.inlineStatusBadge,
-                                        backgroundColor: assertionStyle.bg,
-                                        color: assertionStyle.color,
-                                        border: assertionStyle.border,
-                                      }}
-                                    >
-                                      {getAssertionStatusText(assertion.status)}
+                                    <span style={{ ...s.caseInfoBadge, background: aSt.bg, color: aSt.color }}>
+                                      {aSt.label}
                                     </span>
                                   </div>
-                                  {assertion.timestamp && (
-                                    <div style={styles.assertionMeta}>
-                                      {new Date(assertion.timestamp).toLocaleString('zh-CN')}
+                                  {a.timestamp && (
+                                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4, fontFamily: "'JetBrains Mono', monospace" }}>
+                                      {new Date(a.timestamp).toLocaleString('zh-CN')}
                                     </div>
                                   )}
-                                  {assertionMessage && (
-                                    <div style={styles.assertionError}>{assertionMessage}</div>
+                                  {msg && <div style={{ ...s.caseError, marginTop: 6, fontSize: 11 }}>{msg}</div>}
+                                  {a.data && Object.keys(a.data).length > 0 && (
+                                    <pre style={s.codeBlock}>{JSON.stringify(a.data, null, 2)}</pre>
                                   )}
-                                  {assertionDataPreview && (
-                                    <pre style={styles.caseDetailCode}>{assertionDataPreview}</pre>
-                                  )}
-                                  {!assertionDataPreview && assertionErrorPreview && (
-                                    <pre style={styles.caseDetailCode}>{assertionErrorPreview}</pre>
+                                  {!a.data && a.error && Object.keys(a.error).length > 0 && (
+                                    <pre style={s.codeBlock}>{JSON.stringify(a.error, null, 2)}</pre>
                                   )}
                                 </div>
                               );
@@ -850,21 +568,19 @@ const TaskList: React.FC<TaskListProps> = () => {
                           </div>
                         </div>
                       )}
-
-                      {resultDataPreview && (
-                        <div style={styles.caseSectionGroup}>
-                          <div style={styles.caseSectionTitle}>最近结果数据</div>
-                          <pre style={styles.caseDetailCode}>{resultDataPreview}</pre>
+                      {c.result_data?.data && Object.keys(c.result_data.data).length > 0 && (
+                        <div style={{ marginTop: 12 }}>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>结果数据</div>
+                          <pre style={s.codeBlock}>{JSON.stringify(c.result_data.data, null, 2)}</pre>
                         </div>
                       )}
-
-                      {!resultDataPreview && resultErrorPreview && (
-                        <div style={styles.caseSectionGroup}>
-                          <div style={styles.caseSectionTitle}>最近错误数据</div>
-                          <pre style={styles.caseDetailCode}>{resultErrorPreview}</pre>
+                      {c.result_data?.error && Object.keys(c.result_data.error).length > 0 && assertions.length === 0 && (
+                        <div style={{ marginTop: 12 }}>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>错误数据</div>
+                          <pre style={s.codeBlock}>{JSON.stringify(c.result_data.error, null, 2)}</pre>
                         </div>
                       )}
-                    </>
+                    </div>
                   )}
                 </div>
               )}
@@ -875,419 +591,237 @@ const TaskList: React.FC<TaskListProps> = () => {
     );
   };
 
-  const statusCounts = tasks.reduce((acc, task) => {
-    acc[task.overall_status] = (acc[task.overall_status] || 0) + 1;
-    return acc;
-  }, {} as Record<string, number>);
-
   return (
-    <div className="workspace">
-      {/* Toolbar */}
-      <div className="toolbar">
-        <div className="toolbar-section">
-          <span style={styles.title}>执行任务</span>
-          {Object.entries(statusCounts).slice(0, 4).map(([status, count]) => {
-            const s = getStatusAppearance(status);
-            return (
-              <span
-                key={status}
-                className="status-badge"
+    <div className="workspace" style={s.wrapper}>
+      {/* ──────── HEADER ──────── */}
+      <div style={s.header}>
+        <div style={s.headerTop}>
+          <h1 style={s.title}>执行任务</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={s.searchBox}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-muted)', flexShrink: 0 }}><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+              <input
+                style={s.searchInput}
+                type="text"
+                placeholder="搜索任务 ID..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+              />
+            </div>
+            <button style={s.refreshBtn} onClick={fetchTasks} disabled={loading}>↻</button>
+            <button style={s.dispatchBtn} onClick={openDispatchModal}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3" /></svg>
+              下发任务
+            </button>
+          </div>
+        </div>
+
+        {/* ──────── FILTER TABS (居中显示) ──────── */}
+        <div style={s.filterWrapper}>
+          <div style={s.filterTabs}>
+            {FILTER_TABS.map(tab => (
+              <button
+                key={tab.key || 'all'}
                 style={{
-                  backgroundColor: s.bg,
-                  color: s.color,
-                  border: s.border,
+                  ...s.filterTab,
+                  ...(activeFilter === tab.key ? s.filterTabActive : {}),
                 }}
+                onClick={() => setActiveFilter(tab.key)}
               >
-                {s.label} {count}
-              </span>
-            );
-          })}
-        </div>
-        <div style={{ marginLeft: 'auto' }}>
-          <button className="btn btn--primary" onClick={openDispatchModal}>
-            ▶ 下发任务
-          </button>
-          <button
-            className="btn btn--secondary"
-            style={{ marginLeft: '8px' }}
-            onClick={fetchTasks}
-            disabled={loading}
-          >
-            {loading ? '加载中' : '↻ 刷新'}
-          </button>
+                {tab.label}
+                <span style={{
+                  ...s.filterCount,
+                  ...(activeFilter === tab.key ? s.filterCountActive : {}),
+                }}>{getFilterCount(tab.key)}</span>
+              </button>
+            ))}
+          </div>
+          <span style={s.subtitle}>共 {tasks.length} 个任务</span>
         </div>
       </div>
 
-      {error && (
-        <div className="error-banner" style={{ margin: '16px 28px' }}>
-          <span>⚠</span> {error}
-        </div>
-      )}
+      {/* ──────── BANNERS ──────── */}
+      {error && <div style={s.errorBanner}><span>⚠</span> {error}</div>}
+      {successMessage && <div style={s.successBanner}><span>✓</span> {successMessage}</div>}
 
-      {successMessage && (
-        <div
-          style={{
-            margin: '16px 28px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '10px',
-            padding: '12px 16px',
-            backgroundColor: 'var(--status-success-bg)',
-            border: '1px solid var(--status-success)',
-            borderRadius: 'var(--radius-md)',
-            color: 'var(--status-success)',
-            fontSize: '13px',
-          }}
-        >
-          <span>✓</span> {successMessage}
-        </div>
-      )}
-
-      <div style={{ padding: '0 28px 28px' }}>
-        <div className="data-panel">
-          {loading ? (
-            <div className="loading-overlay">
-              <div className="loading-spinner" />
-            </div>
-          ) : tasks.length === 0 ? (
-            <div className="empty-state">
-              <div className="empty-state__icon">▸</div>
-              <p className="empty-state__text">暂无执行任务</p>
-            </div>
-          ) : (
-          <table style={styles.table}>
-            <thead>
-              <tr style={styles.tableHeader}>
-                <th style={styles.th}>任务ID</th>
-                <th style={styles.th}>调度类型</th>
-                <th style={styles.th}>状态</th>
-                <th style={styles.th}>用例数</th>
-                <th style={styles.th}>创建时间</th>
-                <th style={styles.th}>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {tasks.map((task) => {
-                const statusStyle = getStatusAppearance(task.overall_status);
-                const scheduleStyle = getStatusAppearance(task.schedule_type);
-                return (
-                  <React.Fragment key={task.task_id}>
-                    <tr
-                      style={styles.tr}
-                      onClick={() => handleTaskClick(task.task_id)}
-                      className="task-row"
-                    >
-                      <td style={styles.td}>
-                        <div style={styles.taskIdBlock}>
-                          <span style={styles.taskId}>{task.task_id}</span>
-                          {task.source_task_id && (
-                            <span style={styles.sourceTaskTag}>来源 {task.source_task_id}</span>
-                          )}
-                        </div>
-                      </td>
-                      <td style={styles.td}>
-                        <span
-                          style={{
-                            ...styles.statusBadge,
-                            backgroundColor: scheduleStyle.bg,
-                            color: scheduleStyle.color,
-                            border: scheduleStyle.border,
-                          }}
-                        >
-                          {scheduleStyle.label}
-                        </span>
-                      </td>
-                      <td style={styles.td}>
-                        <span
-                          style={{
-                            ...styles.statusBadgeLarge,
-                            backgroundColor: statusStyle.bg,
-                            color: statusStyle.color,
-                            border: statusStyle.border,
-                            boxShadow: statusStyle.glow,
-                          }}
-                        >
-                          <span
-                            style={{
-                              ...styles.statusDot,
-                              backgroundColor: statusStyle.color,
-                            }}
-                            className={task.overall_status === 'RUNNING' ? 'pulse' : ''}
-                          />
-                          {statusStyle.label}
-                        </span>
-                      </td>
-                      <td style={styles.td}>
-                        <span style={styles.caseCount}>{task.case_count}</span>
-                      </td>
-                      <td style={styles.td}>
-                        <span style={styles.timeText}>
-                          {new Date(task.created_at).toLocaleString('zh-CN')}
-                        </span>
-                      </td>
-                      <td style={styles.td}>
-                        <button
-                          style={styles.rerunBtn}
-                          className="rerun-btn"
-                          onClick={(e) => handleRerunTask(task, e)}
-                          title="重新运行任务"
-                          disabled={rerunningTaskId === task.task_id}
-                        >
-                          {rerunningTaskId === task.task_id ? '…' : '↻'}
+      {/* ──────── TASK LIST (中间) ──────── */}
+      <div style={s.list}>
+        {loading ? (
+          <div style={s.loadingState}>
+            <div style={s.spinner} />
+            <span>加载中...</span>
+          </div>
+        ) : filteredTasks.length === 0 ? (
+          <div style={s.emptyState}>
+            <div style={s.emptyIcon}>○</div>
+            <p>暂无任务</p>
+          </div>
+        ) : (
+          <div style={s.taskList}>
+            {filteredTasks.map(task => {
+              const borderColor = TASK_CARD_STATUS_BORDERS[task.overall_status] || 'var(--border-default)';
+              const st = getStatus(task.overall_status);
+              const isExpanded = expandedTaskId === task.task_id;
+              return (
+                <div key={task.task_id} style={{ ...s.taskCard, borderLeft: `3px solid ${borderColor}` }}>
+                  <div style={s.taskCardMain}>
+                    <div style={s.taskCardLeft}>
+                      <div style={s.taskCardRow}>
+                        <span style={s.taskId} onClick={() => handleTaskClick(task.task_id)}>{task.task_id}</span>
+                        {task.source_task_id && <span style={s.sourceTag}>重跑</span>}
+                        <span style={{ ...s.statusDot, background: st.dot }} />
+                        <span style={{ ...s.statusLabel, color: st.color }}>{st.label}</span>
+                      </div>
+                      <div style={s.taskMeta}>
+                        <span style={s.metaItem}>{(task.cases || []).length}/{task.case_count} 用例</span>
+                        <span style={s.metaDot}>·</span>
+                        <span style={s.metaItem}>{getStatus(task.schedule_type).label}</span>
+                        {task.agent_id && <>
+                          <span style={s.metaDot}>·</span>
+                          <span style={s.metaItem}>代理 {task.agent_id}</span>
+                        </>}
+                      </div>
+                    </div>
+                    <div style={s.taskCardRight}>
+                      <span style={s.taskTime}>{new Date(task.created_at).toLocaleString('zh-CN')}</span>
+                      <div style={s.taskActions}>
+                        <button style={s.actionBtn} onClick={e => handleRerunTask(task, e)} disabled={rerunningTaskId === task.task_id} title="重新运行">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" /><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" /></svg>
                         </button>
-                        <button
-                          style={styles.deleteBtn}
-                          className="delete-btn"
-                          onClick={(e) => handleDeleteTask(task.task_id, e)}
-                          title="删除任务"
-                        >
-                          🗑
+                        <button style={s.actionDangerBtn} onClick={e => handleDeleteTask(task.task_id, e)} title="删除">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
                         </button>
-                      </td>
-                    </tr>
-                    <tr style={styles.caseSummaryRow}>
-                      <td style={styles.caseSummaryCell} colSpan={TASK_TABLE_COLUMNS}>
-                        <div style={styles.caseSummaryWrap}>
-                          <div style={styles.caseSummaryHeading}>
-                            用例执行情况
-                            <span style={styles.caseSummaryCount}>
-                              {(task.cases || []).length}/{task.case_count}
-                            </span>
-                          </div>
-                          {renderTaskCases(task.cases)}
-                        </div>
-                      </td>
-                    </tr>
-                  </React.Fragment>
-                );
-              })}
-            </tbody>
-          </table>
-          )}
-        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div style={s.taskCardBottom}>
+                    <button style={s.expandBtn} onClick={() => setExpandedTaskId(isExpanded ? null : task.task_id)}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ transform: isExpanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }}><polyline points="9 18 15 12 9 6" /></svg>
+                      用例执行情况
+                      <span style={s.expandCount}>{(task.cases || []).length}/{task.case_count}</span>
+                    </button>
+                    <button style={s.detailBtn} onClick={() => handleTaskClick(task.task_id)}>
+                      详情
+                    </button>
+                  </div>
+                  {isExpanded && (
+                    <div style={s.expandedSection}>
+                      {renderTaskCases(task.cases)}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
-      {/* Modal */}
+      {/* ──────── TASK DETAIL MODAL ──────── */}
       {selectedTask && (
-        <div style={styles.modalOverlay} onClick={() => setSelectedTask(null)}>
-          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
-            <div style={styles.modalHeader}>
-              <h2 style={styles.modalTitle}>
-                <span style={styles.modalIcon}>◈</span>
-                任务详情
-              </h2>
-              <button style={styles.closeBtn} onClick={() => setSelectedTask(null)}>×</button>
+        <div style={s.overlay} onClick={() => setSelectedTask(null)}>
+          <div style={s.modal} onClick={e => e.stopPropagation()}>
+            <div style={s.modalHeader}>
+              <h2 style={s.modalTitle}>任务详情</h2>
+              <button style={s.closeBtn} onClick={() => setSelectedTask(null)}>×</button>
             </div>
-
             {modalLoading ? (
-              <div style={styles.modalLoading}>
-                <div style={styles.spinner} />
-              </div>
+              <div style={s.modalLoading}><div style={s.spinner} /></div>
             ) : (
-              <div style={styles.modalBody}>
-                <div style={styles.detailGrid}>
-                  <div style={styles.detailItem}>
-                    <span style={styles.detailLabel}>任务ID</span>
-                    <span style={styles.detailValue}>{selectedTask.task_id}</span>
+              <div style={s.modalBody}>
+                {/* Info Grid */}
+                <div style={s.detailGrid}>
+                  <div style={s.detailItem}>
+                    <span style={s.detailLabel}>任务 ID</span>
+                    <span style={s.detailValue}>{selectedTask.task_id}</span>
                   </div>
-                  <div style={styles.detailItem}>
-                    <span style={styles.detailLabel}>重跑来源</span>
-                    <span style={styles.detailValue}>{selectedTask.source_task_id || '-'}</span>
+                  <div style={s.detailItem}>
+                    <span style={s.detailLabel}>重跑来源</span>
+                    <span style={s.detailValue}>{selectedTask.source_task_id || '-'}</span>
                   </div>
-                  <div style={styles.detailItem}>
-                    <span style={styles.detailLabel}>代理ID</span>
-                    <span style={styles.detailValue}>{selectedTask.agent_id || '-'}</span>
+                  <div style={s.detailItem}>
+                    <span style={s.detailLabel}>代理</span>
+                    <span style={s.detailValue}>{selectedTask.agent_id || '-'}</span>
                   </div>
-                  <div style={styles.detailItem}>
-                    <span style={styles.detailLabel}>下发通道</span>
-                    <span style={styles.detailValue}>{selectedTask.dispatch_channel}</span>
+                  <div style={s.detailItem}>
+                    <span style={s.detailLabel}>下发通道</span>
+                    <span style={s.detailValue}>{selectedTask.dispatch_channel}</span>
                   </div>
-                  <div style={styles.detailItem}>
-                    <span style={styles.detailLabel}>用例数量</span>
-                    <span style={styles.detailValue}>{selectedTask.case_count}</span>
-                  </div>
-                </div>
-
-                <div style={styles.statusSection}>
-                  <h3 style={styles.sectionTitle}>状态信息</h3>
-                  <div style={styles.statusGrid}>
-                    <div style={styles.statusItem}>
-                      <span style={styles.statusLabel}>调度状态</span>
-                      <span
-                        style={{
-                          ...styles.statusBadge,
-                          ...getStatusStyleStyle(selectedTask.schedule_status),
-                        }}
-                      >
-                        {selectedTask.schedule_status}
-                      </span>
-                    </div>
-                    <div style={styles.statusItem}>
-                      <span style={styles.statusLabel}>下发状态</span>
-                      <span
-                        style={{
-                          ...styles.statusBadge,
-                          ...getStatusStyleStyle(selectedTask.dispatch_status),
-                        }}
-                      >
-                        {selectedTask.dispatch_status}
-                      </span>
-                    </div>
-                    <div style={styles.statusItem}>
-                      <span style={styles.statusLabel}>消费状态</span>
-                      <span
-                        style={{
-                          ...styles.statusBadge,
-                          ...getStatusStyleStyle(selectedTask.consume_status),
-                        }}
-                      >
-                        {selectedTask.consume_status}
-                      </span>
-                    </div>
-                    <div style={styles.statusItem}>
-                      <span style={styles.statusLabel}>整体状态</span>
-                      <span
-                        style={{
-                          ...styles.statusBadge,
-                          ...getStatusStyleStyle(selectedTask.overall_status),
-                        }}
-                      >
-                        {selectedTask.overall_status}
-                      </span>
-                    </div>
+                  <div style={s.detailItem}>
+                    <span style={s.detailLabel}>用例数</span>
+                    <span style={s.detailValue}>{selectedTask.case_count}</span>
                   </div>
                 </div>
 
-                <div style={styles.timeSection}>
-                  <h3 style={styles.sectionTitle}>时间信息</h3>
-                  <div style={styles.timeGrid}>
-                    <div>
-                      <span style={styles.timeLabel}>计划执行</span>
-                      <span style={styles.timeValue}>
-                        {selectedTask.planned_at ? new Date(selectedTask.planned_at).toLocaleString('zh-CN') : '-'}
-                      </span>
-                    </div>
-                    <div>
-                      <span style={styles.timeLabel}>实际触发</span>
-                      <span style={styles.timeValue}>
-                        {selectedTask.triggered_at ? new Date(selectedTask.triggered_at).toLocaleString('zh-CN') : '-'}
-                      </span>
-                    </div>
-                    <div>
-                      <span style={styles.timeLabel}>创建时间</span>
-                      <span style={styles.timeValue}>
-                        {new Date(selectedTask.created_at).toLocaleString('zh-CN')}
-                      </span>
-                    </div>
-                    <div>
-                      <span style={styles.timeLabel}>更新时间</span>
-                      <span style={styles.timeValue}>
-                        {new Date(selectedTask.updated_at).toLocaleString('zh-CN')}
-                      </span>
-                    </div>
+                {/* Status Row */}
+                <div style={s.statusRow}>
+                  {[
+                    { label: '调度', status: selectedTask.schedule_status },
+                    { label: '下发', status: selectedTask.dispatch_status },
+                    { label: '消费', status: selectedTask.consume_status },
+                    { label: '整体', status: selectedTask.overall_status },
+                  ].map(item => {
+                    const st = getStatus(item.status);
+                    return (
+                      <div key={item.label} style={s.statusPill}>
+                        <span style={s.statusPillLabel}>{item.label}</span>
+                        <span style={{ ...s.statusPillValue, background: st.bg, color: st.color }}>{st.label}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Time Info */}
+                <div style={s.section}>
+                  <h3 style={s.sectionTitle}>时间信息</h3>
+                  <div style={s.timeGrid}>
+                    <div><span style={s.timeLabel}>计划执行</span><span style={s.timeValue}>{selectedTask.planned_at ? new Date(selectedTask.planned_at).toLocaleString('zh-CN') : '-'}</span></div>
+                    <div><span style={s.timeLabel}>实际触发</span><span style={s.timeValue}>{selectedTask.triggered_at ? new Date(selectedTask.triggered_at).toLocaleString('zh-CN') : '-'}</span></div>
+                    <div><span style={s.timeLabel}>创建时间</span><span style={s.timeValue}>{new Date(selectedTask.created_at).toLocaleString('zh-CN')}</span></div>
+                    <div><span style={s.timeLabel}>更新时间</span><span style={s.timeValue}>{new Date(selectedTask.updated_at).toLocaleString('zh-CN')}</span></div>
                   </div>
                 </div>
 
-                {/* 执行配置展示 */}
-                {(selectedTask.request_payload?.execution_config || (selectedTask.result_summary as { execution_config?: ExecutionConfig } | undefined)?.execution_config) && (
-                  <div style={styles.timeSection}>
-                    <h3 style={styles.sectionTitle}>执行配置</h3>
-                    <div style={styles.executionConfigDisplay}>
-                      {(() => {
-                        const execConfig: ExecutionConfig | undefined = selectedTask.request_payload?.execution_config || (selectedTask.result_summary as { execution_config?: ExecutionConfig } | undefined)?.execution_config;
-                        if (!execConfig) return null;
-
-                        const stepPolicyLabels: Record<string, string> = {
-                          CONTINUE: '继续后续步骤',
-                          STOP_WAIT: '停止等待',
-                          STOP_NOTIFY: '停止+通知',
-                          STOP_WAIT_MANUAL: '停止+等待人工继续',
-                          RETRY_UNTIL_SUCCESS: '重复运行直到成功',
-                          RETRY_N_TIMES_CONTINUE: `重复运行${execConfig.step_retry_count || 'N'}次后继续`,
-                        };
-
-                        const casePolicyLabels: Record<string, string> = {
-                          CONTINUE: '继续后续用例',
-                          STOP: '停止',
-                          STOP_NOTIFY: '停止+通知',
-                          STOP_WAIT_MANUAL: '停止+等待人工继续',
-                          RETRY_UNTIL_SUCCESS: '重复运行直到成功',
-                          RETRY_N_TIMES_CONTINUE: `重复运行${execConfig.case_retry_count || 'N'}次后继续`,
-                        };
-
-                        return (
-                          <>
-                            <div style={styles.executionConfigRow}>
-                              <span style={styles.executionConfigLabel}>步骤失败时:</span>
-                              <span style={{
-                                ...styles.executionConfigValue,
-                                color: execConfig.step_on_failure === 'CONTINUE' ? 'var(--status-success)' :
-                                       execConfig.step_on_failure.startsWith('RETRY') ? 'var(--status-warning)' :
-                                       'var(--status-error)',
-                              }}>
-                                {stepPolicyLabels[execConfig.step_on_failure] || execConfig.step_on_failure}
-                              </span>
-                            </div>
-                            <div style={styles.executionConfigRow}>
-                              <span style={styles.executionConfigLabel}>用例失败时:</span>
-                              <span style={{
-                                ...styles.executionConfigValue,
-                                color: execConfig.case_on_failure === 'CONTINUE' ? 'var(--status-success)' :
-                                       execConfig.case_on_failure.startsWith('RETRY') ? 'var(--status-warning)' :
-                                       'var(--status-error)',
-                              }}>
-                                {casePolicyLabels[execConfig.case_on_failure] || execConfig.case_on_failure}
-                              </span>
-                            </div>
-                          </>
-                        );
-                      })()}
+                {/* Execution Config */}
+                {(selectedTask.request_payload?.execution_config) && (
+                  <div style={s.section}>
+                    <h3 style={s.sectionTitle}>执行配置</h3>
+                    <div style={s.configDisplay}>
+                      <div style={s.configRow}>
+                        <span>步骤失败</span>
+                        <span>{selectedTask.request_payload.execution_config.step_on_failure}</span>
+                      </div>
+                      <div style={s.configRow}>
+                        <span>用例失败</span>
+                        <span>{selectedTask.request_payload.execution_config.case_on_failure}</span>
+                      </div>
                     </div>
                   </div>
                 )}
 
-                <div style={styles.timeSection}>
-                  <h3 style={styles.sectionTitle}>任务附件</h3>
-                  {selectedTask.request_payload?.attachments?.length ? (
-                    <div style={styles.attachmentList}>
-                      {selectedTask.request_payload.attachments.map(attachment => (
-                        <div key={attachment.file_id} style={styles.attachmentItem}>
-                          <div style={styles.attachmentInfo}>
-                            <span style={styles.attachmentName}>{attachment.original_filename}</span>
-                            <span style={styles.attachmentMeta}>
-                              {formatAttachmentSize(attachment.size)} · {attachment.content_type || '-'}
-                            </span>
-                          </div>
+                {/* Attachments */}
+                {selectedTask.request_payload?.attachments?.length ? (
+                  <div style={s.section}>
+                    <h3 style={s.sectionTitle}>附件</h3>
+                    <div style={s.attachList}>
+                      {selectedTask.request_payload.attachments.map(a => (
+                        <div key={a.file_id} style={s.attachItem}>
+                          <span>{a.original_filename}</span>
+                          <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>{formatAttachmentSize(a.size)}</span>
                         </div>
                       ))}
                     </div>
-                  ) : (
-                    <div style={styles.attachmentEmpty}>无附件</div>
-                  )}
-                </div>
+                  </div>
+                ) : null}
 
-                <div style={styles.detailActions}>
-                  <button
-                    style={styles.secondaryActionBtn}
-                    onClick={(e) => handleRerunTask(selectedTask, e)}
-                    disabled={rerunningTaskId === selectedTask.task_id}
-                  >
-                    {rerunningTaskId === selectedTask.task_id ? '重新运行中...' : '重新运行'}
-                  </button>
-                  <button
-                    style={styles.secondaryGhostBtn}
-                    onClick={openEditRerunModal}
-                    disabled={rerunningTaskId === selectedTask.task_id}
-                  >
-                    编辑后重跑
+                {/* Actions */}
+                <div style={s.modalActions}>
+                  <button style={s.ghostBtn} onClick={e => handleRerunTask(selectedTask, e)} disabled={rerunningTaskId === selectedTask.task_id}>
+                    重新运行
                   </button>
                 </div>
 
                 {selectedTask.error_message && (
-                  <div style={styles.errorSection}>
-                    <h3 style={styles.sectionTitle}>错误信息</h3>
-                    <pre style={styles.errorMessage}>{selectedTask.error_message}</pre>
-                  </div>
+                  <pre style={s.errorBlock}>{selectedTask.error_message}</pre>
                 )}
               </div>
             )}
@@ -1295,1354 +829,1179 @@ const TaskList: React.FC<TaskListProps> = () => {
         </div>
       )}
 
-      {/* Dispatch Task Modal */}
+      {/* ──────── DISPATCH MODAL ──────── */}
       {dispatchModal.isOpen && (
-        <div style={styles.modalOverlay} onClick={closeDispatchModal}>
-          <div style={styles.dispatchModal} onClick={(e) => e.stopPropagation()}>
-            <div style={styles.modalHeader}>
-              <h2 style={styles.modalTitle}>
-                <span style={styles.modalIcon}>▶</span>
-                下发任务
-              </h2>
-              <button style={styles.closeBtn} onClick={closeDispatchModal}>×</button>
+        <div style={s.overlay} onClick={closeDispatchModal}>
+          <div style={s.dispatchModal} onClick={e => e.stopPropagation()}>
+            <div style={s.modalHeader}>
+              <h2 style={s.modalTitle}>下发任务</h2>
+              <button style={s.closeBtn} onClick={closeDispatchModal}>×</button>
             </div>
-
-            <div style={styles.dispatchModalBody}>
-              {dispatchModal.loading ? (
-                <div style={styles.modalLoading}>
-                  <div style={styles.spinner} />
-                </div>
-              ) : (
-                <>
-                  <div style={styles.formSection}>
-                    <label style={styles.formLabel}>下发方式</label>
-                    <div style={styles.radioGroup}>
-                      <label style={styles.radioLabel}>
-                        <input
-                          type="radio"
-                          name="scheduleType"
-                          checked={dispatchModal.scheduleType === 'IMMEDIATE'}
-                          onChange={() => setDispatchModal(prev => ({ ...prev, scheduleType: 'IMMEDIATE', plannedAt: '' }))}
-                        />
-                        <span>立即下发</span>
-                      </label>
-                      <label style={styles.radioLabel}>
-                        <input
-                          type="radio"
-                          name="scheduleType"
-                          checked={dispatchModal.scheduleType === 'SCHEDULED'}
-                          onChange={() => setDispatchModal(prev => ({ ...prev, scheduleType: 'SCHEDULED' }))}
-                        />
-                        <span>定时下发</span>
-                      </label>
+            {dispatchModal.loading ? (
+              <div style={s.modalLoading}><div style={s.spinner} /></div>
+            ) : (
+              <div style={s.dispatchBody}>
+                {/* Row 1: Schedule + Category + Tag */}
+                <div style={s.formRow3}>
+                  <div style={s.formGroup}>
+                    <label style={s.formLabel}>下发方式</label>
+                    <div style={s.toggleGroup}>
+                      <button
+                        style={{ ...s.toggleBtn, ...(dispatchModal.scheduleType === 'IMMEDIATE' ? s.toggleBtnActive : {}) }}
+                        onClick={() => setDispatchModal(prev => ({ ...prev, scheduleType: 'IMMEDIATE', plannedAt: '' }))}
+                      >
+                        立即
+                      </button>
+                      <button
+                        style={{ ...s.toggleBtn, ...(dispatchModal.scheduleType === 'SCHEDULED' ? s.toggleBtnActive : {}) }}
+                        onClick={() => setDispatchModal(prev => ({ ...prev, scheduleType: 'SCHEDULED' }))}
+                      >
+                        定时
+                      </button>
                     </div>
-                  </div>
-
-                  {/* 执行中配置 */}
-                  <div style={styles.formSection}>
-                    <label style={styles.formLabel}>执行中配置</label>
-                    <div style={styles.executionConfigContainer}>
-                      <div style={styles.executionConfigItem}>
-                        <label style={styles.executionConfigLabel}>步骤失败时</label>
-                        <select
-                          style={styles.select}
-                          value={dispatchModal.executionConfig.step_on_failure}
-                          onChange={(e) => setDispatchModal(prev => ({
-                            ...prev,
-                            executionConfig: {
-                              ...prev.executionConfig,
-                              step_on_failure: e.target.value as StepFailurePolicy,
-                            },
-                          }))}
-                        >
-                          <option value="CONTINUE">继续后续步骤</option>
-                          <option value="STOP_WAIT">停止等待</option>
-                          <option value="STOP_NOTIFY">停止+通知</option>
-                          <option value="STOP_WAIT_MANUAL">停止+等待人工继续</option>
-                          <option value="RETRY_UNTIL_SUCCESS">重复运行直到成功</option>
-                          <option value="RETRY_N_TIMES_CONTINUE">重复运行N次后继续</option>
-                        </select>
-                        {dispatchModal.executionConfig.step_on_failure === 'RETRY_N_TIMES_CONTINUE' && (
-                          <input
-                            type="number"
-                            style={{ ...styles.input, marginTop: '8px', width: '80px' }}
-                            placeholder="重试次数"
-                            min={1}
-                            max={10}
-                            value={dispatchModal.executionConfig.step_retry_count || ''}
-                            onChange={(e) => setDispatchModal(prev => ({
-                              ...prev,
-                              executionConfig: {
-                                ...prev.executionConfig,
-                                step_retry_count: parseInt(e.target.value) || undefined,
-                              },
-                            }))}
-                          />
-                        )}
-                      </div>
-                      <div style={styles.executionConfigItem}>
-                        <label style={styles.executionConfigLabel}>用例失败时</label>
-                        <select
-                          style={styles.select}
-                          value={dispatchModal.executionConfig.case_on_failure}
-                          onChange={(e) => setDispatchModal(prev => ({
-                            ...prev,
-                            executionConfig: {
-                              ...prev.executionConfig,
-                              case_on_failure: e.target.value as CaseFailurePolicy,
-                            },
-                          }))}
-                        >
-                          <option value="CONTINUE">继续后续用例</option>
-                          <option value="STOP">停止</option>
-                          <option value="STOP_NOTIFY">停止+通知</option>
-                          <option value="STOP_WAIT_MANUAL">停止+等待人工继续</option>
-                          <option value="RETRY_UNTIL_SUCCESS">重复运行直到成功</option>
-                          <option value="RETRY_N_TIMES_CONTINUE">重复运行N次后继续</option>
-                        </select>
-                        {dispatchModal.executionConfig.case_on_failure === 'RETRY_N_TIMES_CONTINUE' && (
-                          <input
-                            type="number"
-                            style={{ ...styles.input, marginTop: '8px', width: '80px' }}
-                            placeholder="重试次数"
-                            min={1}
-                            max={10}
-                            value={dispatchModal.executionConfig.case_retry_count || ''}
-                            onChange={(e) => setDispatchModal(prev => ({
-                              ...prev,
-                              executionConfig: {
-                                ...prev.executionConfig,
-                                case_retry_count: parseInt(e.target.value) || undefined,
-                              },
-                            }))}
-                          />
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {dispatchModal.scheduleType === 'SCHEDULED' && (
-                    <div style={styles.formSection}>
-                      <label style={styles.formLabel}>计划执行时间</label>
-                      <input
-                        type="datetime-local"
-                        style={styles.input}
+                    {dispatchModal.scheduleType === 'SCHEDULED' && (
+                      <input type="datetime-local" style={s.fieldInput}
                         value={dispatchModal.plannedAt}
-                        onChange={(e) => setDispatchModal(prev => ({ ...prev, plannedAt: e.target.value }))}
+                        onChange={e => setDispatchModal(prev => ({ ...prev, plannedAt: e.target.value }))}
                       />
-                    </div>
-                  )}
-
-                  <div style={styles.formSection}>
-                    <label style={styles.formLabel}>Category</label>
-                    <select
-                      style={styles.select}
-                      value={dispatchModal.category}
-                      onChange={(e) => setDispatchModal(prev => ({ ...prev, category: e.target.value }))}
+                    )}
+                  </div>
+                  <div style={s.formGroup}>
+                    <label style={s.formLabel}>分类</label>
+                    <select style={s.fieldSelect} value={dispatchModal.category}
+                      onChange={e => setDispatchModal(prev => ({ ...prev, category: e.target.value }))}
                     >
                       <option value="bmc">BMC</option>
                       <option value="bios">BIOS</option>
                       <option value="os">OS</option>
                     </select>
                   </div>
-
-                  <div style={styles.formSection}>
-                    <label style={styles.formLabel}>Project Tag</label>
-                    <select
-                      style={styles.select}
-                      value={dispatchModal.projectTag}
-                      onChange={(e) => setDispatchModal(prev => ({ ...prev, projectTag: e.target.value }))}
+                  <div style={s.formGroup}>
+                    <label style={s.formLabel}>项目标签</label>
+                    <select style={s.fieldSelect} value={dispatchModal.projectTag}
+                      onChange={e => setDispatchModal(prev => ({ ...prev, projectTag: e.target.value }))}
                     >
                       <option value="universal">Universal</option>
                       <option value="specific">Specific</option>
                     </select>
                   </div>
+                </div>
 
-                  {renderAttachmentUploader(
-                    'dispatch',
-                    dispatchModal.attachments,
-                    dispatchModal.attachmentUploading,
-                  )}
-
-                  <div style={styles.formSection}>
-                    <label style={styles.formLabel}>
-                      选择用例 ({dispatchModal.selectedCases.length} 已选)
-                    </label>
-                    <div style={styles.caseList}>
-                      {autoCases.length === 0 ? (
-                        <div style={styles.emptyCases}>暂无可用用例</div>
-                      ) : (
-                        autoCases.map(caseItem => (
-                          <label key={caseItem.auto_case_id} style={styles.caseItem}>
-                            <input
-                              type="checkbox"
-                              checked={dispatchModal.selectedCases.includes(caseItem.auto_case_id)}
-                              onChange={() => toggleCaseSelection(caseItem.auto_case_id)}
-                            />
-                            <span style={styles.caseName}>{caseItem.auto_case_id}</span>
-                            <span style={styles.caseScriptName}>
-                              {caseItem.script_name || '-'}
-                            </span>
-                            <span style={styles.caseFramework}>{caseItem.framework}</span>
-                          </label>
-                        ))
-                      )}
-                    </div>
+                {/* Case Selection */}
+                <div style={s.formGroup}>
+                  <label style={s.formLabel}>
+                    选择用例
+                    <span style={s.selectedCount}>{dispatchModal.selectedCases.length} 已选</span>
+                  </label>
+                  <div style={s.caseSearchBox}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-muted)', flexShrink: 0 }}><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+                    <input style={{ ...s.fieldInput, border: 'none', padding: '8px 0', background: 'transparent' }}
+                      type="text" placeholder="搜索用例..."
+                      value={caseSearchQuery} onChange={e => setCaseSearchQuery(e.target.value)}
+                    />
                   </div>
-
-                  {dispatchModal.selectedCases.length > 0 && (
-                    <div style={styles.formSection}>
-                      <label style={styles.formLabel}>用例配置</label>
-                      <div style={styles.caseConfigList}>
-                        {dispatchModal.selectedCases.map((autoCaseId) => {
-                          const caseItem = autoCases.find(item => item.auto_case_id === autoCaseId);
-                          if (!caseItem) {
-                            return null;
-                          }
-                          const fields = caseItem.param_spec || [];
-                          const configValues = caseConfigs[autoCaseId] || buildDefaultCaseConfig(caseItem);
+                  <div style={s.caseListBox}>
+                    {autoCases.length === 0 ? (
+                      <div style={s.emptySmall}>暂无可用用例</div>
+                    ) : (
+                      autoCases
+                        .filter(c => !caseSearchQuery || c.auto_case_id.toLowerCase().includes(caseSearchQuery.toLowerCase()) || c.script_name?.toLowerCase().includes(caseSearchQuery.toLowerCase()))
+                        .map(c => {
+                          const selected = dispatchModal.selectedCases.includes(c.auto_case_id);
                           return (
-                            <div key={autoCaseId} style={styles.caseConfigCard}>
-                              <div style={styles.caseConfigHeader}>
-                                <div style={styles.caseConfigTitleBlock}>
-                                  <span style={styles.caseConfigTitle}>{caseItem.auto_case_id}</span>
-                                  <span style={styles.caseConfigSubtitle}>
-                                    {caseItem.script_name || caseItem.name}
-                                  </span>
-                                </div>
-                                <span style={styles.caseConfigCount}>{fields.length} 项配置</span>
-                              </div>
-                              {fields.length === 0 ? (
-                                <div style={styles.caseConfigEmpty}>该用例没有配置项</div>
-                              ) : (
-                                <div style={styles.caseConfigFields}>
-                                  {fields.map((field) => {
-                                    const currentValue = configValues[field.name];
-                                    const normalizedType = (field.type || 'str').toLowerCase();
-                                    return (
-                                      <div key={`${autoCaseId}-${field.name}`} style={styles.caseConfigField}>
-                                        <div style={styles.caseConfigFieldHeader}>
-                                          <label style={styles.caseConfigLabel}>
-                                            {getFieldDisplayLabel(field)}
-                                            {field.required && <span style={styles.requiredMark}>*</span>}
-                                          </label>
-                                          <span style={styles.caseConfigType}>{field.type || 'str'}</span>
-                                        </div>
-                                        {field.description && (
-                                          <div style={styles.caseConfigDescription}>{field.description}</div>
-                                        )}
-                                        {field.options && field.options.length > 0 ? (
-                                          <select
-                                            style={styles.select}
-                                            value={String(currentValue ?? '')}
-                                            onChange={(e) => handleCaseConfigChange(autoCaseId, field, e.target.value)}
-                                          >
-                                            <option value="">请选择</option>
-                                            {field.options.map((option, index) => (
-                                              <option key={`${field.name}-${index}`} value={String(option.value)}>
-                                                {option.label || String(option.value)}
-                                              </option>
-                                            ))}
-                                          </select>
-                                        ) : normalizedType === 'bool' || normalizedType === 'boolean' ? (
-                                          <label style={styles.checkboxLabel}>
-                                            <input
-                                              type="checkbox"
-                                              checked={Boolean(currentValue)}
-                                              onChange={(e) => handleCaseConfigChange(autoCaseId, field, e.target.checked)}
-                                            />
-                                            <span>启用</span>
-                                          </label>
-                                        ) : (
-                                          <input
-                                            type={getConfigFieldInputType(field.type)}
-                                            style={styles.input}
-                                            value={String(currentValue ?? '')}
-                                            onChange={(e) => handleCaseConfigChange(autoCaseId, field, e.target.value)}
-                                            placeholder={field.default !== undefined ? String(field.default) : field.name}
-                                          />
-                                        )}
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              )}
-                            </div>
+                            <label key={c.auto_case_id} style={{ ...s.caseItem, ...(selected ? s.caseItemSelected : {}) }}>
+                              <input type="checkbox" checked={selected} onChange={() => toggleCaseSelection(c.auto_case_id)} style={{ display: 'none' }} />
+                              <span style={{ ...s.checkbox, ...(selected ? s.checkboxChecked : {}) }}>
+                                {selected && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>}
+                              </span>
+                              <span style={s.caseItemName}>{c.auto_case_id}</span>
+                              <span style={s.caseItemScript}>{c.script_name || '-'}</span>
+                              <span style={s.caseItemFw}>{c.framework}</span>
+                            </label>
                           );
-                        })}
-                      </div>
-                    </div>
-                  )}
-
-                  {dispatchModal.error && (
-                    <div style={styles.errorBanner}>{dispatchModal.error}</div>
-                  )}
-
-                  <div style={styles.modalActions}>
-                    <button style={styles.cancelBtn} onClick={closeDispatchModal}>
-                      取消
-                    </button>
-                    <button
-                      style={styles.submitBtn}
-                      onClick={handleDispatchSubmit}
-                      disabled={dispatchModal.submitting || dispatchModal.attachmentUploading}
-                    >
-                      {dispatchModal.submitting ? '下发中...' : '确认下发'}
-                    </button>
+                        })
+                    )}
                   </div>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {dispatchModal.isOpen && editingCase && (
-        <div style={styles.modalOverlay} onClick={() => setConfigEditorCaseId(null)}>
-          <div style={styles.caseConfigEditorModal} onClick={(e) => e.stopPropagation()}>
-            <div style={styles.modalHeader}>
-              <h3 style={styles.modalTitle}>
-                <span style={styles.modalIcon}>⚙</span>
-                用例配置
-              </h3>
-              <button style={styles.closeBtn} onClick={() => setConfigEditorCaseId(null)}>×</button>
-            </div>
-            <div style={styles.dispatchModalBody}>
-              <div style={styles.caseConfigHeader}>
-                <div style={styles.caseConfigTitleBlock}>
-                  <span style={styles.caseConfigTitle}>{editingCase.auto_case_id}</span>
-                  <span style={styles.caseConfigSubtitle}>
-                    {editingCase.script_name || editingCase.name}
-                  </span>
                 </div>
-                <span style={styles.caseConfigCount}>{(editingCase.param_spec || []).length} 项配置</span>
+
+                {/* Case Configs */}
+                {dispatchModal.selectedCases.length > 0 && (
+                  <div style={s.formGroup}>
+                    <label style={s.formLabel}>用例配置</label>
+                    <div style={s.configList}>
+                      {dispatchModal.selectedCases.map(id => (
+                        <div key={id}>{renderCaseConfig(id)}</div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {dispatchModal.error && <div style={s.errorBanner}>{dispatchModal.error}</div>}
+
+                <div style={s.modalActions}>
+                  <button style={s.cancelBtn} onClick={closeDispatchModal}>取消</button>
+                  <button style={s.submitBtn} onClick={handleDispatchSubmit}
+                    disabled={dispatchModal.submitting}
+                  >
+                    {dispatchModal.submitting ? '下發中...' : '确认下发'}
+                  </button>
+                </div>
               </div>
-              {(editingCase.param_spec || []).length === 0 ? (
-                <div style={styles.caseConfigEmpty}>该用例没有配置项</div>
-              ) : (
-                <div style={styles.caseConfigFields}>
-                  {(editingCase.param_spec || []).map((field) => {
-                    const currentValue = (caseConfigs[editingCase.auto_case_id] || buildDefaultCaseConfig(editingCase))[field.name];
-                    const normalizedType = (field.type || 'str').toLowerCase();
-                    return (
-                      <div key={`${editingCase.auto_case_id}-${field.name}`} style={styles.caseConfigField}>
-                        <div style={styles.caseConfigFieldHeader}>
-                          <label style={styles.caseConfigLabel}>
-                            {getFieldDisplayLabel(field)}
-                            {field.required && <span style={styles.requiredMark}>*</span>}
-                          </label>
-                          <span style={styles.caseConfigType}>{field.type || 'str'}</span>
-                        </div>
-                        {field.description && (
-                          <div style={styles.caseConfigDescription}>{field.description}</div>
-                        )}
-                        {field.options && field.options.length > 0 ? (
-                          <select
-                            style={styles.select}
-                            value={String(currentValue ?? '')}
-                            onChange={(e) => handleCaseConfigChange(editingCase.auto_case_id, field, e.target.value)}
-                          >
-                            <option value="">请选择</option>
-                            {field.options.map((option, index) => (
-                              <option key={`${field.name}-${index}`} value={String(option.value)}>
-                                {option.label || String(option.value)}
-                              </option>
-                            ))}
-                          </select>
-                        ) : normalizedType === 'bool' || normalizedType === 'boolean' ? (
-                          <label style={styles.checkboxLabel}>
-                            <input
-                              type="checkbox"
-                              checked={Boolean(currentValue)}
-                              onChange={(e) => handleCaseConfigChange(editingCase.auto_case_id, field, e.target.checked)}
-                            />
-                            <span>启用</span>
-                          </label>
-                        ) : (
-                          <input
-                            type={getConfigFieldInputType(field.type)}
-                            style={styles.input}
-                            value={String(currentValue ?? '')}
-                            onChange={(e) => handleCaseConfigChange(editingCase.auto_case_id, field, e.target.value)}
-                            placeholder={field.default !== undefined ? String(field.default) : field.name}
-                          />
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-              <div style={styles.modalActions}>
-                <button style={styles.cancelBtn} onClick={() => setConfigEditorCaseId(null)}>
-                  完成
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {rerunEditModal.isOpen && (
-        <div style={styles.modalOverlay} onClick={closeRerunEditModal}>
-          <div style={styles.dispatchModal} onClick={(e) => e.stopPropagation()}>
-            <div style={styles.modalHeader}>
-              <h2 style={styles.modalTitle}>
-                <span style={styles.modalIcon}>↻</span>
-                编辑后重跑
-              </h2>
-              <button style={styles.closeBtn} onClick={closeRerunEditModal}>×</button>
-            </div>
-            <div style={styles.dispatchModalBody}>
-              {rerunEditModal.loading ? (
-                <div style={styles.modalLoading}>
-                  <div style={styles.spinner} />
-                </div>
-              ) : (
-                <>
-                  <div style={styles.formSection}>
-                    <label style={styles.formLabel}>下发方式</label>
-                    <div style={styles.radioGroup}>
-                      <label style={styles.radioLabel}>
-                        <input
-                          type="radio"
-                          name="rerunScheduleType"
-                          checked={rerunEditModal.scheduleType === 'IMMEDIATE'}
-                          onChange={() => setRerunEditModal(prev => ({ ...prev, scheduleType: 'IMMEDIATE', plannedAt: '' }))}
-                        />
-                        <span>立即下发</span>
-                      </label>
-                      <label style={styles.radioLabel}>
-                        <input
-                          type="radio"
-                          name="rerunScheduleType"
-                          checked={rerunEditModal.scheduleType === 'SCHEDULED'}
-                          onChange={() => setRerunEditModal(prev => ({ ...prev, scheduleType: 'SCHEDULED' }))}
-                        />
-                        <span>定时下发</span>
-                      </label>
-                    </div>
-                  </div>
-
-                  {/* 执行中配置 - 重跑编辑 */}
-                  <div style={styles.formSection}>
-                    <label style={styles.formLabel}>执行中配置</label>
-                    <div style={styles.executionConfigContainer}>
-                      <div style={styles.executionConfigItem}>
-                        <label style={styles.executionConfigLabel}>步骤失败时</label>
-                        <select
-                          style={styles.select}
-                          value={rerunEditModal.executionConfig.step_on_failure}
-                          onChange={(e) => setRerunEditModal(prev => ({
-                            ...prev,
-                            executionConfig: {
-                              ...prev.executionConfig,
-                              step_on_failure: e.target.value as StepFailurePolicy,
-                            },
-                          }))}
-                        >
-                          <option value="CONTINUE">继续后续步骤</option>
-                          <option value="STOP_WAIT">停止等待</option>
-                          <option value="STOP_NOTIFY">停止+通知</option>
-                          <option value="STOP_WAIT_MANUAL">停止+等待人工继续</option>
-                          <option value="RETRY_UNTIL_SUCCESS">重复运行直到成功</option>
-                          <option value="RETRY_N_TIMES_CONTINUE">重复运行N次后继续</option>
-                        </select>
-                        {rerunEditModal.executionConfig.step_on_failure === 'RETRY_N_TIMES_CONTINUE' && (
-                          <input
-                            type="number"
-                            style={{ ...styles.input, marginTop: '8px', width: '80px' }}
-                            placeholder="重试次数"
-                            min={1}
-                            max={10}
-                            value={rerunEditModal.executionConfig.step_retry_count || ''}
-                            onChange={(e) => setRerunEditModal(prev => ({
-                              ...prev,
-                              executionConfig: {
-                                ...prev.executionConfig,
-                                step_retry_count: parseInt(e.target.value) || undefined,
-                              },
-                            }))}
-                          />
-                        )}
-                      </div>
-                      <div style={styles.executionConfigItem}>
-                        <label style={styles.executionConfigLabel}>用例失败时</label>
-                        <select
-                          style={styles.select}
-                          value={rerunEditModal.executionConfig.case_on_failure}
-                          onChange={(e) => setRerunEditModal(prev => ({
-                            ...prev,
-                            executionConfig: {
-                              ...prev.executionConfig,
-                              case_on_failure: e.target.value as CaseFailurePolicy,
-                            },
-                          }))}
-                        >
-                          <option value="CONTINUE">继续后续用例</option>
-                          <option value="STOP">停止</option>
-                          <option value="STOP_NOTIFY">停止+通知</option>
-                          <option value="STOP_WAIT_MANUAL">停止+等待人工继续</option>
-                          <option value="RETRY_UNTIL_SUCCESS">重复运行直到成功</option>
-                          <option value="RETRY_N_TIMES_CONTINUE">重复运行N次后继续</option>
-                        </select>
-                        {rerunEditModal.executionConfig.case_on_failure === 'RETRY_N_TIMES_CONTINUE' && (
-                          <input
-                            type="number"
-                            style={{ ...styles.input, marginTop: '8px', width: '80px' }}
-                            placeholder="重试次数"
-                            min={1}
-                            max={10}
-                            value={rerunEditModal.executionConfig.case_retry_count || ''}
-                            onChange={(e) => setRerunEditModal(prev => ({
-                              ...prev,
-                              executionConfig: {
-                                ...prev.executionConfig,
-                                case_retry_count: parseInt(e.target.value) || undefined,
-                              },
-                            }))}
-                          />
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  {rerunEditModal.scheduleType === 'SCHEDULED' && (
-                    <div style={styles.formSection}>
-                      <label style={styles.formLabel}>计划执行时间</label>
-                      <input
-                        type="datetime-local"
-                        style={styles.input}
-                        value={rerunEditModal.plannedAt}
-                        onChange={(e) => setRerunEditModal(prev => ({ ...prev, plannedAt: e.target.value }))}
-                      />
-                    </div>
-                  )}
-                  <div style={styles.formSection}>
-                    <label style={styles.formLabel}>Category</label>
-                    <select
-                      style={styles.select}
-                      value={rerunEditModal.category}
-                      onChange={(e) => setRerunEditModal(prev => ({ ...prev, category: e.target.value }))}
-                    >
-                      <option value="bmc">BMC</option>
-                      <option value="bios">BIOS</option>
-                      <option value="os">OS</option>
-                    </select>
-                  </div>
-                  <div style={styles.formSection}>
-                    <label style={styles.formLabel}>Project Tag</label>
-                    <select
-                      style={styles.select}
-                      value={rerunEditModal.projectTag}
-                      onChange={(e) => setRerunEditModal(prev => ({ ...prev, projectTag: e.target.value }))}
-                    >
-                      <option value="universal">Universal</option>
-                      <option value="specific">Specific</option>
-                    </select>
-                  </div>
-                  <div style={styles.formSection}>
-                    <label style={styles.formLabel}>Repo URL</label>
-                    <input
-                      type="text"
-                      style={styles.input}
-                      value={rerunEditModal.repoUrl}
-                      onChange={(e) => setRerunEditModal(prev => ({ ...prev, repoUrl: e.target.value }))}
-                    />
-                  </div>
-                  <div style={styles.formSection}>
-                    <label style={styles.formLabel}>Branch</label>
-                    <input
-                      type="text"
-                      style={styles.input}
-                      value={rerunEditModal.branch}
-                      onChange={(e) => setRerunEditModal(prev => ({ ...prev, branch: e.target.value }))}
-                    />
-                  </div>
-                  <div style={styles.formSection}>
-                    <label style={styles.formLabel}>Timeout (秒)</label>
-                    <input
-                      type="number"
-                      style={styles.input}
-                      value={rerunEditModal.timeout}
-                      onChange={(e) => setRerunEditModal(prev => ({ ...prev, timeout: e.target.value }))}
-                    />
-                  </div>
-
-                  {renderAttachmentUploader(
-                    'rerun',
-                    rerunEditModal.attachments,
-                    rerunEditModal.attachmentUploading,
-                  )}
-
-                  <div style={styles.formSection}>
-                    <label style={styles.formLabel}>
-                      选择用例 ({rerunEditModal.selectedCases.length} 已选)
-                    </label>
-                    <div style={styles.caseList}>
-                      {autoCases.length === 0 ? (
-                        <div style={styles.emptyCases}>暂无可用用例</div>
-                      ) : (
-                        autoCases.map(caseItem => (
-                          <label key={`rerun-${caseItem.auto_case_id}`} style={styles.caseItem}>
-                            <input
-                              type="checkbox"
-                              checked={rerunEditModal.selectedCases.includes(caseItem.auto_case_id)}
-                              onChange={() => {
-                                const isSelected = rerunEditModal.selectedCases.includes(caseItem.auto_case_id);
-                                setRerunEditModal(prev => ({
-                                  ...prev,
-                                  selectedCases: isSelected
-                                    ? prev.selectedCases.filter(id => id !== caseItem.auto_case_id)
-                                    : [...prev.selectedCases, caseItem.auto_case_id],
-                                }));
-                                setCaseConfigs(prev => {
-                                  if (prev[caseItem.auto_case_id]) {
-                                    const next = { ...prev };
-                                    delete next[caseItem.auto_case_id];
-                                    return next;
-                                  }
-                                  return {
-                                    ...prev,
-                                    [caseItem.auto_case_id]: buildDefaultCaseConfig(caseItem),
-                                  };
-                                });
-                              }}
-                            />
-                            <span style={styles.caseName}>{caseItem.auto_case_id}</span>
-                            <span style={styles.caseScriptName}>
-                              {caseItem.script_name || '-'}
-                            </span>
-                            <span style={styles.caseFramework}>{caseItem.framework}</span>
-                          </label>
-                        ))
-                      )}
-                    </div>
-                  </div>
-
-                  {rerunEditModal.selectedCases.length > 0 && (
-                    <div style={styles.formSection}>
-                      <label style={styles.formLabel}>用例配置</label>
-                      <div style={styles.caseConfigList}>
-                        {rerunEditModal.selectedCases.map((autoCaseId) => {
-                          const caseItem = autoCases.find(item => item.auto_case_id === autoCaseId);
-                          if (!caseItem) {
-                            return null;
-                          }
-                          const fields = caseItem.param_spec || [];
-                          const configValues = caseConfigs[autoCaseId] || buildDefaultCaseConfig(caseItem);
-                          return (
-                            <div key={`rerun-config-${autoCaseId}`} style={styles.caseConfigCard}>
-                              <div style={styles.caseConfigHeader}>
-                                <div style={styles.caseConfigTitleBlock}>
-                                  <span style={styles.caseConfigTitle}>{caseItem.auto_case_id}</span>
-                                  <span style={styles.caseConfigSubtitle}>
-                                    {caseItem.script_name || caseItem.name}
-                                  </span>
-                                </div>
-                                <span style={styles.caseConfigCount}>{fields.length} 项配置</span>
-                              </div>
-                              {fields.length === 0 ? (
-                                <div style={styles.caseConfigEmpty}>该用例没有配置项</div>
-                              ) : (
-                                <div style={styles.caseConfigFields}>
-                                  {fields.map((field) => {
-                                    const currentValue = configValues[field.name];
-                                    const normalizedType = (field.type || 'str').toLowerCase();
-                                    return (
-                                      <div key={`rerun-${autoCaseId}-${field.name}`} style={styles.caseConfigField}>
-                                        <div style={styles.caseConfigFieldHeader}>
-                                          <label style={styles.caseConfigLabel}>
-                                            {getFieldDisplayLabel(field)}
-                                            {field.required && <span style={styles.requiredMark}>*</span>}
-                                          </label>
-                                          <span style={styles.caseConfigType}>{field.type || 'str'}</span>
-                                        </div>
-                                        {field.description && (
-                                          <div style={styles.caseConfigDescription}>{field.description}</div>
-                                        )}
-                                        {field.options && field.options.length > 0 ? (
-                                          <select
-                                            style={styles.select}
-                                            value={String(currentValue ?? '')}
-                                            onChange={(e) => handleCaseConfigChange(autoCaseId, field, e.target.value)}
-                                          >
-                                            <option value="">请选择</option>
-                                            {field.options.map((option, index) => (
-                                              <option key={`${field.name}-${index}`} value={String(option.value)}>
-                                                {option.label || String(option.value)}
-                                              </option>
-                                            ))}
-                                          </select>
-                                        ) : normalizedType === 'bool' || normalizedType === 'boolean' ? (
-                                          <label style={styles.checkboxLabel}>
-                                            <input
-                                              type="checkbox"
-                                              checked={Boolean(currentValue)}
-                                              onChange={(e) => handleCaseConfigChange(autoCaseId, field, e.target.checked)}
-                                            />
-                                            <span>启用</span>
-                                          </label>
-                                        ) : (
-                                          <input
-                                            type={getConfigFieldInputType(field.type)}
-                                            style={styles.input}
-                                            value={String(currentValue ?? '')}
-                                            onChange={(e) => handleCaseConfigChange(autoCaseId, field, e.target.value)}
-                                            placeholder={field.default !== undefined ? String(field.default) : field.name}
-                                          />
-                                        )}
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-
-                  {rerunEditModal.error && (
-                    <div style={styles.errorBanner}>{rerunEditModal.error}</div>
-                  )}
-                  <div style={styles.modalActions}>
-                    <button style={styles.cancelBtn} onClick={closeRerunEditModal}>
-                      取消
-                    </button>
-                    <button
-                      style={styles.submitBtn}
-                      onClick={handleEditRerunSubmit}
-                      disabled={rerunEditModal.submitting || rerunEditModal.attachmentUploading}
-                    >
-                      {rerunEditModal.submitting ? '提交中...' : '确认重跑'}
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
+            )}
           </div>
         </div>
       )}
 
       <style>{`
-        @keyframes spin { to { transform: rotate(360deg); } }
-        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
-        .task-row { cursor: pointer; }
-        .task-row:hover { background-color: var(--surface-hover) !important; }
-        .task-row:hover td { color: var(--accent-primary); }
-        .rerun-btn:hover { background-color: var(--status-info-bg) !important; border-color: var(--status-info) !important; color: var(--status-info) !important; }
-        .delete-btn:hover { background-color: var(--status-error-bg) !important; border-color: var(--status-error) !important; color: var(--status-error) !important; }
+        @keyframes taskSpin { to { transform: rotate(360deg); } }
+        @keyframes fadeInDown {
+          from { opacity: 0; transform: translateX(-50%) translateY(-20px); }
+          to { opacity: 1; transform: translateX(-50%) translateY(0); }
+        }
       `}</style>
     </div>
   );
 };
 
-function getStatusStyleStyle(status: string) {
-  const s = getStatusAppearance(status);
-  return {
-    backgroundColor: s.bg,
-    color: s.color,
-    border: s.border,
-    boxShadow: s.glow,
-  };
-}
+export default TaskList;
 
-function getStatusAppearance(status: string): StatusAppearance {
-  const normalizedStatus = (status || '').toUpperCase();
-  const statusMap: Record<string, StatusAppearance> = {
-    PENDING: {
-      bg: 'rgba(250, 204, 21, 0.12)',
-      color: '#facc15',
-      label: '待处理',
-      border: '1px solid rgba(250, 204, 21, 0.28)',
-    },
-    QUEUED: {
-      bg: 'rgba(245, 158, 11, 0.14)',
-      color: '#f59e0b',
-      label: '排队中',
-      border: '1px solid rgba(245, 158, 11, 0.28)',
-    },
-    READY: {
-      bg: 'rgba(59, 130, 246, 0.12)',
-      color: '#60a5fa',
-      label: '就绪',
-      border: '1px solid rgba(96, 165, 250, 0.24)',
-    },
-    RUNNING: {
-      bg: 'rgba(59, 130, 246, 0.14)',
-      color: '#38bdf8',
-      label: '运行中',
-      border: '1px solid rgba(56, 189, 248, 0.28)',
-      glow: '0 0 0 1px rgba(56, 189, 248, 0.08) inset',
-    },
-    SUCCESS: {
-      bg: 'rgba(34, 197, 94, 0.12)',
-      color: '#22c55e',
-      label: '成功',
-      border: '1px solid rgba(34, 197, 94, 0.24)',
-    },
-    PASSED: {
-      bg: 'rgba(34, 197, 94, 0.14)',
-      color: '#22c55e',
-      label: '已通过',
-      border: '1px solid rgba(34, 197, 94, 0.28)',
-      glow: '0 0 0 1px rgba(34, 197, 94, 0.08) inset',
-    },
-    FAILED: {
-      bg: 'rgba(239, 68, 68, 0.14)',
-      color: '#f87171',
-      label: '失败',
-      border: '1px solid rgba(248, 113, 113, 0.28)',
-    },
-    DISPATCH_FAILED: {
-      bg: 'rgba(239, 68, 68, 0.14)',
-      color: '#f87171',
-      label: '下发失败',
-      border: '1px solid rgba(248, 113, 113, 0.28)',
-    },
-    CANCELLED: {
-      bg: 'rgba(100, 116, 139, 0.16)',
-      color: '#94a3b8',
-      label: '已取消',
-      border: '1px solid rgba(148, 163, 184, 0.2)',
-    },
-    SCHEDULED: {
-      bg: 'rgba(163, 113, 247, 0.15)',
-      color: 'var(--accent-purple)',
-      label: '定时',
-      border: '1px solid rgba(163, 113, 247, 0.26)',
-    },
-    IMMEDIATE: {
-      bg: 'rgba(57, 208, 214, 0.12)',
-      color: 'var(--accent-cyan)',
-      label: '立即',
-      border: '1px solid rgba(57, 208, 214, 0.22)',
-    },
-    DISPATCHED: {
-      bg: 'rgba(57, 208, 214, 0.15)',
-      color: 'var(--accent-cyan)',
-      label: '已下发',
-      border: '1px solid rgba(57, 208, 214, 0.24)',
-    },
-    COMPLETED: {
-      bg: 'rgba(34, 197, 94, 0.12)',
-      color: '#22c55e',
-      label: '已完成',
-      border: '1px solid rgba(34, 197, 94, 0.24)',
-    },
-    CONSUMED: {
-      bg: 'rgba(16, 185, 129, 0.12)',
-      color: '#34d399',
-      label: '已消费',
-      border: '1px solid rgba(52, 211, 153, 0.24)',
-    },
-    NOT_CONSUMED: {
-      bg: 'rgba(100, 116, 139, 0.16)',
-      color: '#94a3b8',
-      label: '未消费',
-      border: '1px solid rgba(148, 163, 184, 0.2)',
-    },
-  };
-  return statusMap[normalizedStatus] || {
-    bg: 'rgba(100, 116, 139, 0.16)',
-    color: 'var(--text-secondary)',
-    label: status || '-',
-    border: '1px solid rgba(148, 163, 184, 0.2)',
-  };
-}
-
-const styles = {
-  container: {
-    padding: '32px',
-    maxWidth: '1400px',
+/* ──────────────────────────────────────────────────────────────
+   STYLES
+   ────────────────────────────────────────────────────────────── */
+const s = {
+  wrapper: {
+    padding: '20px 24px 32px',
+    maxWidth: '1200px',
     margin: '0 auto',
-    animation: 'fadeIn 0.4s ease',
+    width: '100%',
+    boxSizing: 'border-box' as const,
   } as const,
+
+  // Header
   header: {
+    marginBottom: '20px',
+  } as const,
+  headerTop: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: '28px',
+    marginBottom: '16px',
   } as const,
-  headerLeft: {
+  filterWrapper: {
     display: 'flex',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: '20px',
+    padding: '12px 0',
   } as const,
   title: {
-    fontSize: '30px',
+    fontSize: '20px',
     fontWeight: 700,
     color: 'var(--text-primary)',
-    letterSpacing: '-0.5px',
     margin: 0,
+    letterSpacing: '-0.3px',
   } as const,
-  statsRow: {
-    display: 'flex',
-    gap: '14px',
-  } as const,
-  statBadge: {
-    padding: '6px 14px',
-    fontSize: '13px',
-    fontWeight: 500,
-    borderRadius: '12px',
-    border: '1px solid transparent',
+  subtitle: {
+    fontSize: '12px',
+    color: 'var(--text-muted)',
+    margin: 0,
+    whiteSpace: 'nowrap' as const,
   } as const,
   headerActions: {
     display: 'flex',
-    gap: '10px',
+    gap: '8px',
+    alignItems: 'center',
+  } as const,
+  refreshBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '36px',
+    height: '36px',
+    fontSize: '16px',
+    color: 'var(--text-secondary)',
+    background: 'var(--bg-secondary)',
+    border: '1px solid var(--border-default)',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    transition: 'all 0.15s',
   } as const,
   dispatchBtn: {
     display: 'flex',
     alignItems: 'center',
     gap: '6px',
-    padding: '12px 20px',
-    fontSize: '14px',
+    padding: '8px 18px',
+    fontSize: '13px',
     fontWeight: 600,
     color: '#fff',
-    backgroundColor: 'var(--accent-cyan)',
+    background: 'linear-gradient(135deg, #06b6d4, #0891b2)',
     border: 'none',
-    borderRadius: 'var(--radius-md)',
+    borderRadius: '8px',
     cursor: 'pointer',
-    transition: 'all var(--transition-fast)',
+    transition: 'all 0.15s',
+    boxShadow: '0 2px 6px rgba(6,182,212,0.25)',
   } as const,
-  refreshBtn: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '6px',
-    padding: '12px 20px',
-    fontSize: '14px',
-    fontWeight: 600,
-    color: 'var(--text-secondary)',
-    backgroundColor: 'var(--bg-secondary)',
-    border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-md)',
-    cursor: 'pointer',
-    transition: 'all var(--transition-fast)',
-  } as const,
-  btnIcon: {
-    fontSize: '14px',
-  } as const,
+
+  // Banners
   errorBanner: {
     display: 'flex',
     alignItems: 'center',
-    gap: '10px',
-    padding: '14px 18px',
-    backgroundColor: 'var(--status-error-bg)',
-    border: '1px solid var(--status-error)',
-    borderRadius: 'var(--radius-md)',
-    color: 'var(--accent-red)',
-    fontSize: '14px',
-    marginBottom: '20px',
+    gap: '6px',
+    padding: '6px 12px',
+    marginBottom: '10px',
+    background: 'rgba(239,68,68,0.1)',
+    border: '1px solid rgba(239,68,68,0.2)',
+    borderRadius: '6px',
+    color: '#f87171',
+    fontSize: '12px',
   } as const,
   successBanner: {
+    position: 'fixed',
+    top: '20px',
+    left: '50%',
+    transform: 'translateX(-50%)',
+    zIndex: 9999,
     display: 'flex',
     alignItems: 'center',
-    gap: '10px',
-    padding: '14px 18px',
-    backgroundColor: 'rgba(34, 197, 94, 0.12)',
-    border: '1px solid rgba(34, 197, 94, 0.28)',
-    borderRadius: 'var(--radius-md)',
-    color: '#4ade80',
+    gap: '8px',
+    padding: '10px 20px',
+    background: '#16a34a',
+    borderRadius: '8px',
+    color: '#fff',
     fontSize: '14px',
-    marginBottom: '20px',
+    fontWeight: 500,
+    boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+    animation: 'fadeInDown 0.3s ease',
   } as const,
-  dispatchModal: {
-    backgroundColor: 'var(--bg-secondary)',
-    borderRadius: 'var(--radius-lg)',
-    border: '1px solid var(--border-default)',
-    width: '90%',
-    maxWidth: '680px',
-    maxHeight: '85vh',
-    overflow: 'auto',
-    boxShadow: 'var(--shadow-lg)',
-    animation: 'scaleIn 0.3s ease',
-  } as const,
-  dispatchModalBody: {
-    padding: '28px',
-  } as const,
-  formSection: {
-    marginBottom: '24px',
-  } as const,
-  formLabel: {
-    display: 'block',
-    fontSize: '14px',
-    fontWeight: 600,
-    color: 'var(--text-secondary)',
-    marginBottom: '8px',
-  } as const,
-  select: {
-    width: '100%',
-    padding: '12px 16px',
-    fontSize: '14px',
-    color: 'var(--text-primary)',
-    backgroundColor: 'var(--bg-primary)',
-    border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-md)',
-    cursor: 'pointer',
-    outline: 'none',
-  } as const,
-  input: {
-    width: '100%',
-    padding: '12px 16px',
-    fontSize: '14px',
-    color: 'var(--text-primary)',
-    backgroundColor: 'var(--bg-primary)',
-    border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-md)',
-    outline: 'none',
-  } as const,
-  attachmentPanel: {
-    border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-md)',
-    backgroundColor: 'var(--bg-primary)',
-    padding: '16px',
-  } as const,
-  attachmentUploadButton: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: '10px 16px',
-    fontSize: '14px',
-    fontWeight: 600,
-    color: 'var(--accent-cyan)',
-    backgroundColor: 'rgba(57, 208, 214, 0.08)',
-    border: '1px solid rgba(57, 208, 214, 0.24)',
-    borderRadius: 'var(--radius-md)',
-    cursor: 'pointer',
-  } as const,
-  hiddenFileInput: {
-    display: 'none',
-  } as const,
-  attachmentEmpty: {
-    marginTop: '10px',
-    fontSize: '13px',
-    color: 'var(--text-muted)',
-  } as const,
-  attachmentList: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: '10px',
-    marginTop: '14px',
-  } as const,
-  attachmentItem: {
+
+  // Filter bar
+  filterBar: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: '12px',
-    padding: '12px 14px',
-    border: '1px solid var(--border-muted)',
-    borderRadius: 'var(--radius-md)',
-    backgroundColor: 'var(--bg-secondary)',
+    marginBottom: '14px',
   } as const,
-  attachmentInfo: {
+  filterTabs: {
     display: 'flex',
-    flexDirection: 'column' as const,
     gap: '4px',
-    minWidth: 0,
+    background: 'var(--bg-secondary)',
+    padding: '4px',
+    borderRadius: '10px',
+    border: '1px solid var(--border-default)',
   } as const,
-  attachmentName: {
+  filterTab: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '6px 14px',
     fontSize: '13px',
-    fontWeight: 600,
-    color: 'var(--text-primary)',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
+    fontWeight: 500,
+    color: 'var(--text-secondary)',
+    background: 'transparent',
+    border: 'none',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    transition: 'all 0.15s',
     whiteSpace: 'nowrap' as const,
   } as const,
-  attachmentMeta: {
-    fontSize: '12px',
-    color: 'var(--text-muted)',
-  } as const,
-  attachmentRemoveBtn: {
-    flexShrink: 0,
-    padding: '6px 10px',
-    fontSize: '12px',
-    color: 'var(--accent-red)',
-    backgroundColor: 'var(--status-error-bg)',
-    border: '1px solid rgba(248, 81, 73, 0.24)',
-    borderRadius: 'var(--radius-sm)',
-    cursor: 'pointer',
-  } as const,
-  radioGroup: {
-    display: 'flex',
-    gap: '28px',
-  } as const,
-  executionConfigContainer: {
-    display: 'flex',
-    gap: '24px',
-    flexWrap: 'wrap' as const,
-    padding: '18px',
-    backgroundColor: 'var(--bg-primary)',
-    border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-md)',
-  } as const,
-  executionConfigItem: {
-    flex: 1,
-    minWidth: '200px',
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: '8px',
-  } as const,
-  executionConfigLabel: {
-    fontSize: '12px',
+  filterTabActive: {
+    color: 'var(--text-primary)',
+    background: 'var(--bg-primary)',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
     fontWeight: 600,
-    color: 'var(--text-secondary)',
   } as const,
-  executionConfigDisplay: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: '12px',
-    padding: '16px',
-    backgroundColor: 'var(--bg-primary)',
-    border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-md)',
+  filterCount: {
+    fontSize: '11px',
+    fontWeight: 600,
+    padding: '2px 7px',
+    borderRadius: '99px',
+    color: 'var(--text-muted)',
+    background: 'var(--bg-tertiary)',
   } as const,
-  executionConfigRow: {
+  filterCountActive: {
+    color: 'var(--accent-cyan)',
+    background: 'rgba(57,208,214,0.1)',
+  } as const,
+  searchBox: {
     display: 'flex',
     alignItems: 'center',
-    gap: '14px',
+    gap: '8px',
+    padding: '0 12px',
+    background: 'var(--bg-secondary)',
+    border: '1px solid var(--border-default)',
+    borderRadius: '8px',
+    minWidth: '180px',
   } as const,
-  executionConfigValue: {
+  searchInput: {
+    width: '100%',
+    padding: '8px 0',
+    fontSize: '13px',
+    color: 'var(--text-primary)',
+    background: 'transparent',
+    border: 'none',
+    outline: 'none',
+  } as const,
+
+  // Task list
+  list: {
+    minHeight: '200px',
+  } as const,
+  taskList: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: '10px',
+  } as const,
+  taskCard: {
+    background: 'var(--bg-secondary)',
+    border: '1px solid var(--border-default)',
+    borderLeft: '4px solid var(--border-default)',
+    borderRadius: '12px',
+    overflow: 'hidden',
+    transition: 'all 0.15s',
+  } as const,
+  taskCardMain: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: '16px',
+    padding: '14px 18px',
+  } as const,
+  taskCardLeft: {
+    flex: 1,
+    minWidth: 0,
+  } as const,
+  taskCardRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    marginBottom: '6px',
+  } as const,
+  taskId: {
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: '14px',
+    fontWeight: 700,
+    color: 'var(--accent-cyan)',
+    cursor: 'pointer',
+    transition: 'color 0.1s',
+  } as const,
+  sourceTag: {
+    fontSize: '11px',
+    fontWeight: 600,
+    padding: '2px 8px',
+    borderRadius: '99px',
+    color: '#a78bfa',
+    background: 'rgba(167,139,250,0.10)',
+    border: '1px solid rgba(167,139,250,0.18)',
+  } as const,
+  statusDot: {
+    width: '8px',
+    height: '8px',
+    borderRadius: '50%',
+    flexShrink: 0,
+  } as const,
+  statusLabel: {
     fontSize: '13px',
     fontWeight: 600,
-    padding: '4px 10px',
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    borderRadius: 'var(--radius-sm)',
   } as const,
-  radioLabel: {
+  taskMeta: {
     display: 'flex',
     alignItems: 'center',
-    gap: '8px',
-    fontSize: '14px',
-    color: 'var(--text-primary)',
-    cursor: 'pointer',
+    gap: '6px',
+    flexWrap: 'wrap' as const,
   } as const,
-  caseList: {
-    maxHeight: '260px',
-    overflowY: 'auto',
-    border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-md)',
-    backgroundColor: 'var(--bg-primary)',
-  } as const,
-  emptyCases: {
-    padding: '20px',
-    textAlign: 'center',
+  metaItem: {
+    fontSize: '12px',
     color: 'var(--text-muted)',
-    fontSize: '14px',
+    fontFamily: "'JetBrains Mono', monospace",
   } as const,
-  caseItem: {
+  metaDot: {
+    color: 'var(--border-default)',
+    fontSize: '12px',
+  } as const,
+  taskCardRight: {
     display: 'flex',
     alignItems: 'center',
     gap: '12px',
-    padding: '12px 16px',
-    borderBottom: '1px solid var(--border-muted)',
-    cursor: 'pointer',
-    fontSize: '14px',
-    color: 'var(--text-primary)',
+    flexShrink: 0,
   } as const,
-  caseName: {
-    flex: 1,
-    fontFamily: "'JetBrains Mono', monospace",
-    fontWeight: 600,
-  } as const,
-  caseScriptName: {
-    minWidth: '140px',
+  taskTime: {
     fontSize: '12px',
+    color: 'var(--text-muted)',
+    fontFamily: "'JetBrains Mono', monospace",
+    whiteSpace: 'nowrap' as const,
+  } as const,
+  taskActions: {
+    display: 'flex',
+    gap: '6px',
+  } as const,
+  actionBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '32px',
+    height: '32px',
+    color: 'var(--text-muted)',
+    background: 'transparent',
+    border: '1px solid var(--border-muted)',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    transition: 'all 0.15s',
+  } as const,
+  actionDangerBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '32px',
+    height: '32px',
+    color: 'var(--text-muted)',
+    background: 'transparent',
+    border: '1px solid var(--border-muted)',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    transition: 'all 0.15s',
+  } as const,
+  taskCardBottom: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: '10px 18px',
+    borderTop: '1px solid var(--border-muted)',
+  } as const,
+  expandBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '4px 10px',
+    fontSize: '12px',
+    fontWeight: 600,
     color: 'var(--text-secondary)',
+    background: 'transparent',
+    border: '1px solid var(--border-muted)',
+    borderRadius: '6px',
+    cursor: 'pointer',
+  } as const,
+  expandCount: {
+    fontSize: '12px',
+    color: 'var(--accent-cyan)',
     fontFamily: "'JetBrains Mono', monospace",
   } as const,
-  caseFramework: {
-    fontSize: '11px',
-    color: 'var(--accent-purple)',
-    backgroundColor: 'rgba(163, 113, 247, 0.15)',
-    padding: '2px 8px',
-    borderRadius: '4px',
+  detailBtn: {
+    padding: '4px 12px',
+    fontSize: '12px',
+    fontWeight: 600,
+    color: 'var(--accent-cyan)',
+    background: 'transparent',
+    border: '1px solid rgba(57,208,214,0.2)',
+    borderRadius: '6px',
+    cursor: 'pointer',
+  } as const,
+  expandedSection: {
+    padding: '16px 18px',
+    borderTop: '1px solid var(--border-muted)',
+    background: 'var(--bg-primary)',
+  } as const,
+
+  // Loading & Empty
+  loadingState: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    alignItems: 'center',
+    gap: '12px',
+    padding: '60px',
+    color: 'var(--text-secondary)',
+  } as const,
+  emptyState: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    alignItems: 'center',
+    gap: '8px',
+    padding: '60px',
+    color: 'var(--text-muted)',
+    fontSize: '14px',
+  } as const,
+  emptyIcon: {
+    fontSize: '40px',
+    opacity: 0.3,
+  } as const,
+  emptySmall: {
+    padding: '12px',
+    textAlign: 'center' as const,
+    color: 'var(--text-muted)',
+    fontSize: '12px',
+  } as const,
+  spinner: {
+    width: '24px',
+    height: '24px',
+    border: '3px solid var(--border-default)',
+    borderTopColor: 'var(--accent-cyan)',
+    borderRadius: '50%',
+    animation: 'taskSpin 0.8s linear infinite',
+  } as const,
+
+  // Modal common
+  overlay: {
+    position: 'fixed' as const,
+    inset: 0,
+    background: 'rgba(0,0,0,0.6)',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'flex-start',
+    zIndex: 1000,
+    backdropFilter: 'blur(4px)',
+    paddingTop: '60px',
+  } as const,
+  modal: {
+    background: 'var(--bg-secondary)',
+    borderRadius: '14px',
+    border: '1px solid var(--border-default)',
+    width: '100%',
+    maxWidth: '800px',
+    maxHeight: 'calc(100vh - 120px)',
+    overflow: 'auto',
+    boxShadow: '0 25px 60px rgba(0,0,0,0.3)',
+    marginBottom: '60px',
+  } as const,
+  modalHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '14px 20px 12px',
+    borderBottom: '1px solid var(--border-default)',
+  } as const,
+  modalTitle: {
+    fontSize: '16px',
+    fontWeight: 700,
+    color: 'var(--text-primary)',
+    margin: 0,
+  } as const,
+  closeBtn: {
+    background: 'transparent',
+    border: 'none',
+    fontSize: '22px',
+    color: 'var(--text-muted)',
+    cursor: 'pointer',
+    lineHeight: 1,
+    padding: 0,
+    width: '28px',
+    height: '28px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: '6px',
+  } as const,
+  modalLoading: {
+    display: 'flex',
+    justifyContent: 'center',
+    padding: '50px',
+  } as const,
+  modalBody: {
+    padding: '20px',
   } as const,
   modalActions: {
     display: 'flex',
     justifyContent: 'flex-end',
+    gap: '8px',
+    marginTop: '16px',
+  } as const,
+
+  // Detail modal styles
+  detailGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, 1fr)',
     gap: '12px',
-    marginTop: '28px',
+    marginBottom: '18px',
   } as const,
-  cancelBtn: {
-    padding: '10px 20px',
-    fontSize: '14px',
-    fontWeight: 500,
-    color: 'var(--text-secondary)',
-    backgroundColor: 'var(--bg-tertiary)',
-    border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-md)',
-    cursor: 'pointer',
-  } as const,
-  submitBtn: {
-    padding: '10px 20px',
-    fontSize: '14px',
-    fontWeight: 500,
-    color: '#fff',
-    backgroundColor: 'var(--accent-cyan)',
-    border: 'none',
-    borderRadius: 'var(--radius-md)',
-    cursor: 'pointer',
-  } as const,
-  tableWrapper: {
-    backgroundColor: 'var(--bg-secondary)',
-    borderRadius: 'var(--radius-lg)',
-    border: '1px solid var(--border-default)',
-    overflow: 'hidden',
-  } as const,
-  table: {
-    width: '100%',
-    borderCollapse: 'collapse',
-  } as const,
-  tableHeader: {
-    backgroundColor: 'var(--bg-tertiary)',
-  } as const,
-  th: {
-    padding: '16px 28px',
-    fontSize: '12px',
-    fontWeight: 600,
-    color: 'var(--text-secondary)',
-    textAlign: 'left' as const,
-    textTransform: 'uppercase' as const,
-    letterSpacing: '0.5px',
-    borderBottom: '1px solid var(--border-default)',
-  } as const,
-  tr: {
-    borderBottom: '1px solid var(--border-muted)',
-    transition: 'all var(--transition-fast)',
-  } as const,
-  caseSummaryRow: {
-    borderBottom: '1px solid var(--border-muted)',
-    backgroundColor: 'rgba(255, 255, 255, 0.02)',
-  } as const,
-  td: {
-    padding: '20px 28px',
-    fontSize: '14px',
-    color: 'var(--text-primary)',
-  } as const,
-  caseSummaryCell: {
-    padding: '0 28px 24px',
-  } as const,
-  caseSummaryWrap: {
-    borderRadius: '16px',
-    border: '1px solid var(--border-muted)',
-    backgroundColor: 'var(--bg-primary)',
-    padding: '20px',
-  } as const,
-  caseSummaryHeading: {
+  detailItem: {
     display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: '16px',
-    fontSize: '13px',
+    flexDirection: 'column' as const,
+    gap: '3px',
+  } as const,
+  detailLabel: {
+    fontSize: '10px',
+    color: 'var(--text-muted)',
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.4px',
     fontWeight: 600,
-    color: 'var(--text-secondary)',
+  } as const,
+  detailValue: {
+    fontSize: '13px',
+    color: 'var(--text-primary)',
+    fontFamily: "'JetBrains Mono', monospace",
+  } as const,
+  statusRow: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(4, 1fr)',
+    gap: '10px',
+    marginBottom: '18px',
+  } as const,
+  statusPill: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    alignItems: 'center',
+    gap: '4px',
+    padding: '10px 8px',
+    borderRadius: '10px',
+    background: 'var(--bg-primary)',
+    border: '1px solid var(--border-muted)',
+  } as const,
+  statusPillLabel: {
+    fontSize: '10px',
+    fontWeight: 600,
+    color: 'var(--text-muted)',
+    textTransform: 'uppercase' as const,
     letterSpacing: '0.4px',
   } as const,
-  caseSummaryCount: {
-    fontFamily: "'JetBrains Mono', monospace",
-    color: 'var(--text-muted)',
+  statusPillValue: {
+    fontSize: '12px',
+    fontWeight: 700,
+    padding: '3px 10px',
+    borderRadius: '99px',
   } as const,
-  caseSummaryList: {
+  section: {
+    marginBottom: '18px',
+  } as const,
+  sectionTitle: {
+    fontSize: '11px',
+    fontWeight: 700,
+    color: 'var(--text-secondary)',
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.4px',
+    margin: '0 0 10px',
+  } as const,
+  timeGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-    gap: '14px',
+    gridTemplateColumns: 'repeat(2, 1fr)',
+    gap: '10px',
   } as const,
-  caseSummaryCard: {
-    padding: '18px',
-    borderRadius: '14px',
-    border: '1px solid var(--border-muted)',
-    backgroundColor: 'var(--bg-secondary)',
+  timeLabel: {
+    display: 'block',
+    fontSize: '11px',
+    color: 'var(--text-muted)',
+    marginBottom: '2px',
   } as const,
-  caseSummaryHeader: {
-    display: 'flex',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: '14px',
-    marginBottom: '14px',
+  timeValue: {
+    fontSize: '12px',
+    fontFamily: "'JetBrains Mono', monospace",
+    color: 'var(--text-secondary)',
   } as const,
-  caseSummaryTitleBlock: {
+  configDisplay: {
     display: 'flex',
     flexDirection: 'column' as const,
     gap: '6px',
-    minWidth: 0,
+    padding: '12px',
+    background: 'var(--bg-primary)',
+    borderRadius: '8px',
+    border: '1px solid var(--border-muted)',
   } as const,
-  caseSummaryTitle: {
-    fontSize: '14px',
-    fontWeight: 600,
-    color: 'var(--text-primary)',
-    lineHeight: 1.4,
-  } as const,
-  caseSummaryMeta: {
-    fontSize: '12px',
-    color: 'var(--text-muted)',
-    fontFamily: "'JetBrains Mono', monospace",
-  } as const,
-  caseStatusBadge: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    flexShrink: 0,
-    padding: '5px 10px',
-    borderRadius: '999px',
-    fontSize: '12px',
-    fontWeight: 600,
-    border: '1px solid transparent',
-  } as const,
-  caseSummaryInfoRow: {
+  configRow: {
     display: 'flex',
-    flexWrap: 'wrap' as const,
-    gap: '14px',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     fontSize: '12px',
     color: 'var(--text-secondary)',
   } as const,
-  caseSummaryMetrics: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
-    gap: '12px',
-    marginBottom: '14px',
+  attachList: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: '6px',
   } as const,
-  caseMetricPill: {
+  attachItem: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '10px',
+    padding: '8px 12px',
+    background: 'var(--bg-primary)',
+    border: '1px solid var(--border-muted)',
+    borderRadius: '7px',
+    fontSize: '12px',
+    color: 'var(--text-primary)',
+  } as const,
+  ghostBtn: {
+    padding: '7px 16px',
+    fontSize: '12px',
+    fontWeight: 600,
+    color: 'var(--accent-cyan)',
+    background: 'rgba(57,208,214,0.08)',
+    border: '1px solid rgba(57,208,214,0.2)',
+    borderRadius: '7px',
+    cursor: 'pointer',
+  } as const,
+  errorBlock: {
+    margin: '12px 0 0',
+    padding: '12px',
+    fontSize: '12px',
+    fontFamily: "'JetBrains Mono', monospace",
+    color: '#f87171',
+    background: 'rgba(239,68,68,0.08)',
+    borderRadius: '8px',
+    overflow: 'auto',
+    maxHeight: '150px',
+    whiteSpace: 'pre-wrap' as const,
+    lineHeight: 1.5,
+  } as const,
+
+  // Dispatch modal
+  dispatchModal: {
+    background: 'var(--bg-secondary)',
+    borderRadius: '14px',
+    border: '1px solid var(--border-default)',
+    width: '92%',
+    maxWidth: '900px',
+    maxHeight: '88vh',
+    overflow: 'auto',
+    boxShadow: '0 25px 60px rgba(0,0,0,0.3)',
+  } as const,
+  dispatchBody: {
+    padding: '18px',
+  } as const,
+  formGroup: {
+    marginBottom: '16px',
+  } as const,
+  formLabel: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    fontSize: '12px',
+    fontWeight: 600,
+    color: 'var(--text-secondary)',
+    marginBottom: '6px',
+  } as const,
+  formRow3: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr 1fr',
+    gap: '16px',
+  } as const,
+  toggleGroup: {
+    display: 'flex',
+    gap: '3px',
+    padding: '3px',
+    background: 'var(--bg-primary)',
+    border: '1px solid var(--border-default)',
+    borderRadius: '7px',
+  } as const,
+  toggleBtn: {
+    flex: 1,
+    padding: '6px 14px',
+    fontSize: '12px',
+    fontWeight: 600,
+    color: 'var(--text-secondary)',
+    background: 'transparent',
+    border: 'none',
+    borderRadius: '5px',
+    cursor: 'pointer',
+    transition: 'all 0.15s',
+  } as const,
+  toggleBtnActive: {
+    color: '#fff',
+    background: 'linear-gradient(135deg, #06b6d4, #0891b2)',
+    boxShadow: '0 1px 3px rgba(6,182,212,0.3)',
+  } as const,
+  fieldInput: {
+    width: '100%',
+    padding: '7px 10px',
+    fontSize: '12px',
+    color: 'var(--text-primary)',
+    background: 'var(--bg-primary)',
+    border: '1px solid var(--border-default)',
+    borderRadius: '7px',
+    outline: 'none',
+    boxSizing: 'border-box' as const,
+  } as const,
+  fieldSelect: {
+    width: '100%',
+    padding: '7px 10px',
+    fontSize: '12px',
+    color: 'var(--text-primary)',
+    background: 'var(--bg-primary)',
+    border: '1px solid var(--border-default)',
+    borderRadius: '7px',
+    outline: 'none',
+    cursor: 'pointer',
+    boxSizing: 'border-box' as const,
+  } as const,
+  retryInput: {
+    width: '70px',
+    padding: '6px 8px',
+    fontSize: '12px',
+    color: 'var(--text-primary)',
+    background: 'var(--bg-primary)',
+    border: '1px solid var(--border-default)',
+    borderRadius: '7px',
+    outline: 'none',
+    marginTop: '4px',
+  } as const,
+
+  // Execution config
+  execConfigRow: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: '14px',
+    padding: '14px',
+    background: 'var(--bg-primary)',
+    border: '1px solid var(--border-default)',
+    borderRadius: '8px',
+  } as const,
+  execConfigItem: {
     display: 'flex',
     flexDirection: 'column' as const,
     gap: '4px',
-    padding: '12px 14px',
-    borderRadius: '12px',
-    backgroundColor: 'rgba(255, 255, 255, 0.03)',
-    border: '1px solid var(--border-muted)',
   } as const,
-  caseMetricLabel: {
+  execConfigItemLabel: {
+    fontSize: '11px',
+    fontWeight: 600,
+    color: 'var(--text-secondary)',
+  } as const,
+
+  // Attachments
+  attachArea: {
+    padding: '12px',
+    background: 'var(--bg-primary)',
+    border: '1px solid var(--border-default)',
+    borderRadius: '8px',
+  } as const,
+  uploadBtn: {
+    display: 'inline-flex',
+    padding: '6px 14px',
     fontSize: '12px',
-    color: 'var(--text-muted)',
-    letterSpacing: '0.2px',
+    fontWeight: 600,
+    color: 'var(--accent-cyan)',
+    background: 'rgba(57,208,214,0.08)',
+    border: '1px dashed rgba(57,208,214,0.35)',
+    borderRadius: '7px',
+    cursor: 'pointer',
   } as const,
-  caseMetricValue: {
-    fontSize: '15px',
+  removeBtn: {
+    flexShrink: 0,
+    width: '22px',
+    height: '22px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '13px',
+    color: 'var(--text-muted)',
+    background: 'transparent',
+    border: 'none',
+    borderRadius: '5px',
+    cursor: 'pointer',
+  } as const,
+
+  // Case selection
+  selectedCount: {
+    fontSize: '11px',
+    fontWeight: 600,
+    color: 'var(--accent-cyan)',
+    background: 'rgba(57,208,214,0.1)',
+    padding: '2px 8px',
+    borderRadius: '99px',
+  } as const,
+  caseSearchBox: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '0 10px',
+    marginBottom: '6px',
+    background: 'var(--bg-primary)',
+    border: '1px solid var(--border-default)',
+    borderRadius: '7px',
+  } as const,
+  caseListBox: {
+    maxHeight: '220px',
+    overflowY: 'auto',
+    border: '1px solid var(--border-default)',
+    borderRadius: '8px',
+    background: 'var(--bg-primary)',
+  } as const,
+  caseItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    padding: '9px 14px',
+    borderBottom: '1px solid var(--border-muted)',
+    cursor: 'pointer',
+    fontSize: '12px',
+    color: 'var(--text-primary)',
+    transition: 'background 0.1s',
+  } as const,
+  caseItemSelected: {
+    background: 'rgba(57,208,214,0.06)',
+  } as const,
+  checkbox: {
+    width: '16px',
+    height: '16px',
+    borderRadius: '4px',
+    border: '2px solid var(--border-default)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+    transition: 'all 0.15s',
+  } as const,
+  checkboxChecked: {
+    background: 'linear-gradient(135deg, #06b6d4, #0891b2)',
+    borderColor: '#06b6d4',
+  } as const,
+  caseItemName: {
+    flex: 1,
+    fontFamily: "'JetBrains Mono', monospace",
+    fontWeight: 600,
+    fontSize: '12px',
+  } as const,
+  caseItemScript: {
+    minWidth: '100px',
+    fontSize: '11px',
+    color: 'var(--text-secondary)',
+    fontFamily: "'JetBrains Mono', monospace",
+  } as const,
+  caseItemFw: {
+    fontSize: '10px',
+    fontWeight: 600,
+    color: '#a78bfa',
+    background: 'rgba(167,139,250,0.10)',
+    padding: '2px 6px',
+    borderRadius: '3px',
+  } as const,
+
+  // Case config
+  configList: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: '10px',
+  } as const,
+  configCard: {
+    border: '1px solid var(--border-default)',
+    borderRadius: '10px',
+    background: 'var(--bg-primary)',
+    padding: '14px',
+  } as const,
+  configCardHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: '12px',
+    paddingBottom: '10px',
+    borderBottom: '1px solid var(--border-muted)',
+  } as const,
+  configCardTitle: {
+    fontSize: '13px',
     fontWeight: 700,
     color: 'var(--text-primary)',
     fontFamily: "'JetBrains Mono', monospace",
   } as const,
-  inlineStatusBadge: {
-    display: 'inline-flex',
+  configCardSub: {
+    fontSize: '11px',
+    color: 'var(--text-secondary)',
+    marginTop: '2px',
+  } as const,
+  configCardBadge: {
+    fontSize: '10px',
+    fontWeight: 600,
+    color: 'var(--accent-cyan)',
+    background: 'rgba(57,208,214,0.1)',
+    border: '1px solid rgba(57,208,214,0.2)',
+    borderRadius: '99px',
+    padding: '2px 7px',
+    flexShrink: 0,
+  } as const,
+  configEmpty: {
+    padding: '6px 0 2px',
+    color: 'var(--text-muted)',
+    fontSize: '12px',
+  } as const,
+  configFields: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
+    gap: '10px',
+  } as const,
+  configField: {
+    border: '1px solid var(--border-muted)',
+    borderRadius: '8px',
+    padding: '10px',
+  } as const,
+  configFieldLabel: {
+    display: 'flex',
     alignItems: 'center',
-    padding: '4px 10px',
-    borderRadius: '999px',
+    gap: '5px',
     fontSize: '12px',
     fontWeight: 600,
-    border: '1px solid transparent',
+    color: 'var(--text-primary)',
+    marginBottom: '3px',
   } as const,
-  caseMetricItem: {
+  configFieldType: {
+    fontSize: '10px',
+    fontWeight: 600,
+    color: '#a78bfa',
+    background: 'rgba(167,139,250,0.1)',
+    padding: '1px 5px',
+    borderRadius: '3px',
+    marginLeft: 'auto',
+  } as const,
+  configFieldDesc: {
+    fontSize: '11px',
+    color: 'var(--text-muted)',
+    marginBottom: '6px',
+    lineHeight: 1.4,
+  } as const,
+  toggleLabel: {
     display: 'inline-flex',
     alignItems: 'center',
-    padding: '4px 0',
+    cursor: 'pointer',
+    marginTop: '3px',
   } as const,
-  caseFailureText: {
-    marginTop: '10px',
+  toggleSwitch: {
+    width: '32px',
+    height: '18px',
+    borderRadius: '99px',
+    background: 'var(--border-default)',
+    position: 'relative' as const,
+    display: 'inline-block',
+  } as const,
+  fileBtn: {
+    display: 'inline-flex',
+    padding: '5px 12px',
+    fontSize: '11px',
+    fontWeight: 600,
+    color: 'var(--accent-cyan)',
+    background: 'rgba(57,208,214,0.06)',
+    border: '1px dashed rgba(57,208,214,0.3)',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    marginTop: '3px',
+  } as const,
+  fileChip: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '5px 10px',
+    fontSize: '11px',
+    color: 'var(--text-primary)',
+    background: 'rgba(57,208,214,0.06)',
+    border: '1px solid rgba(57,208,214,0.2)',
+    borderRadius: '6px',
+    marginTop: '3px',
+  } as const,
+  fileChipRemove: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '16px',
+    height: '16px',
+    fontSize: '11px',
+    color: 'var(--text-muted)',
+    background: 'transparent',
+    border: 'none',
+    borderRadius: '50%',
+    cursor: 'pointer',
+    padding: 0,
+  } as const,
+
+  // Cancel / Submit
+  cancelBtn: {
+    padding: '7px 18px',
+    fontSize: '12px',
+    fontWeight: 600,
+    color: 'var(--text-secondary)',
+    background: 'var(--bg-tertiary)',
+    border: '1px solid var(--border-default)',
+    borderRadius: '7px',
+    cursor: 'pointer',
+  } as const,
+  submitBtn: {
+    padding: '7px 22px',
+    fontSize: '12px',
+    fontWeight: 600,
+    color: '#fff',
+    background: 'linear-gradient(135deg, #06b6d4, #0891b2)',
+    border: 'none',
+    borderRadius: '7px',
+    cursor: 'pointer',
+    transition: 'all 0.15s',
+  } as const,
+
+  // Case cards in expanded view
+  caseGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
+    gap: '12px',
+  } as const,
+  caseCard: {
+    padding: '14px',
+    borderRadius: '10px',
+    border: '1px solid var(--border-muted)',
+    background: 'var(--bg-secondary)',
+  } as const,
+  caseCardTop: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: '10px',
+    marginBottom: '12px',
+  } as const,
+  caseCardTitle: {
     fontSize: '13px',
-    lineHeight: 1.5,
-    color: 'var(--accent-red)',
+    fontWeight: 600,
+    color: 'var(--text-primary)',
+    lineHeight: 1.4,
+    wordBreak: 'break-word' as const,
   } as const,
-  caseDetailSection: {
-    marginTop: '16px',
-    paddingTop: '16px',
+  caseBadge: {
+    flexShrink: 0,
+    padding: '3px 8px',
+    borderRadius: '99px',
+    fontSize: '11px',
+    fontWeight: 600,
+  } as const,
+  caseMetrics: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(4, 1fr)',
+    gap: '8px',
+  } as const,
+  caseMetric: {
+    padding: '8px 6px',
+    borderRadius: '6px',
+    background: 'rgba(255,255,255,0.03)',
+    border: '1px solid var(--border-muted)',
+    textAlign: 'center' as const,
+  } as const,
+  caseMetricLabel: {
+    display: 'block',
+    fontSize: '11px',
+    color: 'var(--text-muted)',
+    marginBottom: '2px',
+  } as const,
+  caseMetricValue: {
+    fontSize: '14px',
+    fontWeight: 700,
+    color: 'var(--text-primary)',
+    fontFamily: "'JetBrains Mono', monospace",
+  } as const,
+  caseError: {
+    marginTop: '10px',
+    fontSize: '12px',
+    color: '#f87171',
+    lineHeight: 1.5,
+  } as const,
+
+  // Case detail expanded
+  caseInfoRow: {
+    display: 'flex',
+    flexWrap: 'wrap' as const,
+    gap: '10px',
+    marginTop: '10px',
+    alignItems: 'center',
+  } as const,
+  caseInfoBadge: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    padding: '2px 8px',
+    borderRadius: '99px',
+    fontSize: '11px',
+    fontWeight: 600,
+  } as const,
+  caseDetailWrap: {
+    marginTop: '14px',
+    paddingTop: '12px',
     borderTop: '1px dashed var(--border-muted)',
   } as const,
   caseDetailToggle: {
@@ -2651,113 +2010,51 @@ const styles = {
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: 0,
-    backgroundColor: 'transparent',
+    background: 'transparent',
     border: 'none',
     cursor: 'pointer',
-    marginBottom: '12px',
   } as const,
-  caseDetailTitle: {
-    fontSize: '12px',
-    fontWeight: 700,
-    color: 'var(--text-secondary)',
-    letterSpacing: '0.3px',
-  } as const,
-  caseDetailToggleText: {
-    fontSize: '12px',
-    color: 'var(--accent-cyan)',
-    fontWeight: 600,
-  } as const,
-  caseDetailGrid: {
+  caseDetailGrid2: {
     display: 'grid',
     gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-    gap: '12px',
-    marginBottom: '14px',
+    gap: '10px',
+    marginBottom: '12px',
   } as const,
-  caseDetailBlock: {
+  caseDetailBlock2: {
     display: 'flex',
     flexDirection: 'column' as const,
-    gap: '4px',
-    padding: '12px 14px',
-    borderRadius: '12px',
-    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    gap: '2px',
+    padding: '10px 12px',
+    borderRadius: '6px',
+    background: 'rgba(255,255,255,0.03)',
     border: '1px solid var(--border-muted)',
   } as const,
-  caseDetailBlockLabel: {
-    fontSize: '12px',
+  caseDetailBlockLabel2: {
+    fontSize: '11px',
     color: 'var(--text-muted)',
   } as const,
-  caseDetailBlockValue: {
-    fontSize: '13px',
+  caseDetailBlockVal2: {
+    fontSize: '12px',
     color: 'var(--text-primary)',
-    lineHeight: 1.4,
   } as const,
-  caseDetailBlockValueMono: {
-    fontSize: '13px',
-    color: 'var(--text-primary)',
-    lineHeight: 1.4,
-    fontFamily: "'JetBrains Mono', monospace",
-    wordBreak: 'break-all' as const,
-  } as const,
-  caseDetailMetaRow: {
+  caseMetaRow: {
     display: 'flex',
     flexWrap: 'wrap' as const,
     gap: '10px',
     marginBottom: '10px',
-  } as const,
-  caseSectionGroup: {
-    marginTop: '14px',
-  } as const,
-  caseSectionTitle: {
-    marginBottom: '8px',
-    fontSize: '12px',
-    color: 'var(--text-secondary)',
-    fontWeight: 600,
-  } as const,
-  caseDetailText: {
-    fontSize: '12px',
-    color: 'var(--text-secondary)',
-  } as const,
-  assertionList: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: '10px',
+    alignItems: 'center',
   } as const,
   assertionItem: {
     padding: '12px 14px',
-    borderRadius: '12px',
-    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    borderRadius: '8px',
+    background: 'rgba(255,255,255,0.03)',
     border: '1px solid var(--border-muted)',
   } as const,
-  assertionHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: '10px',
-  } as const,
-  assertionName: {
-    fontSize: '13px',
-    fontWeight: 600,
-    color: 'var(--text-primary)',
-    lineHeight: 1.4,
-  } as const,
-  assertionError: {
-    marginTop: '8px',
-    fontSize: '12px',
-    lineHeight: 1.5,
-    color: 'var(--accent-red)',
-  } as const,
-  assertionMeta: {
-    marginTop: '4px',
-    fontSize: '12px',
-    color: 'var(--text-muted)',
-    fontFamily: "'JetBrains Mono', monospace",
-  } as const,
-  caseDetailCode: {
-    marginTop: '10px',
-    marginBottom: 0,
+  codeBlock: {
+    margin: '10px 0 0',
     padding: '12px',
-    borderRadius: '12px',
-    backgroundColor: 'rgba(15, 23, 42, 0.55)',
+    borderRadius: '8px',
+    background: 'rgba(15,23,42,0.55)',
     color: '#dbeafe',
     fontSize: '12px',
     lineHeight: 1.5,
@@ -2765,415 +2062,4 @@ const styles = {
     whiteSpace: 'pre-wrap' as const,
     wordBreak: 'break-word' as const,
   } as const,
-  caseSummaryEmpty: {
-    padding: '16px',
-    borderRadius: '12px',
-    backgroundColor: 'var(--bg-secondary)',
-    color: 'var(--text-muted)',
-    fontSize: '13px',
-    textAlign: 'center' as const,
-  } as const,
-  deleteBtn: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '32px',
-    height: '32px',
-    fontSize: '14px',
-    backgroundColor: 'transparent',
-    border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-md)',
-    cursor: 'pointer',
-    color: 'var(--text-muted)',
-    transition: 'all var(--transition-fast)',
-  } as const,
-  rerunBtn: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '32px',
-    height: '32px',
-    marginRight: '8px',
-    fontSize: '14px',
-    backgroundColor: 'transparent',
-    border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-md)',
-    cursor: 'pointer',
-    color: 'var(--text-muted)',
-    transition: 'all var(--transition-fast)',
-  } as const,
-  taskId: {
-    fontFamily: "'JetBrains Mono', monospace",
-    fontSize: '14px',
-    fontWeight: 700,
-    color: 'var(--accent-cyan)',
-  } as const,
-  taskIdBlock: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: '6px',
-  } as const,
-  sourceTaskTag: {
-    display: 'inline-flex',
-    alignSelf: 'flex-start',
-    padding: '3px 8px',
-    borderRadius: '999px',
-    fontSize: '11px',
-    fontWeight: 600,
-    color: 'var(--accent-cyan)',
-    backgroundColor: 'rgba(57, 208, 214, 0.12)',
-    border: '1px solid rgba(57, 208, 214, 0.22)',
-    fontFamily: "'JetBrains Mono', monospace",
-  } as const,
-  statusBadge: {
-    display: 'inline-flex',
-    padding: '6px 12px',
-    fontSize: '12px',
-    fontWeight: 600,
-    borderRadius: '10px',
-    textTransform: 'uppercase' as const,
-    border: '1px solid transparent',
-  } as const,
-  statusBadgeLarge: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: '8px',
-    padding: '8px 16px',
-    fontSize: '12px',
-    fontWeight: 600,
-    borderRadius: '14px',
-    border: '1px solid transparent',
-  } as const,
-  statusDot: {
-    width: '6px',
-    height: '6px',
-    borderRadius: '50%',
-  } as const,
-  caseCount: {
-    fontFamily: "'JetBrains Mono', monospace",
-    fontSize: '15px',
-    fontWeight: 700,
-    color: 'var(--accent-orange)',
-  } as const,
-  timeText: {
-    fontSize: '13px',
-    color: 'var(--text-muted)',
-    fontFamily: "'JetBrains Mono', monospace",
-  } as const,
-  loadingState: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '16px',
-    padding: '60px',
-    color: 'var(--text-secondary)',
-  } as const,
-  spinner: {
-    width: '32px',
-    height: '32px',
-    border: '3px solid var(--border-default)',
-    borderTopColor: 'var(--accent-cyan)',
-    borderRadius: '50%',
-  } as const,
-  emptyState: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '12px',
-    padding: '60px',
-    color: 'var(--text-muted)',
-  } as const,
-  emptyIcon: {
-    fontSize: '48px',
-    opacity: 0.3,
-  } as const,
-  // Modal
-  modalOverlay: {
-    position: 'fixed' as const,
-    inset: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.75)',
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 1000,
-    animation: 'fadeIn 0.2s ease',
-  } as const,
-  modal: {
-    backgroundColor: 'var(--bg-secondary)',
-    borderRadius: 'var(--radius-lg)',
-    border: '1px solid var(--border-default)',
-    width: '90%',
-    maxWidth: '800px',
-    maxHeight: '85vh',
-    overflow: 'auto',
-    boxShadow: 'var(--shadow-lg)',
-    animation: 'scaleIn 0.3s ease',
-  } as const,
-  modalHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: '24px 28px',
-    borderBottom: '1px solid var(--border-default)',
-    backgroundColor: 'var(--bg-tertiary)',
-  } as const,
-  modalTitle: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
-    fontSize: '18px',
-    fontWeight: 600,
-    color: 'var(--text-primary)',
-    margin: 0,
-  } as const,
-  modalIcon: {
-    color: 'var(--accent-cyan)',
-    fontSize: '20px',
-  } as const,
-  closeBtn: {
-    backgroundColor: 'transparent',
-    border: 'none',
-    fontSize: '28px',
-    color: 'var(--text-muted)',
-    cursor: 'pointer',
-    lineHeight: 1,
-    padding: '0',
-  } as const,
-  modalLoading: {
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: '60px',
-  } as const,
-  modalBody: {
-    padding: '28px',
-  } as const,
-  caseConfigEditorModal: {
-    backgroundColor: 'var(--bg-secondary)',
-    borderRadius: 'var(--radius-lg)',
-    border: '1px solid var(--border-default)',
-    width: '92%',
-    maxWidth: '680px',
-    maxHeight: '85vh',
-    overflow: 'auto',
-    boxShadow: 'var(--shadow-lg)',
-    animation: 'scaleIn 0.3s ease',
-  } as const,
-  caseConfigList: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: '16px',
-  } as const,
-  caseConfigCard: {
-    border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-md)',
-    backgroundColor: 'var(--bg-primary)',
-    padding: '18px',
-  } as const,
-  caseConfigHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: '12px',
-    marginBottom: '16px',
-  } as const,
-  caseConfigTitleBlock: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: '4px',
-    minWidth: 0,
-  } as const,
-  caseConfigTitle: {
-    fontSize: '14px',
-    fontWeight: 700,
-    color: 'var(--text-primary)',
-    fontFamily: "'JetBrains Mono', monospace",
-  } as const,
-  caseConfigSubtitle: {
-    fontSize: '12px',
-    color: 'var(--text-secondary)',
-    lineHeight: 1.5,
-  } as const,
-  caseConfigCount: {
-    flexShrink: 0,
-    fontSize: '12px',
-    color: 'var(--accent-cyan)',
-    backgroundColor: 'rgba(57, 208, 214, 0.12)',
-    border: '1px solid rgba(57, 208, 214, 0.24)',
-    borderRadius: '999px',
-    padding: '4px 8px',
-  } as const,
-  caseConfigEmpty: {
-    padding: '12px 0 4px',
-    color: 'var(--text-muted)',
-    fontSize: '13px',
-  } as const,
-  caseConfigFields: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
-    gap: '14px',
-  } as const,
-  caseConfigField: {
-    border: '1px solid var(--border-muted)',
-    borderRadius: 'var(--radius-md)',
-    backgroundColor: 'var(--bg-secondary)',
-    padding: '14px',
-  } as const,
-  caseConfigFieldHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: '8px',
-    marginBottom: '6px',
-  } as const,
-  caseConfigLabel: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '6px',
-    fontSize: '13px',
-    fontWeight: 600,
-    color: 'var(--text-primary)',
-  } as const,
-  requiredMark: {
-    color: 'var(--accent-red)',
-    fontSize: '12px',
-    fontWeight: 700,
-  } as const,
-  caseConfigType: {
-    flexShrink: 0,
-    fontSize: '10px',
-    color: 'var(--accent-purple)',
-    backgroundColor: 'rgba(163, 113, 247, 0.12)',
-    border: '1px solid rgba(163, 113, 247, 0.24)',
-    borderRadius: '999px',
-    padding: '3px 7px',
-    textTransform: 'uppercase' as const,
-  } as const,
-  caseConfigDescription: {
-    fontSize: '12px',
-    color: 'var(--text-muted)',
-    lineHeight: 1.5,
-    marginBottom: '10px',
-  } as const,
-  checkboxLabel: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    fontSize: '13px',
-    color: 'var(--text-primary)',
-    cursor: 'pointer',
-  } as const,
-  detailGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(2, 1fr)',
-    gap: '20px',
-    marginBottom: '28px',
-  } as const,
-  detailItem: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: '6px',
-  } as const,
-  detailLabel: {
-    fontSize: '12px',
-    color: 'var(--text-muted)',
-    textTransform: 'uppercase' as const,
-    letterSpacing: '0.5px',
-  } as const,
-  detailValue: {
-    fontSize: '14px',
-    color: 'var(--text-primary)',
-    fontFamily: "'JetBrains Mono', monospace",
-  } as const,
-  statusSection: {
-    marginBottom: '28px',
-  } as const,
-  sectionTitle: {
-    fontSize: '13px',
-    fontWeight: 600,
-    color: 'var(--text-secondary)',
-    textTransform: 'uppercase' as const,
-    letterSpacing: '0.5px',
-    marginBottom: '16px',
-  } as const,
-  statusGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(4, 1fr)',
-    gap: '16px',
-  } as const,
-  statusItem: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: '8px',
-    alignItems: 'center',
-    textAlign: 'center' as const,
-  } as const,
-  statusLabel: {
-    fontSize: '11px',
-    color: 'var(--text-muted)',
-  } as const,
-  timeSection: {
-    marginBottom: '24px',
-  } as const,
-  timeGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(2, 1fr)',
-    gap: '20px',
-  } as const,
-  timeLabel: {
-    display: 'block',
-    fontSize: '12px',
-    color: 'var(--text-muted)',
-    marginBottom: '4px',
-  } as const,
-  timeValue: {
-    fontSize: '13px',
-    fontFamily: "'JetBrains Mono', monospace",
-    color: 'var(--text-secondary)',
-  } as const,
-  errorSection: {
-    marginTop: '12px',
-  } as const,
-  detailActions: {
-    display: 'flex',
-    justifyContent: 'flex-end',
-    gap: '12px',
-    marginBottom: '24px',
-  } as const,
-  secondaryActionBtn: {
-    padding: '10px 16px',
-    fontSize: '13px',
-    fontWeight: 600,
-    color: 'var(--accent-cyan)',
-    backgroundColor: 'rgba(57, 208, 214, 0.08)',
-    border: '1px solid rgba(57, 208, 214, 0.24)',
-    borderRadius: 'var(--radius-md)',
-    cursor: 'pointer',
-  } as const,
-  secondaryGhostBtn: {
-    padding: '10px 16px',
-    fontSize: '13px',
-    fontWeight: 600,
-    color: 'var(--text-secondary)',
-    backgroundColor: 'var(--bg-tertiary)',
-    border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-md)',
-    cursor: 'pointer',
-  } as const,
-  errorMessage: {
-    margin: 0,
-    padding: '14px',
-    fontSize: '12px',
-    fontFamily: "'JetBrains Mono', monospace",
-    color: 'var(--accent-red)',
-    backgroundColor: 'var(--status-error-bg)',
-    borderRadius: 'var(--radius-md)',
-    overflow: 'auto',
-    maxHeight: '150px',
-    whiteSpace: 'pre-wrap' as const,
-  } as const,
 };
-
-export default TaskList;

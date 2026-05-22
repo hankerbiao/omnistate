@@ -21,6 +21,36 @@ const TestCaseList: React.FC = () => {
   const [dispatching, setDispatching] = useState(false);
   const [dispatchError, setDispatchError] = useState<string | null>(null);
   const [dispatchSuccess, setDispatchSuccess] = useState<string | null>(null);
+  const [selectedTestCase, setSelectedTestCase] = useState<AutomationTestCaseResponse | null>(null);
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['basic', 'code', 'snapshot', 'script', 'params', 'env', 'meta', 'time']));
+
+  const toggleSection = (section: string) => {
+    const newExpanded = new Set(expandedSections);
+    if (newExpanded.has(section)) {
+      newExpanded.delete(section);
+    } else {
+      newExpanded.add(section);
+    }
+    setExpandedSections(newExpanded);
+  };
+
+  const handleCaseClick = (testCase: AutomationTestCaseResponse, e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (target.tagName === 'INPUT' || target.tagName === 'CHECKBOX') {
+      return;
+    }
+    setSelectedTestCase(testCase);
+  };
+
+  const closeDetailModal = () => {
+    setSelectedTestCase(null);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      closeDetailModal();
+    }
+  };
 
   const fetchTestCases = useCallback(async () => {
     setLoading(true);
@@ -172,13 +202,15 @@ const TestCaseList: React.FC = () => {
                 return (
                   <tr
                     key={testCase.id}
+                    onClick={(e) => handleCaseClick(testCase, e)}
                     style={{
                       ...styles.tr,
+                      cursor: 'pointer',
                       animationDelay: `${index * 30}ms`,
                       backgroundColor: selectedCases.has(testCase.auto_case_id) ? 'var(--status-info-bg)' : undefined,
                     }}
                   >
-                    <td style={styles.td}>
+                    <td style={styles.td} onClick={(e) => e.stopPropagation()}>
                       <input
                         type="checkbox"
                         checked={selectedCases.has(testCase.auto_case_id)}
@@ -278,6 +310,296 @@ const TestCaseList: React.FC = () => {
               >
                 {dispatching ? '下发中...' : '确认下发'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {selectedTestCase && (
+        <div
+          style={styles.detailModalOverlay}
+          onClick={closeDetailModal}
+          onKeyDown={handleKeyDown}
+          tabIndex={0}
+        >
+          <div style={styles.detailModalContent} onClick={e => e.stopPropagation()}>
+            <div style={styles.detailModalHeader}>
+              <h2 style={styles.detailModalTitle}>自动化测试用例详情</h2>
+              <button style={styles.closeBtn} onClick={closeDetailModal}>×</button>
+            </div>
+
+            <div style={styles.detailModalBody}>
+              {/* 基本信息 */}
+              <div style={styles.section}>
+                <div style={styles.sectionHeader} onClick={() => toggleSection('basic')}>
+                  <span style={styles.sectionArrow}>{expandedSections.has('basic') ? '▼' : '▶'}</span>
+                  <span style={styles.sectionTitle}>基本信息</span>
+                </div>
+                {expandedSections.has('basic') && (
+                  <div style={styles.sectionContent}>
+                    <div style={styles.infoGrid}>
+                      <div style={styles.infoRow}>
+                        <span style={styles.infoLabel}>用例ID</span>
+                        <span style={styles.infoValue}>{selectedTestCase.auto_case_id || '-'}</span>
+                      </div>
+                      <div style={styles.infoRow}>
+                        <span style={styles.infoLabel}>手工用例ID</span>
+                        <span style={styles.infoValue}>{selectedTestCase.dml_manual_case_id || '-'}</span>
+                      </div>
+                      <div style={styles.infoRow}>
+                        <span style={styles.infoLabel}>名称</span>
+                        <span style={styles.infoValueLarge}>{selectedTestCase.name || '-'}</span>
+                      </div>
+                      <div style={styles.infoRow}>
+                        <span style={styles.infoLabel}>版本</span>
+                        <span style={styles.infoValue}>v{selectedTestCase.version}</span>
+                      </div>
+                      <div style={styles.infoRow}>
+                        <span style={styles.infoLabel}>状态</span>
+                        <span style={{...styles.statusBadge, backgroundColor: getStatusColor(selectedTestCase.status).bg, color: getStatusColor(selectedTestCase.status).text}}>
+                          {AUTO_CASE_STATUS_LABELS[selectedTestCase.status] || selectedTestCase.status}
+                        </span>
+                      </div>
+                      <div style={styles.infoRow}>
+                        <span style={styles.infoLabel}>框架</span>
+                        <span style={styles.frameworkBadge}>{selectedTestCase.framework || '-'}</span>
+                      </div>
+                      <div style={styles.infoRow}>
+                        <span style={styles.infoLabel}>自动化类型</span>
+                        <span style={styles.typeBadge}>{selectedTestCase.automation_type || '-'}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* 代码信息 */}
+              <div style={styles.section}>
+                <div style={styles.sectionHeader} onClick={() => toggleSection('code')}>
+                  <span style={styles.sectionArrow}>{expandedSections.has('code') ? '▼' : '▶'}</span>
+                  <span style={styles.sectionTitle}>代码信息</span>
+                </div>
+                {expandedSections.has('code') && (
+                  <div style={styles.sectionContent}>
+                    <div style={styles.infoGrid}>
+                      <div style={styles.infoRow}>
+                        <span style={styles.infoLabel}>仓库地址</span>
+                        <span style={styles.infoValueMono}>{selectedTestCase.repo_url || '-'}</span>
+                      </div>
+                      <div style={styles.infoRow}>
+                        <span style={styles.infoLabel}>分支</span>
+                        <span style={styles.infoValue}>{selectedTestCase.repo_branch || '-'}</span>
+                      </div>
+                      <div style={styles.infoRow}>
+                        <span style={styles.infoLabel}>脚本路径</span>
+                        <span style={styles.infoValueMono}>{selectedTestCase.script_path || '-'}</span>
+                      </div>
+                      <div style={styles.infoRow}>
+                        <span style={styles.infoLabel}>脚本名称</span>
+                        <span style={styles.infoValue}>{selectedTestCase.script_name || '-'}</span>
+                      </div>
+                      <div style={styles.infoRow}>
+                        <span style={styles.infoLabel}>脚本实体ID</span>
+                        <span style={styles.infoValueMono}>{selectedTestCase.script_entity_id || '-'}</span>
+                      </div>
+                      <div style={styles.infoRow}>
+                        <span style={styles.infoLabel}>执行命令</span>
+                        <span style={styles.infoValueMono}>{selectedTestCase.entry_command || '-'}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* 代码快照 */}
+              {selectedTestCase.code_snapshot && (
+                <div style={styles.section}>
+                  <div style={styles.sectionHeader} onClick={() => toggleSection('snapshot')}>
+                    <span style={styles.sectionArrow}>{expandedSections.has('snapshot') ? '▼' : '▶'}</span>
+                    <span style={styles.sectionTitle}>代码快照</span>
+                  </div>
+                  {expandedSections.has('snapshot') && (
+                    <div style={styles.sectionContent}>
+                      <div style={styles.infoGrid}>
+                        <div style={styles.infoRow}>
+                          <span style={styles.infoLabel}>分支</span>
+                          <span style={styles.infoValue}>{selectedTestCase.code_snapshot.branch || '-'}</span>
+                        </div>
+                        <div style={styles.infoRow}>
+                          <span style={styles.infoLabel}>Commit ID</span>
+                          <span style={styles.infoValueMono}>{selectedTestCase.code_snapshot.commit_short_id || '-'} ({selectedTestCase.code_snapshot.commit_id || '-'})</span>
+                        </div>
+                        <div style={styles.infoRow}>
+                          <span style={styles.infoLabel}>作者</span>
+                          <span style={styles.infoValue}>{selectedTestCase.code_snapshot.author || '-'}</span>
+                        </div>
+                        <div style={styles.infoRow}>
+                          <span style={styles.infoLabel}>提交时间</span>
+                          <span style={styles.infoValue}>{selectedTestCase.code_snapshot.commit_time ? new Date(selectedTestCase.code_snapshot.commit_time).toLocaleString('zh-CN') : '-'}</span>
+                        </div>
+                        <div style={styles.infoRowFull}>
+                          <span style={styles.infoLabel}>提交信息</span>
+                          <span style={styles.infoValueMono}>{selectedTestCase.code_snapshot.message || '-'}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* 脚本引用 */}
+              {selectedTestCase.script_ref && (
+                <div style={styles.section}>
+                  <div style={styles.sectionHeader} onClick={() => toggleSection('script')}>
+                    <span style={styles.sectionArrow}>{expandedSections.has('script') ? '▼' : '▶'}</span>
+                    <span style={styles.sectionTitle}>脚本引用</span>
+                  </div>
+                  {expandedSections.has('script') && (
+                    <div style={styles.sectionContent}>
+                      <div style={styles.infoGrid}>
+                        <div style={styles.infoRow}>
+                          <span style={styles.infoLabel}>实体ID</span>
+                          <span style={styles.infoValueMono}>{selectedTestCase.script_ref.entity_id || '-'}</span>
+                        </div>
+                        <div style={styles.infoRow}>
+                          <span style={styles.infoLabel}>模块</span>
+                          <span style={styles.infoValue}>{selectedTestCase.script_ref.module || '-'}</span>
+                        </div>
+                        <div style={styles.infoRow}>
+                          <span style={styles.infoLabel}>项目标签</span>
+                          <span style={styles.infoValue}>{selectedTestCase.script_ref.project_tag || '-'}</span>
+                        </div>
+                        <div style={styles.infoRow}>
+                          <span style={styles.infoLabel}>项目范围</span>
+                          <span style={styles.infoValue}>{selectedTestCase.script_ref.project_scope || '-'}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* 配置参数 */}
+              {selectedTestCase.param_spec && selectedTestCase.param_spec.length > 0 && (
+                <div style={styles.section}>
+                  <div style={styles.sectionHeader} onClick={() => toggleSection('params')}>
+                    <span style={styles.sectionArrow}>{expandedSections.has('params') ? '▼' : '▶'}</span>
+                    <span style={styles.sectionTitle}>配置参数</span>
+                    <span style={styles.sectionCount}>({selectedTestCase.param_spec.length}项)</span>
+                  </div>
+                  {expandedSections.has('params') && (
+                    <div style={styles.sectionContent}>
+                      <div style={styles.paramsList}>
+                        {selectedTestCase.param_spec.map((param, idx) => (
+                          <div key={idx} style={styles.paramCard}>
+                            <div style={styles.paramHeader}>
+                              <span style={styles.paramName}>{param.name}</span>
+                              <span style={styles.paramLabel}>{param.label || param.name}</span>
+                              <span style={styles.paramType}>{param.type}</span>
+                              {param.required && <span style={styles.requiredBadge}>必填</span>}
+                            </div>
+                            <div style={styles.paramBody}>
+                              <div style={styles.paramRow}>
+                                <span style={styles.infoLabel}>默认值</span>
+                                <span style={styles.infoValueMono}>{param.default ?? '-'}</span>
+                              </div>
+                              {param.description && (
+                                <div style={styles.paramRow}>
+                                  <span style={styles.infoLabel}>描述</span>
+                                  <span style={styles.infoValue}>{param.description}</span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* 运行环境 */}
+              {selectedTestCase.runtime_env && Object.keys(selectedTestCase.runtime_env).length > 0 && (
+                <div style={styles.section}>
+                  <div style={styles.sectionHeader} onClick={() => toggleSection('env')}>
+                    <span style={styles.sectionArrow}>{expandedSections.has('env') ? '▼' : '▶'}</span>
+                    <span style={styles.sectionTitle}>运行环境</span>
+                    <span style={styles.sectionCount}>({Object.keys(selectedTestCase.runtime_env).length}项)</span>
+                  </div>
+                  {expandedSections.has('env') && (
+                    <div style={styles.sectionContent}>
+                      <div style={styles.envGrid}>
+                        {Object.entries(selectedTestCase.runtime_env).map(([key, value]) => (
+                          <div key={key} style={styles.envItem}>
+                            <span style={styles.envKey}>{key}</span>
+                            <span style={styles.envValue}>{String(value)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* 元数据 */}
+              <div style={styles.section}>
+                <div style={styles.sectionHeader} onClick={() => toggleSection('meta')}>
+                  <span style={styles.sectionArrow}>{expandedSections.has('meta') ? '▼' : '▶'}</span>
+                  <span style={styles.sectionTitle}>元数据</span>
+                </div>
+                {expandedSections.has('meta') && (
+                  <div style={styles.sectionContent}>
+                    <div style={styles.infoGrid}>
+                      <div style={styles.infoRow}>
+                        <span style={styles.infoLabel}>标签</span>
+                        <div style={styles.tagList}>
+                          {selectedTestCase.tags && selectedTestCase.tags.length > 0 ? (
+                            selectedTestCase.tags.map((tag, i) => (
+                              <span key={i} style={styles.tag}>{tag}</span>
+                            ))
+                          ) : (
+                            <span style={styles.infoValue}>-</span>
+                          )}
+                        </div>
+                      </div>
+                      <div style={styles.infoRow}>
+                        <span style={styles.infoLabel}>维护人</span>
+                        <span style={styles.infoValue}>{selectedTestCase.maintainer_id || '-'}</span>
+                      </div>
+                      <div style={styles.infoRow}>
+                        <span style={styles.infoLabel}>审核人</span>
+                        <span style={styles.infoValue}>{selectedTestCase.reviewer_id || '-'}</span>
+                      </div>
+                      <div style={styles.infoRowFull}>
+                        <span style={styles.infoLabel}>描述</span>
+                        <span style={styles.infoValue}>{selectedTestCase.description || '-'}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* 时间戳 */}
+              <div style={styles.section}>
+                <div style={styles.sectionHeader} onClick={() => toggleSection('time')}>
+                  <span style={styles.sectionArrow}>{expandedSections.has('time') ? '▼' : '▶'}</span>
+                  <span style={styles.sectionTitle}>时间戳</span>
+                </div>
+                {expandedSections.has('time') && (
+                  <div style={styles.sectionContent}>
+                    <div style={styles.infoGrid}>
+                      <div style={styles.infoRow}>
+                        <span style={styles.infoLabel}>创建时间</span>
+                        <span style={styles.infoValueMono}>{new Date(selectedTestCase.created_at).toLocaleString('zh-CN')}</span>
+                      </div>
+                      <div style={styles.infoRow}>
+                        <span style={styles.infoLabel}>更新时间</span>
+                        <span style={styles.infoValueMono}>{new Date(selectedTestCase.updated_at).toLocaleString('zh-CN')}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -615,6 +937,223 @@ const styles = {
     borderRadius: 'var(--radius-md)',
     cursor: 'pointer',
     transition: 'all var(--transition-fast)',
+  } as const,
+  // Detail Modal Styles
+  detailModalOverlay: {
+    position: 'fixed' as const,
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    backdropFilter: 'blur(4px)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 2000,
+    animation: 'fadeIn 0.2s ease',
+  } as const,
+  detailModalContent: {
+    backgroundColor: 'var(--bg-elevated)',
+    borderRadius: '12px',
+    width: '90%',
+    maxWidth: '900px',
+    maxHeight: '90vh',
+    display: 'flex',
+    flexDirection: 'column' as const,
+    boxShadow: '0 20px 60px rgba(0, 0, 0, 0.4)',
+    border: '1px solid var(--border-default)',
+    animation: 'slideUp 0.3s ease',
+  } as const,
+  detailModalHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '20px 24px',
+    borderBottom: '1px solid var(--border-default)',
+    backgroundColor: 'var(--bg-tertiary)',
+    borderRadius: '12px 12px 0 0',
+  } as const,
+  detailModalTitle: {
+    fontSize: '18px',
+    fontWeight: 600,
+    color: 'var(--text-primary)',
+    margin: 0,
+  } as const,
+  closeBtn: {
+    width: '32px',
+    height: '32px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '24px',
+    color: 'var(--text-muted)',
+    backgroundColor: 'transparent',
+    border: 'none',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    transition: 'all var(--transition-fast)',
+  } as const,
+  detailModalBody: {
+    padding: '16px 24px',
+    overflowY: 'auto' as const,
+    flex: 1,
+  } as const,
+  section: {
+    marginBottom: '12px',
+    border: '1px solid var(--border-muted)',
+    borderRadius: '8px',
+    overflow: 'hidden',
+  } as const,
+  sectionHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '12px 16px',
+    backgroundColor: 'var(--bg-secondary)',
+    cursor: 'pointer',
+    transition: 'background-color var(--transition-fast)',
+    userSelect: 'none' as const,
+  } as const,
+  sectionArrow: {
+    fontSize: '10px',
+    color: 'var(--text-muted)',
+    width: '12px',
+  } as const,
+  sectionTitle: {
+    fontSize: '13px',
+    fontWeight: 600,
+    color: 'var(--text-primary)',
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.5px',
+  } as const,
+  sectionCount: {
+    fontSize: '12px',
+    color: 'var(--text-muted)',
+    fontWeight: 400,
+  } as const,
+  sectionContent: {
+    padding: '16px',
+    backgroundColor: 'var(--bg-primary)',
+  } as const,
+  infoGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, 1fr)',
+    gap: '12px',
+  } as const,
+  infoRow: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: '4px',
+  } as const,
+  infoRowFull: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: '4px',
+    gridColumn: '1 / -1',
+  } as const,
+  infoLabel: {
+    fontSize: '11px',
+    fontWeight: 500,
+    color: 'var(--text-muted)',
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.5px',
+  } as const,
+  infoValue: {
+    fontSize: '13px',
+    color: 'var(--text-primary)',
+    wordBreak: 'break-word' as const,
+  } as const,
+  infoValueLarge: {
+    fontSize: '14px',
+    fontWeight: 500,
+    color: 'var(--text-primary)',
+    wordBreak: 'break-word' as const,
+  } as const,
+  infoValueMono: {
+    fontSize: '12px',
+    fontFamily: "'JetBrains Mono', monospace",
+    color: 'var(--text-primary)',
+    wordBreak: 'break-all' as const,
+  } as const,
+  paramsList: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: '10px',
+  } as const,
+  paramCard: {
+    padding: '12px',
+    backgroundColor: 'var(--bg-secondary)',
+    borderRadius: '6px',
+    border: '1px solid var(--border-muted)',
+  } as const,
+  paramHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    marginBottom: '8px',
+    flexWrap: 'wrap' as const,
+  } as const,
+  paramName: {
+    fontSize: '13px',
+    fontWeight: 600,
+    fontFamily: "'JetBrains Mono', monospace",
+    color: 'var(--accent-purple)',
+  } as const,
+  paramLabel: {
+    fontSize: '12px',
+    color: 'var(--text-secondary)',
+  } as const,
+  paramType: {
+    fontSize: '10px',
+    fontFamily: "'JetBrains Mono', monospace",
+    color: 'var(--accent-cyan)',
+    backgroundColor: 'rgba(57, 208, 214, 0.15)',
+    padding: '2px 6px',
+    borderRadius: '4px',
+  } as const,
+  requiredBadge: {
+    fontSize: '10px',
+    color: 'var(--accent-red)',
+    backgroundColor: 'rgba(219, 68, 68, 0.15)',
+    padding: '2px 6px',
+    borderRadius: '4px',
+  } as const,
+  paramBody: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, 1fr)',
+    gap: '8px',
+  } as const,
+  paramRow: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: '2px',
+  } as const,
+  envGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+    gap: '8px',
+  } as const,
+  envItem: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: '2px',
+    padding: '8px 12px',
+    backgroundColor: 'var(--bg-secondary)',
+    borderRadius: '6px',
+    border: '1px solid var(--border-muted)',
+  } as const,
+  envKey: {
+    fontSize: '11px',
+    fontFamily: "'JetBrains Mono', monospace",
+    color: 'var(--accent-purple)',
+    fontWeight: 500,
+  } as const,
+  envValue: {
+    fontSize: '12px',
+    fontFamily: "'JetBrains Mono', monospace",
+    color: 'var(--text-primary)',
+    wordBreak: 'break-all' as const,
   } as const,
 };
 

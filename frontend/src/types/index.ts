@@ -436,6 +436,28 @@ export interface TaskStatus {
   error_message?: string;
   result_summary?: Record<string, unknown>;
   request_payload?: {
+    // 顶层结构（20260520 新增）
+    action?: string;
+    data?: {
+      task_id?: string;
+      category?: string;
+      project_tag?: string;
+      repo_url?: string;
+      branch?: string;
+      pytest_options?: Record<string, unknown>;
+      timeout?: number;
+      cases?: Array<{
+        case_id?: string;
+        script_path?: string;
+        script_name?: string;
+        parameters?: Record<string, unknown>;  // file 类型字段值为空字符串
+      }>;
+      files?: Record<string, {
+        url?: string | null;
+        sha256?: string | null;
+      }>;
+    };
+    // 兼容旧结构
     schedule_type?: string;
     planned_at?: string;
     callback_url?: string;

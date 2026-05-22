@@ -6,6 +6,9 @@ from datetime import datetime, timezone
 from typing import List
 
 from app.modules.execution.application.commands import DispatchExecutionTaskCommand
+from app.modules.execution.application.constants import DispatchStatus, OverallStatus, ScheduleStatus
+from app.modules.execution.application.task_case_coordinator import ExecutionTaskCaseCoordinator
+from app.modules.execution.application.task_command_helpers import ensure_utc_datetime, initialize_command
 from app.modules.execution.repository.models import (
     ExecutionTaskCaseDoc,
     ExecutionTaskDoc,
@@ -17,8 +20,13 @@ from app.shared.core.logger import log as logger
 class ExecutionTaskDispatchCoordinator:
     """处理命令构造与任务下发状态更新。"""
 
-    def __init__(self, dispatcher: ExecutionTaskDispatcher | None = None) -> None:
+    def __init__(
+        self,
+        dispatcher: ExecutionTaskDispatcher | None = None,
+        case_coordinator: ExecutionTaskCaseCoordinator | None = None,
+    ) -> None:
         self._dispatcher = dispatcher or ExecutionTaskDispatcher()
+        self._case_coordinator = case_coordinator or ExecutionTaskCaseCoordinator()
 
     @staticmethod
     def build_case_dispatch_command(
@@ -29,12 +37,11 @@ class ExecutionTaskDispatchCoordinator:
         case_configs: List[dict],
         case_payloads: List[dict],
         dispatch_case_index: int,
-        planned_at_normalizer,
     ) -> DispatchExecutionTaskCommand:
         """构建单 case 下发命令。"""
         request_payload = dict(task_doc.request_payload or {})
         planned_at = request_payload.get("planned_at")
-        return DispatchExecutionTaskCommand(
+        command = DispatchExecutionTaskCommand(
             task_id=task_doc.task_id,
             dispatch_channel=task_doc.dispatch_channel,
             agent_id=task_doc.agent_id,
@@ -50,8 +57,7 @@ class ExecutionTaskDispatchCoordinator:
             dispatch_case_config=case_configs[dispatch_case_index],
             dispatch_case_index=dispatch_case_index,
             schedule_type=task_doc.schedule_type,
-            planned_at=planned_at_normalizer(planned_at) if planned_at else None,
-            framework=request_payload.get("framework"),
+            planned_at=ensure_utc_datetime(planned_at) if planned_at else None,
             trigger_source=request_payload.get("trigger_source"),
             category=request_payload.get("category"),
             project_tag=request_payload.get("project_tag"),
@@ -60,13 +66,13 @@ class ExecutionTaskDispatchCoordinator:
             pytest_options=request_payload.get("pytest_options"),
             timeout=request_payload.get("timeout"),
         )
+        initialize_command(command)
+        return command
 
     async def build_task_dispatch_command(
         self,
         task_doc: ExecutionTaskDoc,
         dispatch_case_index: int,
-        case_pair_resolver,
-        planned_at_normalizer,
     ) -> DispatchExecutionTaskCommand:
         (
             case_ids,
@@ -74,7 +80,7 @@ class ExecutionTaskDispatchCoordinator:
             script_entity_ids,
             case_configs,
             case_payloads,
-        ) = await case_pair_resolver(task_doc)
+        ) = await self._case_coordinator.resolve_task_case_pairs(task_doc)
         return self.build_case_dispatch_command(
             task_doc,
             case_ids,
@@ -83,7 +89,6 @@ class ExecutionTaskDispatchCoordinator:
             case_configs,
             case_payloads,
             dispatch_case_index,
-            planned_at_normalizer,
         )
 
     async def dispatch_task_if_needed(
@@ -91,20 +96,13 @@ class ExecutionTaskDispatchCoordinator:
         task_doc: ExecutionTaskDoc,
         should_dispatch_now: bool,
         dispatch_case_index: int,
-        case_pair_resolver,
-        planned_at_normalizer,
     ) -> None:
         """按需下发指定索引的 case。"""
         if not should_dispatch_now:
             return
         await self.dispatch_existing_task(
             task_doc,
-            await self.build_task_dispatch_command(
-                task_doc,
-                dispatch_case_index,
-                case_pair_resolver,
-                planned_at_normalizer,
-            ),
+            await self.build_task_dispatch_command(task_doc, dispatch_case_index),
         )
 
     async def dispatch_existing_task(
@@ -127,25 +125,25 @@ class ExecutionTaskDispatchCoordinator:
         })
         dispatch_time = datetime.now(timezone.utc)
         task_doc.dispatch_channel = dispatch_result.channel
-        task_doc.dispatch_status = "DISPATCHED" if dispatch_result.success else "DISPATCH_FAILED"
+        task_doc.dispatch_status = DispatchStatus.DISPATCHED if dispatch_result.success else DispatchStatus.DISPATCH_FAILED
         task_doc.dispatch_error = dispatch_result.error
         task_doc.dispatch_response = dispatch_result.response
-        task_doc.schedule_status = "TRIGGERED"
+        task_doc.schedule_status = ScheduleStatus.TRIGGERED
         task_doc.current_case_id = command.dispatch_case_id
         task_doc.current_case_index = command.dispatch_case_index
         if not task_doc.triggered_at:
             task_doc.triggered_at = dispatch_time
         if dispatch_result.success:
-            task_doc.overall_status = "QUEUED"
+            task_doc.overall_status = OverallStatus.QUEUED
             task_doc.finished_at = None
         else:
-            task_doc.overall_status = "FAILED"
+            task_doc.overall_status = OverallStatus.FAILED
             task_doc.finished_at = dispatch_time
         await task_doc.save()
 
         if case_doc:
             case_doc.dispatch_attempts += 1
-            case_doc.dispatch_status = "DISPATCHED" if dispatch_result.success else "DISPATCH_FAILED"
+            case_doc.dispatch_status = DispatchStatus.DISPATCHED if dispatch_result.success else DispatchStatus.DISPATCH_FAILED
             case_doc.dispatched_at = dispatch_time
             await case_doc.save()
             logger.debug(

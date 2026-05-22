@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.modules.execution.application.constants import CaseStatus
+
 
 def resolve_case_status(
     event_type: str,
@@ -11,7 +13,7 @@ def resolve_case_status(
 ) -> str | None:
     """Map execution event into case status."""
     normalized_status = (event_status or "").strip().upper()
-    if normalized_status in {"PASSED", "FAILED", "SKIPPED", "RUNNING"}:
+    if normalized_status in {CaseStatus.PASSED, CaseStatus.FAILED, CaseStatus.SKIPPED, CaseStatus.RUNNING}:
         return normalized_status
 
     normalized_type = (event_type or "").strip().lower()
@@ -19,7 +21,7 @@ def resolve_case_status(
     if normalized_type != "progress":
         return None
     if normalized_phase == "case_start":
-        return "RUNNING"
+        return CaseStatus.RUNNING
     if normalized_phase == "case_finish":
-        return "FAILED" if (failed_cases or 0) > 0 else "PASSED"
+        return CaseStatus.FAILED if (failed_cases or 0) > 0 else CaseStatus.PASSED
     return None

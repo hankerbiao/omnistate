@@ -6,8 +6,9 @@ import logging
 from typing import Any, Dict, List
 
 from app.modules.execution.application.case_resolver import AutoCaseDispatchBinding, ExecutionCaseResolver
+from app.modules.execution.application.constants import CaseStatus, DispatchStatus
 from app.modules.execution.repository.models import ExecutionTaskCaseDoc, ExecutionTaskDoc
-from app.modules.test_specs.repository.models import AutomationTestCaseDoc, TestCaseDoc
+from app.modules.test_specs.repository.models import TestCaseDoc
 
 logger = logging.getLogger(__name__)
 
@@ -163,8 +164,8 @@ class ExecutionTaskCaseCoordinator:
                 case_id=case_id,
                 case_snapshot=snapshot,
                 order_no=order_no,
-                dispatch_status="PENDING",
-                status="QUEUED",
+                dispatch_status=DispatchStatus.PENDING,
+                status=CaseStatus.QUEUED,
                 step_total=0,
                 step_passed=0,
                 step_failed=0,

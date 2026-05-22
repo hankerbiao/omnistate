@@ -14,6 +14,7 @@ class AttachmentDoc(Document):
     object_name: str = Field(description="MinIO对象名")
     size: int = Field(description="文件大小（字节）")
     content_type: str = Field(description="MIME类型")
+    sha256: Optional[str] = Field(default=None, description="文件 SHA256 校验和")
     uploaded_by: str = Field(description="上传人ID")
     uploaded_at: datetime = Field(description="上传时间")
     is_deleted: bool = Field(default=False, description="逻辑删除标记")

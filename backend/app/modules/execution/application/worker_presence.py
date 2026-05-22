@@ -5,7 +5,9 @@ from __future__ import annotations
 import socket
 from datetime import datetime, timezone
 
+from app.modules.execution.application.constants import AgentStatus
 from app.modules.execution.repository.models import ExecutionAgentDoc
+from app.shared.core.logger import log
 from app.shared.db.config import settings
 
 
@@ -18,7 +20,6 @@ def _detect_local_ip() -> str:
         return "127.0.0.1"
     finally:
         sock.close()
-
 
 
 def get_kafka_worker_agent_id() -> str:
@@ -35,19 +36,35 @@ def get_kafka_worker_heartbeat_interval_seconds() -> int:
     return min(configured_interval, max(ttl_seconds // 3, 1))
 
 
-async def upsert_kafka_worker_presence(status: str = "ONLINE") -> ExecutionAgentDoc:
+async def upsert_kafka_worker_presence(status: str = AgentStatus.ONLINE) -> ExecutionAgentDoc:
+    """使用 Beanie 的 upsert 方法避免唯一索引冲突。
+
+    使用 update_one + upsert 模式，而不是 find-then-insert，
+    这样即使存在被软删除的记录也能正确更新。
+    """
     now = datetime.now(timezone.utc)
     ttl_seconds = get_kafka_worker_heartbeat_ttl_seconds()
     agent_id = get_kafka_worker_agent_id()
-    agent_doc = await ExecutionAgentDoc.find_one({
-        "agent_id": agent_id,
-        "is_deleted": False,
-    })
-    if agent_doc is None:
-        agent_doc = ExecutionAgentDoc(
+    hostname = socket.gethostname()
+    ip = _detect_local_ip()
+
+    agent_doc = await ExecutionAgentDoc.find_one(
+        ExecutionAgentDoc.agent_id == agent_id
+    ).upsert(
+        {
+            "$set": {
+                "hostname": hostname,
+                "ip": ip,
+                "status": status,
+                "last_heartbeat_at": now,
+                "heartbeat_ttl_seconds": ttl_seconds,
+                "is_deleted": False,
+            },
+        },
+        on_insert=ExecutionAgentDoc(
             agent_id=agent_id,
-            hostname=socket.gethostname(),
-            ip=_detect_local_ip(),
+            hostname=hostname,
+            ip=ip,
             port=None,
             base_url=None,
             region="system",
@@ -55,16 +72,9 @@ async def upsert_kafka_worker_presence(status: str = "ONLINE") -> ExecutionAgent
             registered_at=now,
             last_heartbeat_at=now,
             heartbeat_ttl_seconds=ttl_seconds,
-        )
-        await agent_doc.insert()
-        return agent_doc
-
-    agent_doc.hostname = socket.gethostname()
-    agent_doc.ip = _detect_local_ip()
-    agent_doc.status = status
-    agent_doc.last_heartbeat_at = now
-    agent_doc.heartbeat_ttl_seconds = ttl_seconds
-    await agent_doc.save()
+        ),
+    )
+    log.debug(f"Kafka worker presence upserted: agent_id={agent_id}, status={status}")
     return agent_doc
 
 
@@ -75,6 +85,6 @@ async def mark_kafka_worker_offline() -> None:
     })
     if agent_doc is None:
         return
-    agent_doc.status = "OFFLINE"
+    agent_doc.status = AgentStatus.OFFLINE
     agent_doc.last_heartbeat_at = datetime.now(timezone.utc)
     await agent_doc.save()

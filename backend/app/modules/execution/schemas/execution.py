@@ -4,6 +4,8 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.modules.execution.application.constants import AgentStatus
+
 
 class DispatchCaseItem(BaseModel):
     auto_case_id: str = Field(
@@ -30,7 +32,6 @@ class DispatchAttachmentItem(BaseModel):
 class _TaskDispatchBase(BaseModel):
     """下发任务请求公共字段。RerunTaskRequest 复用所有字段并全部可选。"""
 
-    framework: Optional[str] = Field(None, description="执行框架，例如 pytest")
     trigger_source: Optional[str] = Field(None, description="触发来源，例如 web_ui")
     dispatch_channel: Optional[str] = Field(None, description="下发通道，可选 RABBITMQ 或 HTTP")
     agent_id: Optional[str] = Field(None, description="目标执行代理 ID")
@@ -91,7 +92,6 @@ class RerunTaskRequest(_TaskDispatchBase):
 
 class DispatchTaskResponse(BaseModel):
     task_id: str = Field(..., description="平台内部任务 ID")
-    framework: Optional[str] = Field(None, description="执行框架")
     source_task_id: Optional[str] = Field(None, description="重跑来源任务 ID")
     agent_id: Optional[str] = Field(None, description="当前绑定的目标代理 ID")
     dispatch_channel: str = Field(..., description="任务实际下发通道，例如 RABBITMQ、HTTP")
@@ -113,7 +113,6 @@ class DispatchTaskResponse(BaseModel):
 
 class ExecutionTaskListItem(BaseModel):
     task_id: str = Field(..., description="平台内部任务 ID")
-    framework: Optional[str] = Field(None, description="执行框架")
     source_task_id: Optional[str] = Field(None, description="重跑来源任务 ID")
     agent_id: Optional[str] = Field(None, description="目标代理 ID")
     dispatch_channel: str = Field(..., description="当前任务使用的下发通道")
@@ -161,14 +160,14 @@ class AgentRegisterRequest(BaseModel):
     port: Optional[int] = Field(None, ge=1, le=65535, description="代理端口")
     base_url: Optional[str] = Field(None, description="代理基地址")
     region: str = Field(..., min_length=1, description="区域")
-    status: str = Field(default="ONLINE", description="代理状态")
+    status: str = Field(default=AgentStatus.ONLINE, description="代理状态")
     heartbeat_ttl_seconds: int = Field(default=90, ge=10, le=3600, description="心跳租约秒数")
 
     model_config = ConfigDict(extra="forbid")
 
 
 class AgentHeartbeatRequest(BaseModel):
-    status: str = Field(default="ONLINE", description="代理状态")
+    status: str = Field(default=AgentStatus.ONLINE, description="代理状态")
 
     model_config = ConfigDict(extra="forbid")
 

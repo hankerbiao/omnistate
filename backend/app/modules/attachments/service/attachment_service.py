@@ -1,5 +1,7 @@
+import asyncio
+import hashlib
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from app.modules.attachments.repository.models import AttachmentDoc
@@ -44,6 +46,7 @@ class AttachmentService:
                 "object_name": doc.object_name,
                 "size": doc.size,
                 "content_type": doc.content_type,
+                "sha256": doc.sha256,
                 "uploaded_at": doc.uploaded_at.isoformat() if doc.uploaded_at else None,
             })
         return enriched
@@ -53,7 +56,9 @@ class AttachmentService:
         doc = await AttachmentDoc.find_one({"file_id": file_id, "is_deleted": False})
         if not doc:
             raise KeyError(f"attachment not found or deleted: {file_id}")
-        download_url = self.minio_client.presigned_get_object(doc.object_name)
+        download_url = await asyncio.to_thread(
+            self.minio_client.presigned_get_object, doc.object_name
+        )
         return {
             "file_id": doc.file_id,
             "original_filename": doc.original_filename,
@@ -62,6 +67,7 @@ class AttachmentService:
             "object_name": doc.object_name,
             "size": doc.size,
             "content_type": doc.content_type,
+            "sha256": doc.sha256,
             "uploaded_at": doc.uploaded_at.isoformat() if doc.uploaded_at else None,
             "download_url": download_url,
         }
@@ -89,28 +95,42 @@ class AttachmentService:
         extension = filename.rsplit(".", 1)[-1] if "." in filename else ""
         object_name = f"attachments/{file_id}.{extension}" if extension else f"attachments/{file_id}"
 
+        # 计算 SHA256 校验和
+        sha256_hash = hashlib.sha256(content).hexdigest()
+
         # 上传到MinIO
         bucket = self.minio_client.get_bucket()
-        self.minio_client.put_object(
-            object_name=object_name,
-            data=content,
-            content_type=content_type,
-            length=len(content),
-        )
+        try:
+            self.minio_client.put_object(
+                object_name=object_name,
+                data=content,
+                content_type=content_type,
+                length=len(content),
+            )
 
-        # 保存元数据到MongoDB
-        attachment = AttachmentDoc(
-            file_id=file_id,
-            original_filename=filename,
-            bucket=bucket,
-            object_name=object_name,
-            size=len(content),
-            content_type=content_type,
-            uploaded_by=uploaded_by,
-            uploaded_at=datetime.utcnow(),
-            is_deleted=False,
-        )
-        await attachment.create()
+            # 保存元数据到MongoDB
+            attachment = AttachmentDoc(
+                file_id=file_id,
+                original_filename=filename,
+                bucket=bucket,
+                object_name=object_name,
+                size=len(content),
+                content_type=content_type,
+                sha256=sha256_hash,
+                uploaded_by=uploaded_by,
+                uploaded_at=datetime.now(timezone.utc),
+                is_deleted=False,
+            )
+            await attachment.create()
+        except Exception as e:
+            # 回滚：删除已上传的MinIO对象
+            try:
+                self.minio_client.remove_object(object_name)
+            except Exception:
+                pass  # 忽略删除失败，避免掩盖原始错误
+            raise RuntimeError(
+                f"Failed to upload file {file_id} for user {uploaded_by}: {e}"
+            ) from e
 
         return UploadResponse(
             file_id=file_id,
@@ -118,6 +138,7 @@ class AttachmentService:
             storage_path=f"{bucket}/{object_name}",
             size=len(content),
             content_type=content_type,
+            sha256=sha256_hash,
             uploaded_at=attachment.uploaded_at,
         )
 
@@ -186,7 +207,7 @@ class AttachmentService:
 
         # 逻辑删除
         attachment.is_deleted = True
-        attachment.deleted_at = datetime.utcnow()
+        attachment.deleted_at = datetime.now(timezone.utc)
         await attachment.update()
 
         # 可选：物理删除MinIO中的文件（根据需求决定是否立即删除）

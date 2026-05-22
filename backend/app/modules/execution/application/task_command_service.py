@@ -8,7 +8,11 @@ from typing import Any, Dict
 from app.modules.attachments.service.attachment_service import AttachmentService
 from app.modules.execution.application.case_resolver import ExecutionCaseResolver
 from app.modules.execution.application.commands import DispatchExecutionTaskCommand
-from app.modules.execution.application.task_command_mixin import ExecutionTaskCommandMixin
+from app.modules.execution.application.task_command_helpers import (
+    build_rerun_command_from_payload,
+    ensure_actor_identity,
+    initialize_command,
+)
 from app.modules.execution.application.task_dispatch_service import ExecutionDispatchService
 from app.modules.execution.repository.models import ExecutionTaskDoc
 from app.modules.execution.schemas import DispatchTaskRequest, RerunTaskRequest
@@ -16,7 +20,7 @@ from app.shared.core.logger import log as logger
 from app.shared.service import SequenceIdService
 
 
-class ExecutionTaskCommandService(ExecutionTaskCommandMixin):
+class ExecutionTaskCommandService:
     """处理任务创建、重跑、删除等命令。"""
 
     def __init__(
@@ -60,7 +64,7 @@ class ExecutionTaskCommandService(ExecutionTaskCommandMixin):
         logger.info(
             "Dispatch task request received: "
             f"user_id={actor_id}, "
-            f"dispatch_channel={request.dispatch_channel}, agent_id={request.agent_id}, "
+            f"dispatch_channel={request.dispatch_channel}, "
             f"schedule_type={request.schedule_type}, planned_at={request.planned_at}, "
             f"cases={request_case_payload}"
         )
@@ -107,7 +111,6 @@ class ExecutionTaskCommandService(ExecutionTaskCommandMixin):
             case_payloads=case_payloads,
             schedule_type=request.schedule_type,
             planned_at=request.planned_at,
-            framework=request.framework,
             trigger_source=request.trigger_source,
             category=request.category,
             project_tag=request.project_tag,
@@ -117,6 +120,7 @@ class ExecutionTaskCommandService(ExecutionTaskCommandMixin):
             timeout=request.timeout,
             attachments=[],
         )
+        initialize_command(command)
 
         data = await self._dispatch_service.create_task_from_command(command, actor_id=actor_id)
         logger.info(
@@ -132,7 +136,7 @@ class ExecutionTaskCommandService(ExecutionTaskCommandMixin):
         task_doc = await ExecutionTaskDoc.find_one({"task_id": task_id, "is_deleted": False})
         if not task_doc:
             raise KeyError(f"Task not found: {task_id}")
-        self._ensure_actor_identity(actor_id, task_doc.created_by)
+        ensure_actor_identity(actor_id, task_doc.created_by)
 
         task_doc.is_deleted = True
         await task_doc.save()
@@ -152,7 +156,7 @@ class ExecutionTaskCommandService(ExecutionTaskCommandMixin):
         if not source_task_doc:
             raise KeyError(f"Task not found: {source_task_id}")
 
-        self._ensure_actor_identity(actor_id, source_task_doc.created_by)
+        ensure_actor_identity(actor_id, source_task_doc.created_by)
         if request.cases is not None:
             auto_case_ids = [case.auto_case_id for case in request.cases]
         else:
@@ -164,7 +168,7 @@ class ExecutionTaskCommandService(ExecutionTaskCommandMixin):
         dispatch_bindings = await self._case_resolver.resolve_case_dispatch_bindings_by_auto_case_ids(
             auto_case_ids
         )
-        command = self._build_rerun_command_from_payload(
+        command = build_rerun_command_from_payload(
             source_task_doc=source_task_doc,
             request=request,
             new_task_id=new_task_id,
@@ -181,4 +185,3 @@ class ExecutionTaskCommandService(ExecutionTaskCommandMixin):
             f"source_task_id={source_task_id}, new_task_id={new_task_id}, actor_id={actor_id}"
         )
         return await self._dispatch_service.create_task_from_command(command, actor_id=actor_id)
-

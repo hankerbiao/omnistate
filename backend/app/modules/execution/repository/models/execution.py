@@ -6,6 +6,15 @@ from beanie import Document, Insert, Save, before_event
 from pydantic import Field
 from pymongo import ASCENDING, DESCENDING, IndexModel
 
+from app.modules.execution.application.constants import (
+    AgentStatus,
+    CaseStatus,
+    ConsumeStatus,
+    DispatchStatus,
+    OverallStatus,
+    ScheduleStatus,
+)
+
 
 class ExecutionTaskDoc(Document):
     """执行任务主表。
@@ -20,10 +29,10 @@ class ExecutionTaskDoc(Document):
     dispatch_channel: str = Field(default="RABBITMQ", description="下发通道")
     dedup_key: Optional[str] = Field(None, description="业务去重键")
     schedule_type: str = Field(default="IMMEDIATE", description="调度类型")
-    schedule_status: str = Field(default="READY", description="调度状态，仅描述是否已到触发阶段")
-    dispatch_status: str = Field(default="PENDING", description="下发状态")
-    consume_status: str = Field(default="PENDING", description="消费状态")
-    overall_status: str = Field(default="QUEUED", description="总体执行状态")
+    schedule_status: str = Field(default=ScheduleStatus.READY, description="调度状态，仅描述是否已到触发阶段")
+    dispatch_status: str = Field(default=DispatchStatus.PENDING, description="下发状态")
+    consume_status: str = Field(default=ConsumeStatus.PENDING, description="消费状态")
+    overall_status: str = Field(default=OverallStatus.QUEUED, description="总体执行状态")
     request_payload: Dict[str, Any] = Field(default_factory=dict, description="下发请求快照")
     dispatch_response: Dict[str, Any] = Field(default_factory=dict, description="下发响应快照")
     dispatch_error: Optional[str] = Field(None, description="下发失败原因")
@@ -96,9 +105,9 @@ class ExecutionTaskCaseDoc(Document):
     case_id: str = Field(..., description="测试用例业务 ID")
     case_snapshot: Dict[str, Any] = Field(default_factory=dict, description="用例快照")
     order_no: int = Field(default=0, description="用例在任务中的顺序")
-    dispatch_status: str = Field(default="PENDING", description="平台下发状态")
+    dispatch_status: str = Field(default=DispatchStatus.PENDING, description="平台下发状态")
     dispatch_attempts: int = Field(default=0, description="平台下发次数")
-    status: str = Field(default="QUEUED", description="用例执行状态")
+    status: str = Field(default=CaseStatus.QUEUED, description="用例执行状态")
     progress_percent: Optional[float] = Field(None, description="当前 case 执行进度百分比")
     step_total: int = Field(default=0, description="当前 case 总步骤数")
     step_passed: int = Field(default=0, description="当前 case 已通过步骤数")
@@ -152,7 +161,7 @@ class ExecutionAgentDoc(Document):
     port: Optional[int] = Field(None, description="代理服务端口")
     base_url: Optional[str] = Field(None, description="代理服务基地址")
     region: str = Field(..., description="所属区域")
-    status: str = Field(default="ONLINE", description="代理状态")
+    status: str = Field(default=AgentStatus.ONLINE, description="代理状态")
     registered_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
         description="首次注册或最近一次注册时间（UTC）",

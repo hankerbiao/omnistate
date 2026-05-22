@@ -12,6 +12,7 @@ class UploadResponse(BaseModel):
     storage_path: str = Field(description="MinIO存储路径（bucket/object_name）")
     size: int = Field(description="文件大小（字节）")
     content_type: str = Field(description="MIME类型")
+    sha256: Optional[str] = Field(default=None, description="文件 SHA256 校验和")
     uploaded_at: datetime = Field(description="上传时间")
 
 
@@ -23,6 +24,7 @@ class AttachmentInfo(BaseModel):
     storage_path: str = Field(description="MinIO存储路径")
     size: int = Field(description="文件大小（字节）")
     content_type: str = Field(description="MIME类型")
+    sha256: Optional[str] = Field(default=None, description="文件 SHA256 校验和")
     uploaded_by: str = Field(description="上传人ID")
     uploaded_at: datetime = Field(description="上传时间")
     download_url: Optional[str] = Field(default=None, description="下载链接")

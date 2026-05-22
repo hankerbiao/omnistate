@@ -5,23 +5,31 @@ from __future__ import annotations
 from typing import Any, Dict
 
 from app.modules.execution.application.task_case_coordinator import ExecutionTaskCaseCoordinator
-from app.modules.execution.application.task_command_mixin import ExecutionTaskCommandMixin
+from app.modules.execution.application.task_command_helpers import (
+    apply_task_command_to_doc,
+    build_dedup_key,
+    ensure_actor_identity,
+    ensure_no_active_duplicate,
+    normalize_dispatch_channel,
+    normalize_schedule,
+)
 from app.modules.execution.application.task_dispatch_coordinator import ExecutionTaskDispatchCoordinator
 from app.modules.execution.application.task_serializer import ExecutionTaskSerializer
 from app.modules.execution.application.commands import DispatchExecutionTaskCommand
+from app.modules.execution.application.constants import DispatchStatus
 from app.modules.execution.repository.models import ExecutionTaskDoc
 from app.modules.execution.service.task_dispatcher import ExecutionTaskDispatcher
 from app.shared.core.logger import log as logger
 
 
-class ExecutionDispatchService(
-    ExecutionTaskCommandMixin,
-):
+class ExecutionDispatchService:
     """统一封装任务创建后的下发与重建能力。"""
 
     def __init__(self, dispatcher: ExecutionTaskDispatcher | None = None) -> None:
-        self._dispatch_coordinator = ExecutionTaskDispatchCoordinator(dispatcher)
         self._case_coordinator = ExecutionTaskCaseCoordinator()
+        self._dispatch_coordinator = ExecutionTaskDispatchCoordinator(
+            dispatcher, self._case_coordinator
+        )
         self._serializer = ExecutionTaskSerializer()
 
     async def create_task_from_command(
@@ -30,7 +38,7 @@ class ExecutionDispatchService(
         actor_id: str,
     ) -> Dict[str, Any]:
         """创建执行任务，并在需要时立即触发首条 case 下发。"""
-        self._ensure_actor_identity(actor_id, command.created_by)
+        ensure_actor_identity(actor_id, command.created_by)
         if not command.case_ids:
             raise ValueError("case_ids must not be empty")
         logger.info(
@@ -39,29 +47,29 @@ class ExecutionDispatchService(
             f"case_count={len(command.case_ids)}, schedule_type={command.schedule_type}"
         )
         doc_map = await self._case_coordinator.load_case_docs(command.case_ids)
-        schedule_type, planned_at, schedule_status, should_dispatch_now = self._normalize_schedule(
+        schedule_type, planned_at, schedule_status, should_dispatch_now = normalize_schedule(
             command.schedule_type,
             command.planned_at,
         )
-        dispatch_channel = self._normalize_dispatch_channel(command.dispatch_channel)
+        dispatch_channel = normalize_dispatch_channel(command.dispatch_channel)
         command.schedule_type = schedule_type
         command.planned_at = planned_at
         command.dispatch_channel = dispatch_channel
-        dedup_key = self._build_dedup_key(command)
-        await self._ensure_no_active_duplicate(dedup_key)
+        dedup_key = build_dedup_key(command)
+        await ensure_no_active_duplicate(dedup_key)
 
         task_doc = ExecutionTaskDoc(
             task_id=command.task_id,
             created_by=command.created_by,
             dispatch_channel=dispatch_channel,
         )
-        self._apply_task_command_to_doc(
+        apply_task_command_to_doc(
             task_doc=task_doc,
             command=command,
             dedup_key=dedup_key,
             schedule_type=schedule_type,
             schedule_status=schedule_status,
-            dispatch_status="DISPATCHING" if should_dispatch_now else "PENDING",
+            dispatch_status=DispatchStatus.DISPATCHING if should_dispatch_now else DispatchStatus.PENDING,
         )
         await task_doc.insert()
         await self._case_coordinator.replace_task_case_docs(
@@ -76,8 +84,6 @@ class ExecutionDispatchService(
             task_doc,
             should_dispatch_now,
             0,
-            self._case_coordinator.resolve_task_case_pairs,
-            self._ensure_utc_datetime,
         )
         logger.info(
             "Execution task created: "
@@ -95,8 +101,6 @@ class ExecutionDispatchService(
         return await self._dispatch_coordinator.build_task_dispatch_command(
             task_doc,
             dispatch_case_index,
-            self._case_coordinator.resolve_task_case_pairs,
-            self._ensure_utc_datetime,
         )
 
     async def dispatch_existing_task(

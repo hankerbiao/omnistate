@@ -41,9 +41,9 @@ rabbitmq:
   ssl_enabled: false
 
   # 任务下发队列（生产者：backend -> agent）
-  task_queue: "dml_task_queue"
+  task_queue: "dml-test-queue"
   task_exchange: ""
-  task_routing_key: "dml_task_queue"
+  task_routing_key: "dml-test-queue"
 
   # 消费者预取数量
   prefetch_count: 10
@@ -59,7 +59,7 @@ kafka:
   # Topic 配置
   result_topic: "dmlv4.results"
   dead_letter_topic: "dmlv4.deadletter"
-  test_events_topic: "test-events"
+  test_events_topic: "dml-test-event"
 
   # Consumer Group 配置
   execution_result_group_id: "dmlv4-execution-result-consumers"
@@ -107,12 +107,20 @@ jwt:
 # 任务执行配置
 # =============================================================================
 execution:
-  dispatch_mode: "rabbitmq"  # 可选: rabbitmq, http
+  dispatch_mode: "http"  # 可选: rabbitmq, http
   agent_dispatch_path: "/api/v1/tasks"
   http_timeout_sec: 10
   scheduler_interval_sec: 60
-  default_repo_url: "http://10.17.55.151:6600/litaiqing/bmc-case.git"
+  default_repo_url: "http://10.17.55.151:6600/litaiqing/disk_case.git"
   default_branch: "master"
+
+  # HTTP 下发配置（dispatch_mode=http 时使用）
+  http_dispatch:
+    enabled: True
+    target_url: "http://10.32.12.28:8768"  # Agent 服务的完整地址
+    timeout_sec: 30
+    retry_times: 3
+    headers: {}  # 自定义请求头，如 {"Authorization": "Bearer xxx"}
 
   # Kafka Worker 配置（仅当 dispatch_mode=kafka 时使用）
   kafka_worker_agent_id: "execution-kafka-worker"

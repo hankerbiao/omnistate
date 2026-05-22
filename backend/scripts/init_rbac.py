@@ -86,7 +86,7 @@ DEFAULT_ROLES = {
     },
     "AUTOMATION": {
         "name": "AUTOMATION", "description": "自动化测试运行角色", "is_system": True,
-        "permission_ids": [*_READ, "test_cases:write", "work_items:write", *_EXEC_READ, "terminal:connect", "navigation:write"],
+        "permission_ids": [*_READ, "test_cases:write", *_WORKFLOW, *_EXEC_READ, *_EXEC_WRITE, "terminal:connect", "navigation:write"],
     },
 }
 

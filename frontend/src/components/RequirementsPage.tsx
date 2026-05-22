@@ -4,6 +4,7 @@ import type { RequirementResponse, TestCaseResponse, WorkflowTransition } from '
 import CreateRequirementForm from './CreateRequirementForm';
 import CreateTestCaseForm from './CreateTestCaseForm';
 import TestCaseDetailModal from './TestCaseDetailModal';
+import RequirementDetailModal from './RequirementDetailModal';
 
 type ActiveTab = 'workflow' | 'testcases';
 
@@ -50,6 +51,7 @@ const RequirementsPage: React.FC = () => {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [batchDeleteConfirm, setBatchDeleteConfirm] = useState(false);
   const [deleteCaseConfirm, setDeleteCaseConfirm] = useState<{ open: boolean; caseId?: string; title?: string }>({ open: false });
+  const [selectedRequirementDetail, setSelectedRequirementDetail] = useState<RequirementResponse | null>(null);
 
   const selectedRequirement = useMemo(
     () => requirements.find((item) => item.req_id === selectedRequirementId) || null,
@@ -406,7 +408,10 @@ const RequirementsPage: React.FC = () => {
                 <div
                   key={requirement.req_id}
                   className={`requirement-item ${isSelected ? 'requirement-item--selected' : ''} ${isChecked ? 'requirement-item--checked' : ''}`}
-                  onClick={() => setSelectedRequirementId(requirement.req_id)}
+                  onClick={() => {
+                    setSelectedRequirementId(requirement.req_id);
+                    setSelectedRequirementDetail(requirement);
+                  }}
                 >
                   <div style={styles.itemHeader}>
                     <div style={styles.itemHeaderLeft}>
@@ -703,6 +708,13 @@ const RequirementsPage: React.FC = () => {
         <TestCaseDetailModal
           testCase={selectedTestCase}
           onClose={() => setSelectedTestCase(null)}
+        />
+      )}
+
+      {selectedRequirementDetail && (
+        <RequirementDetailModal
+          requirement={selectedRequirementDetail}
+          onClose={() => setSelectedRequirementDetail(null)}
         />
       )}
 

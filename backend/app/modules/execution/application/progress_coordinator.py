@@ -6,7 +6,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.modules.execution.application.constants import FINAL_CASE_STATUSES
+from app.modules.execution.application.constants import (
+    FINAL_CASE_STATUSES,
+    DispatchStatus,
+    OverallStatus,
+)
 from app.modules.execution.application.task_dispatch_service import ExecutionDispatchService
 from app.shared.core.logger import log as logger
 
@@ -72,9 +76,9 @@ class ExecutionProgressCoordinator:
             task_doc.current_case_index = task_doc.case_count
             task_doc.finished_at = event_time
             task_doc.last_callback_at = event_time
-            task_doc.overall_status = "FAILED" if task_doc.failed_case_count > 0 else "PASSED"
-            if getattr(task_doc, "dispatch_status", None) not in {"DISPATCH_FAILED", "PENDING"}:
-                task_doc.dispatch_status = "COMPLETED"
+            task_doc.overall_status = OverallStatus.FAILED if task_doc.failed_case_count > 0 else OverallStatus.PASSED
+            if getattr(task_doc, "dispatch_status", None) not in {DispatchStatus.DISPATCH_FAILED, DispatchStatus.PENDING}:
+                task_doc.dispatch_status = DispatchStatus.COMPLETED
             await task_doc.save()
             logger.info(
                 "Execution task completed after final case: "
@@ -93,9 +97,9 @@ class ExecutionProgressCoordinator:
                 "Failed to build dispatch command for auto-advance: "
                 f"task_id={task_doc.task_id}, next_case_index={next_case_index}, error={exc}"
             )
-            task_doc.dispatch_status = "DISPATCH_FAILED"
+            task_doc.dispatch_status = DispatchStatus.DISPATCH_FAILED
             task_doc.dispatch_error = f"Auto-advance build failed: {exc}"
-            task_doc.overall_status = "FAILED"
+            task_doc.overall_status = OverallStatus.FAILED
             task_doc.finished_at = event_time
             await task_doc.save()
             return
@@ -113,8 +117,8 @@ class ExecutionProgressCoordinator:
                 "Failed to dispatch next case during auto-advance: "
                 f"task_id={task_doc.task_id}, next_case_id={command.dispatch_case_id}, error={exc}"
             )
-            task_doc.dispatch_status = "DISPATCH_FAILED"
+            task_doc.dispatch_status = DispatchStatus.DISPATCH_FAILED
             task_doc.dispatch_error = f"Auto-advance dispatch failed: {exc}"
-            task_doc.overall_status = "FAILED"
+            task_doc.overall_status = OverallStatus.FAILED
             task_doc.finished_at = event_time
             await task_doc.save()

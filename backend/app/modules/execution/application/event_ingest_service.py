@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import timezone
 from typing import Any
 
+from app.modules.execution.application.constants import ConsumeStatus, OverallStatus
 from app.modules.execution.application.progress_coordinator import ExecutionProgressCoordinator
 from app.modules.execution.domain.status_rules import resolve_case_status
 from app.modules.execution.repository.models import (
@@ -341,7 +342,7 @@ class ExecutionEventIngestService:
         task_doc.last_event_phase = event.phase
         # 只要有事件成功进入聚合，说明下游已经真实消费过该任务。
         task_doc.consumed_at = event_time
-        task_doc.consume_status = "CONSUMED"
+        task_doc.consume_status = ConsumeStatus.CONSUMED
         # 这里统一使用 max，避免乱序事件把聚合计数倒退。
         task_doc.started_case_count = max(getattr(task_doc, "started_case_count", 0), event.started_cases)
         task_doc.finished_case_count = max(getattr(task_doc, "finished_case_count", 0), event.finished_cases)
@@ -360,10 +361,10 @@ class ExecutionEventIngestService:
             event.total_cases > 0 and event.finished_cases >= event.total_cases
         ):
             task_doc.finished_at = event_time
-            task_doc.overall_status = "FAILED" if event.failed_cases > 0 else "PASSED"
+            task_doc.overall_status = OverallStatus.FAILED if event.failed_cases > 0 else OverallStatus.PASSED
         # 这些 phase 说明任务仍在运行过程中。
         elif event.phase in {"collection_start", "case_start", "collection_finish", "case_finish"}:
-            task_doc.overall_status = "RUNNING"
+            task_doc.overall_status = OverallStatus.RUNNING
         task_doc.last_callback_at = event_time
 
     async def _advance_task_after_case_finish(
