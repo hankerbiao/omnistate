@@ -1,12 +1,47 @@
 import React, { useState } from 'react';
 import { api } from '../services/api';
-import type { CreateTestCaseRequest } from '../types';
+import type { CreateTestCaseRequest, TestCaseResponse } from '../types';
 
 interface CreateTestCaseFormProps {
   onClose: () => void;
   onSuccess: () => void;
   defaultRequirementId?: string;
   lockRequirementId?: boolean;
+  editTestCase?: TestCaseResponse;
+}
+
+function testCaseToFormData(testCase: TestCaseResponse): CreateTestCaseRequest {
+  return {
+    ref_req_id: testCase.ref_req_id,
+    title: testCase.title,
+    version: testCase.version,
+    is_active: testCase.is_active,
+    change_log: testCase.change_log,
+    owner_id: testCase.owner_id,
+    reviewer_id: testCase.reviewer_id,
+    auto_dev_id: testCase.auto_dev_id,
+    priority: testCase.priority,
+    estimated_duration_sec: testCase.estimated_duration_sec,
+    required_env: testCase.required_env,
+    tags: testCase.tags ?? [],
+    test_category: testCase.test_category,
+    is_destructive: testCase.is_destructive,
+    pre_condition: testCase.pre_condition,
+    post_condition: testCase.post_condition,
+    is_need_auto: testCase.is_need_auto,
+    is_automated: testCase.is_automated,
+    automation_type: testCase.automation_type,
+    script_entity_id: testCase.script_entity_id,
+    automation_case_ref: testCase.automation_case_ref,
+    risk_level: testCase.risk_level,
+    failure_analysis: testCase.failure_analysis,
+    confidentiality: testCase.confidentiality,
+    visibility_scope: testCase.visibility_scope,
+    attachments: testCase.attachments ?? [],
+    custom_fields: testCase.custom_fields ?? {},
+    deprecation_reason: testCase.deprecation_reason,
+    approval_history: testCase.approval_history ?? [],
+  };
 }
 
 const CreateTestCaseForm: React.FC<CreateTestCaseFormProps> = ({
@@ -14,20 +49,28 @@ const CreateTestCaseForm: React.FC<CreateTestCaseFormProps> = ({
   onSuccess,
   defaultRequirementId = '',
   lockRequirementId = false,
+  editTestCase,
 }) => {
-  const [formData, setFormData] = useState<CreateTestCaseRequest>({
-    ref_req_id: defaultRequirementId,
-    title: '',
-    version: 1,
-    is_active: true,
-    priority: 'P1',
-    tags: [],
-    is_destructive: false,
-    is_need_auto: false,
-    is_automated: false,
-    attachments: [],
-    custom_fields: {},
-    approval_history: [],
+  const isEditMode = Boolean(editTestCase);
+
+  const [formData, setFormData] = useState<CreateTestCaseRequest>(() => {
+    if (editTestCase) {
+      return testCaseToFormData(editTestCase);
+    }
+    return {
+      ref_req_id: defaultRequirementId,
+      title: '',
+      version: 1,
+      is_active: true,
+      priority: 'P1',
+      tags: [],
+      is_destructive: false,
+      is_need_auto: false,
+      is_automated: false,
+      attachments: [],
+      custom_fields: {},
+      approval_history: [],
+    };
   });
 
   const [loading, setLoading] = useState(false);
@@ -37,18 +80,31 @@ const CreateTestCaseForm: React.FC<CreateTestCaseFormProps> = ({
   const [steps, setSteps] = useState<Array<{ id: string; content: string; expected: string }>>([]);
   const [stepCounter, setStepCounter] = useState(0);
 
+  const normalizePayload = (data: CreateTestCaseRequest): CreateTestCaseRequest => {
+    const payload = { ...data };
+    if (typeof payload.is_active === 'string') {
+      payload.is_active = payload.is_active === 'true';
+    }
+    return payload;
+  };
+
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
 
     try {
-      await api.createTestCase(formData);
+      const payload = normalizePayload(formData);
+      if (isEditMode && editTestCase) {
+        await api.updateTestCase(editTestCase.case_id, payload);
+      } else {
+        await api.createTestCase(payload);
+      }
       onSuccess();
       onClose();
     } catch (err) {
-      setError('创建测试用例失败');
-      console.error('Create test case error:', err);
+      setError(isEditMode ? '更新测试用例失败' : '创建测试用例失败');
+      console.error(isEditMode ? 'Update test case error:' : 'Create test case error:', err);
     } finally {
       setLoading(false);
     }
@@ -114,8 +170,10 @@ const CreateTestCaseForm: React.FC<CreateTestCaseFormProps> = ({
       <div style={styles.modalContent}>
         <div style={styles.modalHeader}>
           <div>
-            <h2 style={styles.modalTitle}>创建测试用例</h2>
-            <p style={styles.modalSubtitle}>定义测试范围和执行步骤</p>
+            <h2 style={styles.modalTitle}>{isEditMode ? '编辑测试用例' : '创建测试用例'}</h2>
+            <p style={styles.modalSubtitle}>
+              {isEditMode ? `正在编辑 ${editTestCase?.case_id}` : '定义测试范围和执行步骤'}
+            </p>
           </div>
           <button style={styles.closeButton} onClick={onClose}>
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -188,9 +246,9 @@ const CreateTestCaseForm: React.FC<CreateTestCaseFormProps> = ({
                         style={styles.input}
                         placeholder="REQ-001"
                         required
-                        readOnly={lockRequirementId}
+                        readOnly={lockRequirementId || isEditMode}
                       />
-                      {lockRequirementId && (
+                      {(lockRequirementId || isEditMode) && (
                         <span style={styles.lockedBadge}>锁定</span>
                       )}
                     </div>
@@ -567,14 +625,14 @@ const CreateTestCaseForm: React.FC<CreateTestCaseFormProps> = ({
                     <circle cx="12" cy="12" r="10" opacity="0.25"></circle>
                     <path d="M12 2a10 10 0 0 1 10 10h-2a8 8 0 0 0-8-8v2z"></path>
                   </svg>
-                  创建中...
+                  {isEditMode ? '保存中...' : '创建中...'}
                 </span>
               ) : (
                 <span style={styles.submitContent}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <polyline points="20 6 9 17 4 12"></polyline>
                   </svg>
-                  创建测试用例
+                  {isEditMode ? '保存修改' : '创建测试用例'}
                 </span>
               )}
             </button>

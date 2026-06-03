@@ -34,6 +34,7 @@ from app.modules.test_specs.service._service_support import (
 )
 from app.modules.test_specs.service._workflow_status_support import enrich_projected_status
 from app.modules.workflow.application import WorkflowItemGateway
+from app.modules.workflow.repository.models.enums import WorkItemState
 from app.modules.attachments.repository.models import AttachmentDoc
 from app.shared.core.mongo_client import get_mongo_client
 from app.shared.service import BaseService, SequenceIdService
@@ -362,6 +363,7 @@ class TestCaseService(BaseService):
                 "content": data.get("pre_condition") or data.get("post_condition") or data["title"],
                 "creator_id": data.get("owner_id") or data.get("reviewer_id") or "system",
                 "parent_item_id": data.pop("_parent_workflow_item_id", None),
+                "initial_state": WorkItemState.DEVELOPING.value,
             }
 
         return await create_with_workflow_transaction(

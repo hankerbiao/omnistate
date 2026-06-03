@@ -105,6 +105,7 @@ class TestCaseResponse(BaseModel):
     is_active: bool = Field(..., description="用例是否激活状态")
     change_log: Optional[str] = Field(None, description="用例变更日志")
     status: str = Field(..., description="用例状态")
+    workflow_item_id: Optional[str] = Field(None, description="关联工作流事项 ID")
     owner_id: Optional[str] = Field(None, description="用例负责人 ID")
     reviewer_id: Optional[str] = Field(None, description="用例审核人 ID")
     auto_dev_id: Optional[str] = Field(None, description="自动化开发人员 ID")

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { api } from '../services/api';
 import type { TestCaseResponse, ListTestCasesParams } from '../types';
 import TestCaseDetailModal from './TestCaseDetailModal';
+import CreateTestCaseForm from './CreateTestCaseForm';
 
 interface FilterParams {
   ref_req_id?: string;
@@ -42,6 +43,7 @@ const ManualTestCaseList: React.FC = () => {
   const [filters, setFilters] = useState<FilterParams>({});
   const [showFilters, setShowFilters] = useState(false);
   const [selectedTestCase, setSelectedTestCase] = useState<TestCaseResponse | null>(null);
+  const [editingTestCase, setEditingTestCase] = useState<TestCaseResponse | null>(null);
 
   const fetchTestCases = useCallback(async (filterParams: FilterParams, offset: number) => {
     setLoading(true);
@@ -356,6 +358,18 @@ const ManualTestCaseList: React.FC = () => {
         <TestCaseDetailModal
           testCase={selectedTestCase}
           onClose={() => setSelectedTestCase(null)}
+          onEdit={() => {
+            setEditingTestCase(selectedTestCase);
+            setSelectedTestCase(null);
+          }}
+        />
+      )}
+
+      {editingTestCase && (
+        <CreateTestCaseForm
+          editTestCase={editingTestCase}
+          onClose={() => setEditingTestCase(null)}
+          onSuccess={() => fetchTestCases(filters, currentOffset)}
         />
       )}
     </div>

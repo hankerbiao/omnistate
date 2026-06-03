@@ -27,6 +27,7 @@ class WorkflowServicesAdapter(WorkflowItemGateway):
         content: str,
         creator_id: str,
         parent_item_id: str | None = None,
+        initial_state: str | None = None,
         session: AsyncClientSession | None = None,
     ) -> dict[str, object]:
         return await self._mutation_service.create_item(
@@ -35,6 +36,7 @@ class WorkflowServicesAdapter(WorkflowItemGateway):
             content=content,
             creator_id=creator_id,
             parent_item_id=parent_item_id,
+            initial_state=initial_state,
             session=session,
         )
 

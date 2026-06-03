@@ -69,7 +69,7 @@ python scripts/create_user.py \
 
 ## 5. 启动服务
 
-若 `backend/.env` 中 `EXECUTION_DISPATCH_MODE=kafka`，请先启动 Kafka worker：
+请先启动 Kafka worker（execution 事件消费与串行推进依赖它）：
 
 ```bash
 cd backend
@@ -101,13 +101,13 @@ python -m app.main
 1. 连接 MongoDB。
 2. 注册 Beanie 文档模型。
 3. 校验 workflow 配置一致性。
-4. 若当前使用 Kafka 分发，校验 execution Kafka worker 是否在线。
+4. 校验 execution Kafka worker 是否在线。
 5. 初始化应用级基础设施。
 6. 挂载 `/health` 和 `/api/v1/*` 路由。
 
 补充说明：
 
-- 当 `EXECUTION_DISPATCH_MODE=kafka` 且 worker 未启动时，主服务会拒绝启动。
+- Kafka worker 未启动时，主服务可能拒绝启动（取决于预检配置）。
 - worker 负责消费 `test-events` 并推进串行任务；只启动主服务并不能完成完整执行链路。
 
 推荐完整启动顺序：
@@ -129,9 +129,7 @@ python -m app.main
 - `CORS_ORIGINS`
 - `JWT_SECRET_KEY`
 - `JWT_EXPIRE_MINUTES`
-- `EXECUTION_DISPATCH_MODE`
-- `EXECUTION_AGENT_DISPATCH_PATH`
-- `EXECUTION_HTTP_TIMEOUT_SEC`
+- `EXECUTION_SCHEDULER_INTERVAL_SEC`
 - `EXECUTION_KAFKA_WORKER_AGENT_ID`
 
 ## 8. 验证服务

@@ -70,7 +70,6 @@
 | `task.delete` / `task.rerun` | 删除 / 重跑 |
 | `scheduler.tick` | 定时任务扫描触发 |
 | `kafka.batch` / `kafka.result` | Kafka 批量 / 结果消息 |
-| `http.dispatch.bg` | HTTP 异步下发后台任务 |
 
 ### 排障示例
 

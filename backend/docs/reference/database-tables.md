@@ -9,6 +9,8 @@
 
 ## Workflow 相关表
 
+模块详解见 [Workflow 数据模型](/modules/workflow/data-models)。
+
 ### `sys_work_types`
 
 对应模型：`SysWorkTypeDoc`
@@ -472,40 +474,43 @@
 
 - 这是执行事件归档表，负责幂等、审计和排障
 
-### `execution_agents`
+### `execution_biz_logs`
 
-对应模型：`ExecutionAgentDoc`
+对应模型：`ExecutionBizLogDoc`
 
-- `agent_id`
-  代理唯一标识
-- `hostname`
-  主机名
-- `ip`
-  代理 IP
-- `port`
-  代理端口
-- `base_url`
-  代理服务地址
-- `region`
-  所属区域
-- `status`
-  代理状态
-- `registered_at`
-  最近注册时间
-- `last_heartbeat_at`
-  最近心跳时间
-- `heartbeat_ttl_seconds`
-  心跳过期阈值
-- `is_deleted`
-  逻辑删除
+- `task_id`
+  关联任务 ID
+- `case_id`
+  关联用例 ID（可选）
+- `event_id`
+  关联事件 ID（可选）
+- `node`
+  平台业务节点，如 `task.dispatch`、`task.advance`
+- `action`
+  动作描述
+- `outcome`
+  结果摘要，如 `success`、`failed`、`skipped`
+- `status_before`
+  变更前状态快照（JSON）
+- `status_after`
+  变更后状态快照（JSON）
+- `operator_id`
+  操作人 user_id
+- `request_id`
+  链路 request_id
+- `detail`
+  其它结构化摘要
+- `level`
+  日志级别 INFO / WARNING / ERROR
 - `created_at`
-  创建时间
-- `updated_at`
-  更新时间
+  记录时间
 
 用途：
 
-- 保存可接收执行任务的 agent 注册信息和在线状态
+- 平台侧业务决策时间线，供排障与 `GET /execution/tasks/{task_id}/biz-logs` 查询
+- **不替代** `execution_events`（外部原始事件）和 task/case 当前态表
+
+详见 [Execution 日志与排障](../modules/execution/logging.md)。
 
 ## Auth 相关表
 

@@ -9,35 +9,40 @@
         "action": "ASSIGN",
         "to_state": "ASSIGNED",
         "target_owner_strategy": "TO_SPECIFIC_USER",
-        "required_fields": ["target_owner_id"]
+        "required_fields": ["target_owner_id"],
+        "properties": {"creator_only": true}
       },
       {
         "from_state": "ASSIGNED",
         "action": "START_WRITE",
         "to_state": "DEVELOPING",
         "target_owner_strategy": "KEEP",
-        "required_fields": []
+        "required_fields": [],
+        "properties": {"owner_only": true}
       },
       {
         "from_state": "DEVELOPING",
         "action": "SUBMIT_REVIEW",
         "to_state": "PENDING_REVIEW",
         "target_owner_strategy": "TO_SPECIFIC_USER",
-        "required_fields": ["target_owner_id"]
+        "required_fields": ["target_owner_id"],
+        "properties": {"owner_only": true}
       },
       {
         "from_state": "PENDING_REVIEW",
         "action": "APPROVE",
         "to_state": "DONE",
         "target_owner_strategy": "KEEP",
-        "required_fields": ["comment"]
+        "required_fields": ["comment"],
+        "properties": {"owner_only": true}
       },
       {
         "from_state": "PENDING_REVIEW",
         "action": "REJECT",
         "to_state": "DEVELOPING",
         "target_owner_strategy": "TO_SPECIFIC_USER",
-        "required_fields": ["target_owner_id", "comment"]
+        "required_fields": ["target_owner_id", "comment"],
+        "properties": {"owner_only": true}
       }
     ]
   }

@@ -38,7 +38,6 @@ class ExecutionNode(str, Enum):
     SCHEDULER_TICK = "scheduler.tick"
     KAFKA_BATCH = "kafka.batch"
     KAFKA_RESULT = "kafka.result"
-    HTTP_DISPATCH_BG = "http.dispatch.bg"
 
 
 def _truncate_value(value: Any) -> Any:

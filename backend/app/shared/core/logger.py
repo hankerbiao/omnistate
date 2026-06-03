@@ -149,24 +149,37 @@ def _mask_sensitive_data(message: str) -> str:
     return SENSITIVE_PATTERN.sub(PASSWORD_REPLACEMENT, message)
 
 
+def _console_id(value: str, *, empty: str = "-") -> str:
+    """控制台追踪 ID：无上下文时为短占位符，有值时截断避免撑满一行。"""
+    text = str(value or "").strip()
+    if not text or text == "-":
+        return empty
+    return text if len(text) <= 12 else f"{text[:12]}…"
+
+
 # =============================================================================
 # 控制台输出格式（彩色可读）
 # =============================================================================
 CONSOLE_FORMAT = (
     "<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | "
     "<level>{level: <8}</level> | "
-    "<cyan>{extra[request_id]:>32}</cyan> | "
-    "<cyan>{extra[user_id]:>16}</cyan> | "
-    "<cyan>{file}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>"
+    "<cyan>{extra[request_id]}</cyan> | "
+    "<cyan>{extra[user_id]}</cyan> | "
+    "<cyan>{file}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>\n"
 )
 
 
 def _console_format(record: dict) -> str:
-    """控制台格式化器：动态注入追踪上下文并脱敏。"""
+    """控制台格式化器：动态注入追踪上下文并脱敏。
+
+    可调用 format 不会自动补换行，模板末尾必须包含 \\n。
+    """
     trace_extra = _get_trace_extra()
     exec_extra = _merge_execution_extra()
     for key, value in {**trace_extra, **exec_extra}.items():
         record["extra"].setdefault(key, value)
+    record["extra"]["request_id"] = _console_id(record["extra"].get("request_id", "-"))
+    record["extra"]["user_id"] = _console_id(record["extra"].get("user_id", "-"))
     record["message"] = _mask_sensitive_data(str(record["message"]))
     return CONSOLE_FORMAT
 
@@ -213,7 +226,10 @@ def _json_format(record: dict) -> str:
                 "traceback": exception.traceback if hasattr(exception, "traceback") and exception.traceback else "",
             }
 
-    return json.dumps(log_entry, default=str, ensure_ascii=False) + "\n"
+    # format 可调用对象必须返回「模板字符串」，不能返回已格式化的 JSON；
+    # 否则 Loguru 会把 JSON 里的 {"timestamp": ...} 当成占位符再次 format，触发 KeyError。
+    record["message"] = json.dumps(log_entry, default=str, ensure_ascii=False)
+    return "{message}\n"
 
 
 # =============================================================================

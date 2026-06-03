@@ -20,7 +20,7 @@
 | 数据库 | MongoDB |
 | 配置 | `pydantic-settings` + `.env` |
 | 鉴权 | JWT |
-| 执行分发 | Kafka 或 HTTP |
+| 执行分发 | RabbitMQ + Kafka |
 | 测试 | pytest |
 
 ## 3. 目录结构
@@ -78,7 +78,7 @@ dmlv4/
 1. 连接 MongoDB。
 2. 初始化全部 Beanie 文档模型。
 3. 校验 workflow 基础配置一致性。
-4. 若 `EXECUTION_DISPATCH_MODE=kafka`，预检 Kafka worker 心跳。
+4. 预检 execution Kafka worker 心跳。
 5. 初始化应用级基础设施。
 6. 挂载异常处理器和统一 API 路由。
 
@@ -155,7 +155,7 @@ dmlv4/
 - 外部执行端通过 Kafka `test-events` 持续回传事件。
 - 平台只维护当前任务态和当前 case 态。
 - 当前任务不再保留历史轮次模型和 `/runs` 查询接口。
-- 支持 Kafka 和 HTTP 两种下发通道，但真实业务 payload 结构一致。
+- 任务通过 RabbitMQ 下发；执行结果通过 Kafka `test-events` 回报。
 
 `execution` 当前由两个后端进程共同完成：
 
@@ -258,9 +258,6 @@ dmlv4/
 - `JWT_EXPIRE_MINUTES`
 - `JWT_ISSUER`
 - `JWT_AUDIENCE`
-- `EXECUTION_DISPATCH_MODE`
-- `EXECUTION_AGENT_DISPATCH_PATH`
-- `EXECUTION_HTTP_TIMEOUT_SEC`
 - `EXECUTION_SCHEDULER_INTERVAL_SEC`
 
 说明：

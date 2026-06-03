@@ -6,7 +6,6 @@
 from app.shared.config.settings import (
     AppConfig,
     ExecutionConfig,
-    HttpDispatchConfig,
     JWTConfig,
     KafkaConfig,
     LoggingConfig,
@@ -23,7 +22,6 @@ from app.shared.config.settings import (
 __all__ = [
     "AppConfig",
     "ExecutionConfig",
-    "HttpDispatchConfig",
     "JWTConfig",
     "KafkaConfig",
     "LoggingConfig",

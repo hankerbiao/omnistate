@@ -134,10 +134,11 @@ def can_transition(actor: Any, work_item: Any, workflow_config: Any) -> bool:
     """
     检查参与者是否可以对工作项执行状态转换。
 
-    管理员总是可以执行转换。
-    如果配置了owner_only或creator_only限制，则按相应规则检查。
-    否则检查allowed_actor_types或allowed_role_ids配置。
-    如果都没有配置，则默认允许创建者和当前负责人执行转换。
+    流转权限与工作流配置 properties 及 work_item 身份绑定；
+    ADMIN 不享有无条件放行（改派/删除见 can_reassign / can_delete_work_item）。
+
+    判断顺序：owner_only → creator_only → allowed_actor_types →
+    allowed_role_ids → 默认（创建人或当前负责人）。
 
     Args:
         actor: 参与者对象
@@ -147,10 +148,6 @@ def can_transition(actor: Any, work_item: Any, workflow_config: Any) -> bool:
     Returns:
         True如果参与者可以执行转换，否则False
     """
-    # ADMIN 是最高权限，直接放行所有流转动作。
-    if is_admin_actor(actor):
-        return True
-
     properties = _read_value(workflow_config, "properties", {}) or {}
     # 显式 owner_only / creator_only 优先级最高，用于简单强约束场景。
     if properties.get("owner_only"):

@@ -37,7 +37,7 @@ DML V4 后端当前是单体 FastAPI 应用，不是微服务。
 - `test_specs`
   需求与用例定义层，读写 workflow 状态投影
 - `execution`
-  执行任务编排层，读取 test_specs 的用例与自动化配置
+  执行任务编排层，读取 test_specs 的用例与自动化配置（详见 [Execution 模块文档](/modules/execution/)）
 - `auth`
   资源级 RBAC 服务
 - `attachments`

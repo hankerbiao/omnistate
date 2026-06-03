@@ -49,6 +49,7 @@
 
 - 任务一直停在当前 case
 - 事件消费了但任务状态没更新
+- 第一条 case 完成后没有下发第二条
 
 优先检查：
 
@@ -56,6 +57,31 @@
 - `execution/application/progress_coordinator.py`
 - `execution/application/task_dispatch_service.py`
 - `ExecutionTaskDoc` / `ExecutionTaskCaseDoc` / `ExecutionEventDoc`
+- Kafka Worker 进程是否在运行
+
+结构化排障（推荐）：
+
+1. `GET /api/v1/execution/tasks/{task_id}/biz-logs` 看平台节点时间线
+2. `cat logs/execution.log | jq 'select(.task_id=="...")'` 看 `task.advance` 是否 `skipped`
+3. MongoDB `execution_events` 确认是否有 `case_finish` 且 `case_id` 等于 `current_case_id`
+
+完整 Runbook：[Execution 日志与排障](/modules/execution/logging)。
+
+## execution 下发异常
+
+现象：
+
+- `dispatch_status=DISPATCH_FAILED`
+- Agent 未收到任务
+
+优先检查：
+
+- `execution/service/task_dispatcher.py`
+- `config.yaml` 中 `rabbitmq` 连接与队列配置
+- 日志节点 `task.dispatch`
+- RabbitMQ 队列是否可达、Agent 是否正常消费
+
+详见 [Execution Worker 与消息](/modules/execution/workers)。
 
 ## 鉴权失败
 

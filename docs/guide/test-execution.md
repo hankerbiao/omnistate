@@ -164,21 +164,13 @@
 
 ## 5. 下发通道
 
-### 5.1 RABBITMQ（默认）
+任务固定通过 **RabbitMQ** 下发：
 
 - `RabbitMQProducerManager` 将 payload 发送到 `task_queue`
 - 属性：`delivery_mode=2`（持久化）、publisher confirm 已启用
 - 首条 case 由主服务发出，后续 case 由 Worker 在消费到 `case_finish` 后发出
 
-### 5.2 HTTP
-
-- 平台根据 `agent_id` 查询 `ExecutionAgentDoc`
-- POST 到 `agent.base_url + EXECUTION_AGENT_DISPATCH_PATH`
-- Agent 必须已注册、`status=ONLINE`、`base_url` 不为空
-
-### 5.3 共同点
-
-两种通道的 payload 结构、串行推进逻辑、状态聚合逻辑完全一致。执行结果回报都依赖 Kafka `test-events`，**即使 HTTP 下发也必须运行 Kafka Worker**。
+执行结果回报依赖 Kafka `test-events`，**必须运行 Kafka Worker**。
 
 ## 6. 业务流程
 
@@ -214,7 +206,7 @@ progress + phase=case_start → 若干 assert → progress + phase=case_finish
 ### 6.4 时序图
 
 ```text
-前端 → POST /dispatch → 主服务 → RABBITMQ/HTTP → 执行代理
+前端 → POST /dispatch → 主服务 → RabbitMQ → 执行代理
                                                       │
                                         Kafka test-events
                                                       │
@@ -279,13 +271,12 @@ cd backend
 python scripts/mock_test_framework.py
 ```
 
-支持：注册 agent、心跳上报、消费 Kafka 任务、HTTP 下发接收、按 `cases` 载荷串行执行 mock case、向 `test-events` 回报事件。
+支持：消费 RabbitMQ 任务、按 `cases` 载荷串行执行 mock case、向 `test-events` 回报事件。
 
 ### 常见问题
 
 | 现象 | 排查方向 |
 |------|---------|
-| 选了 HTTP 但实际走 RABBITMQ | 检查请求 `dispatch_channel` 字段，看 `task_dispatcher.py` 日志 |
 | 首条 case 执行完不继续下一条 | 确认 Kafka Worker 是否在线，确认 `test-events` 是否到达 |
 | 任务列表看不到 case 细节 | 确认 `ExecutionTaskCaseDoc` 是否已创建 |
 
@@ -316,7 +307,7 @@ python scripts/mock_test_framework.py
 | `app/modules/execution/application/commands.py` | `DispatchExecutionTaskCommand` 数据类 |
 | `app/modules/execution/application/event_ingest_service.py` | 事件消费与状态聚合 |
 | `app/modules/execution/application/progress_coordinator.py` | case 完成后自动推进 |
-| `app/modules/execution/service/task_dispatcher.py` | RABBITMQ/HTTP 通道实现 |
+| `app/modules/execution/service/task_dispatcher.py` | RabbitMQ 下发实现 |
 | `app/modules/execution/shared/execution_log.py` | 结构化日志 `elog()` 与业务节点枚举 |
 | `app/modules/execution/shared/execution_context.py` | execution 业务上下文（contextvars） |
 | `app/workers/kafka_worker_main.py` | Kafka Worker 入口 |

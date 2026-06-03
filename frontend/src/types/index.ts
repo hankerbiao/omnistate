@@ -176,6 +176,8 @@ export interface CreateTestCaseRequest {
   approval_history?: Record<string, unknown>[];
 }
 
+export type UpdateTestCaseRequest = Partial<Omit<CreateTestCaseRequest, 'case_id'>>;
+
 export interface TestCaseResponse {
   id: string;
   case_id: string;
@@ -185,6 +187,7 @@ export interface TestCaseResponse {
   is_active: boolean;
   change_log?: string;
   status: string;
+  workflow_item_id?: string;
   owner_id?: string;
   reviewer_id?: string;
   auto_dev_id?: string;

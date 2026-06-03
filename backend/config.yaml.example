@@ -100,9 +100,6 @@ jwt:
 # 任务执行配置
 # =============================================================================
 execution:
-  dispatch_mode: "rabbitmq"
-  agent_dispatch_path: "/api/v1/tasks"
-  http_timeout_sec: 10
   scheduler_interval_sec: 60
   default_repo_url: ""
   default_branch: "master"

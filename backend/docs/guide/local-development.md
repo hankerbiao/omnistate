@@ -92,12 +92,6 @@ flake8 --select=E,W,F
   token 签发者校验值
 - `JWT_AUDIENCE`
   token 受众校验值
-- `EXECUTION_DISPATCH_MODE`
-  执行任务分发模式；当前支持 `rabbitmq` 或 `http`
-- `EXECUTION_AGENT_DISPATCH_PATH`
-  HTTP 分发模式下发给执行代理的路径
-- `EXECUTION_HTTP_TIMEOUT_SEC`
-  HTTP 分发超时设置
 - `EXECUTION_SCHEDULER_INTERVAL_SEC`
   调度器扫描待触发任务的时间间隔
 - `TERMINAL_SHELL`

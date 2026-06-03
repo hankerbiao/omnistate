@@ -6,7 +6,6 @@
 from fastapi import APIRouter
 
 from app.shared.api.schemas.base import APIResponse
-from app.shared.db.config import settings
 from app.shared.infrastructure import get_infrastructure_registry
 
 router = APIRouter()
@@ -16,12 +15,10 @@ async def _build_health_payload() -> dict:
     """构建健康检查载荷。"""
     registry = get_infrastructure_registry()
     infrastructure = await registry.health_check()
-    dispatch_mode = (settings.EXECUTION_DISPATCH_MODE or "kafka").strip().lower()
-
     return {
         "status": infrastructure.get("overall_status", "UNKNOWN").lower(),
         "message": "Service is running",
-        "dispatch_mode": dispatch_mode,
+        "dispatch_mode": "rabbitmq",
         "warnings": [],
         "components": dict(infrastructure.get("components", {})),
         "timestamp": infrastructure.get("timestamp"),

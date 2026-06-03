@@ -14,6 +14,7 @@
 3. `guide/architecture-overview`
 4. `guide/how-to-change-backend`
 5. 进入对应模块文档
+   - 负责测试执行编排时，阅读 [Execution 模块概览](/modules/execution/)
 
 ## 上手时最容易踩的坑
 

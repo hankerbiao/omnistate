@@ -58,6 +58,7 @@ class WorkflowMutationService:
         content: str,
         creator_id: str,
         parent_item_id: str | None = None,
+        initial_state: str | None = None,
         session: AsyncClientSession | None = None,
     ) -> dict[str, Any]:
         """创建新的工作项。
@@ -65,9 +66,10 @@ class WorkflowMutationService:
         主要流程：
         1. 检查同类型、同标题的工作项是否已存在
         2. 校验并转换父节点 ID
-        3. 以 DRAFT 状态创建工作项
+        3. 以 initial_state（默认 DRAFT）创建工作项
         4. 返回序列化后的结果
         """
+        start_state = (initial_state or WorkItemState.DRAFT.value).strip().upper()
         try:
             # 避免同一业务类型下出现重复标题，减少后续检索和流转歧义。
             existing_item = await BusWorkItemDoc.find_one(
@@ -92,7 +94,7 @@ class WorkflowMutationService:
                 parent_item_id=parent_oid,
                 creator_id=creator_id,
                 current_owner_id=creator_id,
-                current_state=WorkItemState.DRAFT.value,
+                current_state=start_state,
             )
             await new_item.insert(session=session)
             logger.success(f"业务事项创建成功: ID={new_item.id}, state={new_item.current_state}")

@@ -24,6 +24,9 @@ const STATUS_LABELS: Record<string, string> = {
   ACTIVE: '激活',
   INACTIVE: '未激活',
   DEPRECATED: '已弃用',
+  ASSIGNED: '已指派',
+  DEVELOPING: '编写中',
+  DONE: '已完成',
 };
 
 const RequirementsPage: React.FC = () => {
@@ -36,6 +39,7 @@ const RequirementsPage: React.FC = () => {
   const [showCreateRequirement, setShowCreateRequirement] = useState(false);
   const [showCreateTestCase, setShowCreateTestCase] = useState(false);
   const [selectedTestCase, setSelectedTestCase] = useState<TestCaseResponse | null>(null);
+  const [editingTestCase, setEditingTestCase] = useState<TestCaseResponse | null>(null);
   const [workflowState, setWorkflowState] = useState<string>('');
   const [workflowTransitions, setWorkflowTransitions] = useState<WorkflowTransition[]>([]);
   const [loadingWorkflow, setLoadingWorkflow] = useState(false);
@@ -52,6 +56,14 @@ const RequirementsPage: React.FC = () => {
   const [batchDeleteConfirm, setBatchDeleteConfirm] = useState(false);
   const [deleteCaseConfirm, setDeleteCaseConfirm] = useState<{ open: boolean; caseId?: string; title?: string }>({ open: false });
   const [selectedRequirementDetail, setSelectedRequirementDetail] = useState<RequirementResponse | null>(null);
+  const [workflowTestCase, setWorkflowTestCase] = useState<TestCaseResponse | null>(null);
+  const [caseWorkflowState, setCaseWorkflowState] = useState('');
+  const [caseWorkflowTransitions, setCaseWorkflowTransitions] = useState<WorkflowTransition[]>([]);
+  const [loadingCaseWorkflow, setLoadingCaseWorkflow] = useState(false);
+  const [transitionContext, setTransitionContext] = useState<{
+    workflowItemId: string;
+    refresh: () => Promise<void>;
+  } | null>(null);
 
   const selectedRequirement = useMemo(
     () => requirements.find((item) => item.req_id === selectedRequirementId) || null,
@@ -113,6 +125,22 @@ const RequirementsPage: React.FC = () => {
     }
   }, []);
 
+  const fetchCaseWorkflow = useCallback(async (workflowItemId: string) => {
+    setLoadingCaseWorkflow(true);
+    try {
+      const response = await api.getWorkflowTransitions(workflowItemId);
+      setCaseWorkflowState(response.data.current_state);
+      setCaseWorkflowTransitions(response.data.available_transitions || []);
+    } catch (err) {
+      setCaseWorkflowState('');
+      setCaseWorkflowTransitions([]);
+      setError('获取测试用例工作流失败');
+      console.error('Fetch test case workflow error:', err);
+    } finally {
+      setLoadingCaseWorkflow(false);
+    }
+  }, []);
+
   // 搜索用户作为目标处理人
   const searchUsers = useCallback(async (query: string) => {
     if (!query.trim()) {
@@ -148,9 +176,11 @@ const RequirementsPage: React.FC = () => {
   useEffect(() => {
     if (!selectedRequirementId) {
       setTestCases([]);
+      setWorkflowTestCase(null);
       return;
     }
     fetchTestCases(selectedRequirementId);
+    setWorkflowTestCase(null);
   }, [fetchTestCases, selectedRequirementId]);
 
   useEffect(() => {
@@ -162,6 +192,23 @@ const RequirementsPage: React.FC = () => {
     fetchWorkflowTransitions(selectedRequirement.workflow_item_id);
   }, [fetchWorkflowTransitions, selectedRequirement?.workflow_item_id]);
 
+  useEffect(() => {
+    if (!workflowTestCase?.workflow_item_id) {
+      setCaseWorkflowState('');
+      setCaseWorkflowTransitions([]);
+      return;
+    }
+    fetchCaseWorkflow(workflowTestCase.workflow_item_id);
+  }, [fetchCaseWorkflow, workflowTestCase?.workflow_item_id, workflowTestCase?.case_id]);
+
+  useEffect(() => {
+    if (!workflowTestCase?.case_id) return;
+    const updated = testCases.find((item) => item.case_id === workflowTestCase.case_id);
+    if (updated && updated.status !== workflowTestCase.status) {
+      setWorkflowTestCase(updated);
+    }
+  }, [testCases, workflowTestCase?.case_id, workflowTestCase?.status]);
+
   const handleRequirementCreated = (requirement: RequirementResponse) => {
     fetchRequirements(requirement.req_id);
   };
@@ -171,6 +218,21 @@ const RequirementsPage: React.FC = () => {
       fetchTestCases(selectedRequirementId);
     }
   };
+
+  const selectTestCaseForWorkflow = useCallback(async (testCase: TestCaseResponse) => {
+    setWorkflowTestCase(testCase);
+    if (testCase.workflow_item_id) {
+      return;
+    }
+    try {
+      const response = await api.getTestCase(testCase.case_id);
+      if (response.data?.workflow_item_id) {
+        setWorkflowTestCase(response.data);
+      }
+    } catch (err) {
+      console.error('Fetch test case detail for workflow error:', err);
+    }
+  }, []);
 
   const getPriorityStyle = (priority: string) => {
     const styleMap: Record<string, { bg: string; color: string }> = {
@@ -185,6 +247,7 @@ const RequirementsPage: React.FC = () => {
   const getWorkflowStateStyle = (state: string) => {
     const styleMap: Record<string, { bg: string; color: string }> = {
       DRAFT: { bg: 'var(--surface-tertiary)', color: 'var(--text-tertiary)' },
+      ASSIGNED: { bg: 'var(--status-info-bg)', color: 'var(--status-info)' },
       PENDING_REVIEW: { bg: 'var(--status-warning-bg)', color: 'var(--status-warning)' },
       PENDING_DEVELOP: { bg: 'var(--status-info-bg)', color: 'var(--status-info)' },
       DEVELOPING: { bg: 'var(--status-info-bg)', color: 'var(--status-info)' },
@@ -192,6 +255,7 @@ const RequirementsPage: React.FC = () => {
       PENDING_UAT: { bg: 'var(--status-info-bg)', color: 'var(--status-info)' },
       PENDING_RELEASE: { bg: 'var(--status-success-bg)', color: 'var(--status-success)' },
       RELEASED: { bg: 'var(--status-success-bg)', color: 'var(--status-success)' },
+      DONE: { bg: 'var(--status-success-bg)', color: 'var(--status-success)' },
     };
     return styleMap[state] || { bg: 'var(--surface-tertiary)', color: 'var(--text-secondary)' };
   };
@@ -205,6 +269,9 @@ const RequirementsPage: React.FC = () => {
       FINISH: '完成开发',
       PASS: '通过',
       PUBLISH: '发布',
+      ASSIGN: '指派编写人',
+      START_WRITE: '开始编写',
+      SUBMIT_REVIEW: '提交评审',
     };
     return labelMap[action] || action;
   };
@@ -218,24 +285,27 @@ const RequirementsPage: React.FC = () => {
     return labelMap[field] || field;
   };
 
-  const openTransitionModal = (transition: WorkflowTransition) => {
+  const openTransitionModal = (
+    transition: WorkflowTransition,
+    context: { workflowItemId: string; refresh: () => Promise<void> },
+  ) => {
     const initialData: Record<string, string> = {};
     for (const field of transition.required_fields) {
       if (field === 'priority') {
-        initialData[field] = selectedRequirement?.priority || '';
+        initialData[field] = selectedRequirement?.priority || workflowTestCase?.priority || '';
       } else if (field === 'target_owner_id') {
         initialData[field] = '';
-        // 预加载用户列表
         searchUsers('');
       }
     }
     setOwnerSearchQuery('');
     setTransitionFormData(initialData);
+    setTransitionContext(context);
     setTransitionModal({ open: true, transition });
   };
 
   const handleTransitionSubmit = async () => {
-    if (!selectedRequirement?.workflow_item_id || !transitionModal.transition) return;
+    if (!transitionContext?.workflowItemId || !transitionModal.transition) return;
 
     for (const field of transitionModal.transition.required_fields) {
       if (!transitionFormData[field]?.trim()) {
@@ -247,19 +317,31 @@ const RequirementsPage: React.FC = () => {
     setTransitioningAction(transitionModal.transition.action);
     setError(null);
     try {
-      await api.transitionWorkflow(selectedRequirement.workflow_item_id, {
+      await api.transitionWorkflow(transitionContext.workflowItemId, {
         action: transitionModal.transition.action,
         form_data: transitionFormData,
       });
-      await fetchRequirements(selectedRequirement.req_id);
-      await fetchWorkflowTransitions(selectedRequirement.workflow_item_id);
+      await transitionContext.refresh();
       setTransitionModal({ open: false });
+      setTransitionContext(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : '工作流流转失败');
       console.error('Workflow transition error:', err);
     } finally {
       setTransitioningAction(null);
     }
+  };
+
+  const refreshRequirementWorkflow = async () => {
+    if (!selectedRequirement?.workflow_item_id || !selectedRequirement.req_id) return;
+    await fetchRequirements(selectedRequirement.req_id);
+    await fetchWorkflowTransitions(selectedRequirement.workflow_item_id);
+  };
+
+  const refreshTestCaseWorkflow = async () => {
+    if (!selectedRequirementId || !workflowTestCase?.workflow_item_id) return;
+    await fetchTestCases(selectedRequirementId);
+    await fetchCaseWorkflow(workflowTestCase.workflow_item_id);
   };
 
   const onlineCount = requirements.filter(r => r.status === 'RELEASED').length;
@@ -581,7 +663,10 @@ const RequirementsPage: React.FC = () => {
                               <button
                                 key={`${transition.action}-${transition.to_state}`}
                                 className="btn btn--secondary"
-                                onClick={() => openTransitionModal(transition)}
+                                onClick={() => openTransitionModal(transition, {
+                                  workflowItemId: selectedRequirement.workflow_item_id!,
+                                  refresh: refreshRequirementWorkflow,
+                                })}
                                 disabled={Boolean(transitioningAction)}
                               >
                                 <span style={styles.actionName}>{getActionLabel(transition.action)}</span>
@@ -624,15 +709,20 @@ const RequirementsPage: React.FC = () => {
                           <th style={{ width: '60px' }}>优先级</th>
                           <th style={{ width: '80px' }}>状态</th>
                           <th style={{ width: '90px' }}>创建时间</th>
-                          <th style={{ width: '60px' }}>操作</th>
+                          <th style={{ width: '120px' }}>操作</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {testCases.map((testCase) => (
+                        {testCases.map((testCase) => {
+                          const isSelected = workflowTestCase?.case_id === testCase.case_id;
+                          return (
                           <tr
                             key={testCase.id}
-                            onClick={() => setSelectedTestCase(testCase)}
-                            style={{ cursor: 'pointer' }}
+                            onClick={() => { void selectTestCaseForWorkflow(testCase); }}
+                            style={{
+                              cursor: 'pointer',
+                              backgroundColor: isSelected ? 'var(--surface-hover)' : undefined,
+                            }}
                           >
                             <td className="mono">{testCase.case_id}</td>
                             <td>{testCase.title}</td>
@@ -645,7 +735,10 @@ const RequirementsPage: React.FC = () => {
                               </span>
                             </td>
                             <td>
-                              <span className="status-badge status-badge--neutral">
+                              <span
+                                className="status-badge status-badge--neutral"
+                                style={getWorkflowStateStyle(testCase.status)}
+                              >
                                 {STATUS_LABELS[testCase.status] || testCase.status}
                               </span>
                             </td>
@@ -653,21 +746,90 @@ const RequirementsPage: React.FC = () => {
                               {new Date(testCase.created_at).toLocaleDateString('zh-CN')}
                             </td>
                             <td>
-                              <button
-                                style={styles.deleteBtn}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setDeleteCaseConfirm({ open: true, caseId: testCase.case_id, title: testCase.title });
-                                }}
-                                title="删除"
-                              >
-                                ×
-                              </button>
+                              <div style={styles.caseActionCell} onClick={(e) => e.stopPropagation()}>
+                                <button
+                                  type="button"
+                                  style={styles.caseActionBtn}
+                                  onClick={() => setSelectedTestCase(testCase)}
+                                  title="详情"
+                                >
+                                  详情
+                                </button>
+                                <button
+                                  type="button"
+                                  style={styles.deleteBtn}
+                                  onClick={() => {
+                                    setDeleteCaseConfirm({ open: true, caseId: testCase.case_id, title: testCase.title });
+                                  }}
+                                  title="删除"
+                                >
+                                  ×
+                                </button>
+                              </div>
                             </td>
                           </tr>
-                        ))}
+                          );
+                        })}
                       </tbody>
                     </table>
+                  )}
+
+                  {workflowTestCase && (
+                    <div style={styles.caseWorkflowPanel}>
+                      <div className="data-panel-header">
+                        <h3 className="data-panel-title">
+                          用例流转 · {workflowTestCase.case_id}
+                        </h3>
+                        <span
+                          className="status-badge"
+                          style={getWorkflowStateStyle(caseWorkflowState || workflowTestCase.status)}
+                        >
+                          {STATUS_LABELS[caseWorkflowState || workflowTestCase.status]
+                            || caseWorkflowState
+                            || workflowTestCase.status}
+                        </span>
+                      </div>
+
+                      {!workflowTestCase.workflow_item_id ? (
+                        <p style={styles.caseWorkflowHint}>
+                          {workflowTestCase.status === '未开始'
+                            ? '该用例在数据库中未绑定工作流（多为历史数据）。请重新创建用例，或联系管理员执行数据修复。'
+                            : '未能加载工作流 ID，请刷新页面后重试；若仍无效请重启后端服务。'}
+                          <br />
+                          <span style={styles.caseWorkflowHintSub}>
+                            说明：与 admin 无关——流转权限认当前负责人，不认管理员角色。
+                          </span>
+                        </p>
+                      ) : loadingCaseWorkflow ? (
+                        <div className="loading-overlay" style={{ minHeight: '80px' }}>
+                          <div className="loading-spinner" />
+                        </div>
+                      ) : caseWorkflowTransitions.length === 0 ? (
+                        <p style={styles.caseWorkflowHint}>
+                          当前状态没有您可执行的操作。测试用例流转认工作项的创建人/当前负责人，admin 角色本身不能代流转；若您刚指派了负责人，需由新负责人操作或先改派回自己。
+                        </p>
+                      ) : (
+                        <div style={styles.actionGrid}>
+                          {caseWorkflowTransitions.map((transition) => (
+                            <button
+                              key={`case-${transition.action}-${transition.to_state}`}
+                              type="button"
+                              className="btn btn--secondary"
+                              onClick={() => openTransitionModal(transition, {
+                                workflowItemId: workflowTestCase.workflow_item_id!,
+                                refresh: refreshTestCaseWorkflow,
+                              })}
+                              disabled={Boolean(transitioningAction)}
+                            >
+                              <span style={styles.actionName}>{getActionLabel(transition.action)}</span>
+                              <span style={styles.actionArrow}>
+                                → {STATUS_LABELS[transition.to_state] || transition.to_state}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
               )}
@@ -708,6 +870,19 @@ const RequirementsPage: React.FC = () => {
         <TestCaseDetailModal
           testCase={selectedTestCase}
           onClose={() => setSelectedTestCase(null)}
+          onEdit={() => {
+            setEditingTestCase(selectedTestCase);
+            setSelectedTestCase(null);
+          }}
+        />
+      )}
+
+      {editingTestCase && (
+        <CreateTestCaseForm
+          editTestCase={editingTestCase}
+          onClose={() => setEditingTestCase(null)}
+          onSuccess={handleTestCaseCreated}
+          lockRequirementId
         />
       )}
 
@@ -720,11 +895,11 @@ const RequirementsPage: React.FC = () => {
 
       {/* Transition Modal */}
       {transitionModal.open && transitionModal.transition && (
-        <div className="modal-overlay" onClick={() => setTransitionModal({ open: false })}>
+        <div className="modal-overlay" onClick={() => { setTransitionModal({ open: false }); setTransitionContext(null); }}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal__header">
               <h3 className="modal__title">{getActionLabel(transitionModal.transition.action)}</h3>
-              <button className="modal__close" onClick={() => setTransitionModal({ open: false })}>×</button>
+              <button className="modal__close" onClick={() => { setTransitionModal({ open: false }); setTransitionContext(null); }}>×</button>
             </div>
             <div className="modal__body">
               <p style={{ marginBottom: '16px', color: 'var(--text-secondary)', fontSize: '13px' }}>
@@ -800,7 +975,7 @@ const RequirementsPage: React.FC = () => {
               ))}
             </div>
             <div className="modal__footer">
-              <button className="btn btn--secondary" onClick={() => setTransitionModal({ open: false })}>
+              <button className="btn btn--secondary" onClick={() => { setTransitionModal({ open: false }); setTransitionContext(null); }}>
                 取消
               </button>
               <button
@@ -1120,6 +1295,35 @@ const styles = {
     fontSize: '12px',
     color: 'var(--text-tertiary)',
     marginLeft: '8px',
+  },
+  caseActionCell: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+  },
+  caseActionBtn: {
+    padding: '2px 8px',
+    fontSize: '12px',
+    color: 'var(--accent-primary)',
+    backgroundColor: 'transparent',
+    border: '1px solid var(--border-default)',
+    borderRadius: '4px',
+    cursor: 'pointer',
+  },
+  caseWorkflowPanel: {
+    marginTop: '16px',
+    paddingTop: '16px',
+    borderTop: '1px solid var(--border-subtle)',
+  },
+  caseWorkflowHint: {
+    margin: '8px 0 0',
+    fontSize: '13px',
+    color: 'var(--text-tertiary)',
+    lineHeight: 1.6,
+  },
+  caseWorkflowHintSub: {
+    fontSize: '12px',
+    color: 'var(--text-muted)',
   },
   formLabel: {
     display: 'block',

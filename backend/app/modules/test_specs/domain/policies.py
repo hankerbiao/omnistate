@@ -1,6 +1,11 @@
-from typing import Any, Iterable
+from typing import Any
 
-from app.modules.workflow.domain.policies import actor_role_ids, can_delete_work_item, is_admin_actor
+from app.modules.workflow.domain.policies import (
+    actor_role_ids,
+    can_delete_work_item,
+    is_admin_actor,
+)
+from app.modules.workflow.repository.models.enums import WorkItemState
 
 
 def _read_value(source: Any, field: str, default: Any = None) -> Any:
@@ -19,12 +24,6 @@ def _actor_id(actor: Any) -> str:
     return str(getattr(actor, "actor_id", "")).strip()
 
 
-def _matches_any(actor_id: str, candidates: Iterable[Any]) -> bool:
-    """判断操作者 ID 是否匹配任一候选负责人 ID，忽略 None 和首尾空白。"""
-    normalized = actor_id.strip()
-    return any(normalized and normalized == str(candidate).strip() for candidate in candidates if candidate is not None)
-
-
 def _normalized_roles(actor: Any) -> set[str]:
     roles: set[str] = set()
     for role_id in actor_role_ids(actor):
@@ -34,6 +33,35 @@ def _normalized_roles(actor: Any) -> set[str]:
         if normalized:
             roles.add(normalized)
     return roles
+
+
+def _can_edit_via_work_item(actor: Any, work_item: Any) -> bool:
+    """工作流驱动的编辑权限：待办主责可改，草稿阶段创建人可改。
+
+    - 评审态（PENDING_REVIEW）禁止编辑正文/步骤，评审意见仅通过流转提交。
+    - ADMIN 不享有编辑直通（改派/删除见 workflow policies）。
+    """
+    if work_item is None:
+        return False
+
+    current_actor_id = _actor_id(actor)
+    if not current_actor_id:
+        return False
+
+    state = str(_read_value(work_item, "current_state", "") or "").strip().upper()
+    if state == WorkItemState.PENDING_REVIEW.value:
+        return False
+
+    owner_id = str(_read_value(work_item, "current_owner_id", "") or "").strip()
+    if owner_id and current_actor_id == owner_id:
+        return True
+
+    if state == WorkItemState.DRAFT.value:
+        creator_id = str(_read_value(work_item, "creator_id", "") or "").strip()
+        if creator_id and current_actor_id == creator_id:
+            return True
+
+    return False
 
 
 def can_create_requirement(actor: Any) -> bool:
@@ -47,70 +75,45 @@ def can_create_requirement(actor: Any) -> bool:
 
 def can_update_requirement(actor: Any, requirement: Any, work_item: Any = None) -> bool:
     """
-    需求可编辑策略：
-    - 管理员始终允许；
-    - 关联工作项的当前负责人或创建人允许；
-    - 需求的 TPM 负责人允许。
+    需求可编辑策略（只认工作流）：
+    - 当前处理人（current_owner_id）允许（评审态除外）；
+    - DRAFT 状态下创建人（creator_id）允许；
+    - PENDING_REVIEW 禁止编辑；ADMIN 不直通。
     """
-    current_actor_id = _actor_id(actor)
-    if is_admin_actor(actor):
-        return True
-    if work_item is not None and _matches_any(
-        current_actor_id,
-        [_read_value(work_item, "current_owner_id"), _read_value(work_item, "creator_id")],
-    ):
-        return True
-    return _matches_any(current_actor_id, [_read_value(requirement, "tpm_owner_id")])
+    return _can_edit_via_work_item(actor, work_item)
 
 
 def can_delete_requirement(actor: Any, requirement: Any, work_item: Any = None) -> bool:
     """
-    需求可删除策略：
+    需求可删除策略（只认工作流）：
     - 管理员始终允许；
-    - 如果存在关联工作项，则复用工作项删除策略；
-    - 需求的 TPM 负责人允许。
+    - 关联工作项存在时复用工作项删除策略（创建人或管理员）。
     """
     if is_admin_actor(actor):
         return True
     if work_item is not None and can_delete_work_item(actor, work_item):
         return True
-    return _matches_any(_actor_id(actor), [_read_value(requirement, "tpm_owner_id")])
+    return False
 
 
 def can_update_test_case(actor: Any, test_case: Any, work_item: Any = None) -> bool:
     """
-    测试用例可编辑策略：
-    - 管理员始终允许；
-    - 关联工作项的当前负责人或创建人允许；
-    - 用例负责人、评审人或自动化开发负责人允许。
+    测试用例可编辑策略（只认工作流）：
+    - 当前处理人（current_owner_id）允许（评审态除外）；
+    - DRAFT 状态下创建人（creator_id）允许；
+    - PENDING_REVIEW 禁止编辑步骤/正文；ADMIN 不直通。
     """
-    current_actor_id = _actor_id(actor)
-    if is_admin_actor(actor):
-        return True
-    if work_item is not None and _matches_any(
-        current_actor_id,
-        [_read_value(work_item, "current_owner_id"), _read_value(work_item, "creator_id")],
-    ):
-        return True
-    return _matches_any(
-        current_actor_id,
-        [
-            _read_value(test_case, "owner_id"),
-            _read_value(test_case, "reviewer_id"),
-            _read_value(test_case, "auto_dev_id"),
-        ],
-    )
+    return _can_edit_via_work_item(actor, work_item)
 
 
 def can_delete_test_case(actor: Any, test_case: Any, work_item: Any = None) -> bool:
     """
-    测试用例可删除策略：
+    测试用例可删除策略（只认工作流）：
     - 管理员始终允许；
-    - 如果存在关联工作项，则复用工作项删除策略；
-    - 用例负责人允许。
+    - 关联工作项存在时复用工作项删除策略（创建人或管理员）。
     """
     if is_admin_actor(actor):
         return True
     if work_item is not None and can_delete_work_item(actor, work_item):
         return True
-    return _matches_any(_actor_id(actor), [_read_value(test_case, "owner_id")])
+    return False

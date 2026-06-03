@@ -1,6 +1,8 @@
 import { defineConfig } from "vitepress";
+import { withMermaid } from "vitepress-plugin-mermaid";
 
-export default defineConfig({
+export default withMermaid(
+  defineConfig({
   title: "DML V4 Backend Docs",
   description: "DML V4 后端开发手册与模块实现文档",
   lang: "zh-CN",
@@ -28,9 +30,32 @@ export default defineConfig({
       {
         text: "模块实现",
         items: [
-          { text: "Workflow", link: "/modules/workflow/" },
+          {
+            text: "Workflow",
+            collapsed: false,
+            items: [
+              { text: "概览", link: "/modules/workflow/" },
+              { text: "架构与设计", link: "/modules/workflow/architecture" },
+              { text: "数据模型", link: "/modules/workflow/data-models" },
+              { text: "状态与流转", link: "/modules/workflow/state-and-flow" },
+              { text: "HTTP API", link: "/modules/workflow/api" },
+              { text: "配置与初始化", link: "/modules/workflow/configuration" },
+            ],
+          },
           { text: "Test Specs", link: "/modules/test-specs/" },
-          { text: "Execution", link: "/modules/execution/" },
+          {
+            text: "Execution",
+            collapsed: false,
+            items: [
+              { text: "概览", link: "/modules/execution/" },
+              { text: "架构与进程", link: "/modules/execution/architecture" },
+              { text: "数据模型", link: "/modules/execution/data-models" },
+              { text: "状态与流转", link: "/modules/execution/state-and-flow" },
+              { text: "HTTP API", link: "/modules/execution/api" },
+              { text: "日志与排障", link: "/modules/execution/logging" },
+              { text: "Worker 与消息", link: "/modules/execution/workers" },
+            ],
+          },
           { text: "Auth", link: "/modules/auth/" },
           { text: "Attachments", link: "/modules/attachments/" },
           { text: "Terminal", link: "/modules/terminal/" },
@@ -64,4 +89,5 @@ export default defineConfig({
       provider: "local",
     },
   },
-});
+  }),
+);

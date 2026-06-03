@@ -13,9 +13,13 @@ const CASE_STATUS_LABELS: Record<string, string> = {
 interface TestCaseDetailModalProps {
   testCase: TestCaseResponse;
   onClose: () => void;
+  onEdit?: () => void;
 }
 
-const TestCaseDetailModal: React.FC<TestCaseDetailModalProps> = ({ testCase, onClose }) => {
+const NON_EDITABLE_STATES = new Set(['PENDING_REVIEW', 'DONE']);
+
+const TestCaseDetailModal: React.FC<TestCaseDetailModalProps> = ({ testCase, onClose, onEdit }) => {
+  const showEdit = Boolean(onEdit) && !NON_EDITABLE_STATES.has(testCase.status);
   const [expandedSections, setExpandedSections] = React.useState<Set<string>>(new Set([
     'basic', 'person', 'exec', 'condition', 'automation', 'meta', 'custom', 'approval', 'time'
   ]));
@@ -157,7 +161,14 @@ const TestCaseDetailModal: React.FC<TestCaseDetailModalProps> = ({ testCase, onC
             <span style={styles.caseId}>{testCase.case_id}</span>
             <h2 style={styles.modalTitle}>{testCase.title}</h2>
           </div>
-          <button style={styles.closeButton} onClick={onClose}>×</button>
+          <div style={styles.headerActions}>
+            {showEdit && (
+              <button type="button" style={styles.editButton} onClick={onEdit}>
+                编辑
+              </button>
+            )}
+            <button type="button" style={styles.closeButton} onClick={onClose}>×</button>
+          </div>
         </div>
 
         <div style={styles.modalBody}>
@@ -396,6 +407,23 @@ const styles = {
     fontSize: '18px',
     fontWeight: 600,
     color: 'var(--text-primary)',
+  } as const,
+  headerActions: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    flexShrink: 0,
+  } as const,
+  editButton: {
+    padding: '6px 14px',
+    fontSize: '13px',
+    fontWeight: 500,
+    color: 'var(--text-primary)',
+    backgroundColor: 'var(--bg-primary)',
+    border: '1px solid var(--border-default)',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    transition: 'background-color var(--transition-fast), border-color var(--transition-fast)',
   } as const,
   closeButton: {
     fontSize: '28px',

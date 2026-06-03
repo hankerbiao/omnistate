@@ -141,29 +141,15 @@ class JWTConfig(BaseModel):
     audience: str = "tcm-frontend"
 
 
-class HttpDispatchConfig(BaseModel):
-    """HTTP 下发配置。"""
-
-    enabled: bool = False
-    target_url: str = ""  # 完整目标URL，如 "http://10.17.55.151:6600"
-    timeout_sec: int = 10
-    retry_times: int = 3
-    headers: dict[str, str] = Field(default_factory=dict)
-
-
 class ExecutionConfig(BaseModel):
     """任务执行配置。"""
 
-    dispatch_mode: str = "rabbitmq"  # 可选: rabbitmq, http
-    agent_dispatch_path: str = "/api/v1/tasks"
-    http_timeout_sec: int = 10
     scheduler_interval_sec: int = 60
     kafka_worker_agent_id: str = "execution-kafka-worker"
     kafka_worker_heartbeat_ttl_sec: int = 30
     kafka_worker_heartbeat_interval_sec: int = 10
     default_repo_url: str = ""
     default_branch: str = "master"
-    http_dispatch: HttpDispatchConfig = Field(default_factory=HttpDispatchConfig)
 
 
 class TmmsConfig(BaseModel):

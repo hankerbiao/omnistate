@@ -133,16 +133,14 @@ def build_task_request_payload(command: DispatchExecutionTaskCommand) -> Dict[st
 
 
 def normalize_dispatch_channel(dispatch_channel: str | None) -> str:
-    # 默认使用 RABBITMQ 下发
-    if dispatch_channel is None:
-        return "RABBITMQ"
-    normalized = dispatch_channel.strip().upper()
-    if normalized not in {"RABBITMQ", "HTTP"}:
-        logger.warning(
-            f"Unknown dispatch_channel '{dispatch_channel}', defaulting to RABBITMQ"
-        )
-        return "RABBITMQ"
-    return normalized
+    """固定使用 RabbitMQ 下发；忽略请求中的 dispatch_channel。"""
+    if dispatch_channel is not None:
+        normalized = dispatch_channel.strip().upper()
+        if normalized and normalized != "RABBITMQ":
+            logger.warning(
+                f"Ignoring dispatch_channel '{dispatch_channel}', only RABBITMQ is supported"
+            )
+    return "RABBITMQ"
 
 
 def ensure_actor_identity(actual_actor_id: str, expected_actor_id: str) -> None:
@@ -316,8 +314,7 @@ def _validate_case_collection_lengths(command: DispatchExecutionTaskCommand) -> 
 def _apply_defaults(command: DispatchExecutionTaskCommand) -> None:
     from app.shared.config import get_settings
     execution_cfg = get_settings().execution
-    if command.dispatch_channel is None:
-        command.dispatch_channel = execution_cfg.dispatch_mode.upper()
+    command.dispatch_channel = "RABBITMQ"
     if isinstance(command.repo_url, str) and not command.repo_url.strip():
         command.repo_url = None
     if isinstance(command.branch, str) and not command.branch.strip():

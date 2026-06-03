@@ -31,6 +31,7 @@ class WorkflowItemGateway(Protocol):
         content: str,
         creator_id: str,
         parent_item_id: str | None = None,
+        initial_state: str | None = None,
         session: AsyncClientSession | None = None,
     ) -> dict[str, Any]: ...
 

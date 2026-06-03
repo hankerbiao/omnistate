@@ -10,7 +10,7 @@
         "to_state": "PENDING_REVIEW",
         "target_owner_strategy": "TO_SPECIFIC_USER",
         "required_fields": ["target_owner_id", "priority"],
-        "properties": {"allowed_role_ids": ["TPM"]}
+        "properties": {"creator_only": true}
       },
       {
         "from_state": "PENDING_REVIEW",
@@ -18,7 +18,7 @@
         "to_state": "PENDING_DEVELOP",
         "target_owner_strategy": "TO_SPECIFIC_USER",
         "required_fields": ["target_owner_id", "comment"],
-        "properties": {"allowed_role_ids": ["TPM", "REVIEWER"]}
+        "properties": {"owner_only": true}
       },
       {
         "from_state": "PENDING_REVIEW",
@@ -26,7 +26,7 @@
         "to_state": "DRAFT",
         "target_owner_strategy": "TO_CREATOR",
         "required_fields": ["comment"],
-        "properties": {"allowed_role_ids": ["TPM", "REVIEWER"]}
+        "properties": {"owner_only": true}
       },
       {
         "from_state": "PENDING_DEVELOP",
@@ -34,7 +34,7 @@
         "to_state": "DEVELOPING",
         "target_owner_strategy": "KEEP",
         "required_fields": [],
-        "properties": {"allowed_role_ids": ["MANUAL_DEV", "AUTO_DEV"]}
+        "properties": {"owner_only": true}
       },
       {
         "from_state": "DEVELOPING",
@@ -42,7 +42,7 @@
         "to_state": "PENDING_TEST",
         "target_owner_strategy": "TO_SPECIFIC_USER",
         "required_fields": ["target_owner_id"],
-        "properties": {"allowed_role_ids": ["MANUAL_DEV", "AUTO_DEV"]}
+        "properties": {"owner_only": true}
       },
       {
         "from_state": "PENDING_TEST",
@@ -50,7 +50,7 @@
         "to_state": "PENDING_UAT",
         "target_owner_strategy": "TO_SPECIFIC_USER",
         "required_fields": ["target_owner_id"],
-        "properties": {"allowed_role_ids": ["QA", "TESTER"]}
+        "properties": {"owner_only": true}
       },
       {
         "from_state": "PENDING_TEST",
@@ -58,7 +58,7 @@
         "to_state": "DEVELOPING",
         "target_owner_strategy": "TO_SPECIFIC_USER",
         "required_fields": ["target_owner_id", "comment"],
-        "properties": {"allowed_role_ids": ["QA", "TESTER"]}
+        "properties": {"owner_only": true}
       },
       {
         "from_state": "PENDING_UAT",
@@ -66,7 +66,7 @@
         "to_state": "PENDING_RELEASE",
         "target_owner_strategy": "TO_SPECIFIC_USER",
         "required_fields": ["target_owner_id"],
-        "properties": {"allowed_role_ids": ["TPM", "QA", "TESTER"]}
+        "properties": {"owner_only": true}
       },
       {
         "from_state": "PENDING_UAT",
@@ -74,7 +74,7 @@
         "to_state": "DEVELOPING",
         "target_owner_strategy": "TO_SPECIFIC_USER",
         "required_fields": ["target_owner_id", "comment"],
-        "properties": {"allowed_role_ids": ["TPM", "QA", "TESTER"]}
+        "properties": {"owner_only": true}
       },
       {
         "from_state": "PENDING_RELEASE",
@@ -82,7 +82,7 @@
         "to_state": "RELEASED",
         "target_owner_strategy": "KEEP",
         "required_fields": [],
-        "properties": {"allowed_role_ids": ["TPM"]}
+        "properties": {"owner_only": true}
       }
     ]
   }

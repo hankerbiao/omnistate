@@ -33,7 +33,10 @@ class _TaskDispatchBase(BaseModel):
     """下发任务请求公共字段。RerunTaskRequest 复用所有字段并全部可选。"""
 
     trigger_source: Optional[str] = Field(None, description="触发来源，例如 web_ui")
-    dispatch_channel: Optional[str] = Field(None, description="下发通道，可选 RABBITMQ 或 HTTP")
+    dispatch_channel: Optional[str] = Field(
+        None,
+        description="已废弃，固定使用 RABBITMQ 下发，传入值会被忽略",
+    )
     agent_id: Optional[str] = Field(None, description="目标执行代理 ID")
     schedule_type: Optional[str] = Field(None, description="调度类型：IMMEDIATE 或 SCHEDULED")
     planned_at: Optional[datetime] = Field(None, description="计划执行时间（UTC）")
@@ -94,7 +97,7 @@ class DispatchTaskResponse(BaseModel):
     task_id: str = Field(..., description="平台内部任务 ID")
     source_task_id: Optional[str] = Field(None, description="重跑来源任务 ID")
     agent_id: Optional[str] = Field(None, description="当前绑定的目标代理 ID")
-    dispatch_channel: str = Field(..., description="任务实际下发通道，例如 RABBITMQ、HTTP")
+    dispatch_channel: str = Field(..., description="任务实际下发通道，固定为 RABBITMQ")
     dedup_key: Optional[str] = Field(None, description="任务去重键，用于识别语义相同的未完成任务")
     schedule_type: str = Field(..., description="调度类型：IMMEDIATE 或 SCHEDULED")
     schedule_status: str = Field(..., description="调度状态，例如 PENDING、READY、TRIGGERED、CANCELLED；不表达下发结果")
@@ -115,7 +118,7 @@ class ExecutionTaskListItem(BaseModel):
     task_id: str = Field(..., description="平台内部任务 ID")
     source_task_id: Optional[str] = Field(None, description="重跑来源任务 ID")
     agent_id: Optional[str] = Field(None, description="目标代理 ID")
-    dispatch_channel: str = Field(..., description="当前任务使用的下发通道")
+    dispatch_channel: str = Field(..., description="当前任务使用的下发通道，固定为 RABBITMQ")
     dedup_key: Optional[str] = Field(None, description="任务去重键")
     schedule_type: str = Field(..., description="调度类型")
     schedule_status: str = Field(..., description="调度状态，不表达下发结果")
