@@ -16,7 +16,8 @@ from app.modules.execution.application.task_command_helpers import (
 from app.modules.execution.application.task_dispatch_service import ExecutionDispatchService
 from app.modules.execution.repository.models import ExecutionTaskDoc
 from app.modules.execution.schemas import DispatchTaskRequest, RerunTaskRequest
-from app.shared.core.logger import log as logger
+from app.modules.execution.shared.execution_context import execution_scope, set_execution_context
+from app.modules.execution.shared.execution_log import ExecutionNode, elog
 from app.shared.service import SequenceIdService
 
 
@@ -35,11 +36,7 @@ class ExecutionTaskCommandService:
 
     @staticmethod
     async def _enrich_case_file_params(parameters: Dict[str, Any], attachment_service: AttachmentService) -> Dict[str, Any]:
-        """Detect file-type parameters and enrich with download URLs.
-
-        Looks for values like {"type": "file", "file_id": "xxx"} in parameters
-        and replaces them with enriched data including download_url.
-        """
+        """Detect file-type parameters and enrich with download URLs."""
         result = dict(parameters)
         for key, value in result.items():
             if isinstance(value, dict) and value.get("type") == "file" and value.get("file_id"):
@@ -61,17 +58,22 @@ class ExecutionTaskCommandService:
             }
             for item in request.cases
         ]
-        logger.info(
-            "Dispatch task request received: "
-            f"user_id={actor_id}, "
-            f"dispatch_channel={request.dispatch_channel}, "
-            f"schedule_type={request.schedule_type}, planned_at={request.planned_at}, "
-            f"cases={request_case_payload}"
+        elog(
+            "info",
+            ExecutionNode.TASK_CREATE,
+            "dispatch task request received",
+            actor_id=actor_id,
+            dispatch_channel=request.dispatch_channel,
+            schedule_type=request.schedule_type,
+            planned_at=str(request.planned_at) if request.planned_at else None,
+            case_count=len(request.cases),
+            cases=request_case_payload,
         )
 
         year = datetime.now().year
         seq = await sequence_service.next(f"execution_task:{year}")
         task_id = f"ET-{year}-{str(seq).zfill(6)}"
+        set_execution_context(task_id=task_id, agent_id=request.agent_id)
 
         auto_case_ids = [item.auto_case_id for item in request.cases]
         case_configs = [dict(item.config) for item in request.cases]
@@ -89,14 +91,17 @@ class ExecutionTaskCommandService:
             }
             for item, binding in zip(request.cases, dispatch_bindings)
         ]
-        # Per-case file parameter enrichment: detect type=file params and inject download_url
         for payload in case_payloads:
             payload["parameters"] = await self._enrich_case_file_params(payload["parameters"], self._attachment_service)
-        logger.debug(
-            "Dispatch task case bindings resolved: "
-            f"task_id={task_id}, auto_case_ids={auto_case_ids}, case_ids={case_ids}, "
-            f"script_entity_ids={script_entity_ids}, case_configs={case_configs}, "
-            f"case_payloads={case_payloads}"
+        elog(
+            "debug",
+            ExecutionNode.TASK_CREATE,
+            "dispatch task case bindings resolved",
+            auto_case_ids=auto_case_ids,
+            case_ids=case_ids,
+            script_entity_ids=script_entity_ids,
+            case_configs=case_configs,
+            case_payloads=case_payloads,
         )
 
         command = DispatchExecutionTaskCommand(
@@ -122,25 +127,39 @@ class ExecutionTaskCommandService:
         )
         initialize_command(command)
 
-        data = await self._dispatch_service.create_task_from_command(command, actor_id=actor_id)
-        logger.info(
-            "Dispatch task request handled successfully: "
-            f"task_id={task_id}, "
-            f"dispatch_status={data.get('dispatch_status')}, overall_status={data.get('overall_status')}, "
-            f"case_count={data.get('case_count')}"
+        async with execution_scope(task_id=task_id, agent_id=request.agent_id, node=ExecutionNode.TASK_CREATE.value):
+            data = await self._dispatch_service.create_task_from_command(command, actor_id=actor_id)
+
+        elog(
+            "info",
+            ExecutionNode.TASK_CREATE,
+            "dispatch task request handled successfully",
+            outcome="success",
+            after={
+                "dispatch_status": data.get("dispatch_status"),
+                "overall_status": data.get("overall_status"),
+                "case_count": data.get("case_count"),
+            },
         )
         return data
 
     async def delete_task(self, task_id: str, actor_id: str) -> Dict[str, Any]:
         """删除执行任务（逻辑删除）。"""
-        task_doc = await ExecutionTaskDoc.find_one({"task_id": task_id, "is_deleted": False})
-        if not task_doc:
-            raise KeyError(f"Task not found: {task_id}")
-        ensure_actor_identity(actor_id, task_doc.created_by)
+        async with execution_scope(task_id=task_id, node=ExecutionNode.TASK_DELETE.value):
+            task_doc = await ExecutionTaskDoc.find_one({"task_id": task_id, "is_deleted": False})
+            if not task_doc:
+                raise KeyError(f"Task not found: {task_id}")
+            ensure_actor_identity(actor_id, task_doc.created_by)
 
-        task_doc.is_deleted = True
-        await task_doc.save()
-        logger.info(f"Execution task marked deleted: task_id={task_id}, actor_id={actor_id}")
+            task_doc.is_deleted = True
+            await task_doc.save()
+            elog(
+                "info",
+                ExecutionNode.TASK_DELETE,
+                "execution task marked deleted",
+                outcome="success",
+                actor_id=actor_id,
+            )
 
         return {"task_id": task_id, "deleted": True}
 
@@ -175,13 +194,17 @@ class ExecutionTaskCommandService:
             actor_id=actor_id,
             dispatch_bindings=dispatch_bindings,
         )
-        # Re-enrich file-type params in each case (refresh download URLs)
         for i in range(len(command.case_payloads)):
             params = command.case_payloads[i].get("parameters") or {}
             command.case_payloads[i]["parameters"] = await self._enrich_case_file_params(params, self._attachment_service)
         command.attachments = []
-        logger.info(
-            "Rerunning execution task as new task: "
-            f"source_task_id={source_task_id}, new_task_id={new_task_id}, actor_id={actor_id}"
+
+        elog(
+            "info",
+            ExecutionNode.TASK_RERUN,
+            "rerunning execution task as new task",
+            source_task_id=source_task_id,
+            actor_id=actor_id,
         )
-        return await self._dispatch_service.create_task_from_command(command, actor_id=actor_id)
+        async with execution_scope(task_id=new_task_id, node=ExecutionNode.TASK_RERUN.value):
+            return await self._dispatch_service.create_task_from_command(command, actor_id=actor_id)

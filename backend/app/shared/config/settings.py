@@ -198,6 +198,22 @@ class LoggingConfig(BaseModel):
     log_dir: str = "logs"
     retention: LoggingRetentionConfig = Field(default_factory=LoggingRetentionConfig)
 
+    # ====== 新增：结构化日志 ======
+    json_format: bool = True
+    """文件日志使用 JSON Lines 格式输出。"""
+
+    enable_compress: bool = True
+    """轮转日志文件自动 .gz 压缩。"""
+
+    trace_enabled: bool = True
+    """启用全链路追踪（request_id / trace_id）。"""
+
+    slow_query_threshold_ms: int = 200
+    """慢查询阈值（毫秒，预留字段）。"""
+
+    module_levels: dict[str, str] = Field(default_factory=dict)
+    """按模块路径独立控制日志级别，如 {"app.modules.auth": "WARNING"}。"""
+
 
 # =============================================================================
 # 主配置类

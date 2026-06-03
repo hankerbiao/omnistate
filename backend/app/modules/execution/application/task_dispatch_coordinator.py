@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from time import perf_counter
 from typing import List
 
 from app.modules.execution.application.commands import DispatchExecutionTaskCommand
@@ -14,7 +15,8 @@ from app.modules.execution.repository.models import (
     ExecutionTaskDoc,
 )
 from app.modules.execution.service.task_dispatcher import ExecutionTaskDispatcher
-from app.shared.core.logger import log as logger
+from app.modules.execution.shared.execution_context import execution_scope
+from app.modules.execution.shared.execution_log import ExecutionNode, elog
 
 
 class ExecutionTaskDispatchCoordinator:
@@ -111,61 +113,102 @@ class ExecutionTaskDispatchCoordinator:
         command: DispatchExecutionTaskCommand,
     ) -> None:
         """对已有任务执行真正下发。"""
-        logger.debug(
-            "Dispatching execution task case: "
-            f"task_id={command.task_id}, case_id={command.dispatch_case_id}, "
-            f"case_index={command.dispatch_case_index}, "
-            f"agent_id={command.agent_id}"
-        )
-        dispatch_result = await self._dispatcher.dispatch(command)
-        case_doc = await ExecutionTaskCaseDoc.find_one({
-            "task_id": task_doc.task_id,
-            "case_id": command.dispatch_case_id,
-            "is_deleted": False,
-        })
-        dispatch_time = datetime.now(timezone.utc)
-        task_doc.dispatch_channel = dispatch_result.channel
-        task_doc.dispatch_status = DispatchStatus.DISPATCHED if dispatch_result.success else DispatchStatus.DISPATCH_FAILED
-        task_doc.dispatch_error = dispatch_result.error
-        task_doc.dispatch_response = dispatch_result.response
-        task_doc.schedule_status = ScheduleStatus.TRIGGERED
-        task_doc.current_case_id = command.dispatch_case_id
-        task_doc.current_case_index = command.dispatch_case_index
-        if not task_doc.triggered_at:
-            task_doc.triggered_at = dispatch_time
-        if dispatch_result.success:
-            task_doc.overall_status = OverallStatus.QUEUED
-            task_doc.finished_at = None
-        else:
-            task_doc.overall_status = OverallStatus.FAILED
-            task_doc.finished_at = dispatch_time
-        await task_doc.save()
+        before_status = {
+            "dispatch_status": task_doc.dispatch_status,
+            "overall_status": task_doc.overall_status,
+            "current_case_id": task_doc.current_case_id,
+            "current_case_index": task_doc.current_case_index,
+        }
+        async with execution_scope(
+            task_id=command.task_id,
+            case_id=command.dispatch_case_id,
+            agent_id=command.agent_id,
+            node=ExecutionNode.TASK_DISPATCH.value,
+        ):
+            elog(
+                "debug",
+                ExecutionNode.TASK_DISPATCH,
+                "dispatching execution task case",
+                case_index=command.dispatch_case_index,
+            )
+            start = perf_counter()
+            dispatch_result = await self._dispatcher.dispatch(command)
+            elapsed_ms = (perf_counter() - start) * 1000
 
-        if case_doc:
-            case_doc.dispatch_attempts += 1
-            case_doc.dispatch_status = DispatchStatus.DISPATCHED if dispatch_result.success else DispatchStatus.DISPATCH_FAILED
-            case_doc.dispatched_at = dispatch_time
-            await case_doc.save()
-            logger.debug(
-                "Updated execution case dispatch state: "
-                f"task_id={case_doc.task_id}, case_id={case_doc.case_id}, "
-                f"dispatch_status={case_doc.dispatch_status}, attempts={case_doc.dispatch_attempts}"
+            case_doc = await ExecutionTaskCaseDoc.find_one({
+                "task_id": task_doc.task_id,
+                "case_id": command.dispatch_case_id,
+                "is_deleted": False,
+            })
+            dispatch_time = datetime.now(timezone.utc)
+            task_doc.dispatch_channel = dispatch_result.channel
+            task_doc.dispatch_status = (
+                DispatchStatus.DISPATCHED if dispatch_result.success else DispatchStatus.DISPATCH_FAILED
             )
-        else:
-            logger.warning(
-                "Execution case doc missing during dispatch: "
-                f"task_id={task_doc.task_id}, case_id={command.dispatch_case_id}"
-            )
+            task_doc.dispatch_error = dispatch_result.error
+            task_doc.dispatch_response = dispatch_result.response
+            task_doc.schedule_status = ScheduleStatus.TRIGGERED
+            task_doc.current_case_id = command.dispatch_case_id
+            task_doc.current_case_index = command.dispatch_case_index
+            if not task_doc.triggered_at:
+                task_doc.triggered_at = dispatch_time
+            if dispatch_result.success:
+                task_doc.overall_status = OverallStatus.QUEUED
+                task_doc.finished_at = None
+            else:
+                task_doc.overall_status = OverallStatus.FAILED
+                task_doc.finished_at = dispatch_time
+            await task_doc.save()
 
-        if dispatch_result.success:
-            logger.info(
-                "Successfully dispatched execution task case: "
-                f"task_id={command.task_id}, case_id={command.dispatch_case_id}, "
-                f"channel={dispatch_result.channel}"
-            )
-        else:
-            logger.warning(
-                "Failed to dispatch execution task case: "
-                f"task_id={command.task_id}, case_id={command.dispatch_case_id}, "
-                f"channel={dispatch_result.channel}, error={dispatch_result.error}"
-            )
+            after_status = {
+                "dispatch_status": task_doc.dispatch_status,
+                "overall_status": task_doc.overall_status,
+                "current_case_id": task_doc.current_case_id,
+                "current_case_index": task_doc.current_case_index,
+            }
+
+            if case_doc:
+                case_doc.dispatch_attempts += 1
+                case_doc.dispatch_status = (
+                    DispatchStatus.DISPATCHED if dispatch_result.success else DispatchStatus.DISPATCH_FAILED
+                )
+                case_doc.dispatched_at = dispatch_time
+                await case_doc.save()
+                elog(
+                    "debug",
+                    ExecutionNode.TASK_DISPATCH,
+                    "updated execution case dispatch state",
+                    dispatch_attempts=case_doc.dispatch_attempts,
+                    case_dispatch_status=case_doc.dispatch_status,
+                )
+            else:
+                elog(
+                    "warning",
+                    ExecutionNode.TASK_DISPATCH,
+                    "execution case doc missing during dispatch",
+                    outcome="failed",
+                )
+
+            if dispatch_result.success:
+                elog(
+                    "info",
+                    ExecutionNode.TASK_DISPATCH,
+                    "successfully dispatched execution task case",
+                    outcome="success",
+                    channel=dispatch_result.channel,
+                    before=before_status,
+                    after=after_status,
+                    duration_ms=elapsed_ms,
+                )
+            else:
+                elog(
+                    "warning",
+                    ExecutionNode.TASK_DISPATCH,
+                    "failed to dispatch execution task case",
+                    outcome="failed",
+                    channel=dispatch_result.channel,
+                    error=dispatch_result.error,
+                    before=before_status,
+                    after=after_status,
+                    duration_ms=elapsed_ms,
+                )

@@ -8,7 +8,9 @@ from typing import Any, Dict
 
 from app.modules.execution.application.commands import DispatchExecutionTaskCommand
 from app.modules.execution.application.task_command_helpers import build_dispatch_task_data
-from app.shared.core.logger import log as logger
+from app.modules.execution.shared.execution_context import execution_scope
+from app.modules.execution.shared.execution_log import ExecutionNode, elog
+from app.shared.context import trace_scope
 from app.shared.http import get_http_dispatch_client
 from app.shared.kafka import TaskMessage
 
@@ -36,8 +38,7 @@ class ExecutionTaskDispatcher:
 
         if mode == "http":
             return await self._dispatch_via_http(command)
-        else:
-            return await self._dispatch_via_rabbitmq(command)
+        return await self._dispatch_via_rabbitmq(command)
 
     def _dispatch_via_rabbitmq(self, command: DispatchExecutionTaskCommand) -> DispatchResult:
         """通过 RabbitMQ 下发任务。"""
@@ -61,19 +62,27 @@ class ExecutionTaskDispatcher:
             source="dmlv4-execution-api",
             priority=1,
         )
-        logger.info(
-            "Dispatching execution task via RabbitMQ: "
-            f"task_id={command.task_id}, queue=dmlv4.tasks, agent_id={command.agent_id}"
+        elog(
+            "info",
+            ExecutionNode.TASK_DISPATCH,
+            "dispatching execution task via RabbitMQ",
+            channel="RABBITMQ",
+            queue="dmlv4.tasks",
         )
-        logger.debug(
-            "RabbitMQ execution dispatch payload: "
-            f"task_id={command.task_id}, payload={task_data}"
+        elog(
+            "debug",
+            ExecutionNode.TASK_DISPATCH,
+            "RabbitMQ execution dispatch payload",
+            payload=task_data,
         )
         success = rabbitmq_manager.send_task(task_message)
         if success:
-            logger.info(
-                "RabbitMQ execution dispatch accepted: "
-                f"task_id={command.task_id}, agent_id={command.agent_id}"
+            elog(
+                "info",
+                ExecutionNode.TASK_DISPATCH,
+                "RabbitMQ execution dispatch accepted",
+                outcome="success",
+                channel="RABBITMQ",
             )
             return DispatchResult(
                 success=True,
@@ -82,9 +91,12 @@ class ExecutionTaskDispatcher:
                 response={"accepted": True, "message": "Task dispatched to RabbitMQ successfully"},
             )
 
-        logger.warning(
-            "RabbitMQ execution dispatch rejected: "
-            f"task_id={command.task_id}, agent_id={command.agent_id}"
+        elog(
+            "warning",
+            ExecutionNode.TASK_DISPATCH,
+            "RabbitMQ execution dispatch rejected",
+            outcome="failed",
+            channel="RABBITMQ",
         )
         return DispatchResult(
             success=False,
@@ -119,7 +131,6 @@ class ExecutionTaskDispatcher:
                 error="HTTP target_url is empty in configuration",
             )
 
-        # 构造完整 URL
         path = settings.execution.agent_dispatch_path
         full_url = f"{http_cfg.target_url.rstrip('/')}/{path.lstrip('/')}"
 
@@ -127,20 +138,21 @@ class ExecutionTaskDispatcher:
         task_id = command.task_id
         agent_id = command.agent_id
 
-        logger.info(
-            f"[HTTP DISPATCH] Starting async HTTP dispatch (fire-and-forget):\n"
-            f"  task_id={task_id}\n"
-            f"  url={full_url}\n"
-            f"  agent_id={agent_id}\n"
-            f"  timeout={http_cfg.timeout_sec}s"
+        elog(
+            "info",
+            ExecutionNode.TASK_DISPATCH,
+            "starting async HTTP dispatch",
+            channel="HTTP",
+            url=full_url,
+            timeout_sec=http_cfg.timeout_sec,
         )
-        logger.debug(
-            f"[HTTP DISPATCH] Full payload:\n"
-            f"  task_id={task_id}\n"
-            f"  payload={task_data}"
+        elog(
+            "debug",
+            ExecutionNode.TASK_DISPATCH,
+            "HTTP dispatch payload",
+            payload=task_data,
         )
 
-        # 异步 fire-and-forget: 创建后台任务执行 HTTP 请求
         asyncio.create_task(
             self._http_dispatch_background(
                 full_url=full_url,
@@ -153,9 +165,12 @@ class ExecutionTaskDispatcher:
             )
         )
 
-        # 立即返回成功，不等待 HTTP 响应
-        logger.info(
-            f"[HTTP DISPATCH] Dispatch initiated (async): task_id={task_id}, agent_id={agent_id}"
+        elog(
+            "info",
+            ExecutionNode.TASK_DISPATCH,
+            "HTTP dispatch initiated",
+            outcome="accepted",
+            channel="HTTP",
         )
         return DispatchResult(
             success=True,
@@ -175,35 +190,44 @@ class ExecutionTaskDispatcher:
         retry_times: int,
     ) -> None:
         """后台执行 HTTP 请求（不阻塞主流程）。"""
-        try:
-            http_client = get_http_dispatch_client()
-            success, response_data, error = await http_client.post_json(
-                url=full_url,
-                data=task_data["data"],
-                timeout_sec=timeout_sec,
-                headers=headers,
-                retry_times=retry_times,
-            )
+        async with trace_scope(request_id=f"http-dispatch:{task_id}"):
+            async with execution_scope(
+                task_id=task_id,
+                agent_id=agent_id or "-",
+                node=ExecutionNode.HTTP_DISPATCH_BG.value,
+            ):
+                try:
+                    http_client = get_http_dispatch_client()
+                    success, response_data, error = await http_client.post_json(
+                        url=full_url,
+                        data=task_data["data"],
+                        timeout_sec=timeout_sec,
+                        headers=headers,
+                        retry_times=retry_times,
+                    )
 
-            if success:
-                logger.info(
-                    f"[HTTP DISPATCH] Background dispatch success:\n"
-                    f"  task_id={task_id}\n"
-                    f"  agent_id={agent_id}\n"
-                    f"  response_keys={list(response_data.keys()) if response_data else []}"
-                )
-            else:
-                logger.warning(
-                    f"[HTTP DISPATCH] Background dispatch failed:\n"
-                    f"  task_id={task_id}\n"
-                    f"  agent_id={agent_id}\n"
-                    f"  error={error}"
-                )
+                    if success:
+                        elog(
+                            "info",
+                            ExecutionNode.HTTP_DISPATCH_BG,
+                            "HTTP background dispatch success",
+                            outcome="success",
+                            response_keys=list(response_data.keys()) if response_data else [],
+                        )
+                    else:
+                        elog(
+                            "warning",
+                            ExecutionNode.HTTP_DISPATCH_BG,
+                            "HTTP background dispatch failed",
+                            outcome="failed",
+                            error=error,
+                        )
 
-        except Exception as e:
-            logger.error(
-                f"[HTTP DISPATCH] Background dispatch exception:\n"
-                f"  task_id={task_id}\n"
-                f"  agent_id={agent_id}\n"
-                f"  error={e}"
-            )
+                except Exception as exc:
+                    elog(
+                        "error",
+                        ExecutionNode.HTTP_DISPATCH_BG,
+                        "HTTP background dispatch exception",
+                        outcome="failed",
+                        error=str(exc),
+                    )

@@ -15,6 +15,7 @@ from typing import Any
 
 from kafka import KafkaConsumer
 
+from app.shared.context import trace_scope
 from app.shared.core.logger import log
 from app.shared.kafka.config import ConsumerSubscription, KafkaConfig, load_kafka_config
 from app.shared.kafka.dead_letter import DeadLetterMessage, KafkaDeadLetterPublisher
@@ -132,8 +133,10 @@ class KafkaConsumerRunner:
                     "subscription_name": runtime.subscription_name,
                 }
                 payload = self._parse_payload(record.value)
+                request_id = f"kafka:{record.topic}:{record.partition}:{record.offset}"
                 try:
-                    await self.router.dispatch(record.topic, payload, metadata)
+                    async with trace_scope(request_id=request_id):
+                        await self.router.dispatch(record.topic, payload, metadata)
                     # handler 成功后提交 offset，确保消息不会重复消费。
                     await asyncio.to_thread(runtime.consumer.commit)
                 except Exception as exc:

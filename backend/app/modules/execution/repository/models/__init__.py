@@ -4,6 +4,7 @@ from .execution import (
     ExecutionTaskDoc,
     ExecutionTaskCaseDoc,
 )
+from .execution_biz_log import ExecutionBizLogDoc
 from .execution_event import ExecutionEventDoc
 
 
@@ -12,12 +13,14 @@ __all__ = [
     "ExecutionTaskCaseDoc",
     "ExecutionAgentDoc",
     "ExecutionEventDoc",
+    "ExecutionBizLogDoc",
     "DOCUMENT_MODELS",
 ]
 
 DOCUMENT_MODELS = [
     ExecutionAgentDoc,
     ExecutionEventDoc,
+    ExecutionBizLogDoc,
     ExecutionTaskDoc,
     ExecutionTaskCaseDoc,
 ]

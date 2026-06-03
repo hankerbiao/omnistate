@@ -12,7 +12,8 @@ from app.modules.execution.repository.models import (
     ExecutionTaskDoc,
 )
 from app.modules.execution.schemas.kafka_events import TestEvent
-from app.shared.core.logger import log as logger
+from app.modules.execution.shared.execution_context import set_execution_context
+from app.modules.execution.shared.execution_log import ExecutionNode, elog
 
 
 class ExecutionEventIngestService:
@@ -60,24 +61,38 @@ class ExecutionEventIngestService:
         """
         # 先把原始 payload 校验成统一的事件模型，后续逻辑全部围绕强类型字段展开。
         event = TestEvent.model_validate(event_payload)
-        logger.debug(
-            "Ingesting execution event: "
-            f"topic={topic}, task_id={event.task_id}, case_id={event.case_id}, "
-            f"event_id={event.event_id}, event_type={event.event_type}, "
-            f"phase={event.phase}, offset={metadata.get('offset')}"
+        set_execution_context(
+            task_id=event.task_id,
+            case_id=event.case_id or "-",
+            event_id=event.event_id,
+        )
+        elog(
+            "debug",
+            ExecutionNode.EVENT_INGEST,
+            "ingesting execution event",
+            topic=topic,
+            event_type=event.event_type,
+            phase=event.phase,
+            offset=metadata.get("offset"),
         )
         existing = await ExecutionEventDoc.find_one({"event_id": event.event_id})
         if existing is not None:
-            logger.debug(
-                f"Skipping duplicate execution event: event_id={event.event_id}, task_id={event.task_id}"
+            elog(
+                "debug",
+                ExecutionNode.EVENT_INGEST,
+                "skipping duplicate execution event",
+                outcome="skipped",
             )
             return False
 
         event_time = event.timestamp.astimezone(timezone.utc)
         task_doc = await ExecutionTaskDoc.find_one({"task_id": event.task_id, "is_deleted": False})
         if task_doc is None:
-            logger.warning(
-                f"Execution task not found for event: task_id={event.task_id}, event_id={event.event_id}"
+            elog(
+                "warning",
+                ExecutionNode.EVENT_INGEST,
+                "execution task not found for event",
+                outcome="failed",
             )
             await self._archive_event(
                 topic=topic,
@@ -98,9 +113,11 @@ class ExecutionEventIngestService:
                 process_error=None,
             )
         except Exception:
-            logger.warning(
-                f"Duplicate event_id detected during insert (concurrent): "
-                f"event_id={event.event_id}, task_id={event.task_id}"
+            elog(
+                "warning",
+                ExecutionNode.EVENT_INGEST,
+                "duplicate event_id detected during insert",
+                outcome="skipped",
             )
             return False
 
@@ -112,12 +129,13 @@ class ExecutionEventIngestService:
                 "is_deleted": False,
             })
             if case_doc is None:
-                logger.warning(
-                    "Execution case not found for event: "
-                    f"task_id={event.task_id}, case_id={event.case_id}, event_id={event.event_id}"
+                elog(
+                    "warning",
+                    ExecutionNode.EVENT_INGEST,
+                    "execution case not found for event",
+                    outcome="failed",
                 )
 
-        # 把外部事件语义映射为平台统一 case 状态，例如 RUNNING/PASSED/FAILED。
         case_status = resolve_case_status(
             event_type=event.event_type,
             phase=event.phase,
@@ -125,7 +143,7 @@ class ExecutionEventIngestService:
             failed_cases=event.failed_cases,
         )
         if case_doc is not None:
-            # case 当前态更新只在 case 文档存在时执行；不存在时只记录警告，不阻塞任务聚合。
+            before_case_status = case_doc.status
             self._apply_case_event(
                 target=case_doc,
                 event=event,
@@ -133,24 +151,40 @@ class ExecutionEventIngestService:
                 resolved_status=case_status,
             )
             await case_doc.save()
-            logger.debug(
-                "Updated execution case from event: "
-                f"task_id={case_doc.task_id}, case_id={case_doc.case_id}, "
-                f"status={case_doc.status}, progress={case_doc.progress_percent}, "
-                f"event_count={case_doc.event_count}"
+            elog(
+                "debug",
+                ExecutionNode.CASE_UPDATE,
+                "updated execution case from event",
+                outcome="success",
+                before={"status": before_case_status},
+                after={
+                    "status": case_doc.status,
+                    "progress_percent": case_doc.progress_percent,
+                    "event_count": case_doc.event_count,
+                },
             )
 
-        # 无论是否找到 case 文档，任务级聚合都要继续做，因为任务整体进度仍然有意义。
+        before_task_status = {
+            "overall_status": task_doc.overall_status,
+            "finished_case_count": task_doc.finished_case_count,
+            "current_case_id": getattr(task_doc, "current_case_id", None),
+        }
         self._apply_task_aggregate(task_doc, event, event_time)
         await task_doc.save()
-        logger.debug(
-            "Updated execution task aggregate from event: "
-            f"task_id={task_doc.task_id}, overall_status={task_doc.overall_status}, "
-            f"current_case_id={getattr(task_doc, 'current_case_id', None)}, "
-            f"current_case_index={getattr(task_doc, 'current_case_index', None)}, "
-            f"finished_case_count={task_doc.finished_case_count}, "
-            f"failed_case_count={task_doc.failed_case_count}, "
-            f"progress={task_doc.progress_percent}"
+        elog(
+            "debug",
+            ExecutionNode.EVENT_INGEST,
+            "updated execution task aggregate from event",
+            outcome="success",
+            before=before_task_status,
+            after={
+                "overall_status": task_doc.overall_status,
+                "current_case_id": getattr(task_doc, "current_case_id", None),
+                "current_case_index": getattr(task_doc, "current_case_index", None),
+                "finished_case_count": task_doc.finished_case_count,
+                "failed_case_count": task_doc.failed_case_count,
+                "progress_percent": task_doc.progress_percent,
+            },
         )
         # case_finish 后需要判断是任务结束，还是自动推进到下一条 case。
         await self._advance_task_after_case_finish(

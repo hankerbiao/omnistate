@@ -13,6 +13,7 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.shared.config import get_settings
+from app.shared.context import set_operation_context
 from app.modules.auth.repository.models import UserDoc, RoleDoc, PermissionDoc
 
 
@@ -128,6 +129,13 @@ async def get_current_user(
             )
         data = user.model_dump()
         data["id"] = str(user.id)
+
+        set_operation_context(
+            user_id=str(user.user_id),
+            username=getattr(user, "username", "") or getattr(user, "display_name", ""),
+            role_ids=[str(r) for r in (data.get("role_ids") or [])],
+        )
+
         return data
 
     # 正式模式：必须提供有效 token
@@ -150,6 +158,14 @@ async def get_current_user(
 
     data = user.model_dump()
     data["id"] = str(user.id)
+
+    # 设置操作上下文，供日志系统使用
+    set_operation_context(
+        user_id=str(user.user_id),
+        username=getattr(user, "username", "") or getattr(user, "display_name", ""),
+        role_ids=[str(r) for r in (data.get("role_ids") or [])],
+    )
+
     return data
 
 

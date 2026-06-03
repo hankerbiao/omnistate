@@ -40,6 +40,58 @@
 - 基于 `event_id` 做幂等
 - 保存原始 Kafka 事件和元数据
 
+### 4. `ExecutionBizLogDoc`
+
+平台侧业务轨迹表（非 Kafka 原始事件）。
+
+职责：
+
+- 记录平台业务节点（创建、下发、事件入库、自动推进、任务完成等）
+- 支持按 `task_id` 查询时间线，便于排障
+
+## 日志体系
+
+### 结构化日志
+
+- 共享层：[`app/shared/core/logger.py`](../../shared/core/logger.py) — JSON Lines、`app.log` / `error.log` / `execution.log`
+- 模块层：[`shared/execution_log.py`](shared/execution_log.py) — `ExecutionNode` 枚举 + `elog()` API
+- 上下文：[`shared/execution_context.py`](shared/execution_context.py) — `task_id` / `case_id` / `event_id` 自动注入
+
+### 业务节点（ExecutionNode）
+
+| 节点 | 含义 |
+|------|------|
+| `task.create` | 创建任务 |
+| `task.dispatch` | 下发 case |
+| `event.ingest` | Kafka 事件入库与聚合 |
+| `case.update` | case 状态更新 |
+| `task.advance` | 自动推进下一条 case |
+| `task.complete` | 任务收口完成 |
+| `task.delete` / `task.rerun` | 删除 / 重跑 |
+| `scheduler.tick` | 定时任务扫描触发 |
+| `kafka.batch` / `kafka.result` | Kafka 批量 / 结果消息 |
+| `http.dispatch.bg` | HTTP 异步下发后台任务 |
+
+### 排障示例
+
+```bash
+# 按 task_id 过滤 execution 域日志
+cat logs/execution.log | jq 'select(.task_id=="ET-2026-000001")'
+
+# 按 request_id 关联 HTTP 入口
+cat logs/app.log | jq 'select(.request_id=="req_abc123")'
+
+# API 查询业务轨迹
+GET /api/v1/execution/tasks/{task_id}/biz-logs
+```
+
+### 日志级别约定
+
+- **INFO**：业务节点成功（下发成功、推进下一条、任务完成）
+- **WARNING**：可恢复异常（重复 event、case 缺失、下发失败）
+- **ERROR**：需人工介入（auto-advance 失败、Kafka batch 单条失败）
+- **DEBUG**：payload 预览、状态机 skip 原因
+
 ## 执行模型
 
 入口：`POST /api/v1/execution/tasks/dispatch`
@@ -96,6 +148,8 @@
   查询任务列表和 case 当前执行情况
 - `GET /api/v1/execution/tasks/{task_id}/status`
   查询任务当前状态
+- `GET /api/v1/execution/tasks/{task_id}/biz-logs`
+  查询任务平台侧业务轨迹日志（排障时间线）
 
 ### 代理
 

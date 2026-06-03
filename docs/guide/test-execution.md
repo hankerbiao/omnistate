@@ -289,6 +289,21 @@ python scripts/mock_test_framework.py
 | 首条 case 执行完不继续下一条 | 确认 Kafka Worker 是否在线，确认 `test-events` 是否到达 |
 | 任务列表看不到 case 细节 | 确认 `ExecutionTaskCaseDoc` 是否已创建 |
 
+## 9.1 日志排障 Runbook
+
+1. **拿到关联键**：用户报障时优先收集 `task_id`（如 `ET-2026-000001`）或 HTTP 响应头 `X-Request-ID`。
+2. **查平台业务轨迹**：
+   ```bash
+   GET /api/v1/execution/tasks/{task_id}/biz-logs
+   ```
+3. **查 execution 域文件日志**：
+   ```bash
+   cat backend/logs/execution.log | jq 'select(.task_id=="ET-2026-000001")'
+   ```
+4. **关联 HTTP 入口**：用 `request_id` 在 `app.log` 中搜索创建/下发节点。
+5. **核对 Kafka 事件**：在 MongoDB `execution_events` 集合按 `task_id` 查询，确认外部事件是否入库。
+6. **自动推进未触发**：在日志中搜索 `task.advance` 节点，关注 `outcome=skipped` 及 skip 原因（case 非终态、乱序 event 等）。
+
 ## 10. 代码入口
 
 | 文件 | 职责 |
@@ -302,5 +317,7 @@ python scripts/mock_test_framework.py
 | `app/modules/execution/application/event_ingest_service.py` | 事件消费与状态聚合 |
 | `app/modules/execution/application/progress_coordinator.py` | case 完成后自动推进 |
 | `app/modules/execution/service/task_dispatcher.py` | RABBITMQ/HTTP 通道实现 |
+| `app/modules/execution/shared/execution_log.py` | 结构化日志 `elog()` 与业务节点枚举 |
+| `app/modules/execution/shared/execution_context.py` | execution 业务上下文（contextvars） |
 | `app/workers/kafka_worker_main.py` | Kafka Worker 入口 |
 | `app/workers/rabbitmq_worker_main.py` | RabbitMQ Worker 入口 |

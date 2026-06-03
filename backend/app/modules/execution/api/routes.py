@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.modules.execution.application.agent_service import ExecutionAgentService
 from app.modules.execution.application.task_command_service import ExecutionTaskCommandService
@@ -18,10 +18,10 @@ from app.modules.execution.schemas import (
     ExecutionTaskListItem,
     RerunTaskRequest,
 )
-from app.shared.service import SequenceIdService
+from app.modules.execution.shared.execution_log import ExecutionNode, elog
 from app.shared.api.schemas.base import APIResponse
 from app.shared.auth import get_current_user, require_permission
-from app.shared.core.logger import log as logger
+from app.shared.service import SequenceIdService
 
 router = APIRouter(prefix="/execution", tags=["Execution"])
 
@@ -84,25 +84,36 @@ async def dispatch_task(
         return APIResponse(data=data)
 
     except ValueError as exc:
-        logger.warning(
-            "Dispatch task request rejected with validation error: "
-            f"user_id={current_user['user_id']}, "
-            f"dispatch_channel={request.dispatch_channel}, detail={exc}"
+        elog(
+            "warning",
+            ExecutionNode.TASK_CREATE,
+            "dispatch task request rejected with validation error",
+            outcome="failed",
+            actor_id=current_user["user_id"],
+            dispatch_channel=request.dispatch_channel,
+            detail=str(exc),
         )
         raise HTTPException(status_code=400, detail=str(exc))
     except KeyError as exc:
-        logger.warning(
-            "Dispatch task request rejected with missing dependency: "
-            f"user_id={current_user['user_id']}, "
-            f"dispatch_channel={request.dispatch_channel}, "
-            f"auto_case_ids={[item.auto_case_id for item in request.cases]}, detail={exc}"
+        elog(
+            "warning",
+            ExecutionNode.TASK_CREATE,
+            "dispatch task request rejected with missing dependency",
+            outcome="failed",
+            actor_id=current_user["user_id"],
+            dispatch_channel=request.dispatch_channel,
+            auto_case_ids=[item.auto_case_id for item in request.cases],
+            detail=str(exc),
         )
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception:
-        logger.exception(
-            "Dispatch task request failed unexpectedly: "
-            f"user_id={current_user['user_id']}, "
-            f"dispatch_channel={request.dispatch_channel}"
+        elog(
+            "error",
+            ExecutionNode.TASK_CREATE,
+            "dispatch task request failed unexpectedly",
+            outcome="failed",
+            actor_id=current_user["user_id"],
+            dispatch_channel=request.dispatch_channel,
         )
         raise
 
@@ -266,6 +277,26 @@ async def list_tasks(
     """查询执行任务列表。"""
     data = await service.list_tasks()
     return APIResponse(data=data)
+
+
+@router.get(
+    "/tasks/{task_id}/biz-logs",
+    response_model=APIResponse[list[dict]],
+    summary="查询任务业务轨迹日志",
+    dependencies=[Depends(require_permission("execution_tasks:read"))],
+)
+async def list_task_biz_logs(
+        task_id: str,
+        service: ExecutionTaskQueryServiceDep,
+        current_user=Depends(get_current_user),
+        limit: int = Query(200, ge=1, le=500, description="返回条数上限"),
+):
+    """查询 execution 平台侧业务节点时间线。"""
+    try:
+        data = await service.list_task_biz_logs(task_id, limit=limit)
+        return APIResponse(data=data)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
 
 
 @router.get(

@@ -154,3 +154,13 @@ logging:
     info_days: 7
     error_days: 30
     debug_days: 3
+
+  # ====== 结构化日志配置（新增） ======
+  json_format: true                  # 文件日志使用 JSON Lines 格式
+  enable_compress: true              # 轮转日志文件自动 .gz 压缩
+  trace_enabled: true                # 启用全链路追踪
+  slow_query_threshold_ms: 200       # 慢查询阈值（毫秒，预留字段）
+
+  # 按模块路径独立控制日志级别（可选）
+  module_levels:
+    app.modules.execution: "DEBUG"

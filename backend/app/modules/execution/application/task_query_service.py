@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 from app.modules.execution.application.task_serializer import ExecutionTaskSerializer
-from app.modules.execution.repository.models import ExecutionTaskDoc
+from app.modules.execution.repository.models import ExecutionBizLogDoc, ExecutionTaskDoc
 
 
 class ExecutionTaskQueryService:
@@ -50,3 +50,35 @@ class ExecutionTaskQueryService:
         result["dispatch_error"] = task_doc.dispatch_error
         result["request_payload"] = task_doc.request_payload
         return result
+
+    async def list_task_biz_logs(self, task_id: str, limit: int = 200) -> List[Dict[str, Any]]:
+        """查询任务平台侧业务轨迹日志。"""
+        task_doc = await ExecutionTaskDoc.find_one({"task_id": task_id, "is_deleted": False})
+        if not task_doc:
+            raise KeyError(f"Task not found: {task_id}")
+
+        docs = await (
+            ExecutionBizLogDoc.find(ExecutionBizLogDoc.task_id == task_id)
+            .sort("-created_at")
+            .limit(limit)
+            .to_list()
+        )
+        return [
+            {
+                "id": str(doc.id),
+                "task_id": doc.task_id,
+                "case_id": doc.case_id,
+                "event_id": doc.event_id,
+                "node": doc.node,
+                "action": doc.action,
+                "outcome": doc.outcome,
+                "status_before": doc.status_before,
+                "status_after": doc.status_after,
+                "operator_id": doc.operator_id,
+                "request_id": doc.request_id,
+                "detail": doc.detail,
+                "level": doc.level,
+                "created_at": doc.created_at,
+            }
+            for doc in docs
+        ]
