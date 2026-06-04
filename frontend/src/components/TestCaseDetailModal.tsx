@@ -1,14 +1,8 @@
 import React from 'react';
 import type { TestCaseResponse } from '../types';
-
-const CASE_STATUS_LABELS: Record<string, string> = {
-  DRAFT: '草稿',
-  PENDING_REVIEW: '待审核',
-  APPROVED: '已通过',
-  REJECTED: '已拒绝',
-  ACTIVE: '激活',
-  DEPRECATED: '已弃用',
-};
+import { WorkflowPanel } from './workflow';
+import { getStateLabel } from '../constants/workflowLabels';
+import { catalogStyles } from './catalog/catalogStyles';
 
 interface TestCaseDetailModalProps {
   testCase: TestCaseResponse;
@@ -20,8 +14,13 @@ const NON_EDITABLE_STATES = new Set(['PENDING_REVIEW', 'DONE']);
 
 const TestCaseDetailModal: React.FC<TestCaseDetailModalProps> = ({ testCase, onClose, onEdit }) => {
   const showEdit = Boolean(onEdit) && !NON_EDITABLE_STATES.has(testCase.status);
+  const catalogBreadcrumb = testCase.catalog_breadcrumb
+    || (testCase.catalog_path?.length ? testCase.catalog_path.join(' / ') : '');
+  const catalogParts = catalogBreadcrumb
+    ? catalogBreadcrumb.split(/\s*\/\s*/).filter(Boolean)
+    : [];
   const [expandedSections, setExpandedSections] = React.useState<Set<string>>(new Set([
-    'basic', 'person', 'exec', 'condition', 'automation', 'meta', 'custom', 'approval', 'time'
+    'workflow', 'basic', 'person', 'exec', 'condition', 'automation', 'meta', 'custom', 'approval', 'time'
   ]));
 
   const toggleSection = (section: string) => {
@@ -171,7 +170,53 @@ const TestCaseDetailModal: React.FC<TestCaseDetailModalProps> = ({ testCase, onC
           </div>
         </div>
 
+        {catalogParts.length > 0 && (
+          <div style={styles.catalogBanner} aria-label="所属目录">
+            <span style={styles.catalogBannerLabel}>所属目录</span>
+            <div style={styles.catalogBannerChips}>
+              {catalogParts.map((part, i) => (
+                <React.Fragment key={`${part}-${i}`}>
+                  {i > 0 && <span style={styles.catalogSep}>/</span>}
+                  <span
+                    style={{
+                      ...catalogStyles.chip,
+                      ...(i === 0 ? catalogStyles.chipLab : {}),
+                      ...(i === catalogParts.length - 1 ? styles.catalogChipLeaf : {}),
+                    }}
+                  >
+                    {part}
+                  </span>
+                </React.Fragment>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div style={styles.modalBody}>
+          {/* 工作流流转 — 测试入口 */}
+          <div style={styles.workflowSection}>
+            <div style={styles.sectionHeader} onClick={() => toggleSection('workflow')}>
+              <span style={styles.sectionArrow}>{expandedSections.has('workflow') ? '▼' : '▶'}</span>
+              <span style={styles.sectionTitle}>工作流流转</span>
+              <span style={styles.workflowBadge}>测试</span>
+            </div>
+            {expandedSections.has('workflow') && (
+              <div style={styles.sectionContent}>
+                <WorkflowPanel
+                  workflowItemId={testCase.workflow_item_id}
+                  entityLabel={`${testCase.case_id} · ${testCase.title}`}
+                  typeCode="TEST_CASE"
+                  defaultPriority={testCase.priority}
+                  creatorName={testCase.owner_id}
+                  currentOwnerName={testCase.owner_id}
+                  createdAt={testCase.created_at}
+                  updatedAt={testCase.updated_at}
+                  compact
+                />
+              </div>
+            )}
+          </div>
+
           {/* 基本信息 */}
           <div style={styles.section}>
             <div style={styles.sectionHeader} onClick={() => toggleSection('basic')}>
@@ -183,9 +228,10 @@ const TestCaseDetailModal: React.FC<TestCaseDetailModalProps> = ({ testCase, onC
                 {renderInfoGrid(
                   <>
                     {renderField('用例ID', testCase.case_id)}
-                    {renderField('关联需求ID', testCase.ref_req_id)}
+                    {renderField('所属目录', testCase.catalog_breadcrumb || testCase.catalog_path?.join(' / ') || '-')}
+                    {renderField('关联需求ID', testCase.ref_req_id || '-')}
                     {renderField('版本', `v${testCase.version}`)}
-                    {renderField('状态', CASE_STATUS_LABELS[testCase.status] || testCase.status)}
+                    {renderField('状态', getStateLabel(testCase.status, 'TEST_CASE'))}
                     {renderField('是否激活', testCase.is_active ? '是' : '否')}
                     {renderField('优先级', testCase.priority || '-')}
                     {renderField('测试类别', testCase.test_category || '-')}
@@ -435,10 +481,61 @@ const styles = {
     lineHeight: 1,
     transition: 'color var(--transition-fast)',
   } as const,
+  catalogBanner: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 'var(--space-3)',
+    padding: 'var(--space-3) var(--space-6)',
+    backgroundColor: 'var(--status-info-bg)',
+    borderBottom: '1px solid var(--border-subtle)',
+  } as const,
+  catalogBannerLabel: {
+    fontSize: 11,
+    fontWeight: 600,
+    color: 'var(--text-tertiary)',
+    textTransform: 'uppercase',
+    letterSpacing: '0.45px',
+    flexShrink: 0,
+  } as const,
+  catalogBannerChips: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 4,
+    flex: 1,
+  } as const,
+  catalogSep: {
+    color: 'var(--text-tertiary)',
+    fontSize: 12,
+    margin: '0 2px',
+  } as const,
+  catalogChipLeaf: {
+    fontWeight: 600,
+    borderStyle: 'dashed',
+  } as const,
   modalBody: {
     padding: '16px 24px',
     overflowY: 'auto' as const,
     flex: 1,
+  } as const,
+  workflowSection: {
+    marginBottom: '16px',
+    border: '2px solid var(--accent-primary)',
+    borderRadius: '8px',
+    overflow: 'hidden',
+    backgroundColor: 'var(--surface-primary)',
+  } as const,
+  workflowBadge: {
+    marginLeft: 'auto',
+    fontSize: '10px',
+    fontWeight: 600,
+    padding: '2px 8px',
+    borderRadius: '999px',
+    backgroundColor: 'var(--accent-primary)',
+    color: 'white',
+    textTransform: 'none' as const,
+    letterSpacing: 0,
   } as const,
   section: {
     marginBottom: '12px',

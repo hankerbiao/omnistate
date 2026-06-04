@@ -33,6 +33,7 @@ from app.modules.test_specs.service._service_support import (
     workflow_aware_soft_delete,
 )
 from app.modules.test_specs.service._workflow_status_support import enrich_projected_status
+from app.modules.test_specs.service.catalog_service import CatalogService
 from app.modules.workflow.application import WorkflowItemGateway
 from app.modules.workflow.repository.models.enums import WorkItemState
 from app.modules.attachments.repository.models import AttachmentDoc
@@ -63,6 +64,9 @@ class TestCaseService(BaseService):
         "custom_fields",
         "deprecation_reason",
         "approval_history",
+        "lab_id",
+        "catalog_path",
+        "catalog_path_key",
         # Phase 4: 高风险字段已移至显式命令，不允许通过通用更新修改
         # - ref_req_id：通过 move_to_requirement 命令修改
         # - 负责人字段：通过 assign_owners 命令修改
@@ -70,12 +74,18 @@ class TestCaseService(BaseService):
         # - 业务ID和关联：通过显式命令修改
     }
 
-    def __init__(self, workflow_gateway: WorkflowItemGateway) -> None:
+    def __init__(
+        self,
+        workflow_gateway: WorkflowItemGateway,
+        catalog_service: CatalogService | None = None,
+    ) -> None:
         self._workflow_gateway = workflow_gateway
+        self._catalog_service = catalog_service or CatalogService()
 
     async def _enrich_test_case_status(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """使用工作流状态补齐测试用例响应中的派生状态字段。"""
-        return await enrich_projected_status(data)
+        enriched = await enrich_projected_status(data)
+        return await self._catalog_service.enrich_case_dict(enriched)
 
     async def _get_workflow_states_for_test_cases(self, case_ids: List[str]) -> Dict[str, str]:
         """批量获取测试用例的工作流状态。"""
@@ -93,6 +103,7 @@ class TestCaseService(BaseService):
         - 事务内完成workflow + test_case的原子写入
         """
         payload = deepcopy(data)
+        payload = await self._apply_catalog_to_payload(payload, is_create=True)
         payload["case_id"] = await self._generate_case_id()
         client = self._get_mongo_client_or_none()
 
@@ -120,6 +131,8 @@ class TestCaseService(BaseService):
             reviewer_id: Optional[str] = None,
             priority: Optional[str] = None,
             is_active: Optional[bool] = None,
+            lab_id: Optional[str] = None,
+            catalog_prefix: Optional[List[str]] = None,
             limit: int = 20,
             offset: int = 0,
     ) -> List[Dict[str, Any]]:
@@ -128,7 +141,16 @@ class TestCaseService(BaseService):
         Phase 3B重构：状态过滤从工作流源查询，确保单一真实来源。
         """
         # Phase 3B: 先从业务文档查询非状态条件
-        query = TestCaseDoc.find({"is_deleted": False})
+        mongo_query: Dict[str, Any] = {"is_deleted": False}
+        if lab_id:
+            if catalog_prefix:
+                mongo_query.update(
+                    CatalogService.match_catalog_prefix_filter(lab_id, catalog_prefix)
+                )
+            else:
+                mongo_query["lab_id"] = lab_id
+
+        query = TestCaseDoc.find(mongo_query)
         if ref_req_id:
             query = query.find(TestCaseDoc.ref_req_id == ref_req_id)
         if owner_id:
@@ -210,7 +232,27 @@ class TestCaseService(BaseService):
         )
         if not doc:
             raise KeyError("test case not found")
-        self._apply_updates(doc, data, self._UPDATABLE_FIELDS)
+        old_lab_id = doc.lab_id
+        old_path = list(doc.catalog_path or [])
+        update_payload = deepcopy(data)
+        if "lab_id" in update_payload or "catalog_path" in update_payload:
+            merged = {
+                "lab_id": update_payload.get("lab_id", doc.lab_id),
+                "catalog_path": update_payload.get("catalog_path", doc.catalog_path),
+            }
+            catalog_fields = await self._catalog_service.prepare_catalog_fields(
+                merged["lab_id"],
+                merged["catalog_path"],
+            )
+            update_payload.update(catalog_fields)
+            await self._catalog_service.adjust_path_on_update(
+                old_lab_id,
+                old_path,
+                catalog_fields["lab_id"],
+                catalog_fields["catalog_path"],
+            )
+
+        self._apply_updates(doc, update_payload, self._UPDATABLE_FIELDS)
         await doc.save()
         return await self._enrich_test_case_status(self._doc_to_dict(doc))
 
@@ -226,6 +268,9 @@ class TestCaseService(BaseService):
         )
         if not doc:
             raise KeyError("test case not found")
+        if doc.catalog_path:
+            await self._catalog_service.register_path(doc.lab_id, doc.catalog_path, delta=-1)
+
         await workflow_aware_soft_delete(
             doc=doc,
             workflow_item_id=doc.workflow_item_id,
@@ -347,6 +392,11 @@ class TestCaseService(BaseService):
     ) -> Dict[str, Any]:
         """使用事务模式创建测试用例（推荐）"""
         async def _prepare_payload(data: Dict[str, Any], session) -> None:
+            await self._catalog_service.register_path(
+                data["lab_id"],
+                data["catalog_path"],
+                delta=1,
+            )
             if data.get("attachments"):
                 data["attachments"] = await self._validate_and_enrich_attachments(
                     data["attachments"],
@@ -449,6 +499,23 @@ class TestCaseService(BaseService):
             })
 
         return enriched_attachments
+
+    async def _apply_catalog_to_payload(
+        self,
+        payload: Dict[str, Any],
+        is_create: bool = False,
+    ) -> Dict[str, Any]:
+        lab_id = str(payload.get("lab_id") or "").strip()
+        catalog_path = payload.get("catalog_path")
+        if is_create and (not lab_id or not catalog_path):
+            raise ValueError("lab_id 与 catalog_path 为必填项")
+        if lab_id and catalog_path:
+            catalog_fields = await self._catalog_service.prepare_catalog_fields(
+                lab_id,
+                catalog_path,
+            )
+            payload.update(catalog_fields)
+        return payload
 
     async def _generate_case_id(self) -> str:
         """自动生成测试用例编号。

@@ -94,12 +94,28 @@ async def test_create_test_case_workflow_starts_in_developing(monkeypatch) -> No
         "app.modules.test_specs.service.test_case_service.TestCaseService._enrich_test_case_status",
         lambda self, data: _async_value({**data, "status": WorkItemState.DEVELOPING.value}),
     )
+    monkeypatch.setattr(
+        "app.modules.test_specs.service.test_case_service.CatalogService.register_path",
+        lambda self, lab_id, catalog_path, delta=1: _async_value(None),
+    )
+    monkeypatch.setattr(
+        "app.modules.test_specs.service.test_case_service.CatalogService.prepare_catalog_fields",
+        lambda self, lab_id, catalog_path: _async_value(
+            {
+                "lab_id": lab_id,
+                "catalog_path": ["misc"],
+                "catalog_path_key": "misc",
+            }
+        ),
+    )
 
     await service._create_test_case_with_transaction(
         _FakeClient(),
         {
             "case_id": "TC-2026-00099",
             "ref_req_id": "TR-2026-00001",
+            "lab_id": "LAB-DEFAULT",
+            "catalog_path": ["misc"],
             "title": "new case",
             "owner_id": "admin-1",
             "attachments": [],

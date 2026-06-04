@@ -8,6 +8,7 @@ from fastapi import APIRouter
 from app.modules.workflow.api import router as workflow_router
 from app.modules.test_specs.api import (
     automation_test_case_router,
+    catalog_router,
     requirement_router,
     test_case_router,
 )
@@ -25,6 +26,7 @@ api_router.include_router(health_router, prefix="/health", tags=["Health"])
 # 业务路由
 api_router.include_router(workflow_router, prefix="/api/v1", tags=["WorkItems"])
 api_router.include_router(requirement_router, prefix="/api/v1", tags=["Requirements"])
+api_router.include_router(catalog_router, prefix="/api/v1", tags=["Catalog"])
 api_router.include_router(test_case_router, prefix="/api/v1", tags=["TestCases"])
 api_router.include_router(automation_test_case_router, prefix="/api/v1", tags=["AutomationTestCases"])
 api_router.include_router(execution_router, prefix="/api/v1", tags=["Execution"])

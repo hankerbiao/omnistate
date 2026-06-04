@@ -15,6 +15,7 @@ const PAGE_TITLES: Record<PageType, { title: string; description?: string }> = {
   profile: { title: '个人信息', description: '查看个人信息和权限' },
   permissions: { title: '权限管理', description: '管理系统权限项' },
   dashboard: { title: '数据统计', description: '测试数据整体概览' },
+  catalogLabs: { title: 'Lab 管理', description: '管理测试用例目录 Lab' },
 }
 
 interface SwitchableUser {
@@ -31,6 +32,8 @@ interface AppShellProps {
   visibleNavItems: NavItem[]
   onLogout: () => void
   currentUser?: string
+  currentUserId?: string
+  currentUserRole?: string
   onUserClick?: () => void
   onSwitchUser?: (userId: string, password: string) => Promise<void>
   switchableUsers?: SwitchableUser[]
@@ -43,6 +46,8 @@ const AppShell: React.FC<AppShellProps> = ({
   visibleNavItems,
   onLogout,
   currentUser,
+  currentUserId,
+  currentUserRole,
   onUserClick,
   onSwitchUser,
   switchableUsers,
@@ -62,6 +67,8 @@ const AppShell: React.FC<AppShellProps> = ({
           description={pageInfo.description}
           onLogout={onLogout}
           currentUser={currentUser}
+          currentUserId={currentUserId}
+          currentUserRole={currentUserRole}
           onUserClick={onUserClick}
           onSwitchUser={onSwitchUser}
           switchableUsers={switchableUsers}

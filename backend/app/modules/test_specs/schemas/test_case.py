@@ -39,6 +39,8 @@ class CreateTestCaseRequest(BaseModel):
         description="唯一业务编号（可选，前端不应提供，默认由后端生成）",
     )
     ref_req_id: Optional[str] = Field(None, description="关联需求 req_id（可选，不填则不关联需求）")
+    lab_id: str = Field(..., description="所属 Lab")
+    catalog_path: List[str] = Field(..., min_length=1, description="目录路径（≥1 段）")
     title: str = Field(..., description="用例名称")
     version: int = Field(1, description="用例版本号，默认值为 1")
     is_active: bool = Field(True, description="用例是否激活状态")
@@ -67,6 +69,8 @@ class CreateTestCaseRequest(BaseModel):
 class UpdateTestCaseRequest(BaseModel):
     """更新用例请求体（PATCH 语义，字段可按需提交）"""
     ref_req_id: Optional[str] = Field(None, description="关联需求 req_id（外键引用 Requirement.req_id）")
+    lab_id: Optional[str] = Field(None, description="所属 Lab")
+    catalog_path: Optional[List[str]] = Field(None, description="目录路径")
     title: Optional[str] = Field(None, description="用例名称")
     version: Optional[int] = Field(None, description="用例版本号")
     is_active: Optional[bool] = Field(None, description="用例是否激活状态")
@@ -99,7 +103,11 @@ class TestCaseResponse(BaseModel):
     __test__ = False
     id: str = Field(..., description="用例唯一标识 ID")
     case_id: str = Field(..., description="用例业务编号")
-    ref_req_id: str = Field(..., description="关联需求 req_id（外键引用 Requirement.req_id）")
+    ref_req_id: Optional[str] = Field(None, description="关联需求 req_id")
+    lab_id: str = Field(..., description="所属 Lab")
+    catalog_path: List[str] = Field(..., description="目录路径")
+    catalog_path_key: str = Field(..., description="目录路径查询键")
+    catalog_breadcrumb: Optional[str] = Field(None, description="目录面包屑")
     title: str = Field(..., description="用例名称")
     version: int = Field(..., description="用例版本号")
     is_active: bool = Field(..., description="用例是否激活状态")

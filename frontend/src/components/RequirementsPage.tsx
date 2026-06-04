@@ -1,35 +1,25 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../services/api';
-import type { RequirementResponse, TestCaseResponse, WorkflowTransition } from '../types';
+import { getCatalogLabs } from '../services/catalogLabsCache';
+import type { RequirementResponse, TestCaseResponse } from '../types';
 import CreateRequirementForm from './CreateRequirementForm';
 import CreateTestCaseForm from './CreateTestCaseForm';
 import TestCaseDetailModal from './TestCaseDetailModal';
 import RequirementDetailModal from './RequirementDetailModal';
+import { WorkflowPanel } from './workflow';
+import {
+  getStateLabel,
+  getWorkflowStateStyle,
+  REQUIREMENT_STATUS_FILTER_OPTIONS,
+} from '../constants/workflowLabels';
 
 type ActiveTab = 'workflow' | 'testcases';
 
-// 需求/用例状态中文映射
-const STATUS_LABELS: Record<string, string> = {
-  DRAFT: '草稿',
-  PENDING_REVIEW: '待审核',
-  PENDING_DEVELOP: '待开发',
-  DEVELOPING: '开发中',
-  PENDING_TEST: '待测试',
-  PENDING_UAT: '待验收',
-  PENDING_RELEASE: '待发布',
-  RELEASED: '已发布',
-  APPROVED: '已通过',
-  REJECTED: '已驳回',
-  CLOSED: '已关闭',
-  ACTIVE: '激活',
-  INACTIVE: '未激活',
-  DEPRECATED: '已弃用',
-  ASSIGNED: '已指派',
-  DEVELOPING: '编写中',
-  DONE: '已完成',
-};
+interface RequirementsPageProps {
+  initialStatusFilter?: string;
+}
 
-const RequirementsPage: React.FC = () => {
+const RequirementsPage: React.FC<RequirementsPageProps> = ({ initialStatusFilter = '' }) => {
   const [requirements, setRequirements] = useState<RequirementResponse[]>([]);
   const [testCases, setTestCases] = useState<TestCaseResponse[]>([]);
   const [loadingRequirements, setLoadingRequirements] = useState(false);
@@ -40,16 +30,8 @@ const RequirementsPage: React.FC = () => {
   const [showCreateTestCase, setShowCreateTestCase] = useState(false);
   const [selectedTestCase, setSelectedTestCase] = useState<TestCaseResponse | null>(null);
   const [editingTestCase, setEditingTestCase] = useState<TestCaseResponse | null>(null);
-  const [workflowState, setWorkflowState] = useState<string>('');
-  const [workflowTransitions, setWorkflowTransitions] = useState<WorkflowTransition[]>([]);
-  const [loadingWorkflow, setLoadingWorkflow] = useState(false);
-  const [transitioningAction, setTransitioningAction] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<ActiveTab>('workflow');
-  const [transitionModal, setTransitionModal] = useState<{ open: boolean; transition?: WorkflowTransition }>({ open: false });
-  const [transitionFormData, setTransitionFormData] = useState<Record<string, string>>({});
-  const [ownerSuggestions, setOwnerSuggestions] = useState<{ user_id: string; username: string }[]>([]);
-  const [ownerSearchQuery, setOwnerSearchQuery] = useState('');
-  const [showOwnerDropdown, setShowOwnerDropdown] = useState(false);
+  const [statusFilter, setStatusFilter] = useState(initialStatusFilter);
   const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; reqId?: string; title?: string }>({ open: false });
   const [deleting, setDeleting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -57,25 +39,40 @@ const RequirementsPage: React.FC = () => {
   const [deleteCaseConfirm, setDeleteCaseConfirm] = useState<{ open: boolean; caseId?: string; title?: string }>({ open: false });
   const [selectedRequirementDetail, setSelectedRequirementDetail] = useState<RequirementResponse | null>(null);
   const [workflowTestCase, setWorkflowTestCase] = useState<TestCaseResponse | null>(null);
-  const [caseWorkflowState, setCaseWorkflowState] = useState('');
-  const [caseWorkflowTransitions, setCaseWorkflowTransitions] = useState<WorkflowTransition[]>([]);
-  const [loadingCaseWorkflow, setLoadingCaseWorkflow] = useState(false);
-  const [transitionContext, setTransitionContext] = useState<{
-    workflowItemId: string;
-    refresh: () => Promise<void>;
-  } | null>(null);
+  const [defaultCatalogLabId, setDefaultCatalogLabId] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const labs = await getCatalogLabs({ active_only: true });
+        const first = labs[0]?.lab_id;
+        if (!cancelled && first) {
+          setDefaultCatalogLabId(first);
+        }
+      } catch {
+        /* non-blocking */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const selectedRequirement = useMemo(
     () => requirements.find((item) => item.req_id === selectedRequirementId) || null,
     [requirements, selectedRequirementId],
   );
 
-  const fetchRequirements = useCallback(async (nextSelectedId?: string) => {
+  const fetchRequirements = useCallback(async (nextSelectedId?: string, status?: string) => {
     setLoadingRequirements(true);
     setError(null);
 
     try {
-      const response = await api.listRequirements({ limit: 50 });
+      const params: { limit: number; status?: string } = { limit: 50 };
+      const effectiveStatus = status ?? statusFilter;
+      if (effectiveStatus) {
+        params.status = effectiveStatus;
+      }
+      const response = await api.listRequirements(params);
       const data = response.data || [];
       setRequirements(data);
 
@@ -92,7 +89,7 @@ const RequirementsPage: React.FC = () => {
     } finally {
       setLoadingRequirements(false);
     }
-  }, []);
+  }, [statusFilter]);
 
   const fetchTestCases = useCallback(async (requirementId: string) => {
     setLoadingTestCases(true);
@@ -109,66 +106,6 @@ const RequirementsPage: React.FC = () => {
     }
   }, []);
 
-  const fetchWorkflowTransitions = useCallback(async (workflowItemId: string) => {
-    setLoadingWorkflow(true);
-    try {
-      const response = await api.getWorkflowTransitions(workflowItemId);
-      setWorkflowState(response.data.current_state);
-      setWorkflowTransitions(response.data.available_transitions || []);
-    } catch (err) {
-      setWorkflowState('');
-      setWorkflowTransitions([]);
-      setError('获取工作流信息失败');
-      console.error('Fetch workflow transitions error:', err);
-    } finally {
-      setLoadingWorkflow(false);
-    }
-  }, []);
-
-  const fetchCaseWorkflow = useCallback(async (workflowItemId: string) => {
-    setLoadingCaseWorkflow(true);
-    try {
-      const response = await api.getWorkflowTransitions(workflowItemId);
-      setCaseWorkflowState(response.data.current_state);
-      setCaseWorkflowTransitions(response.data.available_transitions || []);
-    } catch (err) {
-      setCaseWorkflowState('');
-      setCaseWorkflowTransitions([]);
-      setError('获取测试用例工作流失败');
-      console.error('Fetch test case workflow error:', err);
-    } finally {
-      setLoadingCaseWorkflow(false);
-    }
-  }, []);
-
-  // 搜索用户作为目标处理人
-  const searchUsers = useCallback(async (query: string) => {
-    if (!query.trim()) {
-      // 无搜索词时加载所有用户
-      try {
-        const response = await api.listUsers({ limit: 50 });
-        setOwnerSuggestions(response.data || []);
-      } catch (err) {
-        console.error('Search users error:', err);
-      }
-      return;
-    }
-
-    try {
-      const response = await api.listUsers({ search: query, limit: 20 });
-      setOwnerSuggestions(response.data || []);
-    } catch (err) {
-      console.error('Search users error:', err);
-    }
-  }, []);
-
-  // 选择目标用户
-  const handleSelectOwner = useCallback((user: { user_id: string; username: string }) => {
-    setTransitionFormData(prev => ({ ...prev, target_owner_id: user.user_id }));
-    setOwnerSearchQuery(user.username);
-    setShowOwnerDropdown(false);
-  }, []);
-
   useEffect(() => {
     fetchRequirements();
   }, [fetchRequirements]);
@@ -182,32 +119,6 @@ const RequirementsPage: React.FC = () => {
     fetchTestCases(selectedRequirementId);
     setWorkflowTestCase(null);
   }, [fetchTestCases, selectedRequirementId]);
-
-  useEffect(() => {
-    if (!selectedRequirement?.workflow_item_id) {
-      setWorkflowState('');
-      setWorkflowTransitions([]);
-      return;
-    }
-    fetchWorkflowTransitions(selectedRequirement.workflow_item_id);
-  }, [fetchWorkflowTransitions, selectedRequirement?.workflow_item_id]);
-
-  useEffect(() => {
-    if (!workflowTestCase?.workflow_item_id) {
-      setCaseWorkflowState('');
-      setCaseWorkflowTransitions([]);
-      return;
-    }
-    fetchCaseWorkflow(workflowTestCase.workflow_item_id);
-  }, [fetchCaseWorkflow, workflowTestCase?.workflow_item_id, workflowTestCase?.case_id]);
-
-  useEffect(() => {
-    if (!workflowTestCase?.case_id) return;
-    const updated = testCases.find((item) => item.case_id === workflowTestCase.case_id);
-    if (updated && updated.status !== workflowTestCase.status) {
-      setWorkflowTestCase(updated);
-    }
-  }, [testCases, workflowTestCase?.case_id, workflowTestCase?.status]);
 
   const handleRequirementCreated = (requirement: RequirementResponse) => {
     fetchRequirements(requirement.req_id);
@@ -244,104 +155,22 @@ const RequirementsPage: React.FC = () => {
     return styleMap[priority] || { bg: 'var(--surface-tertiary)', color: 'var(--text-secondary)' };
   };
 
-  const getWorkflowStateStyle = (state: string) => {
-    const styleMap: Record<string, { bg: string; color: string }> = {
-      DRAFT: { bg: 'var(--surface-tertiary)', color: 'var(--text-tertiary)' },
-      ASSIGNED: { bg: 'var(--status-info-bg)', color: 'var(--status-info)' },
-      PENDING_REVIEW: { bg: 'var(--status-warning-bg)', color: 'var(--status-warning)' },
-      PENDING_DEVELOP: { bg: 'var(--status-info-bg)', color: 'var(--status-info)' },
-      DEVELOPING: { bg: 'var(--status-info-bg)', color: 'var(--status-info)' },
-      PENDING_TEST: { bg: 'var(--status-info-bg)', color: 'var(--status-info)' },
-      PENDING_UAT: { bg: 'var(--status-info-bg)', color: 'var(--status-info)' },
-      PENDING_RELEASE: { bg: 'var(--status-success-bg)', color: 'var(--status-success)' },
-      RELEASED: { bg: 'var(--status-success-bg)', color: 'var(--status-success)' },
-      DONE: { bg: 'var(--status-success-bg)', color: 'var(--status-success)' },
-    };
-    return styleMap[state] || { bg: 'var(--surface-tertiary)', color: 'var(--text-secondary)' };
-  };
-
-  const getActionLabel = (action: string) => {
-    const labelMap: Record<string, string> = {
-      SUBMIT: '提交评审',
-      APPROVE: '通过',
-      REJECT: '驳回',
-      START: '开始开发',
-      FINISH: '完成开发',
-      PASS: '通过',
-      PUBLISH: '发布',
-      ASSIGN: '指派编写人',
-      START_WRITE: '开始编写',
-      SUBMIT_REVIEW: '提交评审',
-    };
-    return labelMap[action] || action;
-  };
-
-  const getFieldLabel = (field: string) => {
-    const labelMap: Record<string, string> = {
-      target_owner_id: '目标处理人',
-      priority: '优先级',
-      comment: '备注',
-    };
-    return labelMap[field] || field;
-  };
-
-  const openTransitionModal = (
-    transition: WorkflowTransition,
-    context: { workflowItemId: string; refresh: () => Promise<void> },
-  ) => {
-    const initialData: Record<string, string> = {};
-    for (const field of transition.required_fields) {
-      if (field === 'priority') {
-        initialData[field] = selectedRequirement?.priority || workflowTestCase?.priority || '';
-      } else if (field === 'target_owner_id') {
-        initialData[field] = '';
-        searchUsers('');
-      }
-    }
-    setOwnerSearchQuery('');
-    setTransitionFormData(initialData);
-    setTransitionContext(context);
-    setTransitionModal({ open: true, transition });
-  };
-
-  const handleTransitionSubmit = async () => {
-    if (!transitionContext?.workflowItemId || !transitionModal.transition) return;
-
-    for (const field of transitionModal.transition.required_fields) {
-      if (!transitionFormData[field]?.trim()) {
-        setError(`${getFieldLabel(field)}不能为空`);
-        return;
-      }
-    }
-
-    setTransitioningAction(transitionModal.transition.action);
-    setError(null);
-    try {
-      await api.transitionWorkflow(transitionContext.workflowItemId, {
-        action: transitionModal.transition.action,
-        form_data: transitionFormData,
-      });
-      await transitionContext.refresh();
-      setTransitionModal({ open: false });
-      setTransitionContext(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '工作流流转失败');
-      console.error('Workflow transition error:', err);
-    } finally {
-      setTransitioningAction(null);
-    }
-  };
-
-  const refreshRequirementWorkflow = async () => {
-    if (!selectedRequirement?.workflow_item_id || !selectedRequirement.req_id) return;
+  const refreshRequirementData = async () => {
+    if (!selectedRequirement?.req_id) return;
     await fetchRequirements(selectedRequirement.req_id);
-    await fetchWorkflowTransitions(selectedRequirement.workflow_item_id);
   };
 
-  const refreshTestCaseWorkflow = async () => {
-    if (!selectedRequirementId || !workflowTestCase?.workflow_item_id) return;
+  const refreshTestCaseData = async () => {
+    if (!selectedRequirementId) return;
     await fetchTestCases(selectedRequirementId);
-    await fetchCaseWorkflow(workflowTestCase.workflow_item_id);
+    if (workflowTestCase?.case_id) {
+      try {
+        const response = await api.getTestCase(workflowTestCase.case_id);
+        if (response.data) setWorkflowTestCase(response.data);
+      } catch {
+        // ignore
+      }
+    }
   };
 
   const onlineCount = requirements.filter(r => r.status === 'RELEASED').length;
@@ -459,6 +288,23 @@ const RequirementsPage: React.FC = () => {
           </div>
         </div>
 
+        <div style={styles.filterBar}>
+          <select
+            className="form-input form-select"
+            value={statusFilter}
+            onChange={(e) => {
+              const next = e.target.value;
+              setStatusFilter(next);
+              fetchRequirements(undefined, next);
+            }}
+            style={{ fontSize: '12px', padding: '6px 10px' }}
+          >
+            {REQUIREMENT_STATUS_FILTER_OPTIONS.map((opt) => (
+              <option key={opt.value || 'all'} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+        </div>
+
         {loadingRequirements ? (
           <div className="loading-overlay">
             <div className="loading-spinner" />
@@ -492,7 +338,6 @@ const RequirementsPage: React.FC = () => {
                   className={`requirement-item ${isSelected ? 'requirement-item--selected' : ''} ${isChecked ? 'requirement-item--checked' : ''}`}
                   onClick={() => {
                     setSelectedRequirementId(requirement.req_id);
-                    setSelectedRequirementDetail(requirement);
                   }}
                 >
                   <div style={styles.itemHeader}>
@@ -524,15 +369,28 @@ const RequirementsPage: React.FC = () => {
                   </div>
                   <div style={styles.itemTitle}>{requirement.title}</div>
                   <div style={styles.itemMeta}>
-                    <span
-                      className="status-badge status-badge--neutral"
-                      style={{ fontSize: '10px' }}
+                    <div style={styles.itemMetaLeft}>
+                      <span
+                        className="status-badge status-badge--neutral"
+                        style={{ fontSize: '10px' }}
+                      >
+                        {getStateLabel(requirement.status, 'REQUIREMENT')}
+                      </span>
+                      <span style={styles.metaTime}>
+                        {new Date(requirement.created_at).toLocaleDateString('zh-CN')}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      style={styles.detailBtn}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedRequirementId(requirement.req_id);
+                        setSelectedRequirementDetail(requirement);
+                      }}
                     >
-                      {STATUS_LABELS[requirement.status] || requirement.status}
-                    </span>
-                    <span style={styles.metaTime}>
-                      {new Date(requirement.created_at).toLocaleDateString('zh-CN')}
-                    </span>
+                      详情
+                    </button>
                   </div>
                 </div>
               );
@@ -552,11 +410,9 @@ const RequirementsPage: React.FC = () => {
                   <span className="mono" style={styles.detailId}>{selectedRequirement.req_id}</span>
                   <span
                     className="status-badge"
-                    style={{
-                      ...getWorkflowStateStyle(workflowState || selectedRequirement.status),
-                    }}
+                    style={getWorkflowStateStyle(selectedRequirement.status)}
                   >
-                    {workflowState || selectedRequirement.status}
+                    {getStateLabel(selectedRequirement.status, 'REQUIREMENT')}
                   </span>
                   <span
                     className="status-badge"
@@ -591,93 +447,20 @@ const RequirementsPage: React.FC = () => {
             <div style={styles.tabContent}>
               {activeTab === 'workflow' ? (
                 <div className="data-panel">
-                  {!selectedRequirement.workflow_item_id ? (
-                    <div className="empty-state">
-                      <div className="empty-state__icon">⚙</div>
-                      <p className="empty-state__text">当前需求没有关联工作流</p>
-                    </div>
-                  ) : loadingWorkflow ? (
-                    <div className="loading-overlay">
-                      <div className="loading-spinner" />
-                    </div>
-                  ) : (
-                    <>
-                      <div className="data-panel-header">
-                        <h3 className="data-panel-title">工作流状态</h3>
-                      </div>
-                      <div style={styles.workflowInfo}>
-                        <div style={styles.workflowInfoItem}>
-                          <span style={styles.workflowInfoLabel}>工作流ID</span>
-                          <span style={styles.workflowInfoValue} className="mono">
-                            {selectedRequirement.workflow_item_id}
-                          </span>
-                        </div>
-                        <div style={styles.workflowInfoItem}>
-                          <span style={styles.workflowInfoLabel}>当前状态</span>
-                          <span
-                            className="status-badge"
-                            style={getWorkflowStateStyle(workflowState || selectedRequirement.status)}
-                          >
-                            {workflowState || selectedRequirement.status}
-                          </span>
-                        </div>
-                        <div style={styles.workflowInfoItem}>
-                          <span style={styles.workflowInfoLabel}>创建人</span>
-                          <span style={styles.workflowInfoValue}>
-                            {selectedRequirement.creator_name || selectedRequirement.creator || '-'}
-                          </span>
-                        </div>
-                        <div style={styles.workflowInfoItem}>
-                          <span style={styles.workflowInfoLabel}>当前负责人</span>
-                          <span style={styles.workflowInfoValue}>
-                            {selectedRequirement.current_owner_name || selectedRequirement.current_owner || '-'}
-                          </span>
-                        </div>
-                        <div style={styles.workflowInfoItem}>
-                          <span style={styles.workflowInfoLabel}>创建时间</span>
-                          <span style={styles.workflowInfoValue}>
-                            {selectedRequirement.created_at
-                              ? new Date(selectedRequirement.created_at).toLocaleString('zh-CN')
-                              : '-'}
-                          </span>
-                        </div>
-                        <div style={styles.workflowInfoItem}>
-                          <span style={styles.workflowInfoLabel}>更新时间</span>
-                          <span style={styles.workflowInfoValue}>
-                            {selectedRequirement.updated_at
-                              ? new Date(selectedRequirement.updated_at).toLocaleString('zh-CN')
-                              : '-'}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div style={styles.workflowActions}>
-                        <h4 style={styles.sectionTitle}>可用操作</h4>
-                        {workflowTransitions.length === 0 ? (
-                          <div className="empty-state" style={{ padding: '24px' }}>
-                            <p className="empty-state__text">当前状态没有可执行的操作</p>
-                          </div>
-                        ) : (
-                          <div style={styles.actionGrid}>
-                            {workflowTransitions.map((transition) => (
-                              <button
-                                key={`${transition.action}-${transition.to_state}`}
-                                className="btn btn--secondary"
-                                onClick={() => openTransitionModal(transition, {
-                                  workflowItemId: selectedRequirement.workflow_item_id!,
-                                  refresh: refreshRequirementWorkflow,
-                                })}
-                                disabled={Boolean(transitioningAction)}
-                              >
-                                <span style={styles.actionName}>{getActionLabel(transition.action)}</span>
-                                <span style={styles.actionArrow}>→ {STATUS_LABELS[transition.to_state] || transition.to_state}</span>
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </>
-                  )}
+                  <div className="data-panel-header">
+                    <h3 className="data-panel-title">需求工作流</h3>
+                  </div>
+                  <WorkflowPanel
+                    workflowItemId={selectedRequirement.workflow_item_id}
+                    entityLabel={`需求 ${selectedRequirement.req_id}`}
+                    typeCode="REQUIREMENT"
+                    defaultPriority={selectedRequirement.priority}
+                    creatorName={selectedRequirement.creator_name || selectedRequirement.creator}
+                    currentOwnerName={selectedRequirement.current_owner_name || selectedRequirement.current_owner}
+                    createdAt={selectedRequirement.created_at}
+                    updatedAt={selectedRequirement.updated_at}
+                    onTransitionSuccess={refreshRequirementData}
+                  />
                 </div>
               ) : (
                 <div className="data-panel">
@@ -706,6 +489,7 @@ const RequirementsPage: React.FC = () => {
                         <tr>
                           <th style={{ width: '120px' }}>用例ID</th>
                           <th>名称</th>
+                          <th>目录</th>
                           <th style={{ width: '60px' }}>优先级</th>
                           <th style={{ width: '80px' }}>状态</th>
                           <th style={{ width: '90px' }}>创建时间</th>
@@ -726,6 +510,9 @@ const RequirementsPage: React.FC = () => {
                           >
                             <td className="mono">{testCase.case_id}</td>
                             <td>{testCase.title}</td>
+                            <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                              {testCase.catalog_breadcrumb || testCase.catalog_path?.join(' / ') || '-'}
+                            </td>
                             <td>
                               <span
                                 className="status-badge status-badge--neutral"
@@ -739,7 +526,7 @@ const RequirementsPage: React.FC = () => {
                                 className="status-badge status-badge--neutral"
                                 style={getWorkflowStateStyle(testCase.status)}
                               >
-                                {STATUS_LABELS[testCase.status] || testCase.status}
+                                {getStateLabel(testCase.status, 'TEST_CASE')}
                               </span>
                             </td>
                             <td className="mono">
@@ -776,59 +563,19 @@ const RequirementsPage: React.FC = () => {
 
                   {workflowTestCase && (
                     <div style={styles.caseWorkflowPanel}>
-                      <div className="data-panel-header">
-                        <h3 className="data-panel-title">
-                          用例流转 · {workflowTestCase.case_id}
-                        </h3>
-                        <span
-                          className="status-badge"
-                          style={getWorkflowStateStyle(caseWorkflowState || workflowTestCase.status)}
-                        >
-                          {STATUS_LABELS[caseWorkflowState || workflowTestCase.status]
-                            || caseWorkflowState
-                            || workflowTestCase.status}
-                        </span>
-                      </div>
-
-                      {!workflowTestCase.workflow_item_id ? (
-                        <p style={styles.caseWorkflowHint}>
-                          {workflowTestCase.status === '未开始'
-                            ? '该用例在数据库中未绑定工作流（多为历史数据）。请重新创建用例，或联系管理员执行数据修复。'
-                            : '未能加载工作流 ID，请刷新页面后重试；若仍无效请重启后端服务。'}
-                          <br />
-                          <span style={styles.caseWorkflowHintSub}>
-                            说明：与 admin 无关——流转权限认当前负责人，不认管理员角色。
-                          </span>
-                        </p>
-                      ) : loadingCaseWorkflow ? (
-                        <div className="loading-overlay" style={{ minHeight: '80px' }}>
-                          <div className="loading-spinner" />
-                        </div>
-                      ) : caseWorkflowTransitions.length === 0 ? (
-                        <p style={styles.caseWorkflowHint}>
-                          当前状态没有您可执行的操作。测试用例流转认工作项的创建人/当前负责人，admin 角色本身不能代流转；若您刚指派了负责人，需由新负责人操作或先改派回自己。
-                        </p>
-                      ) : (
-                        <div style={styles.actionGrid}>
-                          {caseWorkflowTransitions.map((transition) => (
-                            <button
-                              key={`case-${transition.action}-${transition.to_state}`}
-                              type="button"
-                              className="btn btn--secondary"
-                              onClick={() => openTransitionModal(transition, {
-                                workflowItemId: workflowTestCase.workflow_item_id!,
-                                refresh: refreshTestCaseWorkflow,
-                              })}
-                              disabled={Boolean(transitioningAction)}
-                            >
-                              <span style={styles.actionName}>{getActionLabel(transition.action)}</span>
-                              <span style={styles.actionArrow}>
-                                → {STATUS_LABELS[transition.to_state] || transition.to_state}
-                              </span>
-                            </button>
-                          ))}
-                        </div>
-                      )}
+                      <WorkflowPanel
+                        key={workflowTestCase.workflow_item_id || workflowTestCase.case_id}
+                        workflowItemId={workflowTestCase.workflow_item_id}
+                        entityLabel={`用例 ${workflowTestCase.case_id} · ${workflowTestCase.title}`}
+                        typeCode="TEST_CASE"
+                        defaultPriority={workflowTestCase.priority}
+                        creatorName={workflowTestCase.owner_id}
+                        currentOwnerName={workflowTestCase.owner_id}
+                        createdAt={workflowTestCase.created_at}
+                        updatedAt={workflowTestCase.updated_at}
+                        onTransitionSuccess={refreshTestCaseData}
+                        compact
+                      />
                     </div>
                   )}
                 </div>
@@ -863,6 +610,8 @@ const RequirementsPage: React.FC = () => {
           onSuccess={handleTestCaseCreated}
           defaultRequirementId={selectedRequirement.req_id}
           lockRequirementId
+          defaultLabId={defaultCatalogLabId}
+          defaultCatalogPrefix={[]}
         />
       )}
 
@@ -890,104 +639,8 @@ const RequirementsPage: React.FC = () => {
         <RequirementDetailModal
           requirement={selectedRequirementDetail}
           onClose={() => setSelectedRequirementDetail(null)}
+          onUpdated={() => fetchRequirements(selectedRequirementDetail.req_id)}
         />
-      )}
-
-      {/* Transition Modal */}
-      {transitionModal.open && transitionModal.transition && (
-        <div className="modal-overlay" onClick={() => { setTransitionModal({ open: false }); setTransitionContext(null); }}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
-            <div className="modal__header">
-              <h3 className="modal__title">{getActionLabel(transitionModal.transition.action)}</h3>
-              <button className="modal__close" onClick={() => { setTransitionModal({ open: false }); setTransitionContext(null); }}>×</button>
-            </div>
-            <div className="modal__body">
-              <p style={{ marginBottom: '16px', color: 'var(--text-secondary)', fontSize: '13px' }}>
-                状态将变为: <strong>{transitionModal.transition.to_state}</strong>
-              </p>
-              {transitionModal.transition.required_fields.map(field => (
-                <div key={field} style={{ marginBottom: '16px' }}>
-                  <label style={styles.formLabel}>{getFieldLabel(field)} *</label>
-                  {field === 'priority' ? (
-                    <select
-                      className="form-input form-select"
-                      value={transitionFormData[field] || ''}
-                      onChange={e => setTransitionFormData({ ...transitionFormData, [field]: e.target.value })}
-                    >
-                      <option value="">请选择</option>
-                      <option value="P0">P0 - 紧急</option>
-                      <option value="P1">P1 - 高</option>
-                      <option value="P2">P2 - 中</option>
-                      <option value="P3">P3 - 低</option>
-                    </select>
-                  ) : field === 'target_owner_id' ? (
-                    <div style={{ position: 'relative' }}>
-                      <input
-                        className="form-input"
-                        type="text"
-                        value={ownerSearchQuery}
-                        onChange={e => {
-                          setOwnerSearchQuery(e.target.value);
-                          searchUsers(e.target.value);
-                          setShowOwnerDropdown(true);
-                        }}
-                        onFocus={() => {
-                          searchUsers(ownerSearchQuery);
-                          setShowOwnerDropdown(true);
-                        }}
-                        placeholder="搜索用户..."
-                        autoComplete="off"
-                      />
-                      {showOwnerDropdown && ownerSuggestions.length > 0 && (
-                        <div style={styles.ownerDropdown}>
-                          {ownerSuggestions.map(user => (
-                            <div
-                              key={user.user_id}
-                              style={styles.ownerDropdownItem}
-                              onClick={() => handleSelectOwner(user)}
-                              onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--surface-hover)')}
-                              onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
-                            >
-                              <span style={{ fontWeight: 500 }}>{user.username}</span>
-                              <span style={styles.ownerId}>{user.user_id}</span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                      {showOwnerDropdown && ownerSuggestions.length === 0 && ownerSearchQuery && (
-                        <div style={styles.ownerDropdown}>
-                          <div style={{ ...styles.ownerDropdownItem, color: 'var(--text-tertiary)', cursor: 'default' }}>
-                            未找到匹配用户
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <input
-                      className="form-input"
-                      type="text"
-                      value={transitionFormData[field] || ''}
-                      onChange={e => setTransitionFormData({ ...transitionFormData, [field]: e.target.value })}
-                      placeholder={`请输入${getFieldLabel(field)}`}
-                    />
-                  )}
-                </div>
-              ))}
-            </div>
-            <div className="modal__footer">
-              <button className="btn btn--secondary" onClick={() => { setTransitionModal({ open: false }); setTransitionContext(null); }}>
-                取消
-              </button>
-              <button
-                className="btn btn--primary"
-                onClick={handleTransitionSubmit}
-                disabled={Boolean(transitioningAction)}
-              >
-                {transitioningAction ? '处理中...' : '确认'}
-              </button>
-            </div>
-          </div>
-        </div>
       )}
 
       {/* Delete Confirm Modal */}
@@ -1158,6 +811,11 @@ const styles = {
   panelActions: {
     display: 'flex',
     gap: '8px',
+    alignItems: 'center',
+  },
+  filterBar: {
+    padding: '8px 20px',
+    borderBottom: '1px solid var(--border-subtle)',
   },
   list: {
     flex: 1,
@@ -1214,7 +872,24 @@ const styles = {
   itemMeta: {
     display: 'flex',
     alignItems: 'center',
+    justifyContent: 'space-between',
     gap: '8px',
+  },
+  itemMetaLeft: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    minWidth: 0,
+  },
+  detailBtn: {
+    flexShrink: 0,
+    padding: '2px 10px',
+    fontSize: '12px',
+    color: 'var(--accent-primary)',
+    backgroundColor: 'transparent',
+    border: '1px solid var(--border-default)',
+    borderRadius: '4px',
+    cursor: 'pointer',
   },
   metaTime: {
     fontSize: '11px',

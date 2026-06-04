@@ -44,6 +44,40 @@ const CreateRequirementForm: React.FC<CreateRequirementFormProps> = ({ onClose, 
     }));
   };
 
+  const applyPreset = (preset: Partial<CreateRequirementRequest>) => {
+    setFormData((prev) => ({
+      ...prev,
+      ...preset,
+    }));
+  };
+
+  const QUICK_PRESETS: { label: string; data: Partial<CreateRequirementRequest> }[] = [
+    {
+      label: 'DDR5 带宽',
+      data: {
+        title: `[测试] DDR5 内存带宽验证 ${new Date().toLocaleDateString('zh-CN')}`,
+        priority: 'P1',
+        description: '验证 DDR5 内存读写带宽是否达到规格要求，含单通道/双通道场景。',
+      },
+    },
+    {
+      label: 'CPU 压力',
+      data: {
+        title: `[测试] CPU 全核压力测试 ${new Date().toLocaleDateString('zh-CN')}`,
+        priority: 'P2',
+        description: '长时间全核负载，观察温度与稳定性。',
+      },
+    },
+    {
+      label: '最小草稿',
+      data: {
+        title: `[测试] 工作流草稿 ${Date.now()}`,
+        priority: 'P2',
+        description: '',
+      },
+    },
+  ];
+
   return (
     <div style={styles.modalOverlay}>
       <div style={styles.modalContent}>
@@ -53,6 +87,20 @@ const CreateRequirementForm: React.FC<CreateRequirementFormProps> = ({ onClose, 
         </div>
 
         {error && <div style={styles.errorMessage}>{error}</div>}
+
+        <div style={styles.presetBar}>
+          <span style={styles.presetLabel}>快速填充：</span>
+          {QUICK_PRESETS.map((preset) => (
+            <button
+              key={preset.label}
+              type="button"
+              style={styles.presetBtn}
+              onClick={() => applyPreset(preset.data)}
+            >
+              {preset.label}
+            </button>
+          ))}
+        </div>
 
         <form onSubmit={handleSubmit} style={styles.form}>
           <div style={styles.formGroup}>
@@ -164,6 +212,30 @@ const styles = {
     border: '1px solid rgba(255, 107, 107, 0.3)',
     borderRadius: 'var(--radius-md)',
     fontSize: '14px',
+  } as const,
+  presetBar: {
+    display: 'flex',
+    flexWrap: 'wrap' as const,
+    alignItems: 'center',
+    gap: '8px',
+    margin: '16px 24px 0',
+    padding: '10px 12px',
+    backgroundColor: 'var(--bg-primary)',
+    borderRadius: 'var(--radius-md)',
+    border: '1px dashed var(--border-default)',
+  } as const,
+  presetLabel: {
+    fontSize: '12px',
+    color: 'var(--text-muted)',
+  } as const,
+  presetBtn: {
+    padding: '4px 10px',
+    fontSize: '12px',
+    borderRadius: 'var(--radius-sm)',
+    border: '1px solid var(--border-default)',
+    backgroundColor: 'var(--bg-secondary)',
+    color: 'var(--text-secondary)',
+    cursor: 'pointer',
   } as const,
   form: {
     padding: '24px',

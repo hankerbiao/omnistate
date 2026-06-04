@@ -1,4 +1,4 @@
-import type { LoginRequest, LoginResponse, ApiResponse, CreateRequirementRequest, RequirementResponse, ListRequirementsParams, CreateTestCaseRequest, UpdateTestCaseRequest, TestCaseResponse, ListTestCasesParams, DispatchTaskRequest, DispatchTaskResponse, ExecutionAgent, ListAgentsParams, CreateAutomationTestCaseRequest, AutomationTestCaseResponse, ListAutomationTestCasesParams, ExecutionTask, ListTasksParams, TaskStatus, RerunTaskRequest, AttachmentInfo, WorkflowTransitionRequest, WorkflowTransitionResponse, WorkflowTransitionsResponse, RoleResponse, PermissionResponse, CreateRoleRequest, UpdateRoleRequest, UpdateRolePermissionsRequest, CurrentUserPermissionsResponse, UserResponse, CreateUserRequest, UpdateUserRequest, UpdateUserRolesRequest, UpdateUserPasswordRequest, ListUsersParams, WorkItem } from '../types';
+import type { LoginRequest, LoginResponse, ApiResponse, CreateRequirementRequest, RequirementResponse, ListRequirementsParams, CreateTestCaseRequest, UpdateTestCaseRequest, TestCaseResponse, ListTestCasesParams, CatalogLab, CreateCatalogLabRequest, UpdateCatalogLabRequest, CatalogTreeResponse, DispatchTaskRequest, DispatchTaskResponse, ExecutionAgent, ListAgentsParams, CreateAutomationTestCaseRequest, AutomationTestCaseResponse, ListAutomationTestCasesParams, ExecutionTask, ListTasksParams, TaskStatus, RerunTaskRequest, AttachmentInfo, WorkflowTransitionRequest, WorkflowTransitionResponse, WorkflowTransitionsResponse, WorkflowTransitionLog, RoleResponse, PermissionResponse, CreateRoleRequest, UpdateRoleRequest, UpdateRolePermissionsRequest, CurrentUserPermissionsResponse, UserResponse, CreateUserRequest, UpdateUserRequest, UpdateUserRolesRequest, UpdateUserPasswordRequest, ListUsersParams, WorkItem } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
 
@@ -183,6 +183,30 @@ class ApiClient {
     return this.request<WorkflowTransitionResponse>(`/work-items/${itemId}/transition`, {
       method: 'POST',
       body: JSON.stringify(data),
+    });
+  }
+
+  async getWorkflowLogs(
+    itemId: string,
+    limit = 50,
+  ): Promise<ApiResponse<WorkflowTransitionLog[]>> {
+    return this.request<WorkflowTransitionLog[]>(
+      `/work-items/${itemId}/logs?limit=${limit}`,
+      { method: 'GET' },
+    );
+  }
+
+  async reassignWorkItem(
+    itemId: string,
+    targetOwnerId: string,
+    remark?: string,
+  ): Promise<ApiResponse<WorkItem>> {
+    const params = new URLSearchParams({ target_owner_id: targetOwnerId });
+    if (remark?.trim()) {
+      params.append('remark', remark.trim());
+    }
+    return this.request<WorkItem>(`/work-items/${itemId}/reassign?${params.toString()}`, {
+      method: 'POST',
     });
   }
 
@@ -448,6 +472,61 @@ class ApiClient {
   async deleteUser(userId: string): Promise<void> {
     await this.request<void>(`/auth/users/${userId}`, {
       method: 'DELETE',
+    });
+  }
+
+  // Catalog Lab APIs
+  async listCatalogLabs(params: { active_only?: boolean } = {}): Promise<ApiResponse<CatalogLab[]>> {
+    const query = new URLSearchParams();
+    if (params.active_only) {
+      query.append('active_only', 'true');
+    }
+    const qs = query.toString();
+    return this.request<CatalogLab[]>(`/catalog/labs${qs ? `?${qs}` : ''}`, { method: 'GET' });
+  }
+
+  async createCatalogLab(data: CreateCatalogLabRequest): Promise<ApiResponse<CatalogLab>> {
+    return this.request<CatalogLab>('/catalog/labs', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateCatalogLab(labId: string, data: UpdateCatalogLabRequest): Promise<ApiResponse<CatalogLab>> {
+    return this.request<CatalogLab>(`/catalog/labs/${labId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deactivateCatalogLab(
+    labId: string,
+    targetLabId: string,
+  ): Promise<ApiResponse<CatalogLab>> {
+    return this.request<CatalogLab>(`/catalog/labs/${labId}/deactivate`, {
+      method: 'POST',
+      body: JSON.stringify({ target_lab_id: targetLabId }),
+    });
+  }
+
+  async deleteCatalogLab(labId: string): Promise<void> {
+    await this.request<void>(`/catalog/labs/${labId}`, { method: 'DELETE' });
+  }
+
+  async getCatalogSuggestions(
+    labId: string,
+    parentPath: string[] = [],
+  ): Promise<ApiResponse<{ lab_id: string; parent_path: string[]; segments: string[] }>> {
+    const query = new URLSearchParams({ lab_id: labId });
+    if (parentPath.length > 0) {
+      query.append('parent_path', JSON.stringify(parentPath));
+    }
+    return this.request(`/catalog/suggestions?${query.toString()}`, { method: 'GET' });
+  }
+
+  async getCatalogTree(labId: string): Promise<ApiResponse<CatalogTreeResponse>> {
+    return this.request<CatalogTreeResponse>(`/catalog/tree?lab_id=${encodeURIComponent(labId)}`, {
+      method: 'GET',
     });
   }
 }

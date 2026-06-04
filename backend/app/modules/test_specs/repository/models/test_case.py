@@ -17,7 +17,10 @@ class TestCaseDoc(Document):
     """
     __test__ = False
     case_id: str = Field(..., description="唯一业务编号（如 TC-MEM-001）")
-    ref_req_id: str = Field(..., description="关联需求 req_id")
+    lab_id: str = Field(..., description="所属 Lab（FK → TestLabDoc.lab_id）")
+    catalog_path: List[str] = Field(..., description="目录路径段（≥1，小写存储）")
+    catalog_path_key: str = Field(..., description="路径查询键，如 a/b/c")
+    ref_req_id: Optional[str] = Field(None, description="关联需求 req_id（可选）")
     workflow_item_id: Optional[str] = Field(None, description="关联工作流事项 ID")
     title: str = Field(..., description="用例名称")
     version: int = Field(default=1, description="版本号")
@@ -54,6 +57,8 @@ class TestCaseDoc(Document):
         name = "test_cases"
         indexes = [
             IndexModel("case_id", unique=True),
+            IndexModel("lab_id"),
+            IndexModel("catalog_path_key"),
             IndexModel("ref_req_id"),
             IndexModel("owner_id"),
             IndexModel("reviewer_id"),
@@ -71,7 +76,10 @@ class TestCaseModel(BaseModel):
     __test__ = False
     id: Optional[str] = None
     case_id: str
-    ref_req_id: str
+    lab_id: str
+    catalog_path: List[str]
+    catalog_path_key: str
+    ref_req_id: Optional[str] = None
     title: str
     version: int
     is_active: bool

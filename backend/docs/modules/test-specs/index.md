@@ -28,6 +28,7 @@
 - `TestRequirementDoc`
 - `TestCaseDoc`
 - `AutomationTestCaseDoc`
+- `TestLabDoc` / `TestCatalogSegmentDoc`（规划，见 [测试用例目录设计](../../../docs/design/test-case-catalog.md)）
 
 ## 关键字段说明
 

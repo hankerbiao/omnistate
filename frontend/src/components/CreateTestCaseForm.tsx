@@ -1,18 +1,31 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { api } from '../services/api';
 import type { CreateTestCaseRequest, TestCaseResponse } from '../types';
+import CatalogPathEditor, { type CatalogPathValue } from './catalog/CatalogPathEditor';
+import { PRIORITY_COLORS, PRIORITY_LABELS } from '../constants/testCaseLabels';
 
 interface CreateTestCaseFormProps {
   onClose: () => void;
   onSuccess: () => void;
   defaultRequirementId?: string;
   lockRequirementId?: boolean;
+  defaultLabId?: string;
+  defaultCatalogPrefix?: string[];
   editTestCase?: TestCaseResponse;
+}
+
+interface FormSectionProps {
+  title: string;
+  badge?: string;
+  prominent?: boolean;
+  children: React.ReactNode;
 }
 
 function testCaseToFormData(testCase: TestCaseResponse): CreateTestCaseRequest {
   return {
-    ref_req_id: testCase.ref_req_id,
+    ref_req_id: testCase.ref_req_id || undefined,
+    lab_id: testCase.lab_id,
+    catalog_path: testCase.catalog_path || [],
     title: testCase.title,
     version: testCase.version,
     is_active: testCase.is_active,
@@ -44,11 +57,28 @@ function testCaseToFormData(testCase: TestCaseResponse): CreateTestCaseRequest {
   };
 }
 
+const FormSection: React.FC<FormSectionProps> = ({ title, badge, prominent, children }) => (
+  <section
+    style={{
+      ...styles.section,
+      ...(prominent ? styles.sectionProminent : {}),
+    }}
+  >
+    <div style={styles.sectionHeader}>
+      <span style={styles.sectionTitle}>{title}</span>
+      {badge && <span style={prominent ? styles.sectionBadgeProminent : styles.sectionBadge}>{badge}</span>}
+    </div>
+    <div style={styles.sectionContent}>{children}</div>
+  </section>
+);
+
 const CreateTestCaseForm: React.FC<CreateTestCaseFormProps> = ({
   onClose,
   onSuccess,
   defaultRequirementId = '',
   lockRequirementId = false,
+  defaultLabId = '',
+  defaultCatalogPrefix = [],
   editTestCase,
 }) => {
   const isEditMode = Boolean(editTestCase);
@@ -58,7 +88,9 @@ const CreateTestCaseForm: React.FC<CreateTestCaseFormProps> = ({
       return testCaseToFormData(editTestCase);
     }
     return {
-      ref_req_id: defaultRequirementId,
+      ref_req_id: defaultRequirementId || undefined,
+      lab_id: defaultLabId,
+      catalog_path: defaultCatalogPrefix.length > 0 ? [...defaultCatalogPrefix] : [''],
       title: '',
       version: 1,
       is_active: true,
@@ -77,8 +109,24 @@ const CreateTestCaseForm: React.FC<CreateTestCaseFormProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'basic' | 'automation'>('basic');
   const [newTag, setNewTag] = useState('');
-  const [steps, setSteps] = useState<Array<{ id: string; content: string; expected: string }>>([]);
-  const [stepCounter, setStepCounter] = useState(0);
+  const [catalogTouched, setCatalogTouched] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(isEditMode);
+  const lockCatalogFromTree = !isEditMode && Boolean(defaultLabId) && defaultCatalogPrefix.length > 0;
+  const lockLabOnly = !isEditMode && Boolean(defaultLabId) && defaultCatalogPrefix.length === 0;
+
+  const [catalogPath, setCatalogPath] = useState<CatalogPathValue>(() => ({
+    labId: editTestCase?.lab_id || defaultLabId,
+    segments: editTestCase?.catalog_path?.length
+      ? editTestCase.catalog_path
+      : defaultCatalogPrefix.length > 0
+        ? [...defaultCatalogPrefix, '']
+        : [''],
+  }));
+
+  const catalogLockedPrefix = useMemo(
+    () => (lockCatalogFromTree ? defaultCatalogPrefix : []),
+    [lockCatalogFromTree, defaultCatalogPrefix],
+  );
 
   const normalizePayload = (data: CreateTestCaseRequest): CreateTestCaseRequest => {
     const payload = { ...data };
@@ -90,11 +138,25 @@ const CreateTestCaseForm: React.FC<CreateTestCaseFormProps> = ({
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    setCatalogTouched(true);
     setLoading(true);
     setError(null);
 
+    const segments = catalogPath.segments.map(s => s.trim()).filter(Boolean);
+    if (!catalogPath.labId || segments.length === 0) {
+      setError('请选择 Lab 并填写至少一段目录路径');
+      setActiveTab('basic');
+      setLoading(false);
+      return;
+    }
+
     try {
-      const payload = normalizePayload(formData);
+      const payload = normalizePayload({
+        ...formData,
+        lab_id: catalogPath.labId,
+        catalog_path: segments,
+        ref_req_id: formData.ref_req_id?.trim() || undefined,
+      });
       if (isEditMode && editTestCase) {
         await api.updateTestCase(editTestCase.case_id, payload);
       } else {
@@ -103,7 +165,9 @@ const CreateTestCaseForm: React.FC<CreateTestCaseFormProps> = ({
       onSuccess();
       onClose();
     } catch (err) {
-      setError(isEditMode ? '更新测试用例失败' : '创建测试用例失败');
+      const fallback = isEditMode ? '更新测试用例失败' : '创建测试用例失败';
+      const message = err instanceof Error && err.message ? err.message : fallback;
+      setError(message);
       console.error(isEditMode ? 'Update test case error:' : 'Create test case error:', err);
     } finally {
       setLoading(false);
@@ -119,10 +183,10 @@ const CreateTestCaseForm: React.FC<CreateTestCaseFormProps> = ({
   };
 
   const handleAddTag = () => {
-    if (newTag) {
+    if (newTag.trim()) {
       setFormData(prev => ({
         ...prev,
-        tags: [...(prev.tags || []), newTag],
+        tags: [...(prev.tags || []), newTag.trim()],
       }));
       setNewTag('');
     }
@@ -135,443 +199,421 @@ const CreateTestCaseForm: React.FC<CreateTestCaseFormProps> = ({
     }));
   };
 
-  const handleAddStep = () => {
-    const newStepId = `STEP-${String(stepCounter + 1).padStart(3, '0')}`;
-    setSteps(prev => [...prev, { id: newStepId, content: '', expected: '' }]);
-    setStepCounter(prev => prev + 1);
-  };
-
-  const handleRemoveStep = (stepId: string) => {
-    setSteps(prev => prev.filter(step => step.id !== stepId));
-  };
-
-  const handleStepChange = (stepId: string, field: 'content' | 'expected', value: string) => {
-    setSteps(prev => prev.map(step => 
-      step.id === stepId ? { ...step, [field]: value } : step
-    ));
-  };
-
-  const priorityColors = {
-    P0: '#d93021',
-    P1: '#f66a0a',
-    P2: '#e3b30e',
-    P3: '#0b7ece',
-  };
-
-  const priorityLabels = {
-    P0: '紧急',
-    P1: '高',
-    P2: '中',
-    P3: '低',
-  };
-
   return (
-    <div style={styles.modalOverlay}>
-      <div style={styles.modalContent}>
+    <div style={styles.modalOverlay} onClick={onClose} role="presentation">
+      <div
+        style={styles.modalContent}
+        onClick={e => e.stopPropagation()}
+        role="dialog"
+        aria-labelledby="create-test-case-title"
+      >
         <div style={styles.modalHeader}>
           <div>
-            <h2 style={styles.modalTitle}>{isEditMode ? '编辑测试用例' : '创建测试用例'}</h2>
+            <h2 id="create-test-case-title" style={styles.modalTitle}>
+              {isEditMode ? '编辑测试用例' : '创建测试用例'}
+            </h2>
             <p style={styles.modalSubtitle}>
-              {isEditMode ? `正在编辑 ${editTestCase?.case_id}` : '定义测试范围和执行步骤'}
+              {isEditMode
+                ? `用例 ${editTestCase?.case_id} · 目录与基本信息可在此调整`
+                : lockCatalogFromTree
+                  ? '目录已从左侧树继承，填写名称与优先级即可快速创建'
+                  : '先确定所属目录，再填写用例详情'}
             </p>
           </div>
-          <button style={styles.closeButton} onClick={onClose}>
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
+          <button type="button" className="modal__close" style={styles.closeButton} onClick={onClose} aria-label="关闭">
+            ×
           </button>
         </div>
 
         {error && (
-          <div style={styles.errorMessage}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="10"></circle>
-              <line x1="12" y1="8" x2="12" y2="12"></line>
-              <line x1="12" y1="16" x2="12.01" y2="16"></line>
-            </svg>
+          <div style={styles.errorBanner} role="alert">
+            <span style={styles.errorIcon}>!</span>
             <span>{error}</span>
           </div>
         )}
 
         <form onSubmit={handleSubmit} style={styles.form}>
-          <div style={styles.tabs}>
+          <div style={styles.tabs} role="tablist" aria-label="用例表单分区">
             <button
               type="button"
-              style={{
-                ...styles.tab,
-                ...(activeTab === 'basic' ? styles.activeTab : {}),
-              }}
+              role="tab"
+              aria-selected={activeTab === 'basic'}
+              aria-controls="test-case-panel-basic"
+              id="test-case-tab-basic"
+              style={{ ...styles.tab, ...(activeTab === 'basic' ? styles.activeTab : {}) }}
               onClick={() => setActiveTab('basic')}
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 8 }}>
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                <polyline points="14 2 14 8 20 8"></polyline>
-                <line x1="16" y1="13" x2="8" y2="13"></line>
-                <line x1="16" y1="17" x2="8" y2="17"></line>
-                <polyline points="10 9 9 9 8 9"></polyline>
-              </svg>
               基本信息
             </button>
             <button
               type="button"
-              style={{
-                ...styles.tab,
-                ...(activeTab === 'automation' ? styles.activeTab : {}),
-              }}
+              role="tab"
+              aria-selected={activeTab === 'automation'}
+              aria-controls="test-case-panel-automation"
+              id="test-case-tab-automation"
+              style={{ ...styles.tab, ...(activeTab === 'automation' ? styles.activeTab : {}) }}
               onClick={() => setActiveTab('automation')}
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 8 }}>
-                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
-              </svg>
               自动化
             </button>
           </div>
 
           <div style={styles.modalBody}>
             {activeTab === 'basic' && (
-              <div style={styles.tabContent}>
-                <div style={styles.formGrid}>
+              <div
+                id="test-case-panel-basic"
+                role="tabpanel"
+                aria-labelledby="test-case-tab-basic"
+                style={styles.tabStack}
+              >
+                {!isEditMode ? (
+                  <section style={styles.quickCreateCard}>
+                    <div style={styles.quickCreateHeader}>
+                      <span style={styles.quickCreateTitle}>快速创建</span>
+                      <span style={styles.quickCreateBadge}>核心字段</span>
+                    </div>
+                    <div style={styles.quickCreateBody}>
+                      <FormSection title="所属目录" badge="必填" prominent>
+                        <CatalogPathEditor
+                          value={catalogPath}
+                          onChange={setCatalogPath}
+                          titlePreview={formData.title}
+                          showValidation={catalogTouched}
+                          lockLab={lockCatalogFromTree || lockLabOnly}
+                          lockedPrefix={catalogLockedPrefix}
+                          compact
+                        />
+                      </FormSection>
+                      <div style={styles.twoColGrid}>
+                        <div style={styles.formGroup}>
+                          <label style={styles.label}>
+                            用例名称
+                            <span style={styles.required}>*</span>
+                          </label>
+                          <input
+                            type="text"
+                            name="title"
+                            className="form-input"
+                            value={formData.title}
+                            onChange={handleChange}
+                            placeholder="输入用例名称"
+                            required
+                            autoFocus={lockCatalogFromTree}
+                          />
+                        </div>
+                        <div style={styles.formGroup}>
+                          <label style={styles.label}>优先级</label>
+                          <div style={styles.priorityPills} role="group" aria-label="优先级">
+                            {(Object.keys(PRIORITY_LABELS) as Array<keyof typeof PRIORITY_LABELS>).map(p => (
+                              <button
+                                key={p}
+                                type="button"
+                                style={{
+                                  ...styles.priorityPill,
+                                  ...(formData.priority === p ? styles.priorityPillActive : {}),
+                                  borderColor: PRIORITY_COLORS[p],
+                                }}
+                                onClick={() => setFormData(prev => ({ ...prev, priority: p }))}
+                              >
+                                <span
+                                  style={{
+                                    ...styles.priorityPillDot,
+                                    backgroundColor: PRIORITY_COLORS[p],
+                                  }}
+                                />
+                                {PRIORITY_LABELS[p]}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </section>
+                ) : (
+                  <>
+                    <FormSection title="所属目录" badge="必填" prominent>
+                      <CatalogPathEditor
+                        value={catalogPath}
+                        onChange={setCatalogPath}
+                        titlePreview={formData.title}
+                        showValidation={catalogTouched}
+                      />
+                    </FormSection>
+                    <FormSection title="基本信息">
+                      <div style={styles.twoColGrid}>
+                        <div style={styles.formGroup}>
+                          <label style={styles.label}>
+                            用例名称
+                            <span style={styles.required}>*</span>
+                          </label>
+                          <input
+                            type="text"
+                            name="title"
+                            className="form-input"
+                            value={formData.title}
+                            onChange={handleChange}
+                            placeholder="输入用例名称"
+                            required
+                          />
+                        </div>
+                        <div style={styles.formGroup}>
+                          <label style={styles.label}>优先级</label>
+                          <div style={styles.selectWrapper}>
+                            <select
+                              name="priority"
+                              className="form-input form-select"
+                              value={formData.priority}
+                              onChange={handleChange}
+                            >
+                              {Object.entries(PRIORITY_LABELS).map(([value, label]) => (
+                                <option key={value} value={value}>
+                                  {label} ({value})
+                                </option>
+                              ))}
+                            </select>
+                            <span
+                              style={{
+                                ...styles.priorityDot,
+                                backgroundColor: PRIORITY_COLORS[formData.priority as keyof typeof PRIORITY_COLORS]
+                                  || PRIORITY_COLORS.P1,
+                              }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </FormSection>
+                  </>
+                )}
+
+                {!isEditMode && (
+                  <button
+                    type="button"
+                    style={styles.advancedToggle}
+                    onClick={() => setShowAdvanced(v => !v)}
+                    aria-expanded={showAdvanced}
+                  >
+                    <span style={styles.advancedChevron} aria-hidden>
+                      {showAdvanced ? '▾' : '▸'}
+                    </span>
+                    <span>高级选项</span>
+                    <span style={styles.advancedHint}>需求关联、分类、标签、条件等</span>
+                  </button>
+                )}
+
+                {(isEditMode || showAdvanced) && (
+                  <>
+                <FormSection title="关联需求" badge="可选">
                   <div style={styles.formGroup}>
                     <label style={styles.label}>
-                      需求编号
-                      <span style={styles.required}>*</span>
+                      需求编号 (ref_req_id)
+                      <span style={styles.optionalHint}>可选 · 与目录正交</span>
                     </label>
                     <div style={styles.inputWrapper}>
                       <input
                         type="text"
                         name="ref_req_id"
-                        value={formData.ref_req_id}
+                        className="form-input"
+                        value={formData.ref_req_id || ''}
                         onChange={handleChange}
-                        style={styles.input}
-                        placeholder="REQ-001"
-                        required
-                        readOnly={lockRequirementId || isEditMode}
+                        placeholder="留空表示不绑定需求"
+                        readOnly={lockRequirementId}
+                        style={lockRequirementId ? styles.inputLocked : undefined}
                       />
-                      {(lockRequirementId || isEditMode) && (
-                        <span style={styles.lockedBadge}>锁定</span>
+                      {lockRequirementId && (
+                        <span style={styles.lockedBadge}>已锁定</span>
                       )}
                     </div>
+                    {lockRequirementId && (
+                      <p style={styles.helperText}>从需求页创建/编辑时，关联需求不可修改</p>
+                    )}
                   </div>
+                </FormSection>
 
-                  <div style={styles.formGroup}>
-                    <label style={styles.label}>
-                      用例名称
-                      <span style={styles.required}>*</span>
-                    </label>
-                    <input
-                      type="text"
-                      name="title"
-                      value={formData.title}
-                      onChange={handleChange}
-                      style={styles.input}
-                      placeholder="输入用例名称"
-                      required
-                    />
-                  </div>
-
-                  <div style={styles.formGroup}>
-                    <label style={styles.label}>优先级</label>
-                    <div style={styles.selectWrapper}>
-                      <select
-                        name="priority"
-                        value={formData.priority}
+                <FormSection title="执行与分类">
+                  <div style={styles.threeColGrid}>
+                    <div style={styles.formGroup}>
+                      <label style={styles.label}>预估时间 (秒)</label>
+                      <input
+                        type="number"
+                        name="estimated_duration_sec"
+                        className="form-input"
+                        value={formData.estimated_duration_sec ?? ''}
                         onChange={handleChange}
-                        style={styles.select}
+                        placeholder="60"
+                        min={0}
+                      />
+                    </div>
+
+                    <div style={styles.formGroup}>
+                      <label style={styles.label}>测试分类</label>
+                      <input
+                        type="text"
+                        name="test_category"
+                        className="form-input"
+                        value={formData.test_category || ''}
+                        onChange={handleChange}
+                        placeholder="功能 / 性能等（非目录）"
+                      />
+                    </div>
+
+                    <div style={styles.formGroup}>
+                      <label style={styles.label}>状态</label>
+                      <select
+                        name="is_active"
+                        className="form-input form-select"
+                        value={formData.is_active ? 'true' : 'false'}
+                        onChange={handleChange}
                       >
-                        {Object.entries(priorityLabels).map(([value, label]) => (
-                          <option key={value} value={value}>
-                            {label} ({value})
-                          </option>
-                        ))}
+                        <option value="true">激活</option>
+                        <option value="false">未激活</option>
                       </select>
-                      <span style={{ ...styles.priorityIndicator, backgroundColor: priorityColors[formData.priority as keyof typeof priorityColors] }} />
+                    </div>
+                  </div>
+
+                  <div style={styles.twoColGrid}>
+                    <div style={styles.formGroup}>
+                      <label style={styles.label}>前置条件</label>
+                      <textarea
+                        name="pre_condition"
+                        className="form-input"
+                        value={formData.pre_condition || ''}
+                        onChange={handleChange}
+                        placeholder="测试执行前的准备条件"
+                        rows={2}
+                        style={styles.textarea}
+                      />
+                    </div>
+
+                    <div style={styles.formGroup}>
+                      <label style={styles.label}>后置条件</label>
+                      <textarea
+                        name="post_condition"
+                        className="form-input"
+                        value={formData.post_condition || ''}
+                        onChange={handleChange}
+                        placeholder="测试执行后的预期状态"
+                        rows={2}
+                        style={styles.textarea}
+                      />
                     </div>
                   </div>
 
                   <div style={styles.formGroup}>
-                    <label style={styles.label}>预估时间</label>
-                    <input
-                      type="number"
-                      name="estimated_duration_sec"
-                      value={formData.estimated_duration_sec || ''}
-                      onChange={handleChange}
-                      style={styles.input}
-                      placeholder="60"
-                      min="0"
-                    />
+                    <label style={styles.label}>标签</label>
+                    <div style={styles.tagInputRow}>
+                      <input
+                        type="text"
+                        className="form-input"
+                        value={newTag}
+                        onChange={e => setNewTag(e.target.value)}
+                        placeholder="输入标签后回车或点击添加"
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleAddTag();
+                          }
+                        }}
+                      />
+                      <button type="button" className="btn btn--secondary btn--sm" onClick={handleAddTag}>
+                        添加
+                      </button>
+                    </div>
+                    {formData.tags && formData.tags.length > 0 && (
+                      <div style={styles.tagList}>
+                        {formData.tags.map((tag, index) => (
+                          <span key={index} style={styles.tag}>
+                            {tag}
+                            <button
+                              type="button"
+                              style={styles.tagRemove}
+                              onClick={() => handleRemoveTag(tag)}
+                              aria-label={`移除标签 ${tag}`}
+                            >
+                              ×
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
-                  <div style={styles.formGroup}>
-                    <label style={styles.label}>测试分类</label>
-                    <input
-                      type="text"
-                      name="test_category"
-                      value={formData.test_category || ''}
-                      onChange={handleChange}
-                      style={styles.input}
-                      placeholder="功能测试/性能测试等"
-                    />
-                  </div>
-
-                  <div style={styles.formGroup}>
-                    <label style={styles.label}>状态</label>
-                    <select
-                      name="is_active"
-                      value={formData.is_active ? 'true' : 'false'}
-                      onChange={handleChange}
-                      style={styles.select}
-                    >
-                      <option value="true">激活</option>
-                      <option value="false">未激活</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div style={styles.formRow}>
-                  <div style={styles.formGroup}>
-                    <label style={styles.label}>前置条件</label>
-                    <textarea
-                      name="pre_condition"
-                      value={formData.pre_condition || ''}
-                      onChange={handleChange}
-                      style={styles.textarea}
-                      placeholder="描述测试执行前的准备条件"
-                      rows={2}
-                    />
-                  </div>
-
-                  <div style={styles.formGroup}>
-                    <label style={styles.label}>后置条件</label>
-                    <textarea
-                      name="post_condition"
-                      value={formData.post_condition || ''}
-                      onChange={handleChange}
-                      style={styles.textarea}
-                      placeholder="描述测试执行后的状态"
-                      rows={2}
-                    />
-                  </div>
-                </div>
-
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>标签</label>
-                  <div style={styles.tagInputContainer}>
-                    <input
-                      type="text"
-                      value={newTag}
-                      onChange={(e) => setNewTag(e.target.value)}
-                      style={styles.tagInput}
-                      placeholder="输入标签后按回车"
-                      onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddTag())}
-                    />
-                    <button
-                      type="button"
-                      style={styles.addTagButton}
-                      onClick={handleAddTag}
-                    >
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M12 5v14M5 12h14"></path>
-                      </svg>
-                      添加
-                    </button>
-                  </div>
-                  <div style={styles.tagList}>
-                    {formData.tags?.map((tag, index) => (
-                      <span key={index} style={styles.tag}>
-                        <span style={styles.tagText}>{tag}</span>
-                        <button
-                          type="button"
-                          style={styles.tagRemove}
-                          onClick={() => handleRemoveTag(tag)}
-                        >
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <line x1="18" y1="6" x2="6" y2="18"></line>
-                            <line x1="6" y1="6" x2="18" y2="18"></line>
-                          </svg>
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                </div>
-
-                <div style={styles.checkboxSection}>
                   <label style={styles.checkboxLabel}>
                     <input
                       type="checkbox"
                       name="is_destructive"
                       checked={formData.is_destructive}
                       onChange={handleChange}
-                      style={styles.checkbox}
                     />
-                    <span style={styles.checkboxText}>是否为破坏性测试</span>
+                    <span>破坏性测试</span>
                   </label>
-                </div>
+                </FormSection>
+                  </>
+                )}
 
-                <div style={styles.compactStepForm}>
-                  <div style={styles.stepHeader}>
-                    <div style={styles.sectionTitle}>
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 8 }}>
-                        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
-                      </svg>
-                      测试步骤
-                    </div>
-                    <button
-                      type="button"
-                      style={styles.addStepButton}
-                      onClick={handleAddStep}
-                    >
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <line x1="12" y1="5" x2="12" y2="19"></line>
-                        <line x1="5" y1="12" x2="19" y2="12"></line>
-                      </svg>
-                      添加步骤
-                    </button>
-                  </div>
-                  <div style={styles.stepsList}>
-                    {steps.length === 0 ? (
-                      <div style={styles.emptyState}>
-                        <div style={styles.emptyIcon}>
-                          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                            <polyline points="14 2 14 8 20 8"></polyline>
-                            <line x1="16" y1="13" x2="8" y2="13"></line>
-                            <line x1="16" y1="17" x2="8" y2="17"></line>
-                            <polyline points="10 9 9 9 8 9"></polyline>
-                          </svg>
-                        </div>
-                        <p style={styles.emptyText}>暂无测试步骤</p>
-                        <p style={styles.emptySubtext}>点击上方按钮添加测试步骤</p>
-                        <button
-                          type="button"
-                          style={styles.emptyActionButton}
-                          onClick={handleAddStep}
-                        >
-                          立即添加
-                        </button>
-                      </div>
-                    ) : (
-                      <div style={styles.stepItems}>
-                        {steps.map((step) => (
-                          <div key={step.id} style={styles.stepItem}>
-                            <div style={styles.stepHeaderRow}>
-                              <div style={styles.stepBadge}>
-                                <span style={styles.stepIndex}>{step.id}</span>
-                              </div>
-                              <button
-                                type="button"
-                                style={styles.removeStepButton}
-                                onClick={() => handleRemoveStep(step.id)}
-                              >
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                  <line x1="18" y1="6" x2="6" y2="18"></line>
-                                  <line x1="6" y1="6" x2="18" y2="18"></line>
-                                </svg>
-                              </button>
-                            </div>
-                            <div style={styles.stepInputs}>
-                              <div style={styles.stepInputWrapper}>
-                                <label style={styles.stepLabel}>步骤内容</label>
-                                <textarea
-                                  value={step.content}
-                                  onChange={(e) => handleStepChange(step.id, 'content', e.target.value)}
-                                  style={styles.textarea}
-                                  placeholder="描述具体的测试操作步骤"
-                                  rows={2}
-                                />
-                              </div>
-                              <div style={styles.stepInputWrapper}>
-                                <label style={styles.stepLabel}>期望结果</label>
-                                <textarea
-                                  value={step.expected}
-                                  onChange={(e) => handleStepChange(step.id, 'expected', e.target.value)}
-                                  style={styles.textarea}
-                                  placeholder="描述预期的测试结果"
-                                  rows={2}
-                                />
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
               </div>
             )}
 
             {activeTab === 'automation' && (
-              <div style={styles.tabContent}>
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>自动化配置</label>
-                  <div style={styles.formGrid}>
-                    <div style={styles.formGroup}>
-                      <label style={styles.checkboxLabel}>
-                        <input
-                          type="checkbox"
-                          name="is_need_auto"
-                          checked={formData.is_need_auto}
-                          onChange={handleChange}
-                          style={styles.checkbox}
-                        />
-                        <span style={styles.checkboxText}>需要自动化</span>
-                      </label>
-                    </div>
+              <div
+                id="test-case-panel-automation"
+                role="tabpanel"
+                aria-labelledby="test-case-tab-automation"
+                style={styles.tabStack}
+              >
+                <FormSection title="自动化配置">
+                  <div style={styles.checkboxRow}>
+                    <label style={styles.checkboxLabel}>
+                      <input
+                        type="checkbox"
+                        name="is_need_auto"
+                        checked={formData.is_need_auto}
+                        onChange={handleChange}
+                      />
+                      <span>需要自动化</span>
+                    </label>
+                    <label style={styles.checkboxLabel}>
+                      <input
+                        type="checkbox"
+                        name="is_automated"
+                        checked={formData.is_automated}
+                        onChange={handleChange}
+                      />
+                      <span>已实现自动化</span>
+                    </label>
+                  </div>
 
+                  <div style={styles.twoColGrid}>
                     <div style={styles.formGroup}>
-                      <label style={styles.checkboxLabel}>
-                        <input
-                          type="checkbox"
-                          name="is_automated"
-                          checked={formData.is_automated}
-                          onChange={handleChange}
-                          style={styles.checkbox}
-                        />
-                        <span style={styles.checkboxText}>已实现自动化</span>
-                      </label>
+                      <label style={styles.label}>自动化类型</label>
+                      <input
+                        type="text"
+                        name="automation_type"
+                        className="form-input"
+                        value={formData.automation_type || ''}
+                        onChange={handleChange}
+                        placeholder="Selenium / Appium / Cypress 等"
+                      />
+                    </div>
+                    <div style={styles.formGroup}>
+                      <label style={styles.label}>脚本实体 ID</label>
+                      <input
+                        type="text"
+                        name="script_entity_id"
+                        className="form-input"
+                        value={formData.script_entity_id || ''}
+                        onChange={handleChange}
+                        placeholder="脚本 ID"
+                      />
                     </div>
                   </div>
-                </div>
 
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>自动化类型</label>
-                  <div style={styles.inputWrapper}>
-                    <input
-                      type="text"
-                      name="automation_type"
-                      value={formData.automation_type || ''}
-                      onChange={handleChange}
-                      style={styles.input}
-                      placeholder="Selenium/Appium/Cypress等"
-                    />
-                    <span style={styles.inputIcon}>
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
-                      </svg>
-                    </span>
-                  </div>
-                </div>
-
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>脚本实体ID</label>
-                  <input
-                    type="text"
-                    name="script_entity_id"
-                    value={formData.script_entity_id || ''}
-                    onChange={handleChange}
-                    style={styles.input}
-                    placeholder="脚本ID"
-                  />
-                </div>
-
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>风险等级</label>
-                  <div style={styles.selectWrapper}>
+                  <div style={styles.formGroup}>
+                    <label style={styles.label}>风险等级</label>
                     <select
                       name="risk_level"
+                      className="form-input form-select"
                       value={formData.risk_level || ''}
                       onChange={handleChange}
-                      style={styles.select}
                     >
                       <option value="">选择风险等级</option>
                       <option value="LOW">低风险</option>
@@ -579,62 +621,31 @@ const CreateTestCaseForm: React.FC<CreateTestCaseFormProps> = ({
                       <option value="HIGH">高风险</option>
                       <option value="CRITICAL">严重风险</option>
                     </select>
-                    <span style={styles.selectIcon}>
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path>
-                      </svg>
-                    </span>
                   </div>
-                </div>
 
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>失败分析</label>
-                  <textarea
-                    name="failure_analysis"
-                    value={formData.failure_analysis || ''}
-                    onChange={handleChange}
-                    style={styles.textarea}
-                    placeholder="描述可能的失败原因和分析"
-                    rows={6}
-                  />
-                </div>
+                  <div style={styles.formGroup}>
+                    <label style={styles.label}>失败分析</label>
+                    <textarea
+                      name="failure_analysis"
+                      className="form-input"
+                      value={formData.failure_analysis || ''}
+                      onChange={handleChange}
+                      placeholder="可能的失败原因与分析"
+                      rows={5}
+                      style={styles.textarea}
+                    />
+                  </div>
+                </FormSection>
               </div>
             )}
           </div>
 
           <div style={styles.modalFooter}>
-            <button
-              type="button"
-              style={styles.cancelButton}
-              onClick={onClose}
-              disabled={loading}
-            >
+            <button type="button" className="btn btn--secondary" onClick={onClose} disabled={loading}>
               取消
             </button>
-            <button
-              type="submit"
-              style={{
-                ...styles.submitButton,
-                ...(loading ? styles.buttonDisabled : {}),
-              }}
-              disabled={loading}
-            >
-              {loading ? (
-                <span style={styles.loadingContent}>
-                  <svg className="spinner" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="12" cy="12" r="10" opacity="0.25"></circle>
-                    <path d="M12 2a10 10 0 0 1 10 10h-2a8 8 0 0 0-8-8v2z"></path>
-                  </svg>
-                  {isEditMode ? '保存中...' : '创建中...'}
-                </span>
-              ) : (
-                <span style={styles.submitContent}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="20 6 9 17 4 12"></polyline>
-                  </svg>
-                  {isEditMode ? '保存修改' : '创建测试用例'}
-                </span>
-              )}
+            <button type="submit" className="btn btn--primary" disabled={loading}>
+              {loading ? (isEditMode ? '保存中…' : '创建中…') : (isEditMode ? '保存修改' : '创建测试用例')}
             </button>
           </div>
         </form>
@@ -643,471 +654,373 @@ const CreateTestCaseForm: React.FC<CreateTestCaseFormProps> = ({
   );
 };
 
-const styles = {
+const styles: Record<string, React.CSSProperties> = {
   modalOverlay: {
-    position: 'fixed' as const,
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(15, 23, 42, 0.6)',
+    position: 'fixed',
+    inset: 0,
+    backgroundColor: 'rgba(15, 23, 42, 0.55)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 1000,
-    animation: 'fadeIn 0.2s ease',
     backdropFilter: 'blur(4px)',
-  } as const,
+  },
   modalContent: {
-    backgroundColor: 'var(--bg-primary)',
+    backgroundColor: 'var(--surface-primary)',
     borderRadius: 'var(--radius-lg)',
     border: '1px solid var(--border-default)',
-    width: '90%',
-    maxWidth: '900px',
+    width: '92%',
+    maxWidth: 920,
     maxHeight: '90vh',
-    overflow: 'auto' as const,
+    display: 'flex',
+    flexDirection: 'column',
     boxShadow: 'var(--shadow-lg)',
-    animation: 'scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
-  } as const,
+  },
   modalHeader: {
     display: 'flex',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: '20px 24px',
-    borderBottom: '1px solid var(--border-default)',
-    backgroundColor: 'var(--bg-tertiary)',
+    alignItems: 'flex-start',
+    padding: 'var(--space-5) var(--space-6)',
+    borderBottom: '1px solid var(--border-subtle)',
+    backgroundColor: 'var(--surface-secondary)',
     borderRadius: 'var(--radius-lg) var(--radius-lg) 0 0',
-  } as const,
+  },
   modalTitle: {
     margin: 0,
-    fontSize: '20px',
+    fontSize: 18,
     fontWeight: 600,
     color: 'var(--text-primary)',
-    lineHeight: 1.4,
-  } as const,
+  },
   modalSubtitle: {
-    margin: '4px 0 0',
-    fontSize: '13px',
+    margin: 'var(--space-1) 0 0',
+    fontSize: 13,
     color: 'var(--text-secondary)',
-  } as const,
+  },
   closeButton: {
-    background: 'none',
-    border: 'none',
-    cursor: 'pointer',
-    color: 'var(--text-secondary)',
-    padding: '8px',
-    width: '36px',
-    height: '36px',
-    borderRadius: 'var(--radius-md)',
+    marginTop: 2,
+  },
+  errorBanner: {
     display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    transition: 'all var(--transition-fast)',
-  } as const,
-  errorMessage: {
-    padding: '16px 20px',
+    alignItems: 'flex-start',
+    gap: 'var(--space-2)',
+    margin: 'var(--space-4) var(--space-6) 0',
+    padding: 'var(--space-3) var(--space-4)',
     backgroundColor: 'var(--status-error-bg)',
     border: '1px solid var(--status-error)',
     borderRadius: 'var(--radius-md)',
+    fontSize: 13,
     color: 'var(--text-primary)',
-    fontSize: '14px',
-    margin: '0 24px 20px',
+  },
+  errorIcon: {
+    flexShrink: 0,
+    width: 20,
+    height: 20,
+    borderRadius: '50%',
+    backgroundColor: 'var(--status-error)',
+    color: 'white',
+    fontSize: 12,
+    fontWeight: 700,
     display: 'flex',
     alignItems: 'center',
-    gap: '10px',
-  } as const,
+    justifyContent: 'center',
+  },
   form: {
     display: 'flex',
-    flexDirection: 'column' as const,
-    height: 'calc(90vh - 100px)',
-  } as const,
+    flexDirection: 'column',
+    flex: 1,
+    minHeight: 0,
+  },
   tabs: {
     display: 'flex',
-    borderBottom: '1px solid var(--border-default)',
-    backgroundColor: 'var(--bg-primary)',
-  } as const,
+    borderBottom: '1px solid var(--border-subtle)',
+    padding: '0 var(--space-6)',
+    gap: 'var(--space-2)',
+  },
   tab: {
-    flex: 1,
-    padding: '16px 20px',
+    padding: 'var(--space-3) var(--space-4)',
     border: 'none',
-    backgroundColor: 'transparent',
+    background: 'transparent',
     color: 'var(--text-secondary)',
     cursor: 'pointer',
-    fontSize: '14px',
+    fontSize: 13,
     fontWeight: 500,
-    transition: 'all var(--transition-fast)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  } as const,
+    borderBottom: '2px solid transparent',
+    marginBottom: -1,
+  },
   activeTab: {
-    backgroundColor: 'var(--bg-primary)',
-    color: 'var(--accent-cyan)',
-    borderBottom: '2px solid var(--accent-cyan)',
-  } as const,
-  modalBody: {
-    flex: 1,
-    overflow: 'auto' as const,
-    padding: '24px',
-  } as const,
-  tabContent: {
-    display: 'block',
-  } as const,
-  formGroup: {
-    marginBottom: '20px',
-  } as const,
-  formGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(3, 1fr)',
-    gap: '20px',
-    marginBottom: '20px',
-  } as const,
-  formRow: {
-    display: 'flex',
-    gap: '20px',
-    marginBottom: '20px',
-  } as const,
-  checkboxSection: {
-    marginBottom: '20px',
-    padding: '16px',
-    backgroundColor: 'var(--bg-secondary)',
-    borderRadius: 'var(--radius-md)',
-  } as const,
-  label: {
-    display: 'block',
-    fontSize: '13px',
-    fontWeight: 500,
-    color: 'var(--text-secondary)',
-    marginBottom: '8px',
-    letterSpacing: '0.2px',
-  } as const,
-  helperText: {
-    display: 'inline-block',
-    marginTop: '8px',
-    fontSize: '12px',
-    color: 'var(--text-muted)',
-  } as const,
-  required: {
-    color: 'var(--accent-red)',
-    marginLeft: 4,
-  } as const,
-  input: {
-    width: '100%',
-    padding: '10px 12px',
-    border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-md)',
-    fontSize: '14px',
-    backgroundColor: 'var(--bg-primary)',
-    color: 'var(--text-primary)',
+    color: 'var(--accent-primary)',
+    borderBottomColor: 'var(--accent-primary)',
     outline: 'none',
-    transition: 'all var(--transition-fast)',
-  } as const,
-  textarea: {
-    width: '100%',
-    padding: '10px 12px',
-    border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-md)',
-    fontSize: '14px',
-    backgroundColor: 'var(--bg-primary)',
-    color: 'var(--text-primary)',
-    resize: 'vertical' as const,
-    minHeight: '60px',
-    transition: 'all var(--transition-fast)',
-  } as const,
-  select: {
-    width: '100%',
-    padding: '10px 12px',
-    border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-md)',
-    fontSize: '14px',
-    backgroundColor: 'var(--bg-primary)',
-    color: 'var(--text-primary)',
-    outline: 'none',
-    cursor: 'pointer',
-    transition: 'all var(--transition-fast)',
-  } as const,
-  inputWrapper: {
-    position: 'relative' as const,
-  } as const,
-  selectWrapper: {
-    position: 'relative' as const,
-  } as const,
-  inputIcon: {
-    position: 'absolute' as const,
-    right: '12px',
-    top: '50%',
-    transform: 'translateY(-50%)',
-    color: 'var(--text-muted)',
-  } as const,
-  selectIcon: {
-    position: 'absolute' as const,
-    right: '12px',
-    top: '50%',
-    transform: 'translateY(-50%)',
-    color: 'var(--text-muted)',
-  } as const,
-  lockedBadge: {
-    position: 'absolute' as const,
-    right: '40px',
-    top: '50%',
-    transform: 'translateY(-50%)',
-    fontSize: '10px',
-    padding: '2px 8px',
-    backgroundColor: 'var(--bg-tertiary)',
-    color: 'var(--text-secondary)',
-    borderRadius: '10px',
-    border: '1px solid var(--border-default)',
-  } as const,
-  priorityIndicator: {
-    position: 'absolute' as const,
-    right: '12px',
-    top: '50%',
-    transform: 'translateY(-50%)',
-    width: '8px',
-    height: '8px',
-    borderRadius: '50%',
-  } as const,
-  tagInputContainer: {
-    display: 'flex',
-    gap: '8px',
-    marginBottom: '12px',
-  } as const,
-  tagInput: {
-    flex: 1,
-    padding: '8px 12px',
-    border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-md)',
-    fontSize: '13px',
-    backgroundColor: 'var(--bg-primary)',
-    color: 'var(--text-primary)',
-    outline: 'none',
-    transition: 'all var(--transition-fast)',
-  } as const,
-  addTagButton: {
-    padding: '8px 16px',
-    backgroundColor: 'var(--bg-secondary)',
-    color: 'var(--text-primary)',
-    fontSize: '13px',
-    fontWeight: 500,
-    borderRadius: 'var(--radius-md)',
+  },
+  quickCreateCard: {
+    border: '1px solid var(--border-subtle)',
+    borderRadius: 'var(--radius-lg)',
+    overflow: 'hidden',
+    backgroundColor: 'var(--surface-primary)',
+    boxShadow: 'var(--shadow-sm)',
+  },
+  quickCreateHeader: {
     display: 'flex',
     alignItems: 'center',
-    gap: '6px',
-    transition: 'all var(--transition-fast)',
-  } as const,
-  tagList: {
-    display: 'flex',
-    flexWrap: 'wrap' as const,
-    gap: '8px',
-  } as const,
-  tag: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '6px',
-    padding: '4px 10px',
-    backgroundColor: 'var(--bg-secondary)',
-    borderRadius: '12px',
-    fontSize: '12px',
-    color: 'var(--text-primary)',
-  } as const,
-  tagText: {
-    color: 'var(--text-primary)',
-  } as const,
-  tagRemove: {
-    background: 'none',
-    border: 'none',
-    cursor: 'pointer',
-    color: 'var(--text-muted)',
-    padding: '2px',
-    borderRadius: '4px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    transition: 'all var(--transition-fast)',
-  } as const,
-  checkboxLabel: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
-    cursor: 'pointer',
-    fontSize: '14px',
-    color: 'var(--text-primary)',
-  } as const,
-  checkboxText: {
-    fontSize: '14px',
-    color: 'var(--text-primary)',
-  } as const,
-  checkbox: {
-    width: '18px',
-    height: '18px',
-    cursor: 'pointer',
-    accentColor: 'var(--accent-cyan)',
-  } as const,
-  compactStepForm: {
-    marginTop: '24px',
-  } as const,
-  stepHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '16px',
-  } as const,
-  sectionTitle: {
-    display: 'flex',
-    alignItems: 'center',
-    fontSize: '15px',
+    gap: 'var(--space-2)',
+    padding: 'var(--space-3) var(--space-4)',
+    backgroundColor: 'var(--surface-secondary)',
+    borderBottom: '1px solid var(--border-subtle)',
+  },
+  quickCreateTitle: {
+    fontSize: 13,
     fontWeight: 600,
     color: 'var(--text-primary)',
-  } as const,
-  addStepButton: {
-    padding: '8px 16px',
-    backgroundColor: 'var(--accent-cyan)',
-    color: 'white',
-    fontSize: '13px',
-    fontWeight: 500,
-    borderRadius: 'var(--radius-md)',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '6px',
-    transition: 'all var(--transition-fast)',
-  } as const,
-  stepsList: {
-    minHeight: '200px',
-  } as const,
-  emptyState: {
+  },
+  quickCreateBadge: {
+    fontSize: 10,
+    fontWeight: 600,
+    padding: '2px 8px',
+    borderRadius: 'var(--radius-full)',
+    backgroundColor: 'color-mix(in srgb, var(--accent-primary) 12%, transparent)',
+    color: 'var(--accent-primary)',
+  },
+  quickCreateBody: {
+    padding: 'var(--space-4)',
     display: 'flex',
     flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: '40px 20px',
-    textAlign: 'center',
-  } as const,
-  emptyIcon: {
-    marginBottom: '16px',
-    color: 'var(--border-default)',
-  } as const,
-  emptyText: {
-    fontSize: '15px',
-    fontWeight: 500,
-    color: 'var(--text-primary)',
-    marginBottom: '8px',
-  } as const,
-  emptySubtext: {
-    fontSize: '13px',
-    color: 'var(--text-secondary)',
-    marginBottom: '20px',
-  } as const,
-  emptyActionButton: {
-    padding: '10px 24px',
-    backgroundColor: 'var(--accent-cyan)',
-    color: 'white',
-    fontSize: '14px',
-    fontWeight: 500,
-    borderRadius: 'var(--radius-md)',
-    transition: 'all var(--transition-fast)',
-  } as const,
-  stepItems: {
+    gap: 'var(--space-4)',
+  },
+  priorityPills: {
     display: 'flex',
-    flexDirection: 'column' as const,
-    gap: '16px',
-  } as const,
-  stepItem: {
-    padding: '16px',
-    backgroundColor: 'var(--bg-primary)',
+    flexWrap: 'wrap',
+    gap: 'var(--space-2)',
+  },
+  priorityPill: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6,
+    padding: '6px 12px',
+    fontSize: 12,
+    fontWeight: 500,
     border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-md)',
-    transition: 'all var(--transition-fast)',
-  } as const,
-  stepHeaderRow: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '12px',
-  } as const,
-  stepBadge: {
-    padding: '4px 10px',
-    backgroundColor: 'var(--bg-secondary)',
-    borderRadius: '6px',
-  } as const,
-  stepIndex: {
-    fontSize: '12px',
-    fontWeight: 600,
+    borderRadius: 'var(--radius-full)',
+    backgroundColor: 'var(--surface-primary)',
     color: 'var(--text-secondary)',
-    fontFamily: 'JetBrains Mono, monospace',
-  } as const,
-  removeStepButton: {
-    background: 'none',
-    border: 'none',
     cursor: 'pointer',
-    color: 'var(--text-muted)',
-    padding: '6px',
-    borderRadius: '4px',
+    transition: 'background-color var(--transition-fast), color var(--transition-fast)',
+  },
+  priorityPillActive: {
+    backgroundColor: 'var(--surface-secondary)',
+    color: 'var(--text-primary)',
+    fontWeight: 600,
+    boxShadow: 'var(--shadow-sm)',
+  },
+  priorityPillDot: {
+    width: 8,
+    height: 8,
+    borderRadius: '50%',
+    flexShrink: 0,
+  },
+  advancedToggle: {
     display: 'flex',
     alignItems: 'center',
-    justifyContent: 'center',
-    transition: 'all var(--transition-fast)',
-  } as const,
-  stepInputs: {
+    gap: 'var(--space-2)',
+    width: '100%',
+    padding: 'var(--space-3) var(--space-4)',
+    border: '1px solid var(--border-subtle)',
+    borderRadius: 'var(--radius-md)',
+    backgroundColor: 'var(--surface-secondary)',
+    color: 'var(--text-primary)',
+    fontSize: 13,
+    fontWeight: 600,
+    cursor: 'pointer',
+    textAlign: 'left',
+  },
+  advancedHint: {
+    marginLeft: 'auto',
+    fontSize: 12,
+    fontWeight: 400,
+    color: 'var(--text-tertiary)',
+  },
+  advancedChevron: {
+    fontSize: 12,
+    color: 'var(--text-tertiary)',
+    width: 18,
+    textAlign: 'center',
+  },
+  modalBody: {
+    flex: 1,
+    overflowY: 'auto',
+    padding: 'var(--space-6)',
+  },
+  tabStack: {
     display: 'flex',
-    flexDirection: 'column' as const,
-    gap: '12px',
-  } as const,
-  stepInputWrapper: {
+    flexDirection: 'column',
+    gap: 'var(--space-5)',
+  },
+  section: {
+    border: '1px solid var(--border-subtle)',
+    borderRadius: 'var(--radius-lg)',
+    overflow: 'hidden',
+    backgroundColor: 'var(--surface-primary)',
+  },
+  sectionProminent: {
+    border: '2px solid var(--accent-primary)',
+    boxShadow: 'var(--shadow-sm)',
+  },
+  sectionHeader: {
     display: 'flex',
-    flexDirection: 'column' as const,
-    gap: '6px',
-  } as const,
-  stepLabel: {
-    fontSize: '12px',
+    alignItems: 'center',
+    gap: 'var(--space-2)',
+    padding: 'var(--space-3) var(--space-4)',
+    backgroundColor: 'var(--surface-secondary)',
+    borderBottom: '1px solid var(--border-subtle)',
+  },
+  sectionTitle: {
+    fontSize: 12,
+    fontWeight: 600,
+    color: 'var(--text-primary)',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px',
+  },
+  sectionBadge: {
+    fontSize: 10,
+    fontWeight: 600,
+    padding: '2px 8px',
+    borderRadius: 'var(--radius-full)',
+    backgroundColor: 'var(--surface-tertiary)',
+    color: 'var(--text-tertiary)',
+  },
+  sectionBadgeProminent: {
+    fontSize: 10,
+    fontWeight: 600,
+    padding: '2px 8px',
+    borderRadius: 'var(--radius-full)',
+    backgroundColor: 'var(--accent-primary)',
+    color: 'white',
+  },
+  sectionContent: {
+    padding: 'var(--space-4)',
+  },
+  twoColGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+    gap: 'var(--space-4)',
+  },
+  threeColGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+    gap: 'var(--space-4)',
+    marginBottom: 'var(--space-4)',
+  },
+  formGroup: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 'var(--space-2)',
+  },
+  label: {
+    fontSize: 12,
     fontWeight: 500,
     color: 'var(--text-secondary)',
-    letterSpacing: '0.2px',
-  } as const,
+  },
+  required: {
+    color: 'var(--status-error)',
+    marginLeft: 4,
+  },
+  optionalHint: {
+    marginLeft: 6,
+    fontWeight: 400,
+    fontSize: 11,
+    color: 'var(--text-tertiary)',
+  },
+  helperText: {
+    margin: 0,
+    fontSize: 12,
+    color: 'var(--text-tertiary)',
+  },
+  selectWrapper: {
+    position: 'relative',
+  },
+  priorityDot: {
+    position: 'absolute',
+    right: 12,
+    top: '50%',
+    transform: 'translateY(-50%)',
+    width: 8,
+    height: 8,
+    borderRadius: '50%',
+    pointerEvents: 'none',
+  },
+  inputWrapper: {
+    position: 'relative',
+  },
+  inputLocked: {
+    backgroundColor: 'var(--surface-secondary)',
+    color: 'var(--text-secondary)',
+  },
+  lockedBadge: {
+    position: 'absolute',
+    right: 10,
+    top: '50%',
+    transform: 'translateY(-50%)',
+    fontSize: 10,
+    padding: '2px 8px',
+    backgroundColor: 'var(--surface-tertiary)',
+    color: 'var(--text-secondary)',
+    borderRadius: 'var(--radius-full)',
+    border: '1px solid var(--border-default)',
+  },
+  textarea: {
+    resize: 'vertical',
+    minHeight: 64,
+  },
+  tagInputRow: {
+    display: 'flex',
+    gap: 'var(--space-2)',
+  },
+  tagList: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: 'var(--space-2)',
+    marginTop: 'var(--space-2)',
+  },
+  tag: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 4,
+    padding: '4px 10px',
+    backgroundColor: 'var(--surface-secondary)',
+    borderRadius: 'var(--radius-full)',
+    fontSize: 12,
+  },
+  tagRemove: {
+    border: 'none',
+    background: 'none',
+    cursor: 'pointer',
+    color: 'var(--text-tertiary)',
+    fontSize: 14,
+    lineHeight: 1,
+    padding: 0,
+  },
+  checkboxRow: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: 'var(--space-5)',
+    marginBottom: 'var(--space-4)',
+  },
+  checkboxLabel: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 'var(--space-2)',
+    fontSize: 13,
+    color: 'var(--text-primary)',
+    cursor: 'pointer',
+  },
   modalFooter: {
     display: 'flex',
     justifyContent: 'flex-end',
-    gap: '12px',
-    padding: '16px 24px',
-    borderTop: '1px solid var(--border-default)',
-    backgroundColor: 'var(--bg-tertiary)',
+    gap: 'var(--space-3)',
+    padding: 'var(--space-4) var(--space-6)',
+    borderTop: '1px solid var(--border-subtle)',
+    backgroundColor: 'var(--surface-secondary)',
     borderRadius: '0 0 var(--radius-lg) var(--radius-lg)',
-  } as const,
-  cancelButton: {
-    padding: '10px 20px',
-    backgroundColor: 'var(--bg-secondary)',
-    color: 'var(--text-primary)',
-    fontSize: '14px',
-    fontWeight: 500,
-    borderRadius: 'var(--radius-md)',
-    transition: 'all var(--transition-fast)',
-  } as const,
-  submitButton: {
-    padding: '10px 24px',
-    backgroundColor: 'var(--accent-cyan)',
-    color: 'white',
-    fontSize: '14px',
-    fontWeight: 500,
-    borderRadius: 'var(--radius-md)',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    transition: 'all var(--transition-fast)',
-  } as const,
-  buttonDisabled: {
-    opacity: 0.6,
-    cursor: 'not-allowed',
-  } as const,
-  loadingContent: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-  } as const,
-  submitContent: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-  } as const,
+  },
 };
 
 export default CreateTestCaseForm;

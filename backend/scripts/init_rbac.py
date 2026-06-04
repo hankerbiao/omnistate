@@ -40,6 +40,8 @@ DEFAULT_PERMISSIONS = [
     ("requirements:write", "Requirements write"),
     ("test_cases:read", "Test cases read"),
     ("test_cases:write", "Test cases write"),
+    ("catalog:labs:read", "Catalog labs read"),
+    ("catalog:labs:manage", "Catalog labs manage"),
     ("execution_tasks:read", "Execution tasks read"),
     ("execution_tasks:write", "Execution tasks write"),
     ("execution_agents:read", "Execution agents read"),
@@ -50,7 +52,14 @@ DEFAULT_PERMISSIONS = [
 ]
 
 # 公共权限分组
-_READ = ["users:read", "requirements:read", "test_cases:read", "work_items:read", "navigation:read"]
+_READ = [
+    "users:read",
+    "requirements:read",
+    "test_cases:read",
+    "catalog:labs:read",
+    "work_items:read",
+    "navigation:read",
+]
 _WORKFLOW = ["work_items:write", "work_items:transition"]
 _EXEC_READ = ["execution_tasks:read", "execution_agents:read"]
 _EXEC_WRITE = ["execution_tasks:write", "execution_agents:write"]
@@ -62,7 +71,16 @@ DEFAULT_ROLES = {
     },
     "TPM": {
         "name": "TPM", "description": "测试项目管理员，负责项目管理和协调", "is_system": True,
-        "permission_ids": [*_READ, "requirements:write", *_WORKFLOW, *_EXEC_READ, *_EXEC_WRITE, "terminal:connect", "navigation:write"],
+        "permission_ids": [
+            *_READ,
+            "requirements:write",
+            *_WORKFLOW,
+            *_EXEC_READ,
+            *_EXEC_WRITE,
+            "catalog:labs:manage",
+            "terminal:connect",
+            "navigation:write",
+        ],
     },
     "REVIEWER": {
         "name": "REVIEWER", "description": "评审者，审核需求和测试用例", "is_system": True,

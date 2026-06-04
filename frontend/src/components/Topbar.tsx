@@ -12,12 +12,24 @@ interface TopbarProps {
   description?: string
   onLogout: () => void
   currentUser?: string
+  currentUserId?: string
+  currentUserRole?: string
   onUserClick?: () => void
   onSwitchUser?: (userId: string, password: string) => Promise<void>
   switchableUsers?: SwitchableUser[]
 }
 
-const Topbar: React.FC<TopbarProps> = ({ title, description, onLogout, currentUser, onUserClick, onSwitchUser, switchableUsers }) => {
+const Topbar: React.FC<TopbarProps> = ({
+  title,
+  description,
+  onLogout,
+  currentUser,
+  currentUserId,
+  currentUserRole,
+  onUserClick,
+  onSwitchUser,
+  switchableUsers,
+}) => {
   const [menuOpen, setMenuOpen] = useState(false)
   const [switching, setSwitching] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -54,6 +66,16 @@ const Topbar: React.FC<TopbarProps> = ({ title, description, onLogout, currentUs
         )}
       </div>
       <div style={styles.right}>
+        {(currentUserId || currentUserRole) && (
+          <div style={styles.identityBanner} title="工作流测试提示：流转认此身份，非 admin 代操作">
+            <span style={styles.identityDot} />
+            <span style={styles.identityText}>
+              {currentUserRole && <strong>{currentUserRole}</strong>}
+              {currentUserRole && currentUserId && ' · '}
+              {currentUserId && <code style={styles.identityCode}>{currentUserId}</code>}
+            </span>
+          </div>
+        )}
         <div ref={menuRef} style={{ position: 'relative' }}>
           <div
             style={styles.userInfo}
@@ -152,6 +174,34 @@ const styles: Record<string, any> = {
     display: 'flex',
     alignItems: 'center',
     gap: '16px',
+  },
+  identityBanner: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '6px 12px',
+    backgroundColor: 'var(--surface-tertiary)',
+    borderRadius: '999px',
+    border: '1px solid var(--border-subtle)',
+    maxWidth: '280px',
+  },
+  identityDot: {
+    width: '8px',
+    height: '8px',
+    borderRadius: '50%',
+    backgroundColor: 'var(--status-success)',
+    flexShrink: 0,
+  },
+  identityText: {
+    fontSize: '12px',
+    color: 'var(--text-secondary)',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap' as const,
+  },
+  identityCode: {
+    fontFamily: 'monospace',
+    fontSize: '11px',
   },
   userInfo: {
     display: 'flex',

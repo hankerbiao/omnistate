@@ -52,6 +52,8 @@ class TestCaseQueryService:
         reviewer_id: Optional[str] = None,
         priority: Optional[str] = None,
         is_active: Optional[bool] = None,
+        lab_id: Optional[str] = None,
+        catalog_prefix: Optional[list[str]] = None,
         limit: int = 20,
         offset: int = 0,
     ) -> list[dict]:
@@ -62,6 +64,8 @@ class TestCaseQueryService:
             reviewer_id=reviewer_id,
             priority=priority,
             is_active=is_active,
+            lab_id=lab_id,
+            catalog_prefix=catalog_prefix,
             limit=limit,
             offset=offset,
         )

@@ -57,7 +57,16 @@ export default withMermaid(
             ],
           },
           { text: "Auth", link: "/modules/auth/" },
-          { text: "Attachments", link: "/modules/attachments/" },
+          {
+            text: "Attachments",
+            collapsed: false,
+            items: [
+              { text: "概览", link: "/modules/attachments/" },
+              { text: "数据模型", link: "/modules/attachments/data-models" },
+              { text: "HTTP API", link: "/modules/attachments/api" },
+              { text: "模块集成", link: "/modules/attachments/integration" },
+            ],
+          },
           { text: "Terminal", link: "/modules/terminal/" },
           { text: "Shared", link: "/modules/shared/" },
         ],

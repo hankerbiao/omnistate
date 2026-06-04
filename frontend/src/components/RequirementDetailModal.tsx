@@ -1,31 +1,17 @@
 import React from 'react';
 import type { RequirementResponse } from '../types';
+import { WorkflowPanel } from './workflow';
+import { getStateLabel, getWorkflowStateStyle } from '../constants/workflowLabels';
 
 interface RequirementDetailModalProps {
   requirement: RequirementResponse;
   onClose: () => void;
+  onUpdated?: () => void;
 }
 
-const STATUS_LABELS: Record<string, string> = {
-  DRAFT: '草稿',
-  PENDING_REVIEW: '待审核',
-  PENDING_DEVELOP: '待开发',
-  DEVELOPING: '开发中',
-  PENDING_TEST: '待测试',
-  PENDING_UAT: '待验收',
-  PENDING_RELEASE: '待发布',
-  RELEASED: '已发布',
-  APPROVED: '已通过',
-  REJECTED: '已驳回',
-  CLOSED: '已关闭',
-  ACTIVE: '激活',
-  INACTIVE: '未激活',
-  DEPRECATED: '已弃用',
-};
-
-const RequirementDetailModal: React.FC<RequirementDetailModalProps> = ({ requirement, onClose }) => {
+const RequirementDetailModal: React.FC<RequirementDetailModalProps> = ({ requirement, onClose, onUpdated }) => {
   const [expandedSections, setExpandedSections] = React.useState<Set<string>>(new Set([
-    'basic', 'workflow', 'components', 'params', 'meta', 'time'
+    'workflowActions', 'basic', 'workflow', 'components', 'params', 'meta', 'time',
   ]));
 
   const toggleSection = (section: string) => {
@@ -71,6 +57,32 @@ const RequirementDetailModal: React.FC<RequirementDetailModalProps> = ({ require
         </div>
 
         <div style={styles.modalBody}>
+          {/* 工作流流转 */}
+          {requirement.workflow_item_id && (
+            <div style={styles.section}>
+              <div style={styles.sectionHeader} onClick={() => toggleSection('workflowActions')}>
+                <span style={styles.sectionArrow}>{expandedSections.has('workflowActions') ? '▼' : '▶'}</span>
+                <span style={styles.sectionTitle}>工作流流转</span>
+              </div>
+              {expandedSections.has('workflowActions') && (
+                <div style={styles.sectionContent}>
+                  <WorkflowPanel
+                    workflowItemId={requirement.workflow_item_id}
+                    entityLabel={`${requirement.req_id} · ${requirement.title}`}
+                    typeCode="REQUIREMENT"
+                    defaultPriority={requirement.priority}
+                    creatorName={requirement.creator_name || requirement.creator}
+                    currentOwnerName={requirement.current_owner_name || requirement.current_owner}
+                    createdAt={requirement.created_at}
+                    updatedAt={requirement.updated_at}
+                    compact
+                    onTransitionSuccess={onUpdated}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
           {/* 基本信息 */}
           <div style={styles.section}>
             <div style={styles.sectionHeader} onClick={() => toggleSection('basic')}>
@@ -81,7 +93,12 @@ const RequirementDetailModal: React.FC<RequirementDetailModalProps> = ({ require
               <div style={styles.sectionContent}>
                 <div style={styles.infoGrid}>
                   {renderField('需求ID', requirement.req_id)}
-                  {renderField('状态', STATUS_LABELS[requirement.status] || requirement.status)}
+                  {renderField(
+                    '状态',
+                    <span className="status-badge" style={getWorkflowStateStyle(requirement.status)}>
+                      {getStateLabel(requirement.status, 'REQUIREMENT')}
+                    </span>,
+                  )}
                   {renderField('优先级', requirement.priority)}
                   {renderField('固件版本', requirement.firmware_version || '-')}
                   {renderField('工作流ID', requirement.workflow_item_id || '-')}

@@ -14,7 +14,9 @@ import ProfilePage from './components/ProfilePage'
 import MyTasksPage from './components/MyTasksPage'
 import PermissionManagement from './components/PermissionManagement'
 import DashboardPage from './components/DashboardPage'
+import CatalogLabsPage from './components/CatalogLabsPage'
 import { SWITCHABLE_USERS } from './config/users'
+import type { WorkflowNavigateTarget } from './components/workflow'
 import type { PageType, NavItem } from './types/app'
 import './App.css'
 
@@ -30,6 +32,7 @@ const navItems: NavItem[] = [
   { key: 'users', label: '用户管理', icon: '👤', permission: 'users:read' },
   { key: 'roles', label: '角色管理', icon: '👥', permission: 'roles:read' },
   { key: 'permissions', label: '权限管理', icon: '🔑', permission: 'permissions:read' },
+  { key: 'catalogLabs', label: 'Lab 管理', icon: '🗂', permission: 'catalog:labs:manage' },
 ]
 
 function App() {
@@ -46,6 +49,20 @@ function App() {
   const [userPermissions, setUserPermissions] = useState<string[]>([])
   const [currentUsername, setCurrentUsername] = useState<string>('')
   const [currentUserId, setCurrentUserId] = useState<string>('')
+  const [currentUserRole, setCurrentUserRole] = useState<string>('')
+  const [listFilters, setListFilters] = useState<{ requirements?: string; manualTestCases?: string }>({})
+
+  const handleWorkflowNavigate = useCallback((target: WorkflowNavigateTarget) => {
+    if (target.page === 'requirements') {
+      setListFilters((prev) => ({ ...prev, requirements: target.status }))
+    } else if (target.page === 'manualTestCases') {
+      setListFilters((prev) => ({ ...prev, manualTestCases: target.status }))
+    }
+    setCurrentPage(target.page)
+  }, [])
+
+  const resolveUserRole = (userId: string) =>
+    SWITCHABLE_USERS.find((u) => u.userId === userId)?.label || userId
 
   const fetchUserPermissions = async () => {
     try {
@@ -70,6 +87,7 @@ function App() {
           }
           if (userRes.data?.user_id) {
             setCurrentUserId(userRes.data.user_id)
+            setCurrentUserRole(resolveUserRole(userRes.data.user_id))
           }
         } catch (err) {
           console.error('Failed to restore current user:', err)
@@ -78,6 +96,7 @@ function App() {
           setUserPermissions([])
           setCurrentUsername('')
           setCurrentUserId('')
+          setCurrentUserRole('')
           return
         }
         fetchUserPermissions()
@@ -98,6 +117,7 @@ function App() {
       }
       if (userRes.data?.user_id) {
         setCurrentUserId(userRes.data.user_id)
+        setCurrentUserRole(resolveUserRole(userRes.data.user_id))
       }
     } catch (err) {
       console.error('Failed to fetch current user:', err)
@@ -111,6 +131,7 @@ function App() {
     setUserPermissions([])
     setCurrentUsername('')
     setCurrentUserId('')
+    setCurrentUserRole('')
   }
 
   const handleSwitchUser = useCallback(async (userId: string, password: string) => {
@@ -125,6 +146,10 @@ function App() {
       }
       if (userRes.data?.user_id) {
         setCurrentUserId(userRes.data.user_id)
+        setCurrentUserRole(resolveUserRole(userRes.data.user_id))
+      } else {
+        setCurrentUserId(userId)
+        setCurrentUserRole(resolveUserRole(userId))
       }
       const permRes = await api.getCurrentUserPermissions()
       setUserPermissions(permRes.data?.permissions || [])
@@ -147,12 +172,14 @@ function App() {
           visibleNavItems={visibleNavItems}
           onLogout={handleLogout}
           currentUser={currentUsername}
+          currentUserId={currentUserId}
+          currentUserRole={currentUserRole}
           onUserClick={() => setCurrentPage('profile')}
           onSwitchUser={handleSwitchUser}
           switchableUsers={SWITCHABLE_USERS}
         >
           {currentPage === 'dashboard' ? (
-            <DashboardPage key={currentUserId} />
+            <DashboardPage key={currentUserId} onWorkflowNavigate={handleWorkflowNavigate} />
           ) : currentPage === 'profile' ? (
             <ProfilePage key={currentUserId} />
           ) : currentPage === 'myTasks' ? (
@@ -160,9 +187,15 @@ function App() {
           ) : currentPage === 'testCases' ? (
             <TestCaseList key={currentUserId} />
           ) : currentPage === 'manualTestCases' ? (
-            <ManualTestCaseList key={currentUserId} />
+            <ManualTestCaseList
+              key={`cases-${currentUserId}-${listFilters.manualTestCases ?? ''}`}
+              initialStatusFilter={listFilters.manualTestCases}
+            />
           ) : currentPage === 'requirements' ? (
-            <RequirementsPage key={currentUserId} />
+            <RequirementsPage
+              key={`req-${currentUserId}-${listFilters.requirements ?? ''}`}
+              initialStatusFilter={listFilters.requirements}
+            />
           ) : currentPage === 'agents' ? (
             <AgentList key={currentUserId} onLogout={handleLogout} />
           ) : currentPage === 'terminal' ? (
@@ -173,6 +206,8 @@ function App() {
             <RoleManagement key={currentUserId} />
           ) : currentPage === 'permissions' ? (
             <PermissionManagement key={currentUserId} />
+          ) : currentPage === 'catalogLabs' ? (
+            <CatalogLabsPage key={currentUserId} />
           ) : (
             <TaskList key={currentUserId} onLogout={handleLogout} />
           )}

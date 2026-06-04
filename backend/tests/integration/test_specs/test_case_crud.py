@@ -23,7 +23,7 @@ async def create_test_case_with_req(client: AsyncClient, test_data_registry=None
 
     resp = await client.post(
         "/api/v1/test-cases",
-        json={"title": f"Test Case {unique_id()}", "ref_req_id": ref_req_id},
+        json=create_test_case_data(ref_req_id=ref_req_id),
     )
     if resp.status_code == 201:
         data = resp.json()["data"]

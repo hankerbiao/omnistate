@@ -1,8 +1,13 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { api } from '../services/api';
-import type { TestCaseResponse, ListTestCasesParams } from '../types';
+import { getCatalogLabs } from '../services/catalogLabsCache';
+import type { CatalogLab, TestCaseResponse, ListTestCasesParams } from '../types';
 import TestCaseDetailModal from './TestCaseDetailModal';
 import CreateTestCaseForm from './CreateTestCaseForm';
+import CatalogTreeSidebar from './catalog/CatalogTreeSidebar';
+import { catalogStyles } from './catalog/catalogStyles';
+import { PRIORITY_FILTER_OPTIONS } from '../constants/testCaseLabels';
+import { TEST_CASE_STATUS_FILTER_OPTIONS, getStateLabel, getWorkflowStateStyle } from '../constants/workflowLabels';
 
 interface FilterParams {
   ref_req_id?: string;
@@ -13,37 +18,36 @@ interface FilterParams {
   is_active?: boolean;
 }
 
-const STATUS_OPTIONS = [
-  { value: '', label: '全部' },
-  { value: 'DRAFT', label: '草稿' },
-  { value: 'PENDING_REVIEW', label: '待审核' },
-  { value: 'APPROVED', label: '已通过' },
-  { value: 'REJECTED', label: '已拒绝' },
-  { value: 'ACTIVE', label: '激活' },
-  { value: 'DEPRECATED', label: '已弃用' },
-];
-
-const PRIORITY_OPTIONS = [
-  { value: '', label: '全部' },
-  { value: 'P0', label: 'P0 - 最高' },
-  { value: 'P1', label: 'P1 - 高' },
-  { value: 'P2', label: 'P2 - 中' },
-  { value: 'P3', label: 'P3 - 低' },
-];
+const STATUS_OPTIONS = TEST_CASE_STATUS_FILTER_OPTIONS;
 
 const PAGE_SIZE = 20;
 
-const ManualTestCaseList: React.FC = () => {
+interface ManualTestCaseListProps {
+  initialStatusFilter?: string;
+}
+
+const ManualTestCaseList: React.FC<ManualTestCaseListProps> = ({ initialStatusFilter = '' }) => {
   const [testCases, setTestCases] = useState<TestCaseResponse[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [totalCount, setTotalCount] = useState(0);
   const [currentOffset, setCurrentOffset] = useState(0);
 
-  const [filters, setFilters] = useState<FilterParams>({});
-  const [showFilters, setShowFilters] = useState(false);
+  const [filters, setFilters] = useState<FilterParams>(
+    initialStatusFilter ? { status: initialStatusFilter } : {},
+  );
+  const [showFilters, setShowFilters] = useState(Boolean(initialStatusFilter));
   const [selectedTestCase, setSelectedTestCase] = useState<TestCaseResponse | null>(null);
   const [editingTestCase, setEditingTestCase] = useState<TestCaseResponse | null>(null);
+  const [showCreate, setShowCreate] = useState(false);
+  const [labs, setLabs] = useState<CatalogLab[]>([]);
+  const [selectedLabId, setSelectedLabId] = useState('');
+  const [catalogPrefix, setCatalogPrefix] = useState<string[]>([]);
+
+  const selectedLabName = useMemo(
+    () => labs.find(l => l.lab_id === selectedLabId)?.name || '',
+    [labs, selectedLabId],
+  );
 
   const fetchTestCases = useCallback(async (filterParams: FilterParams, offset: number) => {
     setLoading(true);
@@ -52,6 +56,8 @@ const ManualTestCaseList: React.FC = () => {
     try {
       const params: ListTestCasesParams = {
         ...filterParams,
+        lab_id: selectedLabId || undefined,
+        catalog_prefix: catalogPrefix.length > 0 ? JSON.stringify(catalogPrefix) : undefined,
         limit: PAGE_SIZE,
         offset,
       };
@@ -77,11 +83,25 @@ const ManualTestCaseList: React.FC = () => {
     } finally {
       setLoading(false);
     }
+  }, [selectedLabId, catalogPrefix]);
+
+  useEffect(() => {
+    let cancelled = false;
+    getCatalogLabs({ active_only: true })
+      .then(items => {
+        if (cancelled) return;
+        setLabs(items);
+        setSelectedLabId(prev => prev || items[0]?.lab_id || '');
+      })
+      .catch(() => {
+        if (!cancelled) setLabs([]);
+      });
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
     fetchTestCases(filters, currentOffset);
-  }, []);
+  }, [fetchTestCases, filters, currentOffset, selectedLabId, catalogPrefix]);
 
   const handleApplyFilters = () => {
     setCurrentOffset(0);
@@ -106,34 +126,69 @@ const ManualTestCaseList: React.FC = () => {
     fetchTestCases(filters, newOffset);
   };
 
-  const getStatusColor = (status: string) => {
-    const colors: Record<string, { bg: string; text: string }> = {
-      DRAFT: { bg: 'rgba(128, 128, 128, 0.15)', text: '#888' },
-      PENDING_REVIEW: { bg: 'rgba(255, 193, 7, 0.15)', text: '#f5a623' },
-      APPROVED: { bg: 'rgba(40, 167, 69, 0.15)', text: '#28a745' },
-      REJECTED: { bg: 'rgba(220, 53, 69, 0.15)', text: '#dc3545' },
-      ACTIVE: { bg: 'rgba(57, 208, 214, 0.15)', text: '#39d0d6' },
-      DEPRECATED: { bg: 'rgba(163, 113, 247, 0.15)', text: '#a371f7' },
-    };
-    return colors[status] || { bg: 'var(--bg-tertiary)', text: 'var(--text-secondary)' };
-  };
-
-  const getStatusLabel = (status: string) => {
-    const option = STATUS_OPTIONS.find(opt => opt.value === status);
-    return option?.label || status;
-  };
+  const getStatusLabel = (status: string) => getStateLabel(status, 'TEST_CASE');
 
   const totalPages = Math.ceil(totalCount / PAGE_SIZE) || 1;
   const currentPage = Math.floor(currentOffset / PAGE_SIZE) + 1;
 
+  const breadcrumbParts = useMemo(() => {
+    if (!selectedLabId) return [] as string[];
+    if (catalogPrefix.length === 0) return [selectedLabName || 'Lab', '全部用例'];
+    return [selectedLabName || 'Lab', ...catalogPrefix];
+  }, [selectedLabId, selectedLabName, catalogPrefix]);
+
   return (
-    <div style={styles.container}>
+    <div style={styles.layout}>
+      <CatalogTreeSidebar
+        labs={labs}
+        selectedLabId={selectedLabId}
+        selectedPrefix={catalogPrefix}
+        onSelectLab={labId => {
+          setSelectedLabId(labId);
+          setCurrentOffset(0);
+          fetchTestCases(filters, 0);
+        }}
+        onSelectPrefix={prefix => {
+          setCatalogPrefix(prefix);
+          setCurrentOffset(0);
+          fetchTestCases(filters, 0);
+        }}
+      />
+      <div style={styles.container}>
+      {breadcrumbParts.length > 0 && (
+        <nav style={catalogStyles.breadcrumbBar} aria-label="当前目录">
+          <span style={styles.breadcrumbLabel}>当前目录</span>
+          <div style={styles.breadcrumbChips}>
+            {breadcrumbParts.map((part, i) => (
+              <span key={`${part}-${i}`} style={styles.breadcrumbChipWrap}>
+                {i > 0 && <span style={styles.breadcrumbSep}>/</span>}
+                <span
+                  style={{
+                    ...styles.breadcrumbChip,
+                    ...(i === 0 ? styles.breadcrumbChipLab : {}),
+                    ...(i === breadcrumbParts.length - 1 ? styles.breadcrumbChipCurrent : {}),
+                  }}
+                >
+                  {part}
+                </span>
+              </span>
+            ))}
+          </div>
+        </nav>
+      )}
       <div style={styles.header}>
         <div style={styles.headerLeft}>
           <h1 style={styles.title}>测试用例</h1>
           <span style={styles.badge}>{totalCount}</span>
         </div>
         <div style={styles.headerActions}>
+          <button
+            type="button"
+            style={styles.createBtn}
+            onClick={() => setShowCreate(true)}
+          >
+            + 新建用例
+          </button>
           <button style={styles.filterToggleBtn} onClick={() => setShowFilters(!showFilters)}>
             <span style={styles.btnIcon}>⚙</span>
             筛选 {showFilters ? '▲' : '▼'}
@@ -177,7 +232,7 @@ const ManualTestCaseList: React.FC = () => {
                 value={filters.priority || ''}
                 onChange={e => handleFilterChange('priority', e.target.value || undefined)}
               >
-                {PRIORITY_OPTIONS.map(opt => (
+                {PRIORITY_FILTER_OPTIONS.map(opt => (
                   <option key={opt.value} value={opt.value}>{opt.label}</option>
                 ))}
               </select>
@@ -230,9 +285,27 @@ const ManualTestCaseList: React.FC = () => {
           </div>
         ) : testCases.length === 0 ? (
           <div style={styles.emptyState}>
-            <span style={styles.emptyIcon}>📋</span>
-            <p>暂无测试用例</p>
-            <p style={styles.emptyHint}>点击上方按钮创建新的测试用例</p>
+            <div style={styles.emptyIconWrap} aria-hidden>
+              <span style={styles.emptyIcon}>📋</span>
+            </div>
+            <p style={styles.emptyTitle}>暂无测试用例</p>
+            <p style={styles.emptyHint}>
+              {selectedLabId
+                ? catalogPrefix.length > 0
+                  ? '当前目录下还没有用例，可在此路径下新建'
+                  : '选择左侧子目录筛选，或新建第一条用例'
+                : '请先在左侧选择 Lab'}
+            </p>
+            {selectedLabId && (
+              <button
+                type="button"
+                className="btn btn--primary btn--sm"
+                style={styles.emptyCta}
+                onClick={() => setShowCreate(true)}
+              >
+                + 新建用例
+              </button>
+            )}
           </div>
         ) : (
           <>
@@ -241,6 +314,7 @@ const ManualTestCaseList: React.FC = () => {
                 <tr style={styles.tableHeader}>
                   <th style={{ ...styles.th, width: '120px' }}>用例ID</th>
                   <th style={styles.th}>用例标题</th>
+                  <th style={{ ...styles.th, width: '200px' }}>目录</th>
                   <th style={{ ...styles.th, width: '100px' }}>关联需求</th>
                   <th style={{ ...styles.th, width: '100px' }}>状态</th>
                   <th style={{ ...styles.th, width: '70px' }}>优先级</th>
@@ -252,7 +326,7 @@ const ManualTestCaseList: React.FC = () => {
               </thead>
               <tbody>
                 {testCases.map((testCase, index) => {
-                  const statusStyle = getStatusColor(testCase.status);
+                  const statusStyle = getWorkflowStateStyle(testCase.status);
                   return (
                     <tr
                       key={testCase.id}
@@ -270,14 +344,19 @@ const ManualTestCaseList: React.FC = () => {
                         <span style={styles.caseTitle}>{testCase.title}</span>
                       </td>
                       <td style={styles.td}>
-                        <span style={styles.refReqId}>{testCase.ref_req_id}</span>
+                        <span style={styles.catalogText}>
+                          {testCase.catalog_breadcrumb || testCase.catalog_path?.join(' / ') || '-'}
+                        </span>
+                      </td>
+                      <td style={styles.td}>
+                        <span style={styles.refReqId}>{testCase.ref_req_id || '-'}</span>
                       </td>
                       <td style={styles.td}>
                         <span
                           style={{
                             ...styles.statusBadge,
                             backgroundColor: statusStyle.bg,
-                            color: statusStyle.text,
+                            color: statusStyle.color,
                           }}
                         >
                           {getStatusLabel(testCase.status)}
@@ -372,16 +451,79 @@ const ManualTestCaseList: React.FC = () => {
           onSuccess={() => fetchTestCases(filters, currentOffset)}
         />
       )}
+
+      {showCreate && (
+        <CreateTestCaseForm
+          defaultLabId={selectedLabId}
+          defaultCatalogPrefix={catalogPrefix}
+          onClose={() => setShowCreate(false)}
+          onSuccess={() => {
+            setShowCreate(false);
+            fetchTestCases(filters, currentOffset);
+          }}
+        />
+      )}
+      </div>
     </div>
   );
 };
 
 const styles = {
+  layout: {
+    display: 'flex',
+    minHeight: '100%',
+  } as const,
   container: {
+    flex: 1,
     padding: '32px',
     maxWidth: '1600px',
     margin: '0 auto',
     animation: 'fadeIn 0.4s ease',
+    overflow: 'auto',
+  } as const,
+  breadcrumbLabel: {
+    fontSize: 11,
+    fontWeight: 600,
+    color: 'var(--text-tertiary)',
+    textTransform: 'uppercase',
+    letterSpacing: '0.4px',
+    flexShrink: 0,
+  } as const,
+  breadcrumbChips: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 4,
+    flex: 1,
+  } as const,
+  breadcrumbChipWrap: {
+    display: 'inline-flex',
+    alignItems: 'center',
+  } as const,
+  breadcrumbSep: {
+    margin: '0 4px',
+    color: 'var(--text-tertiary)',
+    fontSize: 12,
+  } as const,
+  breadcrumbChip: {
+    fontSize: 13,
+    padding: '2px 8px',
+    borderRadius: 'var(--radius-full)',
+    backgroundColor: 'var(--surface-secondary)',
+    color: 'var(--text-secondary)',
+  } as const,
+  breadcrumbChipLab: {
+    color: 'var(--accent-primary)',
+    fontWeight: 600,
+    backgroundColor: 'var(--status-info-bg)',
+  } as const,
+  breadcrumbChipCurrent: {
+    color: 'var(--text-primary)',
+    fontWeight: 600,
+  } as const,
+  catalogText: {
+    fontSize: 12,
+    color: '#6b7280',
   } as const,
   header: {
     display: 'flex',
@@ -431,6 +573,21 @@ const styles = {
     border: '1px solid var(--border-default)',
     borderRadius: 'var(--radius-md)',
     cursor: 'pointer',
+    transition: 'all var(--transition-fast)',
+  } as const,
+  createBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '10px 18px',
+    fontSize: '13px',
+    fontWeight: 600,
+    color: '#fff',
+    background: 'linear-gradient(135deg, #6366f1 0%, var(--accent-primary) 100%)',
+    border: 'none',
+    borderRadius: 'var(--radius-md)',
+    cursor: 'pointer',
+    boxShadow: '0 2px 8px rgba(37, 99, 235, 0.25)',
     transition: 'all var(--transition-fast)',
   } as const,
   actionBtn: {
@@ -647,18 +804,41 @@ const styles = {
     flexDirection: 'column' as const,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: '8px',
-    padding: '60px',
+    gap: 'var(--space-3)',
+    padding: '72px var(--space-6)',
     color: 'var(--text-muted)',
   } as const,
+  emptyIconWrap: {
+    width: 64,
+    height: 64,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 'var(--radius-xl)',
+    backgroundColor: 'var(--surface-tertiary)',
+    border: '1px solid var(--border-subtle)',
+    boxShadow: 'var(--shadow-sm)',
+  } as const,
   emptyIcon: {
-    fontSize: '48px',
-    opacity: 0.3,
+    fontSize: '28px',
+    opacity: 0.5,
+  } as const,
+  emptyTitle: {
+    fontSize: '15px',
+    fontWeight: 600,
+    color: 'var(--text-primary)',
+    margin: 0,
   } as const,
   emptyHint: {
     fontSize: '13px',
-    color: 'var(--text-muted)',
+    color: 'var(--text-tertiary)',
     margin: 0,
+    textAlign: 'center',
+    maxWidth: 320,
+    lineHeight: 1.5,
+  } as const,
+  emptyCta: {
+    marginTop: 'var(--space-2)',
   } as const,
   pagination: {
     display: 'flex',

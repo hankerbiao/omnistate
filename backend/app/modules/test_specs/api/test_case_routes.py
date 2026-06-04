@@ -1,4 +1,5 @@
 """测试用例 API 路由"""
+import json
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -82,9 +83,20 @@ async def list_test_cases(
     reviewer_id: Optional[str] = Query(None),
     priority: Optional[str] = Query(None),
     is_active: Optional[bool] = Query(None),
+    lab_id: Optional[str] = Query(None),
+    catalog_prefix: Optional[str] = Query(None, description="JSON 数组，目录前缀"),
     limit: int = Query(20, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ):
+    parsed_prefix: Optional[list[str]] = None
+    if catalog_prefix:
+        try:
+            parsed_prefix = json.loads(catalog_prefix)
+            if not isinstance(parsed_prefix, list):
+                raise ValueError("catalog_prefix 必须是 JSON 数组")
+        except (json.JSONDecodeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     data = await query_service.list_test_cases(
         ref_req_id=ref_req_id,
         status=status,
@@ -92,6 +104,8 @@ async def list_test_cases(
         reviewer_id=reviewer_id,
         priority=priority,
         is_active=is_active,
+        lab_id=lab_id,
+        catalog_prefix=parsed_prefix,
         limit=limit,
         offset=offset,
     )

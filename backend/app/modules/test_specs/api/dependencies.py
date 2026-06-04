@@ -12,7 +12,7 @@ from app.modules.test_specs.application import (
     TestSpecsWorkflowProjectionHook,
     WorkflowServicesAdapter,
 )
-from app.modules.test_specs.service import RequirementService, TestCaseService
+from app.modules.test_specs.service import CatalogService, LabService, RequirementService, TestCaseService
 from app.modules.workflow.application import (
     OperationContext,
     WorkflowCommandService,
@@ -63,6 +63,20 @@ def get_test_case_service(
 
 
 TestCaseServiceDep = Annotated[TestCaseService, Depends(get_test_case_service)]
+
+
+def get_lab_service() -> LabService:
+    return LabService()
+
+
+LabServiceDep = Annotated[LabService, Depends(get_lab_service)]
+
+
+def get_catalog_service() -> CatalogService:
+    return CatalogService()
+
+
+CatalogServiceDep = Annotated[CatalogService, Depends(get_catalog_service)]
 
 
 def get_requirement_query_service(requirement_service: RequirementServiceDep) -> RequirementQueryService:

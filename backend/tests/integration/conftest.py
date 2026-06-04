@@ -7,7 +7,7 @@ Sets up:
 - Test data cleanup mechanism
 
 IMPORTANT: These tests require the MongoDB and other services to be running.
-Before running tests, ensure test_admin user exists in MongoDB:
+Before running tests, ensure test_admin user exists in MongoDB (recommended: cd backend && python scripts/create_user.py --user-id test_admin --username "Test Admin" --password Admin@123 --roles ADMIN --email test_admin@test.local --upsert):
   python -c "
     from pymongo import MongoClient
     import hashlib, secrets
@@ -59,6 +59,9 @@ class TestDataRegistry:
         self._case_ids: list[str] = []
         self._req_ids: list[str] = []
         self._relation_ids: list[str] = []
+        self._perm_ids: list[str] = []
+        self._nav_views: list[str] = []
+        self._lab_ids: list[str] = []
 
     def register_work_item(self, item_id: str):
         """Register a work item for cleanup."""
@@ -79,6 +82,18 @@ class TestDataRegistry:
     def register_relation(self, relation_id: str):
         """Register a relation for cleanup."""
         self._relation_ids.append(relation_id)
+
+    def register_permission(self, perm_id: str):
+        """Register a permission for cleanup."""
+        self._perm_ids.append(perm_id)
+
+    def register_navigation_page(self, view: str):
+        """Register a navigation page for cleanup."""
+        self._nav_views.append(view)
+
+    def register_lab(self, lab_id: str):
+        """Register a catalog lab for cleanup."""
+        self._lab_ids.append(lab_id)
 
     async def cleanup(self):
         """Clean up all registered test data."""
@@ -129,6 +144,28 @@ class TestDataRegistry:
                 except Exception:
                     pass
 
+        # Cleanup integration-test permissions (test_perm_* etc.)
+        for perm_id in self._perm_ids:
+            try:
+                db["permissions"].delete_many({"perm_id": perm_id})
+            except Exception:
+                pass
+
+        # Cleanup integration-test navigation pages
+        for view in self._nav_views:
+            try:
+                db["navigation_pages"].delete_many({"view": view})
+            except Exception:
+                pass
+
+        # Cleanup catalog labs (after test cases are soft-deleted)
+        for lab_id in self._lab_ids:
+            try:
+                db["test_catalog_segments"].delete_many({"lab_id": lab_id})
+                db["test_labs"].delete_many({"lab_id": lab_id})
+            except Exception:
+                pass
+
         client.close()
 
 
@@ -158,6 +195,9 @@ async def cleanup_test_data():
     _test_data_registry._case_ids.clear()
     _test_data_registry._req_ids.clear()
     _test_data_registry._relation_ids.clear()
+    _test_data_registry._perm_ids.clear()
+    _test_data_registry._nav_views.clear()
+    _test_data_registry._lab_ids.clear()
 
 
 @pytest_asyncio.fixture

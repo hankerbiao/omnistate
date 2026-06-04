@@ -1,5 +1,7 @@
 # 测试需求、测试用例与自动化用例
 
+> **测试用例目录（Lab + 可变深度路径）** 的定稿设计见：[测试用例目录设计](../design/test-case-catalog.md)。
+
 ## 1. 概述
 
 `test_specs` 模块管理三类对象：
@@ -13,6 +15,23 @@
 - 一个需求可关联多个测试用例。
 - 测试用例通过 `ref_req_id` 指向需求的 `req_id`。
 - 测试用例可以通过 `/automation-link` 关联自动化测试用例库中的记录。
+- 测试用例通过 `lab_id` + `catalog_path[]` 组织目录；`ref_req_id` 可选。
+
+### 1.1 目录（Catalog）接口
+
+| 方法 | 路径 | 权限 | 说明 |
+|------|------|------|------|
+| GET | `/api/v1/catalog/labs` | `catalog:labs:read` | Lab 列表（`active_only`） |
+| POST | `/api/v1/catalog/labs` | `catalog:labs:manage` | 创建 Lab |
+| PUT | `/api/v1/catalog/labs/{lab_id}` | `catalog:labs:manage` | 更新 Lab（不可改 `code`） |
+| POST | `/api/v1/catalog/labs/{lab_id}/deactivate` | `catalog:labs:manage` | 停用并迁移用例 |
+| DELETE | `/api/v1/catalog/labs/{lab_id}` | `catalog:labs:manage` | 删除（仅 0 用例） |
+| GET | `/api/v1/catalog/suggestions` | `test_cases:read` | 下一层段名建议 |
+| GET | `/api/v1/catalog/tree` | `test_cases:read` | Lab 目录树 |
+
+创建/更新用例需 `lab_id` 与 `catalog_path`（≥1 段）。列表支持 `lab_id`、`catalog_prefix`（JSON 数组）过滤；响应含 `catalog_breadcrumb`。
+
+历史数据迁移：`python backend/scripts/migrate_test_case_catalog.py`（默认 `LAB-DEFAULT` / `未分类`）。
 
 ## 2. 测试需求
 

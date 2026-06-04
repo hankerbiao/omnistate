@@ -117,6 +117,18 @@ export interface WorkflowTransitionResponse {
   new_owner_id?: string;
 }
 
+export interface WorkflowTransitionLog {
+  id: string;
+  work_item_id: string;
+  from_state: string;
+  to_state: string;
+  action: string;
+  operator_id: string;
+  payload: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface WorkItem {
   item_id: string;
   type_code: string;
@@ -143,9 +155,48 @@ export interface AutomationCaseRef {
   version?: string;
 }
 
+export interface CatalogLab {
+  lab_id: string;
+  code: string;
+  name: string;
+  description?: string | null;
+  sort_order: number;
+  is_active: boolean;
+  case_count?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateCatalogLabRequest {
+  code: string;
+  name: string;
+  description?: string;
+  sort_order?: number;
+}
+
+export interface UpdateCatalogLabRequest {
+  name?: string;
+  description?: string;
+  sort_order?: number;
+}
+
+export interface CatalogTreeNode {
+  name: string;
+  path: string[];
+  case_count: number;
+  children: CatalogTreeNode[];
+}
+
+export interface CatalogTreeResponse {
+  lab_id: string;
+  tree: CatalogTreeNode;
+}
+
 export interface CreateTestCaseRequest {
   case_id?: string;
-  ref_req_id: string;
+  ref_req_id?: string;
+  lab_id: string;
+  catalog_path: string[];
   title: string;
   version?: number;
   is_active?: boolean;
@@ -181,7 +232,11 @@ export type UpdateTestCaseRequest = Partial<Omit<CreateTestCaseRequest, 'case_id
 export interface TestCaseResponse {
   id: string;
   case_id: string;
-  ref_req_id: string;
+  ref_req_id?: string | null;
+  lab_id: string;
+  catalog_path: string[];
+  catalog_path_key?: string;
+  catalog_breadcrumb?: string | null;
   title: string;
   version: number;
   is_active: boolean;
@@ -223,6 +278,8 @@ export interface ListTestCasesParams {
   reviewer_id?: string;
   priority?: string;
   is_active?: boolean;
+  lab_id?: string;
+  catalog_prefix?: string;
   limit?: number;
   offset?: number;
 }

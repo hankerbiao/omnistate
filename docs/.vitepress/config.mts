@@ -27,6 +27,13 @@ export default defineConfig({
         ]
       },
       {
+        text: '设计',
+        items: [
+          { text: '测试用例目录（Catalog）', link: '/design/test-case-catalog' },
+          { text: 'Catalog 开发计划', link: '/design/test-case-catalog-implementation-plan' }
+        ]
+      },
+      {
         text: '架构',
         items: [
           { text: '后端架构', link: '/architecture' }

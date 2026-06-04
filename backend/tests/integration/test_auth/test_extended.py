@@ -8,7 +8,18 @@ Tests the missing auth APIs:
 import pytest
 from httpx import AsyncClient
 
-from tests.integration.utils.helpers import unique_id
+from tests.integration.conftest import TestDataRegistry
+from tests.integration.utils.helpers import create_permission_data, unique_id
+
+
+async def _delete_permission(client: AsyncClient, perm_id: str) -> None:
+    resp = await client.delete(f"/api/v1/auth/permissions/{perm_id}")
+    assert resp.status_code in (204, 404), f"Cleanup permission failed: {resp.status_code} {resp.text}"
+
+
+async def _delete_navigation_page(client: AsyncClient, view: str) -> None:
+    resp = await client.delete(f"/api/v1/auth/admin/navigation/pages/{view}")
+    assert resp.status_code in (200, 404), f"Cleanup nav page failed: {resp.status_code} {resp.text}"
 
 
 # ==================== Navigation Pages Tests ====================
@@ -40,22 +51,26 @@ async def test_list_navigation_pages_no_admin(client_tpm: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_create_navigation_page(client_admin: AsyncClient):
+async def test_create_navigation_page(client_admin: AsyncClient, test_data_registry: TestDataRegistry):
     """9.4 - Admin can create navigation page."""
     view_name = f"test_view_{unique_id()}"
-    resp = await client_admin.post(
-        "/api/v1/auth/admin/navigation/pages",
-        json={
-            "view": view_name,
-            "label": "Test View",
-            "permission": "test:view",
-            "description": "Test navigation page",
-            "order": 100,
-            "is_active": True,
-        },
-    )
-    # May return 201 or 409 if already exists
-    assert resp.status_code in (201, 409), f"Unexpected status: {resp.status_code}"
+    test_data_registry.register_navigation_page(view_name)
+    try:
+        resp = await client_admin.post(
+            "/api/v1/auth/admin/navigation/pages",
+            json={
+                "view": view_name,
+                "label": "Test View",
+                "permission": "test:view",
+                "description": "Test navigation page",
+                "order": 100,
+                "is_active": True,
+            },
+        )
+        # May return 201 or 409 if already exists
+        assert resp.status_code in (201, 409), f"Unexpected status: {resp.status_code}"
+    finally:
+        await _delete_navigation_page(client_admin, view_name)
 
 
 @pytest.mark.asyncio
@@ -82,34 +97,35 @@ async def test_get_navigation_page(client_admin: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_update_navigation_page(client_admin: AsyncClient):
+async def test_update_navigation_page(client_admin: AsyncClient, test_data_registry: TestDataRegistry):
     """9.7 - Admin can update navigation page."""
-    # First create a page
     view_name = f"test_update_{unique_id()}"
-    await client_admin.post(
-        "/api/v1/auth/admin/navigation/pages",
-        json={
-            "view": view_name,
-            "label": "Original Title",
-            "permission": "test:view",
-            "order": 1,
-        },
-    )
+    test_data_registry.register_navigation_page(view_name)
+    try:
+        await client_admin.post(
+            "/api/v1/auth/admin/navigation/pages",
+            json={
+                "view": view_name,
+                "label": "Original Title",
+                "permission": "test:view",
+                "order": 1,
+            },
+        )
 
-    # Update it
-    resp = await client_admin.put(
-        f"/api/v1/auth/admin/navigation/pages/{view_name}",
-        json={"label": "Updated Title", "order": 2},
-    )
-    # May return 200, 404 (page not found), or 409 (duplicate)
-    assert resp.status_code in (200, 404, 409), f"Unexpected status: {resp.status_code}"
+        resp = await client_admin.put(
+            f"/api/v1/auth/admin/navigation/pages/{view_name}",
+            json={"label": "Updated Title", "order": 2},
+        )
+        assert resp.status_code in (200, 404, 409), f"Unexpected status: {resp.status_code}"
+    finally:
+        await _delete_navigation_page(client_admin, view_name)
 
 
 @pytest.mark.asyncio
-async def test_delete_navigation_page(client_admin: AsyncClient):
+async def test_delete_navigation_page(client_admin: AsyncClient, test_data_registry: TestDataRegistry):
     """9.8 - Admin can delete navigation page."""
-    # First create a page
     view_name = f"test_delete_{unique_id()}"
+    test_data_registry.register_navigation_page(view_name)
     await client_admin.post(
         "/api/v1/auth/admin/navigation/pages",
         json={
@@ -120,9 +136,9 @@ async def test_delete_navigation_page(client_admin: AsyncClient):
         },
     )
 
-    # Delete it
     resp = await client_admin.delete(f"/api/v1/auth/admin/navigation/pages/{view_name}")
     assert resp.status_code in (200, 404), f"Unexpected status: {resp.status_code}"
+    # Already deleted by test; registry cleanup is idempotent
 
 
 # ==================== Roles Tests ====================
@@ -219,20 +235,16 @@ async def test_get_permission_not_found(client_admin: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_create_permission(client_admin: AsyncClient):
+async def test_create_permission(client_admin: AsyncClient, test_data_registry: TestDataRegistry):
     """9.18 - Admin can create permission."""
-    perm_name = f"test_perm_{unique_id()}"
-    resp = await client_admin.post(
-        "/api/v1/auth/permissions",
-        json={
-            "perm_id": perm_name,
-            "code": f"test.code.{unique_id()}",
-            "name": f"Test Permission {perm_name}",
-            "description": "Test permission description",
-        },
-    )
-    # May return 201 or 409 (already exists)
-    assert resp.status_code in (201, 409), f"Unexpected status: {resp.status_code}"
+    payload = create_permission_data()
+    perm_name = payload["perm_id"]
+    test_data_registry.register_permission(perm_name)
+    try:
+        resp = await client_admin.post("/api/v1/auth/permissions", json=payload)
+        assert resp.status_code in (201, 409), f"Unexpected status: {resp.status_code}"
+    finally:
+        await _delete_permission(client_admin, perm_name)
 
 
 @pytest.mark.asyncio
@@ -250,25 +262,21 @@ async def test_create_permission_no_permission(client_tester: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_update_permission(client_admin: AsyncClient):
+async def test_update_permission(client_admin: AsyncClient, test_data_registry: TestDataRegistry):
     """9.20 - Admin can update permission."""
-    # First create a permission
-    perm_name = f"test_perm_update_{unique_id()}"
-    await client_admin.post(
-        "/api/v1/auth/permissions",
-        json={
-            "perm_id": perm_name,
-            "code": f"test.code.{unique_id()}",
-            "name": f"Original Name {perm_name}",
-        },
-    )
+    payload = create_permission_data(perm_id=f"test_perm_update_{unique_id()}")
+    perm_name = payload["perm_id"]
+    test_data_registry.register_permission(perm_name)
+    try:
+        await client_admin.post("/api/v1/auth/permissions", json=payload)
 
-    # Update it
-    resp = await client_admin.put(
-        f"/api/v1/auth/permissions/{perm_name}",
-        json={"name": "Updated Name", "description": "Updated description"},
-    )
-    assert resp.status_code in (200, 404, 409), f"Unexpected status: {resp.status_code}"
+        resp = await client_admin.put(
+            f"/api/v1/auth/permissions/{perm_name}",
+            json={"name": "Updated Name", "description": "Updated description"},
+        )
+        assert resp.status_code in (200, 404, 409), f"Unexpected status: {resp.status_code}"
+    finally:
+        await _delete_permission(client_admin, perm_name)
 
 
 # ==================== Role Permissions Update Tests ====================
@@ -277,24 +285,36 @@ async def test_update_permission(client_admin: AsyncClient):
 @pytest.mark.asyncio
 async def test_update_role_permissions(client_admin: AsyncClient):
     """9.21 - Admin can update role permissions."""
-    # Get the TESTER role
     resp = await client_admin.get("/api/v1/auth/roles/TESTER")
-    if resp.status_code == 200:
-        original_permissions = resp.json()["data"].get("permission_ids", [])
+    if resp.status_code != 200:
+        return
 
-        # Add a permission (if any exist)
-        list_perms = await client_admin.get("/api/v1/auth/permissions?limit=1")
-        if list_perms.status_code == 200:
-            perms = list_perms.json()["data"]
-            if perms:
-                perm_id = perms[0].get("perm_id") or perms[0].get("permission_id")
-                if perm_id:
-                    new_perms = original_permissions + [perm_id]
-                    patch_resp = await client_admin.patch(
-                        "/api/v1/auth/roles/TESTER/permissions",
-                        json={"permission_ids": new_perms},
-                    )
-                    assert patch_resp.status_code == 200
+    original_permissions = resp.json()["data"].get("permission_ids", [])
+
+    list_perms = await client_admin.get("/api/v1/auth/permissions?limit=1")
+    if list_perms.status_code != 200:
+        return
+
+    perms = list_perms.json()["data"]
+    if not perms:
+        return
+
+    perm_id = perms[0].get("perm_id") or perms[0].get("permission_id")
+    if not perm_id or perm_id in original_permissions:
+        return
+
+    new_perms = original_permissions + [perm_id]
+    try:
+        patch_resp = await client_admin.patch(
+            "/api/v1/auth/roles/TESTER/permissions",
+            json={"permission_ids": new_perms},
+        )
+        assert patch_resp.status_code == 200
+    finally:
+        await client_admin.patch(
+            "/api/v1/auth/roles/TESTER/permissions",
+            json={"permission_ids": original_permissions},
+        )
 
 
 @pytest.mark.asyncio
