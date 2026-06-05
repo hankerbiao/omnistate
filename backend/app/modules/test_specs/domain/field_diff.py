@@ -31,6 +31,8 @@ TRACKED_FIELDS = frozenset({
     "attachments",
     "custom_fields",
     "deprecation_reason",
+    "steps",
+    "cleanup_steps",
     "is_deleted",
 })
 

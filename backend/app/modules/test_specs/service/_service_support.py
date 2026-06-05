@@ -112,6 +112,8 @@ async def create_with_workflow_transaction(
     workflow_item_factory: Callable[[dict[str, Any]], dict[str, Any]],
     enrich_result: Callable[[Any], Awaitable[dict[str, Any]]] | Callable[[Any], dict[str, Any]],
     prepare_payload: Callable[[dict[str, Any], Any], Awaitable[None]] | None = None,
+    # 冗余字段回填：将业务 ID 写入 BusWorkItemDoc，避免后续跨集合查询
+    redundant_fields: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Create business entity and workflow item in one transaction."""
     async with client.start_session() as session:
@@ -128,6 +130,16 @@ async def create_with_workflow_transaction(
                 session=session,
             )
             payload["workflow_item_id"] = workflow_item["id"]
+
+            # 将冗余字段回填到 BusWorkItemDoc（如 req_id → BusWorkItemDoc.req_id）
+            if redundant_fields:
+                from app.modules.workflow.repository.models import BusWorkItemDoc
+                work_item_doc = await BusWorkItemDoc.get(workflow_item["id"], session=session)
+                if work_item_doc:
+                    for payload_key, doc_field in redundant_fields.items():
+                        if payload_key in payload and payload[payload_key] is not None:
+                            setattr(work_item_doc, doc_field, payload[payload_key])
+                    await work_item_doc.save(session=session)
 
             doc = doc_cls(**payload)
             await doc.insert(session=session)

@@ -40,7 +40,12 @@ export interface RequirementKeyParameter {
 export interface CreateRequirementRequest {
   title: string;
   description?: string;
-  technical_spec?: string;
+  category?: string;
+  tags?: string[];
+  source?: string;
+  acceptance_criteria?: string;
+  baseline_version?: string;
+  target_version?: string;
   target_components?: string[];
   firmware_version?: string;
   priority?: string;
@@ -50,6 +55,8 @@ export interface CreateRequirementRequest {
   manual_dev_id?: string;
   auto_dev_id?: string;
   attachments?: Record<string, unknown>[];
+  planned_start_date?: string;
+  planned_end_date?: string;
 }
 
 export interface RequirementResponse {
@@ -58,17 +65,28 @@ export interface RequirementResponse {
   workflow_item_id?: string;
   title: string;
   description?: string;
-  technical_spec?: string;
+  category?: string;
+  tags: string[];
+  source?: string;
+  acceptance_criteria?: string;
+  baseline_version?: string;
+  target_version?: string;
   target_components: string[];
   firmware_version?: string;
   priority: string;
   key_parameters: RequirementKeyParameter[];
   risk_points?: string;
   tpm_owner_id: string;
+  tpm_owner_name?: string;
   manual_dev_id?: string;
+  manual_dev_name?: string;
   auto_dev_id?: string;
+  auto_dev_name?: string;
+  case_count: number;
   status: string;
   attachments: Record<string, unknown>[];
+  planned_start_date?: string;
+  planned_end_date?: string;
   created_at: string;
   updated_at: string;
   // Workflow related fields
@@ -80,6 +98,8 @@ export interface RequirementResponse {
 
 export interface ListRequirementsParams {
   status?: string;
+  category?: string;
+  source?: string;
   tpm_owner_id?: string;
   manual_dev_id?: string;
   auto_dev_id?: string;
@@ -225,6 +245,8 @@ export interface CreateTestCaseRequest {
   custom_fields?: Record<string, unknown>;
   deprecation_reason?: string;
   approval_history?: Record<string, unknown>[];
+  steps?: TestCaseStep[];
+  cleanup_steps?: TestCaseStep[];
 }
 
 export type UpdateTestCaseRequest = Partial<Omit<CreateTestCaseRequest, 'case_id'>>;
@@ -268,6 +290,8 @@ export interface TestCaseResponse {
   custom_fields: Record<string, unknown>;
   deprecation_reason?: string;
   approval_history: Record<string, unknown>[];
+  steps?: TestCaseStep[];
+  cleanup_steps?: TestCaseStep[];
   created_at: string;
   updated_at: string;
 }

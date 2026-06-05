@@ -25,6 +25,8 @@ export const TEST_CASE_FIELD_LABELS: Record<string, string> = {
   attachments: '附件',
   custom_fields: '自定义字段',
   deprecation_reason: '废弃原因',
+  steps: '执行步骤',
+  cleanup_steps: '清理步骤',
   is_deleted: '已删除',
   automation_link: '自动化关联',
 };
@@ -47,6 +49,17 @@ export function formatChangeValue(field: string, value: unknown): string {
   }
   if (field === 'tags' && Array.isArray(value)) {
     return value.length ? value.join(', ') : '（空）';
+  }
+  if ((field === 'steps' || field === 'cleanup_steps') && Array.isArray(value)) {
+    if (value.length === 0) return '（空）';
+    const names = value
+      .map((item) => (typeof item === 'object' && item !== null && 'name' in item ? String((item as { name?: string }).name || '') : ''))
+      .filter(Boolean);
+    if (names.length > 0) {
+      const preview = names.slice(0, 3).join('、');
+      return names.length > 3 ? `共 ${value.length} 步（${preview}…）` : `共 ${value.length} 步（${preview}）`;
+    }
+    return `共 ${value.length} 步`;
   }
   if (field === 'is_active' || field === 'is_destructive' || field === 'is_deleted') {
     return value ? '是' : '否';

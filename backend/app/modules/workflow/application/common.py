@@ -61,18 +61,23 @@ async def serialize_work_item(doc: BusWorkItemDoc) -> dict[str, Any]:
     if data.get("parent_item_id") is not None:
         data["parent_item_id"] = str(data["parent_item_id"])
 
-    # 对于 REQUIREMENT 类型，查询并填充 req_id
+    # 对于 REQUIREMENT 类型，填充 req_id
     if doc.type_code == "REQUIREMENT":
-        try:
-            TestRequirementDoc = _get_test_requirement_doc()
-            requirement = await TestRequirementDoc.find_one(
-                {"workflow_item_id": str(doc.id), "is_deleted": False}
-            )
-            if requirement:
-                data["req_id"] = requirement.req_id
-        except Exception:
-            # 忽略查询失败，不阻塞主流程
-            pass
+        # 优先使用冗余字段（BusWorkItemDoc.req_id），避免跨集合查询
+        if doc.req_id:
+            data["req_id"] = doc.req_id
+        else:
+            # fallback: 旧数据可能没有冗余字段，走跨集合查询
+            try:
+                TestRequirementDoc = _get_test_requirement_doc()
+                requirement = await TestRequirementDoc.find_one(
+                    {"workflow_item_id": str(doc.id), "is_deleted": False}
+                )
+                if requirement:
+                    data["req_id"] = requirement.req_id
+            except Exception:
+                # 忽略查询失败，不阻塞主流程
+                pass
 
     return data
 

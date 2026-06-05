@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from beanie import init_beanie
@@ -29,10 +30,21 @@ def get_document_models() -> list[type[Any]]:
 
 
 async def initialize_beanie(database: Any) -> None:
+    # 生产环境跳过索引同步，索引由部署脚本/CI 管理。
+    # 开发环境或显式设置 SKIP_INDEX_SYNC=0 时仍同步索引。
+    skip_indexes = os.getenv("SKIP_INDEX_SYNC", "1") == "1"
+
     await init_beanie(
         database=database,
         document_models=get_document_models(),
+        skip_indexes=skip_indexes,
     )
+
+    if skip_indexes:
+        log.info(
+            "Beanie 索引同步已跳过（SKIP_INDEX_SYNC=1），"
+            "如需同步索引请运行: python app/init_mongodb.py 或设置 SKIP_INDEX_SYNC=0"
+        )
 
 
 async def validate_workflow_consistency() -> None:

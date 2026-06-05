@@ -27,9 +27,11 @@ from app.modules.test_specs.repository.models import (
 class TestCaseStepSchema(BaseModel):
     __test__ = False
     step_id: str = Field(..., description="步骤 ID")
-    name: str = Field(..., description="步骤名称")
-    action: str = Field(..., description="执行动作")
-    expected: str = Field(..., description="预期结果")
+    name: str = Field(..., max_length=200, description="步骤名称")
+    action: str = Field(..., max_length=4000, description="执行动作")
+    expected: str = Field(..., max_length=4000, description="预期结果")
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class CreateTestCaseRequest(BaseModel):
@@ -64,6 +66,8 @@ class CreateTestCaseRequest(BaseModel):
     custom_fields: Dict[str, Any] = Field(default_factory=dict, description="自定义字段")
     deprecation_reason: Optional[str] = Field(None, description="弃用原因")
     approval_history: List[Dict[str, Any]] = Field(default_factory=list, description="审批历史")
+    steps: List[TestCaseStepSchema] = Field(default_factory=list, description="执行步骤")
+    cleanup_steps: List[TestCaseStepSchema] = Field(default_factory=list, description="清理步骤")
 
 
 class UpdateTestCaseRequest(BaseModel):
@@ -94,6 +98,8 @@ class UpdateTestCaseRequest(BaseModel):
     custom_fields: Optional[Dict[str, Any]] = Field(None, description="自定义字段")
     deprecation_reason: Optional[str] = Field(None, description="弃用原因")
     approval_history: Optional[List[Dict[str, Any]]] = Field(None, description="审批历史")
+    steps: Optional[List[TestCaseStepSchema]] = Field(None, description="执行步骤")
+    cleanup_steps: Optional[List[TestCaseStepSchema]] = Field(None, description="清理步骤")
 
     model_config = ConfigDict(extra="forbid")
 
@@ -134,6 +140,8 @@ class TestCaseResponse(BaseModel):
     custom_fields: Dict[str, Any] = Field(..., description="自定义字段")
     deprecation_reason: Optional[str] = Field(None, description="弃用原因")
     approval_history: List[Dict[str, Any]] = Field(..., description="审批历史")
+    steps: List[TestCaseStepSchema] = Field(default_factory=list, description="执行步骤")
+    cleanup_steps: List[TestCaseStepSchema] = Field(default_factory=list, description="清理步骤")
     created_at: datetime = Field(..., description="创建时间")
     updated_at: datetime = Field(..., description="更新时间")
 

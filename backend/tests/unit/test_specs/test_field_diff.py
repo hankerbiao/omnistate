@@ -38,3 +38,23 @@ def test_compute_field_changes_catalog_path():
     changes = compute_field_changes(old, new)
     assert len(changes) == 1
     assert changes[0]["field"] == "catalog_path"
+
+
+def test_compute_field_changes_steps_reorder():
+    step_a = {"step_id": "a", "name": "A", "action": "do", "expected": "ok"}
+    step_b = {"step_id": "b", "name": "B", "action": "do", "expected": "ok"}
+    old = {"steps": [step_a, step_b]}
+    new = {"steps": [step_b, step_a]}
+    changes = compute_field_changes(old, new)
+    assert len(changes) == 1
+    assert changes[0]["field"] == "steps"
+    assert changes[0]["change_type"] == "modified"
+
+
+def test_compute_field_changes_steps_added_on_create():
+    new = {
+        "title": "case",
+        "steps": [{"step_id": "s1", "name": "N", "action": "A", "expected": "E"}],
+    }
+    changes = compute_field_changes(None, new)
+    assert any(c["field"] == "steps" and c["change_type"] == "added" for c in changes)

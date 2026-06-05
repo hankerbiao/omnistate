@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { api } from '../services/api';
 import { getCatalogLabs } from '../services/catalogLabsCache';
-import type { CatalogLab, TestCaseResponse, ListTestCasesParams } from '../types';
+import type { CatalogLab, TestCaseResponse, ListTestCasesParams, UserResponse } from '../types';
 import TestCaseDetailModal from './TestCaseDetailModal';
 import CreateTestCaseForm from './CreateTestCaseForm';
 import CatalogTreeSidebar from './catalog/CatalogTreeSidebar';
@@ -9,6 +9,7 @@ import { catalogStyles } from './catalog/catalogStyles';
 import PageToolbar, { StatPill } from './ui/PageToolbar';
 import { PRIORITY_FILTER_OPTIONS } from '../constants/testCaseLabels';
 import { TEST_CASE_STATUS_FILTER_OPTIONS, getStateLabel, getWorkflowStateStyle } from '../constants/workflowLabels';
+import { SWITCHABLE_USERS } from '../config/users';
 
 interface FilterParams {
   ref_req_id?: string;
@@ -23,6 +24,26 @@ const STATUS_OPTIONS = TEST_CASE_STATUS_FILTER_OPTIONS;
 
 const PAGE_SIZE = 20;
 
+/** 构建 userId → username 的映射表 */
+function buildUserNameMap(users: UserResponse[]): Map<string, string> {
+  const map = new Map<string, string>();
+  // 优先使用配置中的用户标签
+  for (const u of SWITCHABLE_USERS) {
+    map.set(u.userId, u.label);
+  }
+  // 再用 API 返回的用户名覆盖
+  for (const u of users) {
+    map.set(u.user_id, u.username);
+  }
+  return map;
+}
+
+/** 根据 userId 解析显示名 */
+function resolveUserName(map: Map<string, string>, userId?: string | null): string {
+  if (!userId) return '-';
+  return map.get(userId) || userId;
+}
+
 interface ManualTestCaseListProps {
   initialStatusFilter?: string;
 }
@@ -33,6 +54,7 @@ const ManualTestCaseList: React.FC<ManualTestCaseListProps> = ({ initialStatusFi
   const [error, setError] = useState<string | null>(null);
   const [totalCount, setTotalCount] = useState(0);
   const [currentOffset, setCurrentOffset] = useState(0);
+  const [userNameMap, setUserNameMap] = useState<Map<string, string>>(() => buildUserNameMap([]));
 
   const [filters, setFilters] = useState<FilterParams>(
     initialStatusFilter ? { status: initialStatusFilter } : {},
@@ -90,7 +112,10 @@ const ManualTestCaseList: React.FC<ManualTestCaseListProps> = ({ initialStatusFi
 
       if (response.code === 0 || response.code === 200) {
         setTestCases(response.data || []);
-        setTotalCount(response.data?.length || 0);
+        // 优先使用后端返回的 total 字段，否则用当前页行数（需要后端配合添加 total 字段）
+        const data = response.data || [];
+        const total = (response as unknown as { total?: number }).total;
+        setTotalCount(total !== undefined ? total : data.length);
       } else {
         setError(response.message || '获取测试用例列表失败');
       }
@@ -117,6 +142,23 @@ const ManualTestCaseList: React.FC<ManualTestCaseListProps> = ({ initialStatusFi
       })
       .catch(() => {
         if (!cancelled) setLabs([]);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  // 加载用户列表用于显示负责人/审核人姓名
+  useEffect(() => {
+    let cancelled = false;
+    api.listUsers({ limit: 100 })
+      .then(res => {
+        if (!cancelled) {
+          setUserNameMap(buildUserNameMap(res.data || []));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setUserNameMap(buildUserNameMap([]));
+        }
       });
     return () => { cancelled = true; };
   }, []);
@@ -397,10 +439,14 @@ const ManualTestCaseList: React.FC<ManualTestCaseListProps> = ({ initialStatusFi
                         <span style={styles.priorityBadge}>{testCase.priority || '-'}</span>
                       </td>
                       <td style={styles.td}>
-                        <span style={styles.ownerBadge}>{testCase.owner_id || '-'}</span>
+                        <span style={styles.ownerBadge} title={testCase.owner_id || undefined}>
+                          {resolveUserName(userNameMap, testCase.owner_id)}
+                        </span>
                       </td>
                       <td style={styles.td}>
-                        <span style={styles.reviewerBadge}>{testCase.reviewer_id || '-'}</span>
+                        <span style={styles.reviewerBadge} title={testCase.reviewer_id || undefined}>
+                          {resolveUserName(userNameMap, testCase.reviewer_id)}
+                        </span>
                       </td>
                       <td style={styles.td}>
                         <span style={styles.versionBadge}>v{testCase.version}</span>

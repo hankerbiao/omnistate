@@ -37,13 +37,20 @@ class RequirementService(BaseService):
     _UPDATABLE_FIELDS = {
         "title",
         "description",
-        "technical_spec",
+        "category",
+        "tags",
+        "source",
+        "acceptance_criteria",
+        "baseline_version",
+        "target_version",
         "target_components",
         "firmware_version",
         "priority",
         "key_parameters",
         "risk_points",
         "attachments",
+        "planned_start_date",
+        "planned_end_date",
         # Phase 4: 高风险字段已移至显式命令，不允许通过通用更新修改
         # - 负责人字段：通过 assign_owners 命令修改
         # - 工作流字段：通过工作流命令修改
@@ -94,6 +101,17 @@ class RequirementService(BaseService):
         # 这是为了保证唯一性和避免冲突
         payload["req_id"] = await self._generate_req_id()
         logger.info(f"后端生成需求编号: req_id={payload['req_id']}")
+
+        # 解析并填充人员姓名
+        user_ids_to_resolve = []
+        for uid_key in ("tpm_owner_id", "manual_dev_id", "auto_dev_id"):
+            if payload.get(uid_key):
+                user_ids_to_resolve.append(payload[uid_key])
+        if user_ids_to_resolve:
+            name_map = await self._resolve_user_names(user_ids_to_resolve)
+            payload["tpm_owner_name"] = name_map.get(payload.get("tpm_owner_id", ""))
+            payload["manual_dev_name"] = name_map.get(payload.get("manual_dev_id", ""))
+            payload["auto_dev_name"] = name_map.get(payload.get("auto_dev_id", ""))
 
         client = self._get_mongo_client_or_none()
         if client is None:
@@ -238,13 +256,23 @@ class RequirementService(BaseService):
         if not doc:
             raise KeyError("requirement not found")
 
-        # 更新负责人字段（明确指定每个字段的更新）
+        # 构建需要查询的 userId 列表
+        user_ids_to_resolve: dict[str, str] = {}  # userId → doc_attr_name
         if tpm_owner_id is not None:
             doc.tpm_owner_id = tpm_owner_id
+            user_ids_to_resolve[tpm_owner_id] = "tpm_owner_name"
         if manual_dev_id is not None:
             doc.manual_dev_id = manual_dev_id
+            user_ids_to_resolve[manual_dev_id] = "manual_dev_name"
         if auto_dev_id is not None:
             doc.auto_dev_id = auto_dev_id
+            user_ids_to_resolve[auto_dev_id] = "auto_dev_name"
+
+        # 批量查询用户名
+        if user_ids_to_resolve:
+            name_map = await self._resolve_user_names(list(user_ids_to_resolve.keys()))
+            for uid, attr_name in user_ids_to_resolve.items():
+                setattr(doc, attr_name, name_map.get(uid))
 
         await doc.save()
         return await self._enrich_requirement_status(self._doc_to_dict(doc))
@@ -306,6 +334,8 @@ class RequirementService(BaseService):
                 "parent_item_id": None,
             },
             enrich_result=lambda doc: self._enrich_requirement_status(self._doc_to_dict(doc)),
+            # 将 req_id 冗余写入 BusWorkItemDoc，避免 serialize_work_item 跨集合查询
+            redundant_fields={"req_id": "req_id"},
         )
 
     @staticmethod
@@ -331,3 +361,18 @@ class RequirementService(BaseService):
         next_seq = await SequenceIdService().next(counter_key)
 
         return f"{prefix}{str(next_seq).zfill(5)}"
+
+    @staticmethod
+    async def _resolve_user_names(user_ids: List[str]) -> Dict[str, str | None]:
+        """批量查询用户 ID → 用户名映射。"""
+        from app.modules.auth.repository.models import UserDoc
+        from beanie.operators import In as InOp
+
+        if not user_ids:
+            return {}
+
+        users = await UserDoc.find(
+            InOp(UserDoc.user_id, user_ids),
+        ).to_list()
+
+        return {u.user_id: u.username for u in users}

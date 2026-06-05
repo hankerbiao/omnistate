@@ -37,6 +37,7 @@ from app.modules.test_specs.service.catalog_service import CatalogService
 from app.modules.workflow.application import WorkflowItemGateway
 from app.modules.workflow.repository.models.enums import WorkItemState
 from app.modules.attachments.repository.models import AttachmentDoc
+from app.modules.test_specs.domain.test_case_step_validator import validate_test_case_step_fields
 from app.shared.core.mongo_client import get_mongo_client
 from app.shared.service import BaseService, SequenceIdService
 
@@ -64,6 +65,8 @@ class TestCaseService(BaseService):
         "custom_fields",
         "deprecation_reason",
         "approval_history",
+        "steps",
+        "cleanup_steps",
         "lab_id",
         "catalog_path",
         "catalog_path_key",
@@ -103,6 +106,7 @@ class TestCaseService(BaseService):
         - 事务内完成workflow + test_case的原子写入
         """
         payload = deepcopy(data)
+        payload = validate_test_case_step_fields(payload)
         payload = await self._apply_catalog_to_payload(payload, is_create=True)
         payload["case_id"] = await self._generate_case_id()
         client = self._get_mongo_client_or_none()
@@ -244,7 +248,7 @@ class TestCaseService(BaseService):
             raise KeyError("test case not found")
         old_lab_id = doc.lab_id
         old_path = list(doc.catalog_path or [])
-        update_payload = deepcopy(data)
+        update_payload = validate_test_case_step_fields(deepcopy(data))
         if "lab_id" in update_payload or "catalog_path" in update_payload:
             merged = {
                 "lab_id": update_payload.get("lab_id", doc.lab_id),

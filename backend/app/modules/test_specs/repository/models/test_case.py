@@ -10,6 +10,14 @@ from pymongo import IndexModel, ASCENDING, DESCENDING
 
 # ========== 子结构 ==========
 
+class TestCaseStepEmbedded(BaseModel):
+    """测试用例步骤（执行步骤 / 清理步骤）"""
+    step_id: str = Field(..., description="步骤稳定标识")
+    name: str = Field(..., description="步骤短标题")
+    action: str = Field(..., description="执行动作")
+    expected: str = Field(..., description="期望结果")
+
+
 # ========== Beanie 文档模型 ==========
 
 class TestCaseDoc(Document):
@@ -45,6 +53,8 @@ class TestCaseDoc(Document):
     custom_fields: Dict[str, Any] = Field(default_factory=dict, description="自定义字段")
     deprecation_reason: Optional[str] = Field(None, description="废弃原因")
     approval_history: List[Dict[str, Any]] = Field(default_factory=list, description="审批记录")
+    steps: List[TestCaseStepEmbedded] = Field(default_factory=list, description="执行步骤")
+    cleanup_steps: List[TestCaseStepEmbedded] = Field(default_factory=list, description="清理步骤")
     is_deleted: bool = Field(default=False, description="逻辑删除标志")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -104,6 +114,8 @@ class TestCaseModel(BaseModel):
     custom_fields: Dict[str, Any]
     deprecation_reason: Optional[str] = None
     approval_history: List[Dict[str, Any]]
+    steps: List[TestCaseStepEmbedded] = Field(default_factory=list)
+    cleanup_steps: List[TestCaseStepEmbedded] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 

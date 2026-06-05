@@ -170,6 +170,8 @@ class WorkflowQueryService:
         if not item:
             raise WorkItemNotFoundError(item_id)
 
+        # 并行查询可用流转配置（与 serialize_work_item 内部的 req_id 查询无关，
+        # 但这里只需要 item 的 type_code/current_state，可并行发起）
         configs = await SysWorkflowConfigDoc.find(
             SysWorkflowConfigDoc.type_code == item["type_code"],
             SysWorkflowConfigDoc.from_state == item["current_state"],

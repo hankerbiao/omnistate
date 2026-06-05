@@ -25,6 +25,8 @@ class BusWorkItemDoc(Document):
     current_state: str = Field(default="DRAFT", description="当前状态指针")
     current_owner_id: Optional[str] = Field(None, description="当前处理人")
     creator_id: str = Field(..., description="创建者用户ID")
+    # 冗余字段：避免每次序列化时跨集合查询 req_id
+    req_id: Optional[str] = Field(None, description="关联需求编号（冗余自 TestRequirementDoc.req_id）")
     is_deleted: bool = Field(default=False, description="逻辑删除标志")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

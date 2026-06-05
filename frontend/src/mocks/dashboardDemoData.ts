@@ -87,14 +87,25 @@ function buildRequirements(): RequirementResponse[] {
       workflow_item_id: `wi-req-${i + 1}`,
       title,
       description: `${title} — 覆盖主流平台与边界场景`,
+      category: ['FUNCTIONAL', 'PERFORMANCE', 'STABILITY', 'COMPATIBILITY'][i % 4],
+      tags: ['DDR5', 'CPU', 'BMC'].slice(0, (i % 3) + 1),
+      source: ['CUSTOMER', 'INTERNAL', 'SPEC'][i % 3],
+      acceptance_criteria: `所有测试用例通过，覆盖率达 80% 以上`,
+      baseline_version: `v2.${i % 5}.0`,
+      target_version: `v2.${(i % 5) + 1}.0`,
       target_components: ['CPU', 'DIMM', 'BMC'],
       firmware_version: `v2.${i % 5}.${i % 3}`,
       priority: PRIORITIES[i % PRIORITIES.length],
       key_parameters: [{ name: 'platform', value: 'Genoa / Sapphire Rapids' }],
       tpm_owner_id: tpm.id,
+      tpm_owner_name: tpm.name,
       manual_dev_id: owner.id,
+      manual_dev_name: owner.name,
+      case_count: Math.floor(Math.random() * 10),
       status: REQ_STATUSES[i % REQ_STATUSES.length],
       attachments: [],
+      planned_start_date: daysAgo(30 - i).split('T')[0],
+      planned_end_date: daysAgo(-30 + i).split('T')[0],
       created_at: daysAgo(90 - i * 5),
       updated_at: daysAgo(i * 2),
       creator: tpm.id,
@@ -153,7 +164,7 @@ function buildTasks(): ExecutionTask[] {
   const tasks: ExecutionTask[] = []
   let id = 0
   for (let day = 29; day >= 0; day -= 1) {
-    const base = 18 + (day % 7) * 3 + ((day * 3 + i) % 5)
+    const base = 18 + (day % 7) * 3 + ((day * 3 + id) % 5)
     for (let i = 0; i < base; i += 1) {
       id += 1
       const roll = (day * 17 + i * 13) % 100

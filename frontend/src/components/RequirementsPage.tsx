@@ -14,6 +14,36 @@ import {
 } from '../constants/workflowLabels';
 import PageToolbar, { StatPill } from './ui/PageToolbar';
 
+/** 需求分类标签映射 */
+const CATEGORY_LABELS: Record<string, string> = {
+  FUNCTIONAL: '功能',
+  PERFORMANCE: '性能',
+  STABILITY: '稳定性',
+  COMPATIBILITY: '兼容',
+  SECURITY: '安全',
+  REGRESSION: '回归',
+};
+
+/** 分类颜色 */
+const CATEGORY_COLORS: Record<string, string> = {
+  FUNCTIONAL: '#58a6ff',
+  PERFORMANCE: '#ff7b72',
+  STABILITY: '#79c0ff',
+  COMPATIBILITY: '#bb8009',
+  SECURITY: '#db4537',
+  REGRESSION: '#a371f7',
+};
+
+const CATEGORY_FILTER_OPTIONS = [
+  { value: '', label: '全部分类' },
+  { value: 'FUNCTIONAL', label: '功能测试' },
+  { value: 'PERFORMANCE', label: '性能测试' },
+  { value: 'STABILITY', label: '稳定性测试' },
+  { value: 'COMPATIBILITY', label: '兼容性测试' },
+  { value: 'SECURITY', label: '安全测试' },
+  { value: 'REGRESSION', label: '回归测试' },
+];
+
 type ActiveTab = 'workflow' | 'testcases';
 
 interface RequirementsPageProps {
@@ -33,6 +63,7 @@ const RequirementsPage: React.FC<RequirementsPageProps> = ({ initialStatusFilter
   const [editingTestCase, setEditingTestCase] = useState<TestCaseResponse | null>(null);
   const [activeTab, setActiveTab] = useState<ActiveTab>('workflow');
   const [statusFilter, setStatusFilter] = useState(initialStatusFilter);
+  const [categoryFilter, setCategoryFilter] = useState('');
   const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; reqId?: string; title?: string }>({ open: false });
   const [deleting, setDeleting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -325,6 +356,18 @@ const RequirementsPage: React.FC<RequirementsPageProps> = ({ initialStatusFilter
               <option key={opt.value || 'all'} value={opt.value}>{opt.label}</option>
             ))}
           </select>
+          <select
+            className="form-input form-select"
+            value={categoryFilter}
+            aria-label="按分类筛选需求"
+            onChange={(e) => {
+              setCategoryFilter(e.target.value);
+            }}
+          >
+            {CATEGORY_FILTER_OPTIONS.map((opt) => (
+              <option key={opt.value || 'all'} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
         </div>
 
         {loadingRequirements ? (
@@ -354,6 +397,9 @@ const RequirementsPage: React.FC<RequirementsPageProps> = ({ initialStatusFilter
               const priorityStyle = getPriorityStyle(requirement.priority);
               const isSelected = selectedRequirementId === requirement.req_id;
               const isChecked = selectedIds.has(requirement.req_id);
+              const categoryColor = requirement.category ? CATEGORY_COLORS[requirement.category] : undefined;
+              const categoryText = requirement.category ? (CATEGORY_LABELS[requirement.category] || requirement.category) : null;
+              const ownerName = requirement.tpm_owner_name || requirement.tpm_owner_id;
               return (
                 <div
                   key={requirement.req_id}
@@ -372,6 +418,18 @@ const RequirementsPage: React.FC<RequirementsPageProps> = ({ initialStatusFilter
                         style={styles.checkbox}
                       />
                       <span style={styles.itemId}>{requirement.req_id}</span>
+                      {categoryText && categoryColor && (
+                        <span style={{
+                          fontSize: '10px',
+                          padding: '1px 6px',
+                          borderRadius: '8px',
+                          color: categoryColor,
+                          backgroundColor: `${categoryColor}22`,
+                          fontWeight: 500,
+                        }}>
+                          {categoryText}
+                        </span>
+                      )}
                     </div>
                     <div style={styles.itemHeaderRight}>
                       <span
@@ -398,6 +456,12 @@ const RequirementsPage: React.FC<RequirementsPageProps> = ({ initialStatusFilter
                       >
                         {getStateLabel(requirement.status, 'REQUIREMENT')}
                       </span>
+                      {ownerName && (
+                        <span style={styles.metaOwner}>{ownerName}</span>
+                      )}
+                      {requirement.case_count > 0 && (
+                        <span style={styles.metaCaseCount}>{requirement.case_count} 用例</span>
+                      )}
                       <span style={styles.metaTime}>
                         {new Date(requirement.created_at).toLocaleDateString('zh-CN')}
                       </span>
@@ -894,6 +958,17 @@ const styles = {
   metaTime: {
     fontSize: '11px',
     color: 'var(--text-tertiary)',
+  },
+  metaOwner: {
+    fontSize: '11px',
+    color: 'var(--text-secondary)',
+  },
+  metaCaseCount: {
+    fontSize: '10px',
+    color: 'var(--accent-cyan)',
+    backgroundColor: 'rgba(121, 192, 255, 0.12)',
+    padding: '1px 6px',
+    borderRadius: '8px',
   },
   detailHeader: {
     padding: '20px 24px',

@@ -213,6 +213,10 @@
   前置条件
 - `post_condition`
   后置条件
+- `steps`
+  执行步骤数组，每项含 `step_id`、`name`、`action`、`expected`
+- `cleanup_steps`
+  清理步骤数组，结构与 `steps` 相同
 - `risk_level`
   风险等级
 - `failure_analysis`
