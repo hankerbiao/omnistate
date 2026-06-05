@@ -8,6 +8,7 @@ import { catalogStyles } from './catalog/catalogStyles';
 import { SWITCHABLE_USERS } from '../config/users';
 import { api } from '../services/api';
 import TestCaseHistoryPanel from './TestCaseHistoryPanel';
+import TestCaseStepList from './TestCaseStepList';
 
 interface TestCaseDetailModalProps {
   testCase: TestCaseResponse;
@@ -17,17 +18,14 @@ interface TestCaseDetailModalProps {
   changeLogRefreshSignal?: number;
 }
 
-type DetailTab = 'overview' | 'workflow' | 'details' | 'condition' | 'advanced';
+type DetailTab = 'overview' | 'steps' | 'workflow' | 'more';
 
-const DETAIL_TABS: { id: DetailTab; label: string }[] = [
+const DETAIL_TABS: { id: DetailTab; label: string; badge?: number }[] = [
   { id: 'overview', label: '概览' },
+  { id: 'steps', label: '步骤' },
   { id: 'workflow', label: '工作流' },
-  { id: 'details', label: '详情' },
-  { id: 'condition', label: '条件与环境' },
-  { id: 'advanced', label: '高级' },
+  { id: 'more', label: '更多' },
 ];
-
-const CONDITION_SUMMARY_MAX_LEN = 120;
 
 const NON_EDITABLE_STATES = new Set(['PENDING_REVIEW', 'DONE']);
 
@@ -137,10 +135,6 @@ const TestCaseDetailModal: React.FC<TestCaseDetailModalProps> = ({
 
   const formatDate = (dateStr: string) => new Date(dateStr).toLocaleString('zh-CN');
 
-  const isShortCondition = (text?: string | null) => (
-    Boolean(text && text.length <= CONDITION_SUMMARY_MAX_LEN)
-  );
-
   const renderEmptyState = (message: string) => (
     <p style={styles.emptyState}>{message}</p>
   );
@@ -151,36 +145,6 @@ const TestCaseDetailModal: React.FC<TestCaseDetailModalProps> = ({
       <div style={styles.infoRow}>
         <span style={styles.infoLabel}>{label}</span>
         <span style={styles.infoValue}>{value}</span>
-      </div>
-    );
-  };
-
-  const renderPersonField = (label: string, userId?: string | null, displayName?: string | null) => {
-    if (!userId) return null;
-    const name = displayName || userId;
-    return (
-      <div style={styles.infoRow}>
-        <span style={styles.infoLabel}>{label}</span>
-        <span style={styles.infoValue}>
-          {name}
-          {name !== userId && (
-            <span style={styles.userIdHint} title={userId}>{userId}</span>
-          )}
-        </span>
-      </div>
-    );
-  };
-
-  const renderTags = () => {
-    if (!testCase.tags?.length) return null;
-    return (
-      <div style={styles.infoRowFull}>
-        <span style={styles.infoLabel}>标签</span>
-        <div style={styles.tagList}>
-          {testCase.tags.map((tag, index) => (
-            <span key={index} style={styles.tag}>{tag}</span>
-          ))}
-        </div>
       </div>
     );
   };
@@ -255,61 +219,9 @@ const TestCaseDetailModal: React.FC<TestCaseDetailModalProps> = ({
     );
   };
 
-  const detailFields = (
-    <div style={styles.infoGrid}>
-      {renderField('状态', getStateLabel(testCase.status, 'TEST_CASE'))}
-      {renderField('关联需求', testCase.ref_req_id)}
-      {renderField('版本', `v${testCase.version}`)}
-      {renderField('优先级', priorityLabel)}
-      {renderField('测试类别', testCase.test_category)}
-      {renderField('风险等级', testCase.risk_level)}
-      {renderField('预计时长', testCase.estimated_duration_sec ? `${testCase.estimated_duration_sec} 秒` : null)}
-      {renderField('保密级别', testCase.confidentiality)}
-      {renderField('可见范围', testCase.visibility_scope)}
-      {testCase.is_destructive && renderField('破坏性测试', '是')}
-      {testCase.is_need_auto && renderField('需要自动化', '是')}
-      {testCase.is_automated && renderField('已自动化', '是')}
-      {!testCase.is_active && renderField('激活状态', '未激活')}
-      {renderPersonField('负责人', testCase.owner_id, ownerName)}
-      {renderPersonField('审核人', testCase.reviewer_id, reviewerName)}
-      {renderPersonField('自动化开发', testCase.auto_dev_id, autoDevName)}
-    </div>
-  );
-
-  const conditionFields = hasConditionContent ? (
-    <div style={styles.infoGrid}>
-      {renderField('前置条件', testCase.pre_condition)}
-      {renderField('后置条件', testCase.post_condition)}
-      {renderTags()}
-      {renderRequiredEnv()}
-    </div>
-  ) : (
-    <p style={styles.sectionEmptyHint}>暂无前置/后置条件、标签或运行环境配置</p>
-  );
-
-  const automationFields = (
-    <div style={styles.infoGrid}>
-      {renderField('自动化用例 ID', testCase.automation_case_ref?.auto_case_id)}
-      {renderField('自动化版本', testCase.automation_case_ref?.version)}
-      {renderField('自动化类型', testCase.automation_type)}
-      {renderField('脚本实体 ID', testCase.script_entity_id)}
-    </div>
-  );
-
-  const mergedDetailFields = (
-    <>
-      {detailFields}
-      {hasAutomationSection && (
-        <div style={styles.subBlock}>
-          <span style={styles.subBlockTitle}>自动化</span>
-          {automationFields}
-        </div>
-      )}
-    </>
-  );
-
   const overviewContent = (
     <>
+      {/* Person cards */}
       {(ownerName || reviewerName || autoDevName) && (
         <div style={styles.personSummary}>
           {ownerName && (
@@ -332,35 +244,59 @@ const TestCaseDetailModal: React.FC<TestCaseDetailModalProps> = ({
           )}
         </div>
       )}
-      <div style={styles.infoGrid}>
-        {renderField('状态', getStateLabel(testCase.status, 'TEST_CASE'))}
-        {renderField('优先级', priorityLabel)}
+
+      {/* Core fields — 3 columns for compact display */}
+      <div style={styles.infoGrid3Col}>
         {renderField('关联需求', testCase.ref_req_id)}
-        {renderField('版本', `v${testCase.version}`)}
+        {renderField('测试类别', testCase.test_category)}
+        {renderField('风险等级', testCase.risk_level)}
+        {renderField('保密级别', testCase.confidentiality)}
+        {renderField('可见范围', testCase.visibility_scope)}
+        {renderField('预计时长', testCase.estimated_duration_sec ? `${testCase.estimated_duration_sec} 秒` : null)}
+        {testCase.is_destructive && renderField('破坏性测试', '是')}
+        {testCase.is_need_auto && renderField('需要自动化', '是')}
+        {testCase.is_automated && renderField('已自动化', '是')}
+        {!testCase.is_active && renderField('激活状态', '未激活')}
+        {renderField('创建时间', formatDate(testCase.created_at))}
+        {renderField('更新时间', formatDate(testCase.updated_at))}
       </div>
+
+      {/* Automation sub-section — only if relevant */}
+      {hasAutomationSection && (
+        <div style={styles.subBlock}>
+          <span style={styles.subBlockTitle}>自动化</span>
+          <div style={styles.infoGrid3Col}>
+            {renderField('用例 ID', testCase.automation_case_ref?.auto_case_id)}
+            {renderField('版本', testCase.automation_case_ref?.version)}
+            {renderField('类型', testCase.automation_type)}
+            {renderField('脚本实体 ID', testCase.script_entity_id)}
+          </div>
+        </div>
+      )}
+
+      {/* Conditions sub-section */}
+      {hasConditionContent && (
+        <div style={styles.subBlock}>
+          <span style={styles.subBlockTitle}>条件与环境</span>
+          <div style={styles.infoGrid}>
+            {renderField('前置条件', testCase.pre_condition)}
+            {renderField('后置条件', testCase.post_condition)}
+          </div>
+          {renderRequiredEnv()}
+        </div>
+      )}
+
+      {/* Tags — full width */}
       {testCase.tags?.length ? (
         <div style={{ ...styles.infoRowFull, marginTop: 16 }}>
           <span style={styles.infoLabel}>标签</span>
           <div style={styles.tagList}>
-            {testCase.tags.slice(0, 8).map((tag, index) => (
+            {testCase.tags.map((tag, index) => (
               <span key={index} style={styles.tag}>{tag}</span>
             ))}
-            {testCase.tags.length > 8 && (
-              <span style={styles.tagMore}>+{testCase.tags.length - 8}</span>
-            )}
           </div>
         </div>
       ) : null}
-      {(isShortCondition(testCase.pre_condition) || isShortCondition(testCase.post_condition)) && (
-        <div style={{ ...styles.infoGrid, marginTop: 16 }}>
-          {isShortCondition(testCase.pre_condition) && renderField('前置条件', testCase.pre_condition)}
-          {isShortCondition(testCase.post_condition) && renderField('后置条件', testCase.post_condition)}
-        </div>
-      )}
-      {!ownerName && !reviewerName && !autoDevName
-        && !priorityLabel && !testCase.ref_req_id && !testCase.tags?.length
-        && !isShortCondition(testCase.pre_condition) && !isShortCondition(testCase.post_condition)
-        && renderEmptyState('关键信息已在上方概览条展示，可切换其他标签查看完整内容')}
     </>
   );
 
@@ -385,35 +321,6 @@ const TestCaseDetailModal: React.FC<TestCaseDetailModalProps> = ({
     />
   ) : (
     renderEmptyState('此用例未关联工作流')
-  );
-
-  const advancedFields = (
-    <>
-      <div style={styles.infoGrid}>
-        {renderField('故障分析', testCase.failure_analysis)}
-        {renderField('弃用原因', testCase.deprecation_reason)}
-        {renderField('创建时间', formatDate(testCase.created_at))}
-        {renderField('更新时间', formatDate(testCase.updated_at))}
-      </div>
-      {testCase.custom_fields && Object.keys(testCase.custom_fields).length > 0 && (
-        <div style={styles.subBlock}>
-          <span style={styles.subBlockTitle}>自定义字段</span>
-          <pre style={styles.codeBlockCompact}>{JSON.stringify(testCase.custom_fields, null, 2)}</pre>
-        </div>
-      )}
-      {testCase.attachments?.length > 0 && (
-        <div style={styles.subBlock}>
-          <span style={styles.subBlockTitle}>附件</span>
-          {renderAttachments()}
-        </div>
-      )}
-      {testCase.approval_history?.length > 0 && (
-        <div style={styles.subBlock}>
-          <span style={styles.subBlockTitle}>审批记录</span>
-          {renderApprovalHistory()}
-        </div>
-      )}
-    </>
   );
 
   return (
@@ -513,23 +420,27 @@ const TestCaseDetailModal: React.FC<TestCaseDetailModalProps> = ({
         )}
 
         <div style={styles.tabBar} role="tablist" aria-label="用例详情分区">
-          {DETAIL_TABS.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              role="tab"
-              aria-selected={activeTab === tab.id}
-              aria-controls={`test-case-detail-panel-${tab.id}`}
-              id={`test-case-detail-tab-${tab.id}`}
-              style={{
-                ...styles.tab,
-                ...(activeTab === tab.id ? styles.activeTab : {}),
-              }}
-              onClick={() => setActiveTab(tab.id)}
-            >
-              {tab.label}
-            </button>
-          ))}
+          {DETAIL_TABS.map((tab) => {
+            const stepCount = tab.id === 'steps' ? (testCase.steps?.length ?? 0) : 0;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                role="tab"
+                aria-selected={activeTab === tab.id}
+                aria-controls={`test-case-detail-panel-${tab.id}`}
+                id={`test-case-detail-tab-${tab.id}`}
+                style={{
+                  ...styles.tab,
+                  ...(activeTab === tab.id ? styles.activeTab : {}),
+                }}
+                onClick={() => setActiveTab(tab.id)}
+              >
+                {tab.label}
+                {stepCount > 0 && <span style={styles.tabBadge}>({stepCount})</span>}
+              </button>
+            );
+          })}
         </div>
 
         <div style={styles.modalBody}>
@@ -542,6 +453,19 @@ const TestCaseDetailModal: React.FC<TestCaseDetailModalProps> = ({
               {overviewContent}
             </div>
           )}
+          {activeTab === 'steps' && (
+            <div
+              id="test-case-detail-panel-steps"
+              role="tabpanel"
+              aria-labelledby="test-case-detail-tab-steps"
+            >
+              <TestCaseStepList
+                steps={testCase.steps ?? []}
+                cleanupSteps={testCase.cleanup_steps ?? []}
+                showEditHint={showEdit}
+              />
+            </div>
+          )}
           {activeTab === 'workflow' && (
             <div
               id="test-case-detail-panel-workflow"
@@ -551,33 +475,36 @@ const TestCaseDetailModal: React.FC<TestCaseDetailModalProps> = ({
               {workflowContent}
             </div>
           )}
-          {activeTab === 'details' && (
+          {activeTab === 'more' && (
             <div
-              id="test-case-detail-panel-details"
+              id="test-case-detail-panel-more"
               role="tabpanel"
-              aria-labelledby="test-case-detail-tab-details"
+              aria-labelledby="test-case-detail-tab-more"
             >
-              {mergedDetailFields}
-            </div>
-          )}
-          {activeTab === 'condition' && (
-            <div
-              id="test-case-detail-panel-condition"
-              role="tabpanel"
-              aria-labelledby="test-case-detail-tab-condition"
-            >
-              {conditionFields}
-            </div>
-          )}
-          {activeTab === 'advanced' && (
-            <div
-              id="test-case-detail-panel-advanced"
-              role="tabpanel"
-              aria-labelledby="test-case-detail-tab-advanced"
-            >
-              {advancedFields}
+              <div style={styles.infoGrid}>
+                {renderField('故障分析', testCase.failure_analysis)}
+                {renderField('弃用原因', testCase.deprecation_reason)}
+              </div>
+              {testCase.custom_fields && Object.keys(testCase.custom_fields).length > 0 && (
+                <div style={styles.subBlock}>
+                  <span style={styles.subBlockTitle}>自定义字段</span>
+                  <pre style={styles.codeBlockCompact}>{JSON.stringify(testCase.custom_fields, null, 2)}</pre>
+                </div>
+              )}
+              {testCase.attachments?.length > 0 && (
+                <div style={styles.subBlock}>
+                  <span style={styles.subBlockTitle}>附件</span>
+                  {renderAttachments()}
+                </div>
+              )}
+              {testCase.approval_history?.length > 0 && (
+                <div style={styles.subBlock}>
+                  <span style={styles.subBlockTitle}>审批记录</span>
+                  {renderApprovalHistory()}
+                </div>
+              )}
               {!hasAdvancedExtras && (
-                <p style={styles.emptyStateHint}>
+                <p style={styles.emptyState}>
                   暂无故障分析、弃用说明、自定义字段、附件或审批记录
                 </p>
               )}
@@ -779,6 +706,12 @@ const styles = {
     borderBottomColor: 'var(--accent-primary)',
     outline: 'none',
   } as const,
+  tabBadge: {
+    marginLeft: 4,
+    fontSize: 11,
+    fontWeight: 600,
+    color: 'var(--text-secondary)',
+  } as const,
   modalBody: {
     padding: '16px 24px',
     overflowY: 'auto' as const,
@@ -813,11 +746,6 @@ const styles = {
     fontWeight: 500,
     color: 'var(--text-primary)',
   } as const,
-  tagMore: {
-    padding: '4px 10px',
-    fontSize: 12,
-    color: 'var(--text-muted)',
-  } as const,
   emptyState: {
     margin: 0,
     fontSize: 13,
@@ -826,21 +754,14 @@ const styles = {
     textAlign: 'center' as const,
     padding: '24px 16px',
   } as const,
-  emptyStateHint: {
-    margin: '16px 0 0',
-    fontSize: 13,
-    color: 'var(--text-muted)',
-    lineHeight: 1.6,
-  } as const,
-  sectionEmptyHint: {
-    margin: 0,
-    fontSize: 13,
-    color: 'var(--text-muted)',
-    lineHeight: 1.6,
-  } as const,
   infoGrid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(2, 1fr)',
+    gap: '12px',
+  } as const,
+  infoGrid3Col: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(3, 1fr)',
     gap: '12px',
   } as const,
   infoRow: {
@@ -865,13 +786,6 @@ const styles = {
     fontSize: '13px',
     color: 'var(--text-primary)',
     wordBreak: 'break-word' as const,
-  } as const,
-  userIdHint: {
-    display: 'block',
-    marginTop: 2,
-    fontSize: 11,
-    fontFamily: "'JetBrains Mono', monospace",
-    color: 'var(--text-tertiary)',
   } as const,
   tagList: {
     display: 'flex',

@@ -156,6 +156,7 @@
 
 - Schema 中 `case_id` 是可选字段，但当前设计仍以“后端自动生成”为准。
 - `cleanup_steps` 和 `steps` 使用统一步骤结构：`step_id`、`name`、`action`、`expected`。
+- P0 已接入 Create/Update/Response 与前端「步骤」Tab；创建草稿允许步骤为空，保存时校验已填步骤的四字段非空。
 
 ### 3.3 查询参数
 

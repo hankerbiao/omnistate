@@ -1,8 +1,9 @@
 import React, { useMemo, useState } from 'react';
 import { api } from '../services/api';
-import type { CreateTestCaseRequest, TestCaseResponse } from '../types';
+import type { CreateTestCaseRequest, TestCaseResponse, TestCaseStep } from '../types';
 import CatalogPathEditor, { type CatalogPathValue } from './catalog/CatalogPathEditor';
 import { PRIORITY_COLORS, PRIORITY_LABELS } from '../constants/testCaseLabels';
+import TestCaseStepEditor from './TestCaseStepEditor';
 
 interface CreateTestCaseFormProps {
   onClose: () => void;
@@ -54,7 +55,33 @@ function testCaseToFormData(testCase: TestCaseResponse): CreateTestCaseRequest {
     custom_fields: testCase.custom_fields ?? {},
     deprecation_reason: testCase.deprecation_reason,
     approval_history: testCase.approval_history ?? [],
+    steps: testCase.steps ?? [],
+    cleanup_steps: testCase.cleanup_steps ?? [],
   };
+}
+
+function validateStepList(steps: TestCaseStep[] | undefined, label: string): string | null {
+  if (!steps?.length) return null;
+  const seen = new Set<string>();
+  for (let i = 0; i < steps.length; i++) {
+    const step = steps[i];
+    const name = step.name?.trim() ?? '';
+    const action = step.action?.trim() ?? '';
+    const expected = step.expected?.trim() ?? '';
+    const stepId = step.step_id?.trim() ?? '';
+    if (!stepId || !name || !action || !expected) {
+      return `${label}第 ${i + 1} 步：请填写步骤标题、动作与期望`;
+    }
+    if (seen.has(stepId)) {
+      return `${label}：步骤 ID 重复`;
+    }
+    seen.add(stepId);
+  }
+  return null;
+}
+
+function stepsChanged(a: TestCaseStep[] = [], b: TestCaseStep[] = []): boolean {
+  return JSON.stringify(a) !== JSON.stringify(b);
 }
 
 const FormSection: React.FC<FormSectionProps> = ({ title, badge, prominent, children }) => (
@@ -102,12 +129,24 @@ const CreateTestCaseForm: React.FC<CreateTestCaseFormProps> = ({
       attachments: [],
       custom_fields: {},
       approval_history: [],
+      steps: [],
+      cleanup_steps: [],
     };
   });
 
+  const originalSteps = editTestCase?.steps ?? [];
+  const originalCleanupSteps = editTestCase?.cleanup_steps ?? [];
+  const stepsDirty = isEditMode && (
+    stepsChanged(formData.steps, originalSteps)
+    || stepsChanged(formData.cleanup_steps, originalCleanupSteps)
+  );
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'basic' | 'automation'>('basic');
+  const [activeTab, setActiveTab] = useState<'basic' | 'steps' | 'automation'>('basic');
+  const [cleanupExpanded, setCleanupExpanded] = useState(
+    () => Boolean(editTestCase?.cleanup_steps?.length),
+  );
   const [newTag, setNewTag] = useState('');
   const [catalogTouched, setCatalogTouched] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(isEditMode);
@@ -150,12 +189,33 @@ const CreateTestCaseForm: React.FC<CreateTestCaseFormProps> = ({
       return;
     }
 
+    const stepsError = validateStepList(formData.steps, '执行步骤')
+      || validateStepList(formData.cleanup_steps, '清理步骤');
+    if (stepsError) {
+      setError(stepsError);
+      setActiveTab('steps');
+      setLoading(false);
+      return;
+    }
+
     try {
       const payload = normalizePayload({
         ...formData,
         lab_id: catalogPath.labId,
         catalog_path: segments,
         ref_req_id: formData.ref_req_id?.trim() || undefined,
+        steps: (formData.steps ?? []).map(step => ({
+          ...step,
+          name: step.name.trim(),
+          action: step.action.trim(),
+          expected: step.expected.trim(),
+        })),
+        cleanup_steps: (formData.cleanup_steps ?? []).map(step => ({
+          ...step,
+          name: step.name.trim(),
+          action: step.action.trim(),
+          expected: step.expected.trim(),
+        })),
       });
       if (isEditMode && editTestCase) {
         await api.updateTestCase(editTestCase.case_id, payload);
@@ -244,6 +304,20 @@ const CreateTestCaseForm: React.FC<CreateTestCaseFormProps> = ({
               onClick={() => setActiveTab('basic')}
             >
               基本信息
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'steps'}
+              aria-controls="test-case-panel-steps"
+              id="test-case-tab-steps"
+              style={{ ...styles.tab, ...(activeTab === 'steps' ? styles.activeTab : {}) }}
+              onClick={() => setActiveTab('steps')}
+            >
+              步骤
+              {(formData.steps?.length ?? 0) > 0 && (
+                <span style={styles.tabBadge}>{formData.steps?.length}</span>
+              )}
             </button>
             <button
               type="button"
@@ -553,6 +627,78 @@ const CreateTestCaseForm: React.FC<CreateTestCaseFormProps> = ({
               </div>
             )}
 
+            {activeTab === 'steps' && (
+              <div
+                id="test-case-panel-steps"
+                role="tabpanel"
+                aria-labelledby="test-case-tab-steps"
+                style={styles.tabStack}
+              >
+                {!isEditMode && (
+                  <p style={styles.stepsHint}>
+                    可先创建草稿，稍后在编辑中补充步骤
+                  </p>
+                )}
+
+                <FormSection title="执行步骤" badge="可选">
+                  <TestCaseStepEditor
+                    steps={formData.steps ?? []}
+                    onChange={steps => setFormData(prev => ({ ...prev, steps }))}
+                  />
+                </FormSection>
+
+                <section style={styles.cleanupSection}>
+                  <button
+                    type="button"
+                    style={styles.cleanupToggle}
+                    onClick={() => setCleanupExpanded(v => !v)}
+                    aria-expanded={cleanupExpanded}
+                  >
+                    <span style={styles.cleanupChevron} aria-hidden>
+                      {cleanupExpanded ? '▾' : '▸'}
+                    </span>
+                    <span style={styles.cleanupTitle}>清理步骤</span>
+                    <span style={styles.sectionBadge}>可选</span>
+                    {(formData.cleanup_steps?.length ?? 0) > 0 && (
+                      <span style={styles.cleanupCount}>{formData.cleanup_steps?.length}</span>
+                    )}
+                  </button>
+                  {cleanupExpanded && (
+                    <div style={styles.cleanupBody}>
+                      <TestCaseStepEditor
+                        steps={formData.cleanup_steps ?? []}
+                        onChange={cleanup_steps => setFormData(prev => ({ ...prev, cleanup_steps }))}
+                        emptyHint="破坏性测试建议填写清理步骤"
+                      />
+                    </div>
+                  )}
+                </section>
+
+                {isEditMode && (
+                  <FormSection title="版本说明" badge={stepsDirty ? '建议填写' : '可选'}>
+                    <div style={styles.formGroup}>
+                      <label style={styles.label}>
+                        变更说明 (change_log)
+                        {stepsDirty && <span style={styles.changeLogHint}>步骤已修改，建议填写版本说明</span>}
+                      </label>
+                      <textarea
+                        name="change_log"
+                        className="form-input"
+                        value={formData.change_log || ''}
+                        onChange={handleChange}
+                        placeholder="描述本次步骤或内容变更"
+                        rows={3}
+                        style={{
+                          ...styles.textarea,
+                          ...(stepsDirty ? styles.changeLogHighlight : {}),
+                        }}
+                      />
+                    </div>
+                  </FormSection>
+                )}
+              </div>
+            )}
+
             {activeTab === 'automation' && (
               <div
                 id="test-case-panel-automation"
@@ -751,6 +897,69 @@ const styles: Record<string, React.CSSProperties> = {
     color: 'var(--accent-primary)',
     borderBottomColor: 'var(--accent-primary)',
     outline: 'none',
+  },
+  tabBadge: {
+    marginLeft: 6,
+    fontSize: 11,
+    fontWeight: 600,
+    padding: '1px 6px',
+    borderRadius: 'var(--radius-full)',
+    backgroundColor: 'color-mix(in srgb, var(--accent-primary) 15%, transparent)',
+    color: 'var(--accent-primary)',
+  },
+  stepsHint: {
+    margin: 0,
+    fontSize: 12,
+    color: 'var(--text-secondary)',
+    padding: 'var(--space-2) var(--space-3)',
+    backgroundColor: 'var(--surface-secondary)',
+    borderRadius: 'var(--radius-md)',
+    border: '1px solid var(--border-subtle)',
+  },
+  cleanupSection: {
+    border: '1px solid var(--border-subtle)',
+    borderRadius: 'var(--radius-lg)',
+    overflow: 'hidden',
+    backgroundColor: 'var(--surface-primary)',
+  },
+  cleanupToggle: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-2)',
+    width: '100%',
+    padding: 'var(--space-3) var(--space-4)',
+    border: 'none',
+    backgroundColor: 'var(--surface-secondary)',
+    cursor: 'pointer',
+    textAlign: 'left' as const,
+  },
+  cleanupChevron: {
+    fontSize: 12,
+    color: 'var(--text-secondary)',
+  },
+  cleanupTitle: {
+    fontSize: 13,
+    fontWeight: 600,
+    color: 'var(--text-primary)',
+  },
+  cleanupCount: {
+    marginLeft: 'auto',
+    fontSize: 11,
+    fontWeight: 600,
+    color: 'var(--text-secondary)',
+  },
+  cleanupBody: {
+    padding: 'var(--space-4)',
+  },
+  changeLogHint: {
+    marginLeft: 'var(--space-2)',
+    fontSize: 11,
+    color: 'var(--status-warning)',
+    fontWeight: 500,
+  },
+  changeLogHighlight: {
+    borderColor: 'var(--status-warning)',
+    backgroundColor: 'var(--status-warning-bg)',
   },
   quickCreateCard: {
     border: '1px solid var(--border-subtle)',

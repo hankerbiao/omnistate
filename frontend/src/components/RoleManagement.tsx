@@ -113,6 +113,11 @@ const RoleManagement: React.FC = () => {
     [filteredPermissions],
   );
 
+  const selectedPermissions = useMemo(
+    () => permissions.filter(p => selectedPermissionIds.has(getPermissionKey(p))),
+    [permissions, selectedPermissionIds],
+  );
+
   const selectableRoles = useMemo(
     () => filteredRoles.filter(r => !r.is_system),
     [filteredRoles],
@@ -438,176 +443,198 @@ const RoleManagement: React.FC = () => {
         </div>
       )}
 
-      {/* Slide-over Drawer */}
+      {/* Role Configuration Modal */}
       {selectedRole && (
-        <>
-          <div style={styles.drawerOverlay} onClick={closeRoleDrawer} />
-          <aside style={styles.drawer}>
-            <div style={styles.drawerHeader}>
+        <div className="modal-overlay" onClick={closeRoleDrawer}>
+          <div
+            className="modal"
+            style={styles.roleModal}
+            onClick={e => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label={`配置角色 ${selectedRole.name}`}
+          >
+            {/* Header */}
+            <div className="modal__header" style={styles.modalHeader}>
               <div>
-                <h3 style={styles.drawerTitle}>{selectedRole.name}</h3>
-                <span className="mono" style={styles.drawerSubtitle}>{selectedRole.role_id}</span>
+                <h3 className="modal__title">{selectedRole.name}</h3>
+                <span className="mono" style={styles.modalSubtitle}>{selectedRole.role_id}</span>
               </div>
-              <button style={styles.drawerClose} onClick={closeRoleDrawer} aria-label="关闭">
-                ×
-              </button>
+              <button className="modal__close" onClick={closeRoleDrawer} aria-label="关闭">×</button>
             </div>
 
-            <div style={styles.drawerBody}>
+            {/* Body */}
+            <div style={styles.modalBody}>
               {error && (
-                <div className="error-banner" style={{ ...styles.errorBanner, marginBottom: 16 }}>
+                <div className="error-banner" style={{ marginBottom: 16 }}>
                   <span>⚠</span> {error}
                   <button style={styles.errorClose} onClick={() => setError(null)}>×</button>
                 </div>
               )}
 
-              {/* Basic Info */}
-              <section style={styles.section}>
-                <h4 style={styles.sectionTitle}>基本信息</h4>
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>角色名称</label>
-                  <input
-                    className="form-input"
-                    value={editName}
-                    onChange={e => setEditName(e.target.value)}
-                    placeholder="输入角色名称"
-                    disabled={selectedRole.is_system}
-                  />
-                </div>
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>角色描述</label>
-                  <textarea
-                    className="form-input"
-                    style={styles.textarea}
-                    value={editDesc}
-                    onChange={e => setEditDesc(e.target.value)}
-                    placeholder="输入角色描述（可选）"
-                    rows={3}
-                    disabled={selectedRole.is_system}
-                  />
-                </div>
-                {!selectedRole.is_system && (
-                  <button
-                    className="btn btn--primary btn--sm"
-                    onClick={handleSaveBasicInfo}
-                    disabled={saving || !editName.trim() || !hasBasicInfoChanges}
-                  >
-                    {saving ? '保存中...' : '保存基本信息'}
-                  </button>
-                )}
-                {selectedRole.is_system && (
-                  <p style={styles.systemHint}>
-                    系统角色不可修改名称与描述，权限配置可调整
-                  </p>
-                )}
-              </section>
+              <div style={styles.twoCol}>
+                {/* Left: Basic Info */}
+                <section style={styles.basicInfoSection}>
+                  <h4 style={styles.sectionTitle}>基本信息</h4>
+                  <div style={styles.formGroup}>
+                    <label style={styles.label}>角色名称</label>
+                    <input
+                      className="form-input"
+                      value={editName}
+                      onChange={e => setEditName(e.target.value)}
+                      placeholder="输入角色名称"
+                      disabled={selectedRole.is_system}
+                    />
+                  </div>
+                  <div style={styles.formGroup}>
+                    <label style={styles.label}>角色描述</label>
+                    <textarea
+                      className="form-input"
+                      style={styles.textarea}
+                      value={editDesc}
+                      onChange={e => setEditDesc(e.target.value)}
+                      placeholder="输入角色描述（可选）"
+                      rows={3}
+                      disabled={selectedRole.is_system}
+                    />
+                  </div>
+                  {!selectedRole.is_system && (
+                    <button
+                      className="btn btn--primary btn--sm"
+                      onClick={handleSaveBasicInfo}
+                      disabled={saving || !editName.trim() || !hasBasicInfoChanges}
+                    >
+                      {saving ? '保存中...' : '保存基本信息'}
+                    </button>
+                  )}
+                  {selectedRole.is_system && (
+                    <p style={styles.systemHint}>
+                      系统角色不可修改名称与描述，权限配置可调整
+                    </p>
+                  )}
+                </section>
 
-              {/* Permissions */}
-              <section style={styles.section}>
-                <div style={styles.sectionHeader}>
-                  <h4 style={styles.sectionTitle}>
-                    权限配置
-                    <span style={styles.permSelectedCount}>
-                      已选 {selectedPermissionIds.size} / {permissions.length}
-                    </span>
-                  </h4>
-                  <button
-                    className="btn btn--primary btn--sm"
-                    onClick={handleSavePermissions}
-                    disabled={saving || !hasPermissionChanges}
-                  >
-                    {saving ? '保存中...' : '保存权限'}
-                  </button>
-                </div>
+                {/* Right: Permissions */}
+                <section style={styles.permSection}>
+                  <div style={styles.permToolbar}>
+                    <div style={styles.sectionHeader}>
+                      <h4 style={styles.sectionTitle}>
+                        权限配置
+                        <span style={styles.permSelectedBadge}>
+                          已选 {selectedPermissionIds.size} / {permissions.length}
+                        </span>
+                      </h4>
+                      <button
+                        className="btn btn--primary btn--sm"
+                        onClick={handleSavePermissions}
+                        disabled={saving || !hasPermissionChanges}
+                      >
+                        {saving ? '保存中...' : '保存权限'}
+                      </button>
+                    </div>
 
-                <input
-                  className="form-input"
-                  value={permissionSearch}
-                  onChange={e => setPermissionSearch(e.target.value)}
-                  placeholder="搜索权限名称或代码..."
-                  style={{ marginBottom: 12 }}
-                />
+                    <input
+                      className="form-input"
+                      value={permissionSearch}
+                      onChange={e => setPermissionSearch(e.target.value)}
+                      placeholder="搜索权限名称或代码..."
+                    />
 
-                {permissionGroups.length === 0 ? (
-                  <p style={styles.noResults}>没有匹配的权限</p>
-                ) : (
-                  <div style={styles.permGroupList}>
-                    {permissionGroups.map(([groupName, groupPerms]) => {
-                      const selectedInGroup = groupPerms.filter(p =>
-                        selectedPermissionIds.has(getPermissionKey(p)),
-                      ).length;
-                      const allSelected = selectedInGroup === groupPerms.length;
-                      const someSelected = selectedInGroup > 0 && !allSelected;
+                    {selectedPermissions.length > 0 && (
+                      <div style={styles.permSelectedSummary}>
+                        {selectedPermissions.map(perm => (
+                            <span key={getPermissionKey(perm)} style={styles.permChip}>
+                              {perm.name}
+                            </span>
+                          ))}
+                      </div>
+                    )}
+                  </div>
 
-                      return (
-                        <div key={groupName} style={styles.permGroup}>
-                          <div style={styles.permGroupHeader}>
-                            <label style={styles.permGroupLabel}>
-                              <input
-                                type="checkbox"
-                                checked={allSelected}
-                                ref={el => {
-                                  if (el) el.indeterminate = someSelected;
-                                }}
-                                onChange={() => handleToggleGroup(groupPerms, !allSelected)}
-                                style={styles.checkbox}
-                              />
-                              <span style={styles.permGroupName}>{groupName}</span>
-                              <span style={styles.permGroupCount}>
-                                {selectedInGroup}/{groupPerms.length}
-                              </span>
-                            </label>
-                          </div>
-                          <div style={styles.permList}>
-                            {groupPerms.map(perm => {
-                              const permKey = getPermissionKey(perm);
-                              const checked = selectedPermissionIds.has(permKey);
-                              return (
-                                <label
-                                  key={permKey}
-                                  style={{
-                                    ...styles.permItem,
-                                    ...(checked ? styles.permItemSelected : {}),
-                                  }}
-                                  className="perm-item"
-                                >
+                  <div style={styles.permScrollArea}>
+                    {permissionGroups.length === 0 ? (
+                      <p style={styles.noResults}>没有匹配的权限</p>
+                    ) : (
+                      <div style={styles.permGroupList}>
+                        {permissionGroups.map(([groupName, groupPerms]) => {
+                          const selectedInGroup = groupPerms.filter(p =>
+                            selectedPermissionIds.has(getPermissionKey(p)),
+                          ).length;
+                          const allSelected = selectedInGroup === groupPerms.length;
+                          const someSelected = selectedInGroup > 0 && !allSelected;
+
+                          return (
+                            <div key={groupName} style={styles.permGroup}>
+                              <div style={styles.permGroupHeader}>
+                                <label style={styles.permGroupLabel}>
                                   <input
                                     type="checkbox"
-                                    checked={checked}
-                                    onChange={() => handleTogglePermission(permKey)}
+                                    checked={allSelected}
+                                    ref={el => {
+                                      if (el) el.indeterminate = someSelected;
+                                    }}
+                                    onChange={() => handleToggleGroup(groupPerms, !allSelected)}
                                     style={styles.checkbox}
                                   />
-                                  <div style={styles.permContent}>
-                                    <div style={styles.permName}>{perm.name}</div>
-                                    <div className="mono" style={styles.permCode}>{perm.code}</div>
-                                    <div style={styles.permDesc}>
-                                      {perm.description || '暂无说明'}
-                                    </div>
-                                  </div>
+                                  <span style={styles.permGroupName}>{groupName}</span>
+                                  <span style={styles.permGroupCount}>
+                                    {selectedInGroup}/{groupPerms.length}
+                                  </span>
                                 </label>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      );
-                    })}
+                              </div>
+                              <div style={styles.permTileGrid}>
+                                {groupPerms.map(perm => {
+                                  const permKey = getPermissionKey(perm);
+                                  const checked = selectedPermissionIds.has(permKey);
+                                  return (
+                                    <label
+                                      key={permKey}
+                                      style={{
+                                        ...styles.permTile,
+                                        ...(checked ? styles.permTileSelected : {}),
+                                      }}
+                                      className="perm-tile"
+                                      title={perm.description || perm.code}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={checked}
+                                        onChange={() => handleTogglePermission(permKey)}
+                                        style={styles.checkbox}
+                                      />
+                                      <span style={styles.permTileName}>{perm.name}</span>
+                                      <span className="mono" style={styles.permTileCode}>{perm.code}</span>
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
-                )}
-              </section>
+                </section>
+              </div>
             </div>
 
-            {!selectedRole.is_system && (
-              <div style={styles.drawerFooter}>
+            {/* Footer */}
+            <div className="modal__footer">
+              {!selectedRole.is_system && (
                 <button
                   className="btn btn--danger btn--sm"
                   onClick={() => setDeleteConfirm(selectedRole.role_id)}
                 >
                   删除角色
                 </button>
-              </div>
-            )}
-          </aside>
-        </>
+              )}
+              <div style={{ flex: 1 }} />
+              <button className="btn btn--secondary" onClick={closeRoleDrawer}>
+                关闭
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Create Role Modal */}
@@ -721,7 +748,7 @@ const RoleManagement: React.FC = () => {
       )}
 
       <style>{`
-        .perm-item:hover:not(:has(input:disabled)) {
+        .perm-tile:hover:not(:has(input:disabled)) {
           background-color: var(--surface-hover);
           border-color: var(--accent-primary);
         }
@@ -731,40 +758,6 @@ const RoleManagement: React.FC = () => {
 };
 
 const styles: Record<string, React.CSSProperties> = {
-  page: {
-    padding: 'var(--space-6)',
-    height: '100%',
-    overflow: 'auto',
-  },
-  header: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 'var(--space-4)',
-  },
-  title: {
-    margin: 0,
-    fontSize: '18px',
-    fontWeight: 600,
-    color: 'var(--text-primary)',
-  },
-  subtitle: {
-    fontSize: '13px',
-    color: 'var(--text-tertiary)',
-    marginTop: '4px',
-    display: 'block',
-  },
-  toolbar: {
-    marginBottom: 'var(--space-4)',
-    borderRadius: 'var(--radius-lg)',
-    border: '1px solid var(--border-subtle)',
-  },
-  searchInput: {
-    maxWidth: '360px',
-  },
-  filterSelect: {
-    width: '140px',
-  },
   errorBanner: {
     marginBottom: 'var(--space-4)',
   },
@@ -776,12 +769,6 @@ const styles: Record<string, React.CSSProperties> = {
     border: 'none',
     color: 'var(--status-error)',
     cursor: 'pointer',
-  },
-  tableCard: {
-    backgroundColor: 'var(--surface-primary)',
-    border: '1px solid var(--border-subtle)',
-    borderRadius: 'var(--radius-lg)',
-    overflow: 'hidden',
   },
   colCheck: { width: '44px' },
   colCount: { width: '80px', textAlign: 'center' as const },
@@ -826,63 +813,70 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     gap: '4px',
   },
-  drawerOverlay: {
-    position: 'fixed',
-    inset: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
-    zIndex: 1000,
-    animation: 'fadeIn 0.15s ease',
-  },
-  drawer: {
-    position: 'fixed',
-    top: 0,
-    right: 0,
-    bottom: 0,
-    width: '520px',
-    maxWidth: '95vw',
-    backgroundColor: 'var(--surface-primary)',
-    boxShadow: 'var(--shadow-lg)',
-    zIndex: 1001,
+  roleModal: {
+    width: '960px',
+    maxWidth: '94vw',
+    maxHeight: '88vh',
     display: 'flex',
-    flexDirection: 'column',
-    animation: 'slideInRight 0.25s ease',
+    flexDirection: 'column' as const,
   },
-  drawerHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    padding: 'var(--space-5) var(--space-6)',
+  modalHeader: {
     borderBottom: '1px solid var(--border-subtle)',
   },
-  drawerTitle: {
-    margin: 0,
-    fontSize: '18px',
-    fontWeight: 600,
-    color: 'var(--text-primary)',
-  },
-  drawerSubtitle: {
+  modalSubtitle: {
     fontSize: '12px',
     color: 'var(--text-tertiary)',
-    marginTop: '4px',
+    marginTop: '2px',
     display: 'block',
   },
-  drawerClose: {
-    padding: '4px 8px',
-    fontSize: '22px',
-    color: 'var(--text-tertiary)',
-    lineHeight: 1,
-  },
-  drawerBody: {
+  modalBody: {
     flex: 1,
-    overflowY: 'auto',
-    padding: 'var(--space-6)',
+    minHeight: 0,
+    overflow: 'hidden',
+    padding: 'var(--space-5) var(--space-6)',
+    display: 'flex',
+    flexDirection: 'column' as const,
   },
-  drawerFooter: {
-    padding: 'var(--space-4) var(--space-6)',
-    borderTop: '1px solid var(--border-subtle)',
+  twoCol: {
+    display: 'grid',
+    gridTemplateColumns: '260px 1fr',
+    gridTemplateRows: 'minmax(0, 1fr)',
+    gap: 'var(--space-6)',
+    alignItems: 'stretch',
+    flex: 1,
+    minHeight: 0,
+    overflow: 'hidden',
   },
   section: {
-    marginBottom: 'var(--space-8)',
+    marginBottom: 0,
+  },
+  basicInfoSection: {
+    marginBottom: 0,
+    overflowY: 'auto' as const,
+    minHeight: 0,
+  },
+  permSection: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    minHeight: 0,
+    minWidth: 0,
+    overflow: 'hidden',
+  },
+  permToolbar: {
+    flexShrink: 0,
+    backgroundColor: 'var(--surface-primary)',
+    paddingBottom: 'var(--space-3)',
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: 'var(--space-3)',
+    borderBottom: '1px solid var(--border-subtle)',
+    marginBottom: 'var(--space-3)',
+  },
+  permScrollArea: {
+    flex: 1,
+    minHeight: 0,
+    overflowY: 'auto' as const,
+    paddingRight: 'var(--space-1)',
   },
   sectionHeader: {
     display: 'flex',
@@ -898,13 +892,34 @@ const styles: Record<string, React.CSSProperties> = {
     textTransform: 'uppercase',
     letterSpacing: '0.5px',
   },
-  permSelectedCount: {
+  permSelectedBadge: {
     marginLeft: '8px',
+    padding: '2px 8px',
     fontSize: '11px',
-    fontWeight: 500,
-    color: 'var(--text-tertiary)',
+    fontWeight: 600,
+    color: 'var(--accent-primary)',
+    backgroundColor: 'rgba(22, 163, 74, 0.1)',
+    borderRadius: 'var(--radius-full)',
     textTransform: 'none',
     letterSpacing: 0,
+  },
+  permSelectedSummary: {
+    display: 'flex',
+    flexWrap: 'wrap' as const,
+    gap: '6px',
+    maxHeight: '56px',
+    overflowY: 'auto' as const,
+  },
+  permChip: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    padding: '2px 8px',
+    fontSize: '11px',
+    fontWeight: 500,
+    color: 'var(--text-primary)',
+    backgroundColor: 'var(--surface-tertiary)',
+    borderRadius: 'var(--radius-full)',
+    whiteSpace: 'nowrap' as const,
   },
   formGroup: {
     marginBottom: 'var(--space-4)',
@@ -928,12 +943,13 @@ const styles: Record<string, React.CSSProperties> = {
   permGroupList: {
     display: 'flex',
     flexDirection: 'column',
-    gap: 'var(--space-4)',
+    gap: 'var(--space-3)',
+    paddingBottom: 'var(--space-2)',
   },
   permGroup: {
     border: '1px solid var(--border-subtle)',
     borderRadius: 'var(--radius-lg)',
-    overflow: 'hidden',
+    backgroundColor: 'var(--surface-secondary)',
   },
   permGroupHeader: {
     padding: 'var(--space-3) var(--space-4)',
@@ -957,40 +973,41 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '11px',
     color: 'var(--text-tertiary)',
   },
-  permList: {
-    display: 'flex',
-    flexDirection: 'column',
+  permTileGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(148px, 1fr))',
+    gap: 'var(--space-2)',
+    padding: 'var(--space-3)',
   },
-  permItem: {
+  permTile: {
     display: 'flex',
+    flexDirection: 'column' as const,
     alignItems: 'flex-start',
-    gap: 'var(--space-3)',
-    padding: 'var(--space-3) var(--space-4)',
-    borderBottom: '1px solid var(--border-subtle)',
+    gap: '4px',
+    padding: 'var(--space-2) var(--space-3)',
+    border: '1px solid var(--border-subtle)',
+    borderRadius: 'var(--radius-md)',
+    backgroundColor: 'var(--surface-primary)',
     cursor: 'pointer',
-    transition: 'background-color var(--transition-fast)',
-  },
-  permItemSelected: {
-    backgroundColor: 'rgba(22, 163, 74, 0.06)',
-  },
-  permContent: {
-    flex: 1,
+    transition: 'background-color var(--transition-fast), border-color var(--transition-fast)',
     minWidth: 0,
   },
-  permName: {
-    fontSize: '13px',
+  permTileSelected: {
+    backgroundColor: 'rgba(22, 163, 74, 0.08)',
+    borderColor: 'var(--accent-primary)',
+  },
+  permTileName: {
+    fontSize: '12px',
     fontWeight: 600,
     color: 'var(--text-primary)',
-    marginBottom: '2px',
+    lineHeight: 1.3,
+    wordBreak: 'break-word' as const,
   },
-  permCode: {
-    fontSize: '11px',
-    color: 'var(--accent-primary)',
-    marginBottom: '2px',
-  },
-  permDesc: {
-    fontSize: '11px',
+  permTileCode: {
+    fontSize: '10px',
     color: 'var(--text-tertiary)',
+    lineHeight: 1.2,
+    wordBreak: 'break-all' as const,
   },
   noResults: {
     fontSize: '13px',
