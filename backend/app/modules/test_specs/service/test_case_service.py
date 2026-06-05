@@ -123,6 +123,16 @@ class TestCaseService(BaseService):
             raise KeyError("test case not found")
         return await self._enrich_test_case_status(self._doc_to_dict(doc))
 
+    async def get_case_raw_dict(self, case_id: str) -> Dict[str, Any]:
+        """获取未 enrich 的用例 dict，供变更 diff 使用。"""
+        doc = await TestCaseDoc.find_one(
+            TestCaseDoc.case_id == case_id,
+            {"is_deleted": False},
+        )
+        if not doc:
+            raise KeyError("test case not found")
+        return self._doc_to_dict(doc)
+
     async def list_test_cases(
             self,
             ref_req_id: Optional[str] = None,

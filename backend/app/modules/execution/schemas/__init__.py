@@ -1,5 +1,6 @@
 """测试执行 API 模型汇总。"""
 from .execution import (
+    AgentCleanupOfflineResponse,
     AgentHeartbeatRequest,
     AgentRegisterRequest,
     DispatchCaseItem,
@@ -15,6 +16,7 @@ from .kafka_events import ExecutionResultEvent, RawTestEventEnvelope, TestEvent
 
 
 __all__ = [
+    "AgentCleanupOfflineResponse",
     "AgentHeartbeatRequest",
     "AgentRegisterRequest",
     "DispatchCaseItem",

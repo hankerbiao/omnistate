@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, Legend,
+  PieChart, Pie, Cell, Legend, Line, Area, ComposedChart,
 } from 'recharts'
 import type { PieLabelRenderProps } from 'recharts'
 import { WorkflowOverviewSection, type WorkflowNavigateTarget } from './workflow'
@@ -14,6 +14,12 @@ import type {
   TestCaseResponse,
 } from '../types'
 import { getStateLabel, getWorkflowStateStyle } from '../constants/workflowLabels'
+import PageToolbar, { StatPill } from './ui/PageToolbar'
+import {
+  buildDemoDashboardData,
+  DEMO_EXECUTIVE_METRICS,
+  type DemoExecutiveMetrics,
+} from '../mocks/dashboardDemoData'
 
 type RangeKey = '7d' | '30d' | '90d' | 'all'
 
@@ -48,8 +54,6 @@ const TASK_STATUS_COLORS: Record<string, string> = {
   FAILED: COLORS.red, DISPATCH_FAILED: COLORS.red,
   RUNNING: COLORS.amber, PENDING: COLORS.slate, QUEUED: COLORS.slate,
 }
-
-const PASS_RATE_COLOR = (r: number) => (r >= 80 ? COLORS.green : r >= 60 ? COLORS.amber : COLORS.red)
 
 const RADIAN = Math.PI / 180
 
@@ -135,8 +139,10 @@ function buildTeamRows(requirements: RequirementResponse[], testCases: TestCaseR
 
 export default function DashboardPage({ onWorkflowNavigate }: DashboardPageProps) {
   const [range, setRange] = useState<RangeKey>('30d')
+  const [demoMode, setDemoMode] = useState(true)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const demoData = useMemo(() => buildDemoDashboardData(), [])
   const [data, setData] = useState<DashboardData>({
     requirements: [],
     testCases: [],
@@ -153,7 +159,7 @@ export default function DashboardPage({ onWorkflowNavigate }: DashboardPageProps
         api.listRequirements({ limit: 500 }),
         api.listTestCases({ limit: 500 }),
         api.listTasks({ limit: 500 }),
-        api.listAgents({ limit: 100 }),
+        api.listAgents({}),
         api.listAutomationTestCases({ limit: 500 }),
       ])
       setData({
@@ -175,9 +181,12 @@ export default function DashboardPage({ onWorkflowNavigate }: DashboardPageProps
     load()
   }, [load])
 
+  const activeData = demoMode ? demoData : data
+  const executive = DEMO_EXECUTIVE_METRICS
+
   const filteredTasks = useMemo(
-    () => filterTasksByRange(data.tasks, range),
-    [data.tasks, range],
+    () => filterTasksByRange(activeData.tasks, range),
+    [activeData.tasks, range],
   )
 
   const taskSummary = useMemo(() => {
@@ -197,26 +206,26 @@ export default function DashboardPage({ onWorkflowNavigate }: DashboardPageProps
   const trends = useMemo(() => buildDailyTrend(filteredTasks), [filteredTasks])
 
   const statusItems = useMemo(
-    () => countBy(data.testCases, (tc) => getStateLabel(tc.status, 'TEST_CASE')),
-    [data.testCases],
+    () => countBy(activeData.testCases, (tc) => getStateLabel(tc.status, 'TEST_CASE')),
+    [activeData.testCases],
   )
 
   const priorityItems = useMemo(
-    () => countBy(data.testCases, (tc) => tc.priority || '未设置'),
-    [data.testCases],
+    () => countBy(activeData.testCases, (tc) => tc.priority || '未设置'),
+    [activeData.testCases],
   )
 
   const categoryItems = useMemo(
-    () => countBy(data.testCases, (tc) => tc.test_category || '未分类'),
-    [data.testCases],
+    () => countBy(activeData.testCases, (tc) => tc.test_category || '未分类'),
+    [activeData.testCases],
   )
 
   const reqCoverage = useMemo(() => {
-    const casesByReq = data.testCases.reduce<Record<string, number>>((acc, tc) => {
+    const casesByReq = activeData.testCases.reduce<Record<string, number>>((acc, tc) => {
       if (tc.ref_req_id) acc[tc.ref_req_id] = (acc[tc.ref_req_id] || 0) + 1
       return acc
     }, {})
-    return data.requirements
+    return activeData.requirements
       .map((req) => ({
         req_id: req.req_id,
         title: req.title,
@@ -225,30 +234,30 @@ export default function DashboardPage({ onWorkflowNavigate }: DashboardPageProps
         statusLabel: getStateLabel(req.status, 'REQUIREMENT'),
       }))
       .sort((a, b) => b.case_count - a.case_count)
-  }, [data.requirements, data.testCases])
+  }, [activeData.requirements, activeData.testCases])
 
   const automatedCount = useMemo(
-    () => data.testCases.filter((tc) => tc.is_automated || tc.is_need_auto).length,
-    [data.testCases],
+    () => activeData.testCases.filter((tc) => tc.is_automated || tc.is_need_auto).length,
+    [activeData.testCases],
   )
 
-  const automationRate = data.testCases.length > 0
-    ? Math.round((automatedCount / data.testCases.length) * 1000) / 10
+  const automationRate = activeData.testCases.length > 0
+    ? Math.round((automatedCount / activeData.testCases.length) * 1000) / 10
     : 0
 
   const frameworkDist = useMemo(
-    () => countBy(data.automationCases, (ac) => ac.framework || '未设置'),
-    [data.automationCases],
+    () => countBy(activeData.automationCases, (ac) => ac.framework || '未设置'),
+    [activeData.automationCases],
   )
 
   const typeDist = useMemo(
-    () => countBy(data.automationCases, (ac) => ac.automation_type || '未设置'),
-    [data.automationCases],
+    () => countBy(activeData.automationCases, (ac) => ac.automation_type || '未设置'),
+    [activeData.automationCases],
   )
 
   const teamRows = useMemo(
-    () => buildTeamRows(data.requirements, data.testCases).slice(0, 10),
-    [data.requirements, data.testCases],
+    () => buildTeamRows(activeData.requirements, activeData.testCases).slice(0, 10),
+    [activeData.requirements, activeData.testCases],
   )
 
   const taskStatusItems = useMemo(
@@ -256,9 +265,21 @@ export default function DashboardPage({ onWorkflowNavigate }: DashboardPageProps
     [filteredTasks],
   )
 
-  const onlineAgents = data.agents.filter((a) => a.is_online).length
-  const activeCases = data.testCases.filter((tc) => tc.is_active).length
+  const onlineAgents = activeData.agents.filter((a) => a.is_online).length
+  const activeCases = activeData.testCases.filter((tc) => tc.is_active).length
   const reqsWithCases = reqCoverage.filter((r) => r.case_count > 0).length
+
+  const displayPassRate = demoMode ? 94.6 : taskSummary.passRate
+  const displayTaskTotal = demoMode ? filteredTasks.length : taskSummary.total
+  const displayPassed = demoMode
+    ? Math.round(filteredTasks.length * 0.946)
+    : taskSummary.passed
+  const displayFailed = demoMode
+    ? Math.round(filteredTasks.length * 0.038)
+    : taskSummary.failed
+  const displayRunning = demoMode
+    ? filteredTasks.length - displayPassed - displayFailed
+    : taskSummary.running
 
   const renderLabelList = (items: { name: string; value: number }[], colors: string[] | Record<string, string>) => (
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 16px', padding: '8px 0 0' }}>
@@ -276,63 +297,183 @@ export default function DashboardPage({ onWorkflowNavigate }: DashboardPageProps
   )
 
   const taskPieData = [
-    { name: '通过', value: taskSummary.passed },
-    { name: '失败', value: taskSummary.failed },
-    { name: '进行中', value: taskSummary.running },
+    { name: '通过', value: displayPassed },
+    { name: '失败', value: displayFailed },
+    { name: '进行中', value: displayRunning },
   ].filter((d) => d.value > 0)
 
+  const showContent = demoMode || !loading
+
   return (
-    <div style={pageStyle}>
-      <div style={headerStyle}>
-        <div>
-          <h1 style={titleStyle}>数据统计看板</h1>
-          <p style={subtitleStyle}>数据来自后端 API 实时聚合（执行任务范围可切换）</p>
-        </div>
-        <div style={headerActions}>
-          <button type="button" className="btn btn--ghost btn--sm" onClick={load} disabled={loading}>
-            ↻ 刷新
-          </button>
-          <div style={rangeGroupStyle}>
-            {(Object.entries(RANGE_LABELS) as [RangeKey, string][]).map(([key, label]) => (
-              <button key={key} type="button" onClick={() => setRange(key)}
-                style={{ ...rangeBtn, ...(range === key ? rangeBtnActive : {}) }}>
-                {label}
+    <div className="page-content">
+      <PageToolbar
+        meta={(
+          <>
+            <StatPill label="需求" value={activeData.requirements.length} />
+            <StatPill label="用例" value={activeData.testCases.length} tone="info" />
+            <StatPill label="任务" value={displayTaskTotal} tone="warning" />
+            <StatPill label="Agent 在线" value={onlineAgents} tone="success" dot pulse={onlineAgents > 0} />
+            {demoMode && <StatPill label="模式" value="演示" tone="info" />}
+          </>
+        )}
+        actions={(
+          <>
+            <div className="segmented-control" role="group" aria-label="数据模式">
+              <button
+                type="button"
+                className={`segmented-control__btn${demoMode ? ' segmented-control__btn--active' : ''}`}
+                onClick={() => setDemoMode(true)}
+              >
+                汇报演示
               </button>
-            ))}
-          </div>
+              <button
+                type="button"
+                className={`segmented-control__btn${!demoMode ? ' segmented-control__btn--active' : ''}`}
+                onClick={() => setDemoMode(false)}
+              >
+                实时数据
+              </button>
+            </div>
+            <div className="segmented-control" role="group" aria-label="时间范围">
+              {(Object.entries(RANGE_LABELS) as [RangeKey, string][]).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  className={`segmented-control__btn${range === key ? ' segmented-control__btn--active' : ''}`}
+                  onClick={() => setRange(key)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <button type="button" className="btn btn--secondary btn--sm" onClick={load} disabled={loading && !demoMode}>
+              刷新
+            </button>
+          </>
+        )}
+      />
+
+      {demoMode && (
+        <ExecutiveHero metrics={executive} />
+      )}
+
+      {error && !demoMode && (
+        <div className="error-banner" style={{ marginBottom: 16 }}>
+          {error}
         </div>
-      </div>
+      )}
 
-      {error && <div style={errorBanner}>{error}</div>}
+      {!demoMode && <WorkflowOverviewSection onNavigate={onWorkflowNavigate} />}
 
-      <WorkflowOverviewSection onNavigate={onWorkflowNavigate} />
-
-      {loading ? (
+      {!showContent ? (
         <div style={loadingBox}>
           <div className="loading-spinner" />
           <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>加载统计数据…</span>
         </div>
       ) : (
         <>
-          <div style={cardsGrid}>
-            <StatCard label="执行任务" value={taskSummary.total.toLocaleString()} color={COLORS.purple} icon="▶" />
-            <StatCard label="通过" value={taskSummary.passed.toLocaleString()} color={COLORS.green} icon="✓" />
-            <StatCard label="失败" value={taskSummary.failed.toLocaleString()} color={COLORS.red} icon="✕" />
-            <StatCard label="进行中" value={taskSummary.running.toLocaleString()} color={COLORS.amber} icon="◌" />
-            <StatCard label="通过率" value={`${taskSummary.passRate}%`} color={COLORS.cyan} icon="%" />
-            <StatCard label="测试用例" value={data.testCases.length.toLocaleString()} color={COLORS.blue} icon="📋" />
+          {demoMode && (
+            <div className="dashboard-kpi-grid">
+              {executive.kpis.map((kpi) => (
+                <KpiCard key={kpi.label} {...kpi} />
+              ))}
+            </div>
+          )}
+
+          <div className="stats-grid">
+            <StatCard label="执行任务" value={displayTaskTotal.toLocaleString()} color={COLORS.purple} icon="▶" />
+            <StatCard label="通过" value={displayPassed.toLocaleString()} color={COLORS.green} icon="✓" />
+            <StatCard label="失败" value={displayFailed.toLocaleString()} color={COLORS.red} icon="✕" />
+            <StatCard label="进行中" value={displayRunning.toLocaleString()} color={COLORS.amber} icon="◌" />
+            <StatCard
+              label="通过率"
+              value={`${displayPassRate}%`}
+              color={displayPassRate >= 80 ? COLORS.green : displayPassRate >= 60 ? COLORS.amber : COLORS.red}
+              icon="%"
+            />
+            <StatCard label="测试用例" value={activeData.testCases.length.toLocaleString()} color={COLORS.blue} icon="◧" />
           </div>
 
-          <div style={metricsRow}>
-            <MetricBox label="测试需求" value={`${data.requirements.length}`} sub={`已关联用例: ${reqsWithCases}`} />
-            <MetricBox label="激活用例" value={`${activeCases}`} sub={`总计: ${data.testCases.length}`} />
-            <MetricBox label="自动化覆盖" value={`${automationRate}%`} sub={`需/已自动化: ${automatedCount}`} />
-            <MetricBox label="执行 Agent" value={`${data.agents.length}`} sub={`在线: ${onlineAgents}`} />
+          <div className="dashboard-metric-grid">
+            <MetricBox label="测试需求" value={`${activeData.requirements.length}`} sub={`已关联用例: ${reqsWithCases}`} />
+            <MetricBox label="激活用例" value={`${activeCases}`} sub={`总计: ${activeData.testCases.length}`} />
+            <MetricBox
+              label="自动化覆盖"
+              value={demoMode ? `${executive.kpis[1].value}` : `${automationRate}%`}
+              sub={`需/已自动化: ${automatedCount}`}
+            />
+            <MetricBox label="执行 Agent" value={`${activeData.agents.length}`} sub={`在线: ${onlineAgents}`} />
           </div>
 
-          <div style={twoCol}>
-            <div style={cardSection}>
-              <h3 style={cardSectionTitle}>每日执行趋势</h3>
+          {demoMode && (
+            <div className="dashboard-chart-grid">
+              <div className="chart-card">
+                <h3 className="chart-card__title">质量趋势 · 近 5 周</h3>
+                <ResponsiveContainer width="100%" height={260}>
+                  <ComposedChart data={executive.weeklyQuality}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-muted)" />
+                    <XAxis dataKey="week" tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
+                    <YAxis yAxisId="left" domain={[80, 100]} tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
+                    <YAxis yAxisId="right" orientation="right" domain={[50, 80]} tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
+                    <Tooltip contentStyle={{ backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-default)', borderRadius: 8, fontSize: 12 }} />
+                    <Legend wrapperStyle={{ fontSize: 11 }} />
+                    <Area yAxisId="left" type="monotone" dataKey="passRate" name="通过率 %" fill={`${COLORS.green}33`} stroke={COLORS.green} strokeWidth={2} />
+                    <Line yAxisId="right" type="monotone" dataKey="coverage" name="自动化 %" stroke={COLORS.cyan} strokeWidth={2} dot={{ r: 4 }} />
+                    <Bar yAxisId="right" dataKey="defects" name="缺陷数" fill={COLORS.red} opacity={0.7} barSize={16} radius={[3, 3, 0, 0]} />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="chart-card">
+                <h3 className="chart-card__title">Lab 资产与通过率</h3>
+                <ResponsiveContainer width="100%" height={260}>
+                  <BarChart data={executive.labCoverage} barGap={4}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-muted)" />
+                    <XAxis dataKey="name" tick={{ fontSize: 10, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} interval={0} angle={-12} textAnchor="end" height={56} />
+                    <YAxis yAxisId="count" tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
+                    <YAxis yAxisId="rate" orientation="right" domain={[85, 100]} tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} unit="%" />
+                    <Tooltip contentStyle={{ backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-default)', borderRadius: 8, fontSize: 12 }} />
+                    <Legend wrapperStyle={{ fontSize: 11 }} />
+                    <Bar yAxisId="count" dataKey="cases" name="用例数" fill={COLORS.blue} radius={[4, 4, 0, 0]} />
+                    <Bar yAxisId="count" dataKey="automated" name="已自动化" fill={COLORS.cyan} radius={[4, 4, 0, 0]} />
+                    <Line yAxisId="rate" type="monotone" dataKey="passRate" name="通过率" stroke={COLORS.green} strokeWidth={2} dot={{ r: 4 }} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
+
+          {demoMode && (
+            <div className="chart-card" style={{ marginBottom: 16 }}>
+              <h3 className="chart-card__title">里程碑进度</h3>
+              <div style={milestoneGrid}>
+                {executive.milestones.map((m) => (
+                  <div key={m.name} style={milestoneCard}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, marginBottom: 10 }}>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{m.name}</span>
+                      <MilestoneBadge status={m.status} />
+                    </div>
+                    <div style={milestoneBarTrack}>
+                      <div
+                        style={{
+                          ...milestoneBarFill,
+                          width: `${m.progress}%`,
+                          backgroundColor: m.status === 'done' ? COLORS.green : m.status === 'at_risk' ? COLORS.amber : COLORS.blue,
+                        }}
+                      />
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, fontSize: 11, color: 'var(--text-muted)' }}>
+                      <span>{m.progress}%</span>
+                      <span>目标: {m.target}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="dashboard-chart-grid">
+            <div className="chart-card">
+              <h3 className="chart-card__title">每日执行趋势</h3>
               {trends.length === 0 ? (
                 <EmptyHint text="所选时间范围内暂无执行任务" />
               ) : (
@@ -349,8 +490,8 @@ export default function DashboardPage({ onWorkflowNavigate }: DashboardPageProps
                 </ResponsiveContainer>
               )}
             </div>
-            <div style={cardSection}>
-              <h3 style={cardSectionTitle}>任务状态分布</h3>
+            <div className="chart-card">
+              <h3 className="chart-card__title">任务状态分布</h3>
               {taskPieData.length === 0 ? (
                 <EmptyHint text="暂无执行任务数据" />
               ) : (
@@ -368,10 +509,10 @@ export default function DashboardPage({ onWorkflowNavigate }: DashboardPageProps
             </div>
           </div>
 
-          <div style={twoCol}>
-            <div style={cardSection}>
-              <h3 style={cardSectionTitle}>用例分布</h3>
-              {data.testCases.length === 0 ? (
+          <div className="dashboard-chart-grid">
+            <div className="chart-card">
+              <h3 className="chart-card__title">用例分布</h3>
+              {activeData.testCases.length === 0 ? (
                 <EmptyHint text="暂无测试用例" />
               ) : (
                 <>
@@ -430,8 +571,8 @@ export default function DashboardPage({ onWorkflowNavigate }: DashboardPageProps
                 </>
               )}
             </div>
-            <div style={cardSection}>
-              <h3 style={cardSectionTitle}>需求用例关联</h3>
+            <div className="chart-card">
+              <h3 className="chart-card__title">需求用例关联</h3>
               {reqCoverage.length === 0 ? (
                 <EmptyHint text="暂无测试需求" />
               ) : (
@@ -465,10 +606,10 @@ export default function DashboardPage({ onWorkflowNavigate }: DashboardPageProps
             </div>
           </div>
 
-          <div style={twoCol}>
-            <div style={cardSection}>
-              <h3 style={cardSectionTitle}>自动化用例</h3>
-              {data.automationCases.length === 0 ? (
+          <div className="dashboard-chart-grid">
+            <div className="chart-card">
+              <h3 className="chart-card__title">自动化用例</h3>
+              {activeData.automationCases.length === 0 ? (
                 <EmptyHint text="暂无自动化用例" />
               ) : (
                 <>
@@ -486,7 +627,7 @@ export default function DashboardPage({ onWorkflowNavigate }: DashboardPageProps
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, justifyContent: 'center' }}>
                       <div style={{ textAlign: 'center' }}>
-                        <div style={{ fontSize: 32, fontWeight: 700, color: COLORS.cyan }}>{data.automationCases.length}</div>
+                        <div style={{ fontSize: 32, fontWeight: 700, color: COLORS.cyan }}>{activeData.automationCases.length}</div>
                         <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>自动化用例总数</div>
                       </div>
                       <div style={miniStatRow}>
@@ -512,8 +653,8 @@ export default function DashboardPage({ onWorkflowNavigate }: DashboardPageProps
                 </>
               )}
             </div>
-            <div style={cardSection}>
-              <h3 style={cardSectionTitle}>任务原始状态</h3>
+            <div className="chart-card">
+              <h3 className="chart-card__title">任务原始状态</h3>
               {filteredTasks.length === 0 ? (
                 <EmptyHint text="所选时间范围内暂无任务" />
               ) : (
@@ -534,9 +675,60 @@ export default function DashboardPage({ onWorkflowNavigate }: DashboardPageProps
             </div>
           </div>
 
-          <div style={cardSection}>
-            <h3 style={cardSectionTitle}>负责人负载（来自用例/需求 owner）</h3>
-            {teamRows.length === 0 ? (
+          <div className="chart-card" style={{ marginBottom: 16 }}>
+            <h3 className="chart-card__title">{demoMode ? '团队效能排行' : '负责人负载（来自用例/需求 owner）'}</h3>
+            {demoMode ? (
+              executive.teamPerformance.length === 0 ? (
+                <EmptyHint text="暂无团队数据" />
+              ) : (
+                <div style={tableWrap}>
+                  <table style={table}>
+                    <thead>
+                      <tr>
+                        <th style={th}>成员</th>
+                        <th style={th}>部门</th>
+                        <th style={{ ...th, textAlign: 'center' }}>负责用例</th>
+                        <th style={{ ...th, textAlign: 'center' }}>负责需求</th>
+                        <th style={{ ...th, textAlign: 'center' }}>审核</th>
+                        <th style={{ ...th, textAlign: 'center', width: 90 }}>完成率</th>
+                        <th style={{ ...th, width: 140 }}>负载</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {executive.teamPerformance.map((u, i) => {
+                        const load = u.owned_cases + u.owned_reqs
+                        const maxLoad = Math.max(...executive.teamPerformance.map((x) => x.owned_cases + x.owned_reqs), 1)
+                        const loadPct = (load / maxLoad) * 100
+                        return (
+                          <tr key={u.name} style={{ ...tr, ...(i % 2 === 1 ? { backgroundColor: 'rgba(0,0,0,0.02)' } : {}) }}>
+                            <td style={td}>
+                              <div style={{ fontWeight: 600 }}>{u.name}</div>
+                              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{u.role}</div>
+                            </td>
+                            <td style={{ ...td, fontSize: 12, color: 'var(--text-secondary)' }}>{u.dept}</td>
+                            <td style={{ ...td, textAlign: 'center' }}>{u.owned_cases}</td>
+                            <td style={{ ...td, textAlign: 'center' }}>{u.owned_reqs}</td>
+                            <td style={{ ...td, textAlign: 'center' }}>{u.reviewed_cases}</td>
+                            <td style={{ ...td, textAlign: 'center' }}>
+                              <span style={{ color: u.completionRate >= 90 ? COLORS.green : COLORS.amber, fontWeight: 600 }}>
+                                {u.completionRate}%
+                              </span>
+                            </td>
+                            <td style={td}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <div style={{ flex: 1, height: 8, backgroundColor: 'var(--bg-tertiary)', borderRadius: 4, overflow: 'hidden' }}>
+                                  <div style={{ height: '100%', width: `${loadPct}%`, backgroundColor: COLORS.cyan, borderRadius: 4 }} />
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )
+            ) : teamRows.length === 0 ? (
               <EmptyHint text="暂无负责人数据" />
             ) : (
               <div style={tableWrap}>
@@ -578,16 +770,16 @@ export default function DashboardPage({ onWorkflowNavigate }: DashboardPageProps
             )}
           </div>
 
-          <div style={cardSection}>
-            <h3 style={cardSectionTitle}>数据摘要</h3>
+          <div className="chart-card">
+            <h3 className="chart-card__title">数据摘要</h3>
             <div style={summaryGrid}>
-              <SummaryBox label="测试需求" value={`${data.requirements.length}`} />
-              <SummaryBox label="测试用例" value={`${data.testCases.length}`} />
-              <SummaryBox label="自动化用例" value={`${data.automationCases.length}`} />
-              <SummaryBox label="执行任务" value={`${data.tasks.length}`} />
-              <SummaryBox label="执行 Agent" value={`${data.agents.length}`} />
+              <SummaryBox label="测试需求" value={`${activeData.requirements.length}`} />
+              <SummaryBox label="测试用例" value={`${activeData.testCases.length}`} />
+              <SummaryBox label="自动化用例" value={`${activeData.automationCases.length}`} />
+              <SummaryBox label="执行任务" value={`${activeData.tasks.length}`} />
+              <SummaryBox label="执行 Agent" value={`${activeData.agents.length}`} />
               <SummaryBox label="在线 Agent" value={`${onlineAgents}`} />
-              <SummaryBox label="自动化率" value={`${automationRate}%`} />
+              <SummaryBox label="自动化率" value={demoMode ? executive.kpis[1].value : `${automationRate}%`} />
               <SummaryBox label="数据刷新" value={new Date().toLocaleTimeString('zh-CN')} />
             </div>
           </div>
@@ -597,13 +789,71 @@ export default function DashboardPage({ onWorkflowNavigate }: DashboardPageProps
   )
 }
 
+function ExecutiveHero({ metrics }: { metrics: DemoExecutiveMetrics }) {
+  const scoreColor = metrics.healthScore >= 90 ? COLORS.green : metrics.healthScore >= 75 ? COLORS.amber : COLORS.red
+  return (
+    <div style={heroWrap}>
+      <div style={heroMain}>
+        <div style={heroBadge}>质量周报 · {metrics.periodLabel}</div>
+        <h2 style={heroTitle}>服务器测试质量驾驶舱</h2>
+        <p style={heroSummary}>{metrics.healthSummary}</p>
+        <div style={heroHighlights}>
+          {metrics.highlights.map((h) => (
+            <div key={h.title} style={{ ...heroHighlight, borderLeftColor: h.type === 'success' ? COLORS.green : h.type === 'warning' ? COLORS.amber : COLORS.blue }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>{h.title}</div>
+              <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.5 }}>{h.detail}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div style={heroScore}>
+        <div style={{ ...scoreRing, borderColor: scoreColor, color: scoreColor }}>
+          <span style={{ fontSize: 36, fontWeight: 800, lineHeight: 1 }}>{metrics.healthScore}</span>
+          <span style={{ fontSize: 11, opacity: 0.85 }}>健康分</span>
+        </div>
+        <div style={{ fontSize: 16, fontWeight: 700, color: scoreColor, marginTop: 10 }}>{metrics.healthGrade}</div>
+        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>{metrics.reportDate}</div>
+      </div>
+    </div>
+  )
+}
+
+function KpiCard({ label, value, delta, deltaUp, sub, color }: DemoExecutiveMetrics['kpis'][0]) {
+  return (
+    <div style={kpiCard}>
+      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6 }}>{label}</div>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+        <span style={{ fontSize: 24, fontWeight: 800, color, fontFamily: "'JetBrains Mono', monospace" }}>{value}</span>
+        <span style={{ fontSize: 12, fontWeight: 600, color: deltaUp ? COLORS.green : COLORS.red }}>
+          {deltaUp ? '↑' : '↓'} {delta}
+        </span>
+      </div>
+      <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4 }}>{sub}</div>
+    </div>
+  )
+}
+
+function MilestoneBadge({ status }: { status: 'on_track' | 'at_risk' | 'done' }) {
+  const map = {
+    on_track: { label: '正常', bg: `${COLORS.blue}22`, color: COLORS.blue },
+    at_risk: { label: '需关注', bg: `${COLORS.amber}22`, color: COLORS.amber },
+    done: { label: '已完成', bg: `${COLORS.green}22`, color: COLORS.green },
+  }
+  const s = map[status]
+  return (
+    <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 999, backgroundColor: s.bg, color: s.color, whiteSpace: 'nowrap' }}>
+      {s.label}
+    </span>
+  )
+}
+
 function StatCard({ label, value, color, icon }: { label: string; value: string; color: string; icon: string }) {
   return (
-    <div style={statCard}>
+    <div className="stat-card" style={statCard}>
       <div style={{ ...statIcon, backgroundColor: `${color}18`, color }}>{icon}</div>
       <div>
-        <div style={statLabel}>{label}</div>
-        <div style={{ ...statValue, color }}>{value}</div>
+        <div className="stat-card__label">{label}</div>
+        <div className="stat-card__value" style={{ color }}>{value}</div>
       </div>
     </div>
   )
@@ -611,7 +861,7 @@ function StatCard({ label, value, color, icon }: { label: string; value: string;
 
 function MetricBox({ label, value, sub }: { label: string; value: string; sub: string }) {
   return (
-    <div style={metricBox}>
+    <div className="stat-card" style={metricBox}>
       <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>{label}</div>
       <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--text-primary)', fontFamily: "'JetBrains Mono', monospace" }}>{value}</div>
       <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{sub}</div>
@@ -645,51 +895,10 @@ function EmptyHint({ text }: { text: string }) {
   )
 }
 
-const pageStyle: React.CSSProperties = {
-  padding: 32, maxWidth: 1600, margin: '0 auto',
-  animation: 'fadeIn 0.4s ease',
-}
-
-const headerStyle: React.CSSProperties = {
-  display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
-  marginBottom: 24, flexWrap: 'wrap', gap: 16,
-}
-const titleStyle: React.CSSProperties = {
-  fontSize: 28, fontWeight: 700, color: 'var(--text-primary)', margin: 0, letterSpacing: '-0.5px',
-}
-const subtitleStyle: React.CSSProperties = {
-  fontSize: 14, color: 'var(--text-muted)', margin: '4px 0 0',
-}
-const headerActions: React.CSSProperties = {
-  display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
-}
-const errorBanner: React.CSSProperties = {
-  padding: '10px 14px', marginBottom: 16, borderRadius: 8,
-  backgroundColor: 'var(--status-error-bg)', color: 'var(--status-error)', fontSize: 13,
-}
 const loadingBox: React.CSSProperties = {
   display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, padding: 48,
 }
 
-const rangeGroupStyle: React.CSSProperties = {
-  display: 'flex', gap: 4, backgroundColor: 'var(--bg-secondary)',
-  padding: 4, borderRadius: 'var(--radius-md)', border: '1px solid var(--border-default)',
-}
-const rangeBtn: React.CSSProperties = {
-  padding: '8px 16px', fontSize: 13, fontWeight: 500,
-  color: 'var(--text-secondary)', backgroundColor: 'transparent',
-  border: 'none', borderRadius: 'var(--radius-sm)', cursor: 'pointer',
-  transition: 'all 0.15s ease',
-}
-const rangeBtnActive: React.CSSProperties = {
-  color: 'var(--text-primary)', backgroundColor: 'var(--bg-primary)',
-  boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-}
-
-const cardsGrid: React.CSSProperties = {
-  display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
-  gap: 14, marginBottom: 14,
-}
 const statCard: React.CSSProperties = {
   display: 'flex', alignItems: 'center', gap: 14,
   padding: '18px 20px', backgroundColor: 'var(--bg-secondary)',
@@ -699,33 +908,9 @@ const statIcon: React.CSSProperties = {
   width: 42, height: 42, display: 'flex', alignItems: 'center', justifyContent: 'center',
   borderRadius: 12, fontSize: 18, fontWeight: 700, flexShrink: 0,
 }
-const statLabel: React.CSSProperties = {
-  fontSize: 11, color: 'var(--text-muted)', marginBottom: 2, textTransform: 'uppercase', letterSpacing: '0.3px',
-}
-const statValue: React.CSSProperties = {
-  fontSize: 22, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", lineHeight: 1.2,
-}
-
-const metricsRow: React.CSSProperties = {
-  display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
-  gap: 14, marginBottom: 14,
-}
 const metricBox: React.CSSProperties = {
   padding: '16px 20px', backgroundColor: 'var(--bg-secondary)',
   borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-default)',
-}
-
-const twoCol: React.CSSProperties = {
-  display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14,
-}
-
-const cardSection: React.CSSProperties = {
-  backgroundColor: 'var(--bg-secondary)', borderRadius: 'var(--radius-lg)',
-  border: '1px solid var(--border-default)', padding: 20,
-}
-const cardSectionTitle: React.CSSProperties = {
-  fontSize: 14, fontWeight: 600, color: 'var(--text-primary)',
-  margin: '0 0 12px',
 }
 
 const tableWrap: React.CSSProperties = { overflowX: 'auto' }
@@ -747,4 +932,112 @@ const summaryGrid: React.CSSProperties = {
 }
 const sbox: React.CSSProperties = {
   padding: 12, backgroundColor: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)',
+}
+
+const heroWrap: React.CSSProperties = {
+  display: 'flex',
+  justifyContent: 'space-between',
+  alignItems: 'stretch',
+  gap: 24,
+  marginBottom: 20,
+  padding: '24px 28px',
+  borderRadius: 'var(--radius-xl)',
+  border: '1px solid var(--border-subtle)',
+  background: 'linear-gradient(135deg, rgba(59,130,246,0.08) 0%, rgba(6,182,212,0.06) 50%, rgba(34,197,94,0.05) 100%)',
+  flexWrap: 'wrap',
+}
+
+const heroMain: React.CSSProperties = { flex: 1, minWidth: 280 }
+
+const heroBadge: React.CSSProperties = {
+  display: 'inline-block',
+  fontSize: 11,
+  fontWeight: 600,
+  color: 'var(--accent-primary)',
+  backgroundColor: 'rgba(59,130,246,0.12)',
+  padding: '4px 10px',
+  borderRadius: 999,
+  marginBottom: 10,
+}
+
+const heroTitle: React.CSSProperties = {
+  margin: '0 0 8px',
+  fontSize: 22,
+  fontWeight: 700,
+  color: 'var(--text-primary)',
+}
+
+const heroSummary: React.CSSProperties = {
+  margin: '0 0 16px',
+  fontSize: 13,
+  color: 'var(--text-secondary)',
+  lineHeight: 1.6,
+  maxWidth: 640,
+}
+
+const heroHighlights: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+  gap: 10,
+}
+
+const heroHighlight: React.CSSProperties = {
+  padding: '10px 12px',
+  backgroundColor: 'var(--surface-primary)',
+  borderRadius: 'var(--radius-md)',
+  borderLeft: '3px solid',
+}
+
+const heroScore: React.CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center',
+  justifyContent: 'center',
+  minWidth: 120,
+}
+
+const scoreRing: React.CSSProperties = {
+  width: 96,
+  height: 96,
+  borderRadius: '50%',
+  border: '4px solid',
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center',
+  justifyContent: 'center',
+  backgroundColor: 'var(--surface-primary)',
+}
+
+const kpiCard: React.CSSProperties = {
+  padding: '16px 18px',
+  backgroundColor: 'var(--surface-primary)',
+  borderRadius: 'var(--radius-lg)',
+  border: '1px solid var(--border-subtle)',
+  boxShadow: 'var(--shadow-sm)',
+}
+
+const milestoneGrid: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+  gap: 14,
+}
+
+const milestoneCard: React.CSSProperties = {
+  padding: 14,
+  backgroundColor: 'var(--bg-tertiary)',
+  borderRadius: 'var(--radius-md)',
+  border: '1px solid var(--border-muted)',
+}
+
+const milestoneBarTrack: React.CSSProperties = {
+  height: 8,
+  backgroundColor: 'var(--surface-primary)',
+  borderRadius: 4,
+  overflow: 'hidden',
+}
+
+const milestoneBarFill: React.CSSProperties = {
+  height: '100%',
+  borderRadius: 4,
+  transition: 'width 0.4s ease',
 }

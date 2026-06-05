@@ -4,6 +4,11 @@ from .requirement import (
     UpdateRequirementRequest,
     RequirementResponse,
 )
+from .change_log import (
+    TestCaseChangeLogListResponse,
+    TestCaseChangeLogResponse,
+    TestCaseFieldChangeResponse,
+)
 from .test_case import (
     AutomationTestCaseReportResponse,
     AutomationTestCaseResponse,
@@ -28,4 +33,7 @@ __all__ = [
     "UpdateTestCaseRequest",
     "TestCaseResponse",
     "LinkAutomationCaseRequest",
+    "TestCaseChangeLogListResponse",
+    "TestCaseChangeLogResponse",
+    "TestCaseFieldChangeResponse",
 ]

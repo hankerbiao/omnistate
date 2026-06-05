@@ -15,6 +15,79 @@ interface WorkflowLogsPanelProps {
   onToggle?: () => void;
 }
 
+export interface WorkflowLogsTimelineProps {
+  logs: WorkflowTransitionLog[];
+  loading: boolean;
+  typeCode?: WorkflowTypeCode;
+}
+
+export const WorkflowLogsTimeline: React.FC<WorkflowLogsTimelineProps> = ({
+  logs,
+  loading,
+  typeCode,
+}) => {
+  if (loading) {
+    return (
+      <div style={styles.loading}>
+        <div className="loading-spinner" style={{ width: 20, height: 20 }} />
+      </div>
+    );
+  }
+  if (logs.length === 0) {
+    return <p style={styles.empty}>暂无流转记录</p>;
+  }
+  return (
+    <div style={styles.timeline}>
+      {logs.map((log, index) => {
+        const stateStyle = getWorkflowStateStyle(log.to_state);
+        return (
+          <div key={log.id} style={styles.item}>
+            <div style={styles.itemRail}>
+              <div
+                style={{
+                  ...styles.itemDot,
+                  width: index === 0 ? '10px' : '8px',
+                  height: index === 0 ? '10px' : '8px',
+                  backgroundColor: index === 0 ? 'var(--accent-primary)' : 'var(--border-subtle)',
+                }}
+              />
+              {index < logs.length - 1 && <div style={styles.itemLine} />}
+            </div>
+            <div style={styles.itemContent}>
+              <div style={styles.itemTop}>
+                <span style={styles.action}>
+                  {WORKFLOW_ACTION_LABELS[log.action] || log.action}
+                </span>
+                <span style={styles.time}>
+                  {new Date(log.created_at).toLocaleString('zh-CN')}
+                </span>
+              </div>
+              <div style={styles.stateRow}>
+                <span style={styles.stateFrom}>
+                  {getStateLabel(log.from_state, typeCode)}
+                </span>
+                <span style={styles.arrow}>→</span>
+                <span
+                  className="status-badge"
+                  style={{ ...stateStyle, fontSize: '11px', padding: '2px 8px' }}
+                >
+                  {getStateLabel(log.to_state, typeCode)}
+                </span>
+              </div>
+              <div style={styles.meta}>
+                操作人: <code style={styles.code}>{log.operator_id}</code>
+                {log.payload?.comment != null && String(log.payload.comment) !== '' && (
+                  <span style={styles.comment}> · {String(log.payload.comment)}</span>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
 const WorkflowLogsPanel: React.FC<WorkflowLogsPanelProps> = ({
   logs,
   loading,
@@ -34,62 +107,7 @@ const WorkflowLogsPanel: React.FC<WorkflowLogsPanelProps> = ({
 
       {!collapsed && (
         <div style={styles.body}>
-          {loading ? (
-            <div style={styles.loading}>
-              <div className="loading-spinner" style={{ width: 20, height: 20 }} />
-            </div>
-          ) : logs.length === 0 ? (
-            <p style={styles.empty}>暂无流转记录</p>
-          ) : (
-            <div style={styles.timeline}>
-              {logs.map((log, index) => {
-                const stateStyle = getWorkflowStateStyle(log.to_state);
-                return (
-                  <div key={log.id} style={styles.item}>
-                    <div style={styles.itemRail}>
-                      <div
-                        style={{
-                          ...styles.itemDot,
-                          width: index === 0 ? '10px' : '8px',
-                          height: index === 0 ? '10px' : '8px',
-                          backgroundColor: index === 0 ? 'var(--accent-primary)' : 'var(--border-subtle)',
-                        }}
-                      />
-                      {index < logs.length - 1 && <div style={styles.itemLine} />}
-                    </div>
-                    <div style={styles.itemContent}>
-                      <div style={styles.itemTop}>
-                        <span style={styles.action}>
-                          {WORKFLOW_ACTION_LABELS[log.action] || log.action}
-                        </span>
-                        <span style={styles.time}>
-                          {new Date(log.created_at).toLocaleString('zh-CN')}
-                        </span>
-                      </div>
-                      <div style={styles.stateRow}>
-                        <span style={styles.stateFrom}>
-                          {getStateLabel(log.from_state, typeCode)}
-                        </span>
-                        <span style={styles.arrow}>→</span>
-                        <span
-                          className="status-badge"
-                          style={{ ...stateStyle, fontSize: '11px', padding: '2px 8px' }}
-                        >
-                          {getStateLabel(log.to_state, typeCode)}
-                        </span>
-                      </div>
-                      <div style={styles.meta}>
-                        操作人: <code style={styles.code}>{log.operator_id}</code>
-                        {log.payload?.comment != null && String(log.payload.comment) !== '' && (
-                          <span style={styles.comment}> · {String(log.payload.comment)}</span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+          <WorkflowLogsTimeline logs={logs} loading={loading} typeCode={typeCode} />
         </div>
       )}
     </div>

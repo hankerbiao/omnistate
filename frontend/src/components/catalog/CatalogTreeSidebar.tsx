@@ -63,7 +63,7 @@ const CatalogTreeSidebar: React.FC<CatalogTreeSidebarProps> = ({
 
   const selectedLabName = labs.find(l => l.lab_id === selectedLabId)?.name;
 
-  const renderNode = (node: CatalogTreeNode, depth: number) => {
+  const renderNode = (node: CatalogTreeNode, depth: number): React.ReactNode => {
     if (!node.name && depth === 0) {
       return (node.children || []).map(child => renderNode(child, depth));
     }
@@ -129,16 +129,20 @@ const CatalogTreeSidebar: React.FC<CatalogTreeSidebarProps> = ({
           id="catalog-lab-select"
           className="form-input form-select"
           style={styles.select}
-          value={selectedLabId}
+          value={selectedLabId || labs[0]?.lab_id || ''}
+          disabled={labs.length === 0}
           onChange={e => {
             onSelectLab(e.target.value);
             onSelectPrefix([]);
           }}
         >
-          <option value="">选择 Lab</option>
-          {labs.map(lab => (
-            <option key={lab.lab_id} value={lab.lab_id}>{lab.name}</option>
-          ))}
+          {labs.length === 0 ? (
+            <option value="">暂无 Lab</option>
+          ) : (
+            labs.map(lab => (
+              <option key={lab.lab_id} value={lab.lab_id}>{lab.name}</option>
+            ))
+          )}
         </select>
       </div>
       <button
@@ -168,8 +172,8 @@ const CatalogTreeSidebar: React.FC<CatalogTreeSidebarProps> = ({
           {renderNode(tree, 0)}
         </div>
       )}
-      {!selectedLabId && (
-        <p style={styles.emptyTree}>选择 Lab 以浏览目录</p>
+      {!selectedLabId && labs.length === 0 && (
+        <p style={styles.emptyTree}>请先在「Lab 管理」中创建 Lab</p>
       )}
     </aside>
   );

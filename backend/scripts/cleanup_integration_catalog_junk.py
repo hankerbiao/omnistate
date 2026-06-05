@@ -17,8 +17,14 @@ from __future__ import annotations
 
 import argparse
 import re
+import sys
+from pathlib import Path
 
 from pymongo import MongoClient
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 from app.shared.db.config import settings
 
@@ -157,10 +163,13 @@ def main() -> None:
         for doc in junk_cases:
             workflow_item_id = doc.get("workflow_item_id")
             if workflow_item_id:
-                db["work_items"].update_one(
-                    {"item_id": workflow_item_id},
-                    {"$set": {"is_deleted": True}},
-                )
+                from bson import ObjectId
+
+                if ObjectId.is_valid(str(workflow_item_id)):
+                    db["bus_work_items"].update_one(
+                        {"_id": ObjectId(str(workflow_item_id))},
+                        {"$set": {"is_deleted": True}},
+                    )
 
     if junk_lab_ids:
         db["test_catalog_segments"].delete_many({"lab_id": {"$in": junk_lab_ids}})

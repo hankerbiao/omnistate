@@ -175,6 +175,14 @@ class AgentHeartbeatRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class AgentCleanupOfflineResponse(BaseModel):
+    deleted_count: int = Field(..., description="已清理的离线代理数量")
+    deleted_agent_ids: list[str] = Field(
+        default_factory=list,
+        description="被清理的代理 ID 列表",
+    )
+
+
 class ExecutionAgentResponse(BaseModel):
     agent_id: str = Field(..., description="代理唯一标识")
     hostname: str = Field(..., description="代理所在主机名")

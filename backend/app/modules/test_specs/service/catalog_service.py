@@ -107,6 +107,11 @@ class CatalogService:
     async def enrich_case_dict(self, data: dict[str, Any]) -> dict[str, Any]:
         lab_id = data.get("lab_id")
         catalog_path = data.get("catalog_path") or []
+        if lab_id:
+            lab = await TestLabDoc.find_one({"lab_id": lab_id})
+            data["lab_name"] = lab.name if lab else lab_id
+        else:
+            data["lab_name"] = None
         if lab_id and catalog_path:
             data["catalog_breadcrumb"] = await self.build_breadcrumb(
                 lab_id,

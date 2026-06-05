@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../services/api';
 import type { ExecutionAgent } from '../types';
+import PageToolbar, { StatPill } from './ui/PageToolbar';
 
 interface AgentListProps {
   onLogout?: () => void;
@@ -12,6 +13,7 @@ const AgentList: React.FC<AgentListProps> = () => {
   const [error, setError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [cleaningOffline, setCleaningOffline] = useState(false);
 
   const handleDeleteAgent = useCallback(async (agentId: string) => {
     if (!window.confirm(`确定要删除代理 ${agentId} 吗？`)) {
@@ -32,6 +34,33 @@ const AgentList: React.FC<AgentListProps> = () => {
     }
   }, []);
 
+  const handleCleanupOffline = useCallback(async () => {
+    const offlineAgents = agents.filter(a => !a.is_online);
+    if (offlineAgents.length === 0) {
+      return;
+    }
+
+    const preview = offlineAgents.slice(0, 5).map(a => a.agent_id).join('、');
+    const suffix = offlineAgents.length > 5 ? ` 等 ${offlineAgents.length} 个` : '';
+    if (!window.confirm(`确定清理 ${offlineAgents.length} 个离线代理吗？\n${preview}${suffix}`)) {
+      return;
+    }
+
+    setCleaningOffline(true);
+    setDeleteError(null);
+
+    try {
+      const response = await api.cleanupOfflineAgents();
+      const deletedIds = new Set(response.data?.deleted_agent_ids || []);
+      setAgents(prev => prev.filter(a => !deletedIds.has(a.agent_id)));
+    } catch (err) {
+      setDeleteError('清理离线代理失败');
+      console.error('Cleanup offline agents error:', err);
+    } finally {
+      setCleaningOffline(false);
+    }
+  }, [agents]);
+
   const fetchAgents = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -51,408 +80,132 @@ const AgentList: React.FC<AgentListProps> = () => {
     fetchAgents();
   }, [fetchAgents]);
 
-  const getStatusStyle = (agent: ExecutionAgent) => {
-    if (!agent.is_online) {
-      return {
-        bg: 'var(--status-error-bg)',
-        color: 'var(--accent-red)',
-        text: '离线',
-        pulse: false,
-      };
-    }
-    switch (agent.status) {
-      case 'ONLINE':
-        return {
-          bg: 'var(--status-success-bg)',
-          color: 'var(--accent-green)',
-          text: '在线',
-          pulse: true,
-        };
-      default:
-        return {
-          bg: 'var(--status-warning-bg)',
-          color: 'var(--accent-yellow)',
-          text: agent.status,
-          pulse: false,
-        };
-    }
-  };
-
   const onlineCount = agents.filter(a => a.is_online).length;
   const offlineCount = agents.length - onlineCount;
 
+  const statusClass = (agent: ExecutionAgent) => {
+    if (!agent.is_online) return 'status-badge--error';
+    if (agent.status === 'ONLINE') return 'status-badge--success';
+    return 'status-badge--warning';
+  };
+
+  const statusText = (agent: ExecutionAgent) => {
+    if (!agent.is_online) return '离线';
+    if (agent.status === 'ONLINE') return '在线';
+    return agent.status;
+  };
+
   return (
-    <div style={styles.container}>
-      <div style={styles.header}>
-        <div style={styles.headerLeft}>
-          <h1 style={styles.title}>执行代理</h1>
-          <div style={styles.statsRow}>
-            <span style={styles.statBadge}>
-              <span style={styles.statDot} className="pulse" />
-              在线 {onlineCount}
-            </span>
-            <span style={styles.statBadgeOffline}>
-              <span style={styles.statDot} />
-              离线 {offlineCount}
-            </span>
-          </div>
-        </div>
-        <div style={styles.headerActions}>
-          <button style={styles.refreshBtn} onClick={fetchAgents} disabled={loading}>
-            <span style={styles.btnIcon}>↻</span>
-            {loading ? '加载中' : '刷新'}
-          </button>
-        </div>
-      </div>
+    <div className="page-content">
+      <PageToolbar
+        meta={(
+          <>
+            <StatPill label="全部" value={agents.length} />
+            <StatPill label="在线" value={onlineCount} tone="success" dot pulse />
+            <StatPill label="离线" value={offlineCount} tone="danger" dot />
+          </>
+        )}
+        actions={(
+          <>
+            <button
+              type="button"
+              className="btn btn--danger-outline btn--sm"
+              onClick={handleCleanupOffline}
+              disabled={loading || cleaningOffline || offlineCount === 0}
+              title={offlineCount === 0 ? '当前没有离线代理' : '删除所有离线代理记录'}
+            >
+              {cleaningOffline ? '清理中…' : `清理离线 (${offlineCount})`}
+            </button>
+            <button
+              type="button"
+              className="btn btn--secondary btn--sm"
+              onClick={fetchAgents}
+              disabled={loading || cleaningOffline}
+            >
+              {loading ? '加载中…' : '刷新'}
+            </button>
+          </>
+        )}
+      />
 
       {error && (
-        <div style={styles.errorBanner}>
-          <span>⚠</span> {error}
+        <div className="error-banner" style={{ marginBottom: 16 }}>
+          <span aria-hidden>⚠</span> {error}
         </div>
       )}
 
       {deleteError && (
-        <div style={styles.errorBanner}>
-          <span>⚠</span> {deleteError}
+        <div className="error-banner" style={{ marginBottom: 16 }}>
+          <span aria-hidden>⚠</span> {deleteError}
         </div>
       )}
 
-      <div style={styles.grid}>
-        {loading ? (
-          <div style={styles.loadingState}>
-            <div style={styles.spinner} />
-            <span>加载代理信息...</span>
-          </div>
-        ) : agents.length === 0 ? (
-          <div style={styles.emptyState}>
-            <span style={styles.emptyIcon}>◉</span>
-            <p>暂无执行代理</p>
-          </div>
-        ) : (
-          agents.map((agent) => {
-            const status = getStatusStyle(agent);
-            return (
-              <div
-                key={agent.agent_id}
-                style={styles.agentCard}
-                className="agent-card"
-              >
-                <div style={styles.cardHeader}>
-                  <div style={styles.agentIdSection}>
-                    <span style={styles.agentId}>{agent.agent_id}</span>
-                    <span
-                      style={{
-                        ...styles.statusDot,
-                        backgroundColor: status.color,
-                        boxShadow: status.pulse ? `0 0 8px ${status.color}` : 'none',
-                      }}
-                      className={status.pulse ? 'pulse' : ''}
-                    />
-                  </div>
-                  <span
-                    style={{
-                      ...styles.statusBadge,
-                      backgroundColor: status.bg,
-                      color: status.color,
-                    }}
-                  >
-                    {status.text}
+      {loading ? (
+        <div className="loading-overlay">
+          <div className="loading-spinner" />
+          <span>加载代理信息…</span>
+        </div>
+      ) : agents.length === 0 ? (
+        <div className="empty-state surface-card">
+          <span className="empty-state__icon" aria-hidden>◉</span>
+          <p className="empty-state__text">暂无执行代理</p>
+          <p style={{ fontSize: 13, color: 'var(--text-tertiary)', marginTop: 8 }}>
+            启动客户端后将自动注册到此列表
+          </p>
+        </div>
+      ) : (
+        <div className="agent-grid">
+          {agents.map(agent => (
+            <article key={agent.agent_id} className="agent-card">
+              <div className="agent-card__head">
+                <span className="agent-card__id">{agent.agent_id}</span>
+                <span className={`status-badge ${statusClass(agent)}`}>{statusText(agent)}</span>
+              </div>
+
+              <div className="agent-card__body">
+                <div className="agent-card__row">
+                  <span className="agent-card__label">主机名</span>
+                  <span>{agent.hostname}</span>
+                </div>
+                <div className="agent-card__row">
+                  <span className="agent-card__label">IP 地址</span>
+                  <span className="mono">{agent.ip}</span>
+                </div>
+                <div className="agent-card__row">
+                  <span className="agent-card__label">端口</span>
+                  <span className="mono">{agent.port || '—'}</span>
+                </div>
+                <div className="agent-card__row">
+                  <span className="agent-card__label">区域</span>
+                  <span className="stat-pill stat-pill--info" style={{ padding: '2px 8px', fontSize: 11 }}>
+                    {agent.region}
                   </span>
                 </div>
-
-                <div style={styles.cardBody}>
-                  <div style={styles.infoRow}>
-                    <span style={styles.infoLabel}>主机名</span>
-                    <span style={styles.infoValue}>{agent.hostname}</span>
-                  </div>
-                  <div style={styles.infoRow}>
-                    <span style={styles.infoLabel}>IP地址</span>
-                    <span style={styles.infoValueMono}>{agent.ip}</span>
-                  </div>
-                  <div style={styles.infoRow}>
-                    <span style={styles.infoLabel}>端口</span>
-                    <span style={styles.infoValueMono}>{agent.port || '-'}</span>
-                  </div>
-                  <div style={styles.infoRow}>
-                    <span style={styles.infoLabel}>区域</span>
-                    <span style={styles.regionBadge}>{agent.region}</span>
-                  </div>
-                </div>
-
-                <div style={styles.cardFooter}>
-                  <div style={styles.timeInfo}>
-                    <span style={styles.timeLabel}>最后心跳</span>
-                    <span style={styles.timeValue}>
-                      {new Date(agent.last_heartbeat_at).toLocaleString('zh-CN')}
-                    </span>
-                  </div>
-                  <button
-                    style={{
-                      ...styles.deleteBtn,
-                      opacity: deletingId === agent.agent_id ? 0.6 : 1,
-                      cursor: deletingId === agent.agent_id ? 'not-allowed' : 'pointer',
-                    }}
-                    onClick={() => handleDeleteAgent(agent.agent_id)}
-                    disabled={deletingId === agent.agent_id}
-                  >
-                    {deletingId === agent.agent_id ? '删除中...' : '删除'}
-                  </button>
-                </div>
               </div>
-            );
-          })
-        )}
-      </div>
 
-      <style>{`
-        @keyframes spin {
-          to { transform: rotate(360deg); }
-        }
-        .pulse {
-          animation: pulse 2s ease-in-out infinite;
-        }
-        .agent-card:hover {
-          transform: translateY(-2px);
-          border-color: var(--accent-cyan);
-          box-shadow: 0 8px 24px rgba(57, 208, 214, 0.15);
-        }
-      `}</style>
+              <div className="agent-card__foot">
+                <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
+                  心跳 ·{' '}
+                  <time className="mono" style={{ color: 'var(--text-secondary)' }}>
+                    {new Date(agent.last_heartbeat_at).toLocaleString('zh-CN')}
+                  </time>
+                </div>
+                <button
+                  type="button"
+                  className="btn btn--ghost btn--sm"
+                  style={{ color: 'var(--status-error)' }}
+                  onClick={() => handleDeleteAgent(agent.agent_id)}
+                  disabled={deletingId === agent.agent_id}
+                >
+                  {deletingId === agent.agent_id ? '删除中…' : '删除'}
+                </button>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
     </div>
   );
-};
-
-const styles = {
-  container: {
-    padding: '32px',
-    maxWidth: '1400px',
-    margin: '0 auto',
-    animation: 'fadeIn 0.4s ease',
-  } as const,
-  header: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '28px',
-  } as const,
-  headerLeft: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '20px',
-  } as const,
-  title: {
-    fontSize: '28px',
-    fontWeight: 700,
-    color: 'var(--text-primary)',
-    letterSpacing: '-0.5px',
-    margin: 0,
-  } as const,
-  statsRow: {
-    display: 'flex',
-    gap: '12px',
-  } as const,
-  statBadge: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '6px',
-    padding: '6px 14px',
-    fontSize: '13px',
-    fontWeight: 500,
-    color: 'var(--accent-green)',
-    backgroundColor: 'var(--status-success-bg)',
-    borderRadius: '16px',
-  } as const,
-  statBadgeOffline: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '6px',
-    padding: '6px 14px',
-    fontSize: '13px',
-    fontWeight: 500,
-    color: 'var(--accent-red)',
-    backgroundColor: 'var(--status-error-bg)',
-    borderRadius: '16px',
-  } as const,
-  statDot: {
-    width: '8px',
-    height: '8px',
-    borderRadius: '50%',
-    backgroundColor: 'currentColor',
-  } as const,
-  headerActions: {
-    display: 'flex',
-    gap: '10px',
-  } as const,
-  refreshBtn: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '6px',
-    padding: '10px 16px',
-    fontSize: '13px',
-    fontWeight: 500,
-    color: 'var(--text-secondary)',
-    backgroundColor: 'var(--bg-secondary)',
-    border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-md)',
-    cursor: 'pointer',
-    transition: 'all var(--transition-fast)',
-  } as const,
-  btnIcon: {
-    fontSize: '14px',
-  } as const,
-  errorBanner: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
-    padding: '14px 18px',
-    backgroundColor: 'var(--status-error-bg)',
-    border: '1px solid var(--status-error)',
-    borderRadius: 'var(--radius-md)',
-    color: 'var(--accent-red)',
-    fontSize: '14px',
-    marginBottom: '20px',
-  } as const,
-  grid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))',
-    gap: '20px',
-  } as const,
-  agentCard: {
-    backgroundColor: 'var(--bg-secondary)',
-    borderRadius: 'var(--radius-lg)',
-    border: '1px solid var(--border-default)',
-    overflow: 'hidden',
-    transition: 'all var(--transition-normal)',
-    animation: 'slideUp 0.4s ease forwards',
-    opacity: 0,
-  } as const,
-  cardHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: '18px 20px',
-    backgroundColor: 'var(--bg-tertiary)',
-    borderBottom: '1px solid var(--border-muted)',
-  } as const,
-  agentIdSection: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
-  } as const,
-  agentId: {
-    fontFamily: "'JetBrains Mono', monospace",
-    fontSize: '15px',
-    fontWeight: 600,
-    color: 'var(--accent-cyan)',
-  } as const,
-  statusDot: {
-    width: '10px',
-    height: '10px',
-    borderRadius: '50%',
-  } as const,
-  statusBadge: {
-    padding: '4px 12px',
-    fontSize: '11px',
-    fontWeight: 600,
-    borderRadius: '12px',
-    textTransform: 'uppercase' as const,
-    letterSpacing: '0.5px',
-  } as const,
-  cardBody: {
-    padding: '18px 20px',
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: '12px',
-  } as const,
-  infoRow: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  } as const,
-  infoLabel: {
-    fontSize: '13px',
-    color: 'var(--text-muted)',
-  } as const,
-  infoValue: {
-    fontSize: '14px',
-    color: 'var(--text-primary)',
-    fontWeight: 500,
-  } as const,
-  infoValueMono: {
-    fontSize: '13px',
-    fontFamily: "'JetBrains Mono', monospace",
-    color: 'var(--text-secondary)',
-  } as const,
-  regionBadge: {
-    fontSize: '12px',
-    fontFamily: "'JetBrains Mono', monospace",
-    color: 'var(--accent-purple)',
-    backgroundColor: 'rgba(163, 113, 247, 0.15)',
-    padding: '3px 10px',
-    borderRadius: '6px',
-  } as const,
-  cardFooter: {
-    padding: '14px 20px',
-    borderTop: '1px solid var(--border-muted)',
-    backgroundColor: 'var(--bg-primary)',
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  } as const,
-  timeInfo: {
-    display: 'flex',
-    alignItems: 'center',
-  } as const,
-  deleteBtn: {
-    padding: '6px 14px',
-    fontSize: '12px',
-    fontWeight: 500,
-    color: 'var(--accent-red)',
-    backgroundColor: 'transparent',
-    border: '1px solid var(--accent-red)',
-    borderRadius: 'var(--radius-sm)',
-    transition: 'all var(--transition-fast)',
-  } as const,
-  timeLabel: {
-    fontSize: '12px',
-    color: 'var(--text-muted)',
-  } as const,
-  timeValue: {
-    fontSize: '12px',
-    fontFamily: "'JetBrains Mono', monospace",
-    color: 'var(--text-secondary)',
-  } as const,
-  loadingState: {
-    gridColumn: '1 / -1',
-    display: 'flex',
-    flexDirection: 'column' as const,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '16px',
-    padding: '80px',
-    color: 'var(--text-secondary)',
-  } as const,
-  spinner: {
-    width: '40px',
-    height: '40px',
-    border: '3px solid var(--border-default)',
-    borderTopColor: 'var(--accent-cyan)',
-    borderRadius: '50%',
-    animation: 'spin 0.8s linear infinite',
-  } as const,
-  emptyState: {
-    gridColumn: '1 / -1',
-    display: 'flex',
-    flexDirection: 'column' as const,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '12px',
-    padding: '80px',
-    color: 'var(--text-muted)',
-  } as const,
-  emptyIcon: {
-    fontSize: '56px',
-    opacity: 0.3,
-  } as const,
 };
 
 export default AgentList;

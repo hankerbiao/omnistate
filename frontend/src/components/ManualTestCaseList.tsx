@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { api } from '../services/api';
 import { getCatalogLabs } from '../services/catalogLabsCache';
 import type { CatalogLab, TestCaseResponse, ListTestCasesParams } from '../types';
@@ -6,6 +6,7 @@ import TestCaseDetailModal from './TestCaseDetailModal';
 import CreateTestCaseForm from './CreateTestCaseForm';
 import CatalogTreeSidebar from './catalog/CatalogTreeSidebar';
 import { catalogStyles } from './catalog/catalogStyles';
+import PageToolbar, { StatPill } from './ui/PageToolbar';
 import { PRIORITY_FILTER_OPTIONS } from '../constants/testCaseLabels';
 import { TEST_CASE_STATUS_FILTER_OPTIONS, getStateLabel, getWorkflowStateStyle } from '../constants/workflowLabels';
 
@@ -49,20 +50,33 @@ const ManualTestCaseList: React.FC<ManualTestCaseListProps> = ({ initialStatusFi
     [labs, selectedLabId],
   );
 
-  const fetchTestCases = useCallback(async (filterParams: FilterParams, offset: number) => {
+  const fetchSeqRef = useRef(0);
+
+  const fetchTestCases = useCallback(async (
+    filterParams: FilterParams,
+    offset: number,
+    labId: string,
+    prefix: string[],
+  ) => {
+    if (!labId) {
+      setTestCases([]);
+      setTotalCount(0);
+      return;
+    }
+
+    const seq = ++fetchSeqRef.current;
     setLoading(true);
     setError(null);
 
     try {
       const params: ListTestCasesParams = {
         ...filterParams,
-        lab_id: selectedLabId || undefined,
-        catalog_prefix: catalogPrefix.length > 0 ? JSON.stringify(catalogPrefix) : undefined,
+        lab_id: labId,
+        catalog_prefix: prefix.length > 0 ? JSON.stringify(prefix) : undefined,
         limit: PAGE_SIZE,
         offset,
       };
 
-      // Remove undefined values
       Object.keys(params).forEach(key => {
         if (params[key as keyof ListTestCasesParams] === undefined || params[key as keyof ListTestCasesParams] === '') {
           delete params[key as keyof ListTestCasesParams];
@@ -70,20 +84,28 @@ const ManualTestCaseList: React.FC<ManualTestCaseListProps> = ({ initialStatusFi
       });
 
       const response = await api.listTestCases(params);
+      if (seq !== fetchSeqRef.current) {
+        return;
+      }
+
       if (response.code === 0 || response.code === 200) {
         setTestCases(response.data || []);
-        // Estimate total - backend doesn't return total in list response
         setTotalCount(response.data?.length || 0);
       } else {
         setError(response.message || '获取测试用例列表失败');
       }
     } catch (err) {
+      if (seq !== fetchSeqRef.current) {
+        return;
+      }
       setError('获取测试用例列表失败');
       console.error('Fetch test cases error:', err);
     } finally {
-      setLoading(false);
+      if (seq === fetchSeqRef.current) {
+        setLoading(false);
+      }
     }
-  }, [selectedLabId, catalogPrefix]);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -100,18 +122,16 @@ const ManualTestCaseList: React.FC<ManualTestCaseListProps> = ({ initialStatusFi
   }, []);
 
   useEffect(() => {
-    fetchTestCases(filters, currentOffset);
+    fetchTestCases(filters, currentOffset, selectedLabId, catalogPrefix);
   }, [fetchTestCases, filters, currentOffset, selectedLabId, catalogPrefix]);
 
   const handleApplyFilters = () => {
     setCurrentOffset(0);
-    fetchTestCases(filters, 0);
   };
 
   const handleResetFilters = () => {
     setFilters({});
     setCurrentOffset(0);
-    fetchTestCases({}, 0);
   };
 
   const handleFilterChange = (key: keyof FilterParams, value: string | boolean | undefined) => {
@@ -123,7 +143,6 @@ const ManualTestCaseList: React.FC<ManualTestCaseListProps> = ({ initialStatusFi
 
   const handlePageChange = (newOffset: number) => {
     setCurrentOffset(newOffset);
-    fetchTestCases(filters, newOffset);
   };
 
   const getStatusLabel = (status: string) => getStateLabel(status, 'TEST_CASE');
@@ -145,13 +164,12 @@ const ManualTestCaseList: React.FC<ManualTestCaseListProps> = ({ initialStatusFi
         selectedPrefix={catalogPrefix}
         onSelectLab={labId => {
           setSelectedLabId(labId);
+          setCatalogPrefix([]);
           setCurrentOffset(0);
-          fetchTestCases(filters, 0);
         }}
         onSelectPrefix={prefix => {
           setCatalogPrefix(prefix);
           setCurrentOffset(0);
-          fetchTestCases(filters, 0);
         }}
       />
       <div style={styles.container}>
@@ -176,32 +194,45 @@ const ManualTestCaseList: React.FC<ManualTestCaseListProps> = ({ initialStatusFi
           </div>
         </nav>
       )}
-      <div style={styles.header}>
-        <div style={styles.headerLeft}>
-          <h1 style={styles.title}>测试用例</h1>
-          <span style={styles.badge}>{totalCount}</span>
-        </div>
-        <div style={styles.headerActions}>
-          <button
-            type="button"
-            style={styles.createBtn}
-            onClick={() => setShowCreate(true)}
-          >
-            + 新建用例
-          </button>
-          <button style={styles.filterToggleBtn} onClick={() => setShowFilters(!showFilters)}>
-            <span style={styles.btnIcon}>⚙</span>
-            筛选 {showFilters ? '▲' : '▼'}
-          </button>
-          <button style={styles.actionBtn} onClick={() => fetchTestCases(filters, currentOffset)} disabled={loading}>
-            <span style={styles.btnIcon}>↻</span>
-            {loading ? '加载中' : '刷新'}
-          </button>
-        </div>
-      </div>
+      <PageToolbar
+        meta={(
+          <>
+            <StatPill label="当前列表" value={totalCount} tone="info" />
+            {selectedLabName && (
+              <StatPill label="Lab" value={selectedLabName} />
+            )}
+            {catalogPrefix.length > 0 && (
+              <StatPill label="目录" value={catalogPrefix.join(' / ')} />
+            )}
+          </>
+        )}
+        actions={(
+          <>
+            <button type="button" className="btn btn--primary btn--sm" onClick={() => setShowCreate(true)}>
+              + 新建用例
+            </button>
+            <button
+              type="button"
+              className={`btn btn--secondary btn--sm${showFilters ? ' btn--active' : ''}`}
+              onClick={() => setShowFilters(!showFilters)}
+              aria-expanded={showFilters}
+            >
+              筛选 {showFilters ? '▴' : '▾'}
+            </button>
+            <button
+              type="button"
+              className="btn btn--secondary btn--sm"
+              onClick={() => fetchTestCases(filters, currentOffset, selectedLabId, catalogPrefix)}
+              disabled={loading}
+            >
+              {loading ? '加载中…' : '刷新'}
+            </button>
+          </>
+        )}
+      />
 
       {showFilters && (
-        <div style={styles.filterBar}>
+        <div className="surface-card" style={{ ...styles.filterBar, marginBottom: 20, border: undefined, boxShadow: undefined }}>
           <div style={styles.filterGrid}>
             <div style={styles.filterItem}>
               <label style={styles.filterLabel}>关联需求</label>
@@ -261,10 +292,10 @@ const ManualTestCaseList: React.FC<ManualTestCaseListProps> = ({ initialStatusFi
             </div>
           </div>
           <div style={styles.filterActions}>
-            <button style={styles.resetBtn} onClick={handleResetFilters}>
+            <button type="button" className="btn btn--secondary btn--sm" onClick={handleResetFilters}>
               重置
             </button>
-            <button style={styles.applyBtn} onClick={handleApplyFilters}>
+            <button type="button" className="btn btn--primary btn--sm" onClick={handleApplyFilters}>
               应用筛选
             </button>
           </div>
@@ -272,12 +303,12 @@ const ManualTestCaseList: React.FC<ManualTestCaseListProps> = ({ initialStatusFi
       )}
 
       {error && (
-        <div style={styles.errorBanner}>
-          <span>⚠</span> {error}
+        <div className="error-banner" style={{ marginBottom: 16 }}>
+          <span aria-hidden>⚠</span> {error}
         </div>
       )}
 
-      <div style={styles.tableWrapper}>
+      <div className="surface-card" style={styles.tableWrapper}>
         {loading ? (
           <div style={styles.loadingState}>
             <div style={styles.spinner} />
@@ -448,7 +479,7 @@ const ManualTestCaseList: React.FC<ManualTestCaseListProps> = ({ initialStatusFi
         <CreateTestCaseForm
           editTestCase={editingTestCase}
           onClose={() => setEditingTestCase(null)}
-          onSuccess={() => fetchTestCases(filters, currentOffset)}
+          onSuccess={() => fetchTestCases(filters, currentOffset, selectedLabId, catalogPrefix)}
         />
       )}
 
@@ -459,7 +490,7 @@ const ManualTestCaseList: React.FC<ManualTestCaseListProps> = ({ initialStatusFi
           onClose={() => setShowCreate(false)}
           onSuccess={() => {
             setShowCreate(false);
-            fetchTestCases(filters, currentOffset);
+            fetchTestCases(filters, currentOffset, selectedLabId, catalogPrefix);
           }}
         />
       )}
@@ -475,7 +506,7 @@ const styles = {
   } as const,
   container: {
     flex: 1,
-    padding: '32px',
+    padding: 'var(--page-padding)',
     maxWidth: '1600px',
     margin: '0 auto',
     animation: 'fadeIn 0.4s ease',
@@ -695,10 +726,10 @@ const styles = {
     marginBottom: '20px',
   } as const,
   tableWrapper: {
-    backgroundColor: 'var(--bg-secondary)',
-    borderRadius: 'var(--radius-lg)',
-    border: '1px solid var(--border-default)',
     overflow: 'hidden',
+    backgroundColor: 'transparent',
+    border: 'none',
+    borderRadius: 0,
   } as const,
   table: {
     width: '100%',

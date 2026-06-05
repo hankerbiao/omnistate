@@ -240,6 +240,35 @@
 
 - 管理平台测试用例主体，并承载需求关联、workflow 状态投影源和执行前置元数据
 
+### `test_case_change_logs`
+
+对应模型：`TestCaseChangeLogDoc`
+
+- `case_id`
+  用例业务 ID，与 `test_cases.case_id` 逻辑关联（无外键）
+- `revision_no`
+  该用例维度单调递增的版本序号，与 `case_id` 组成唯一键
+- `action`
+  操作类型：`CREATE`、`UPDATE`、`DELETE`、`ASSIGN_OWNERS`、`MOVE_REQUIREMENT`、`LINK_AUTOMATION`
+- `operator_id`
+  操作人 user_id
+- `changes`
+  字段 diff 数组，每项含 `field`、`old_value`、`new_value`、`change_type`（`added` / `removed` / `modified`）
+- `remark`
+  可选备注，通常来自用例 `change_log`（版本说明）
+- `created_at`
+  记录写入时间（UTC）
+
+索引：
+
+- `(case_id, created_at)` — 按用例分页、时间排序
+- `(case_id, revision_no)` — **唯一**，防止同用例版本号重复
+
+用途：
+
+- 测试用例**字段级变更审计**（UI「变更记录」），与 workflow 的 `bus_flow_logs`（流转历史）分离
+- 由 `TestCaseCommandService` 在 CREATE/UPDATE/DELETE 等写操作成功后 append；详见 [变更记录实现](/modules/test-specs/change-log)
+
 ### `automation_test_cases`
 
 对应模型：`AutomationTestCaseDoc`

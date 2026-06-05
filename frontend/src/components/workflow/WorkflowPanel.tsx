@@ -1,17 +1,13 @@
-import React, { useCallback, useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useWorkflow } from '../../hooks/useWorkflow';
 import {
   getStateLabel,
   getWorkflowStateStyle,
-  getActionButtonStyle,
-  WORKFLOW_ACTION_LABELS,
   type WorkflowTypeCode,
 } from '../../constants/workflowLabels';
-import type { WorkflowTransition } from '../../types';
-import { SWITCHABLE_USERS } from '../../config/users';
 import WorkflowStateStepper from './WorkflowStateStepper';
 import WorkflowLogsPanel from './WorkflowLogsPanel';
-import WorkflowTransitionModal from './WorkflowTransitionModal';
+import WorkflowActionToolbar from './WorkflowActionToolbar';
 
 export interface WorkflowPanelProps {
   workflowItemId?: string | null;
@@ -27,6 +23,16 @@ export interface WorkflowPanelProps {
   showStepper?: boolean;
   showReassign?: boolean;
   showLogs?: boolean;
+  /** 为 true 时不渲染右上角操作栏（由父组件在 header 中渲染 WorkflowActionToolbar） */
+  hideToolbar?: boolean;
+  /** 递增时触发 Panel 内工作流数据刷新（与外部 Toolbar 联动） */
+  refreshSignal?: number;
+  /** 是否展示 meta 信息网格（ID、负责人等） */
+  showMetaGrid?: boolean;
+  /** 是否展示权限说明文案 */
+  showPermissionHint?: boolean;
+  /** 流转历史默认是否折叠 */
+  defaultLogsCollapsed?: boolean;
 }
 
 const WorkflowPanel: React.FC<WorkflowPanelProps> = ({
@@ -43,39 +49,23 @@ const WorkflowPanel: React.FC<WorkflowPanelProps> = ({
   showStepper = true,
   showReassign = true,
   showLogs = true,
+  hideToolbar = false,
+  refreshSignal,
+  showMetaGrid = true,
+  showPermissionHint = true,
+  defaultLogsCollapsed = false,
 }) => {
   const wf = useWorkflow(workflowItemId);
-  const [transitionModal, setTransitionModal] = useState<{
-    open: boolean;
-    transition?: WorkflowTransition;
-  }>({ open: false });
-  const [logsCollapsed, setLogsCollapsed] = useState(false);
-  const [showReassignForm, setShowReassignForm] = useState(false);
-  const [reassignUserId, setReassignUserId] = useState('');
-  const [reassignRemark, setReassignRemark] = useState('');
+  const [logsCollapsed, setLogsCollapsed] = useState(defaultLogsCollapsed);
 
-  const handleTransition = useCallback(
-    async (formData: Record<string, string>) => {
-      if (!transitionModal.transition) return false;
-      const ok = await wf.executeTransition(transitionModal.transition.action, formData);
-      if (ok) {
-        onTransitionSuccess?.();
-      }
-      return ok;
-    },
-    [transitionModal.transition, wf, onTransitionSuccess],
-  );
-
-  const handleReassign = async () => {
-    if (!reassignUserId.trim()) return;
-    const ok = await wf.reassign(reassignUserId.trim(), reassignRemark);
-    if (ok) {
-      setShowReassignForm(false);
-      setReassignUserId('');
-      setReassignRemark('');
-      onTransitionSuccess?.();
+  useEffect(() => {
+    if (refreshSignal !== undefined && refreshSignal > 0) {
+      void wf.refresh();
+      void wf.refreshLogs();
     }
-  };
+    // refreshSignal 是唯一触发源；wf 方法引用稳定
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshSignal]);
 
   if (!workflowItemId) {
     return (
@@ -101,144 +91,61 @@ const WorkflowPanel: React.FC<WorkflowPanelProps> = ({
 
   return (
     <div style={compact ? styles.compactRoot : styles.root}>
-      {entityLabel && (
-        <div style={styles.entityLabel}>{entityLabel}</div>
+      {!hideToolbar && (
+        <div style={styles.topBar}>
+          <div style={styles.topBarLeft}>
+            {entityLabel && <span style={styles.entityLabel}>{entityLabel}</span>}
+            {wf.currentState && (
+              <span className="status-badge" style={stateStyle}>
+                {getStateLabel(wf.currentState, typeCode)}
+              </span>
+            )}
+          </div>
+          <WorkflowActionToolbar
+            workflowItemId={workflowItemId}
+            typeCode={typeCode}
+            defaultPriority={defaultPriority}
+            onTransitionSuccess={onTransitionSuccess}
+            compact={compact}
+            showReassign={showReassign}
+          />
+        </div>
       )}
 
-      {(wf.error || wf.successMessage) && (
-        <div style={wf.error ? styles.errorBanner : styles.successBanner}>
-          <span>{wf.error || wf.successMessage}</span>
-          <button type="button" style={styles.dismissBtn} onClick={wf.clearMessages}>×</button>
-        </div>
+      {hideToolbar && entityLabel && (
+        <div style={styles.entityLabelOnly}>{entityLabel}</div>
       )}
 
       {showStepper && (
         <WorkflowStateStepper currentState={wf.currentState} typeCode={typeCode} />
       )}
 
-      <div style={styles.metaGrid}>
-        <MetaItem label="工作流 ID" value={workflowItemId} mono />
-        <MetaItem
-          label="当前状态"
-          value={
-            <span className="status-badge" style={stateStyle}>
-              {getStateLabel(wf.currentState, typeCode)}
-            </span>
-          }
-        />
-        <MetaItem label="创建人" value={creatorName || wf.creator || '-'} />
-        <MetaItem label="当前负责人" value={currentOwnerName || wf.currentOwner || '-'} />
-        {!compact && createdAt && (
-          <MetaItem label="创建时间" value={new Date(createdAt).toLocaleString('zh-CN')} />
-        )}
-        {!compact && updatedAt && (
-          <MetaItem label="更新时间" value={new Date(updatedAt).toLocaleString('zh-CN')} />
-        )}
-      </div>
-
-      <div style={styles.permissionHint}>
-        流转权限认<strong>创建人</strong> / <strong>当前负责人</strong>，admin 不能代操作。
-        无可用按钮时请 Topbar 切换对应角色，或使用下方改派。
-      </div>
-
-      <div style={styles.actionsSection}>
-        <div style={styles.actionsHeader}>
-          <h4 style={styles.sectionTitle}>可用操作</h4>
-          <button
-            type="button"
-            className="btn btn--ghost btn--sm"
-            onClick={() => { wf.refresh(); wf.refreshLogs(); }}
-            disabled={wf.loading}
-          >
-            ↻ 刷新
-          </button>
-        </div>
-
-        {wf.transitions.length === 0 ? (
-          <div style={styles.noActions}>
-            当前身份下没有可执行的操作
-          </div>
-        ) : (
-          <div style={styles.actionGrid}>
-            {wf.transitions.map((transition) => {
-              const btnStyle = getActionButtonStyle(transition.action);
-              return (
-                <button
-                  key={`${transition.action}-${transition.to_state}`}
-                  type="button"
-                  style={{
-                    ...styles.actionBtn,
-                    backgroundColor: btnStyle.bg,
-                    color: btnStyle.color,
-                    borderColor: btnStyle.border,
-                  }}
-                  onClick={() => setTransitionModal({ open: true, transition })}
-                  disabled={wf.transitioning}
-                >
-                  <span style={styles.actionName}>
-                    {WORKFLOW_ACTION_LABELS[transition.action] || transition.action}
-                  </span>
-                  <span style={styles.actionArrow}>
-                    → {getStateLabel(transition.to_state, typeCode)}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {showReassign && (
-        <div style={styles.reassignSection}>
-          <button
-            type="button"
-            className="btn btn--ghost btn--sm"
-            onClick={() => setShowReassignForm((v) => !v)}
-          >
-            {showReassignForm ? '收起改派' : '↪ 改派负责人（测试用）'}
-          </button>
-          {showReassignForm && (
-            <div style={styles.reassignForm}>
-              <div style={styles.quickChips}>
-                {SWITCHABLE_USERS.map((user) => (
-                  <button
-                    key={user.userId}
-                    type="button"
-                    style={{
-                      ...styles.chip,
-                      ...(reassignUserId === user.userId ? styles.chipActive : {}),
-                    }}
-                    onClick={() => setReassignUserId(user.userId)}
-                  >
-                    {user.label}
-                  </button>
-                ))}
-              </div>
-              <input
-                className="form-input"
-                placeholder="或输入 user_id"
-                value={reassignUserId}
-                onChange={(e) => setReassignUserId(e.target.value)}
-                style={{ marginTop: '8px' }}
-              />
-              <input
-                className="form-input"
-                placeholder="备注（可选）"
-                value={reassignRemark}
-                onChange={(e) => setReassignRemark(e.target.value)}
-                style={{ marginTop: '8px' }}
-              />
-              <button
-                type="button"
-                className="btn btn--primary btn--sm"
-                style={{ marginTop: '8px' }}
-                onClick={handleReassign}
-                disabled={wf.reassigning || !reassignUserId.trim()}
-              >
-                {wf.reassigning ? '改派中...' : '确认改派'}
-              </button>
-            </div>
+      {showMetaGrid && (
+        <div style={styles.metaGrid}>
+          <MetaItem label="工作流 ID" value={workflowItemId} mono />
+          <MetaItem
+            label="当前状态"
+            value={
+              <span className="status-badge" style={stateStyle}>
+                {getStateLabel(wf.currentState, typeCode)}
+              </span>
+            }
+          />
+          <MetaItem label="创建人" value={creatorName || wf.creator || '-'} />
+          <MetaItem label="当前负责人" value={currentOwnerName || wf.currentOwner || '-'} />
+          {!compact && createdAt && (
+            <MetaItem label="创建时间" value={new Date(createdAt).toLocaleString('zh-CN')} />
           )}
+          {!compact && updatedAt && (
+            <MetaItem label="更新时间" value={new Date(updatedAt).toLocaleString('zh-CN')} />
+          )}
+        </div>
+      )}
+
+      {showPermissionHint && (
+        <div style={styles.permissionHint}>
+          流转权限认<strong>创建人</strong> / <strong>当前负责人</strong>，admin 不能代操作。
+          无可用按钮时请 Topbar 切换对应角色，或使用改派。
         </div>
       )}
 
@@ -251,16 +158,6 @@ const WorkflowPanel: React.FC<WorkflowPanelProps> = ({
           onToggle={() => setLogsCollapsed((v) => !v)}
         />
       )}
-
-      <WorkflowTransitionModal
-        open={transitionModal.open}
-        transition={transitionModal.transition ?? null}
-        typeCode={typeCode}
-        defaultPriority={defaultPriority}
-        onClose={() => setTransitionModal({ open: false })}
-        onSubmit={handleTransition}
-        submitting={wf.transitioning}
-      />
     </div>
   );
 };
@@ -283,45 +180,38 @@ const styles: Record<string, React.CSSProperties> = {
   compactRoot: {
     fontSize: '13px',
   },
+  topBar: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 12,
+    marginBottom: 14,
+    paddingBottom: 12,
+    borderBottom: '1px solid var(--border-subtle)',
+    flexWrap: 'wrap',
+  },
+  topBarLeft: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 10,
+    flexWrap: 'wrap',
+    minWidth: 0,
+  },
   entityLabel: {
     fontSize: '14px',
     fontWeight: 600,
-    marginBottom: '12px',
+    color: 'var(--text-primary)',
+  },
+  entityLabelOnly: {
+    fontSize: '14px',
+    fontWeight: 600,
+    marginBottom: 12,
     color: 'var(--text-primary)',
   },
   hint: {
     fontSize: '12px',
     color: 'var(--text-tertiary)',
     marginTop: '8px',
-  },
-  errorBanner: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: '8px 12px',
-    marginBottom: '12px',
-    backgroundColor: 'var(--status-error-bg)',
-    color: 'var(--status-error)',
-    borderRadius: 'var(--radius-md)',
-    fontSize: '13px',
-  },
-  successBanner: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: '8px 12px',
-    marginBottom: '12px',
-    backgroundColor: 'var(--status-success-bg)',
-    color: 'var(--status-success)',
-    borderRadius: 'var(--radius-md)',
-    fontSize: '13px',
-  },
-  dismissBtn: {
-    background: 'none',
-    border: 'none',
-    cursor: 'pointer',
-    fontSize: '16px',
-    padding: '0 4px',
   },
   metaGrid: {
     display: 'grid',
@@ -352,81 +242,6 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 'var(--radius-md)',
     marginBottom: '16px',
     lineHeight: 1.5,
-  },
-  actionsSection: {
-    marginBottom: '12px',
-  },
-  actionsHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '10px',
-  },
-  sectionTitle: {
-    margin: 0,
-    fontSize: '13px',
-    fontWeight: 600,
-    color: 'var(--text-primary)',
-  },
-  noActions: {
-    padding: '20px',
-    textAlign: 'center',
-    color: 'var(--text-tertiary)',
-    fontSize: '13px',
-    backgroundColor: 'var(--surface-tertiary)',
-    borderRadius: 'var(--radius-md)',
-  },
-  actionGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
-    gap: '8px',
-  },
-  actionBtn: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'flex-start',
-    gap: '4px',
-    padding: '10px 12px',
-    borderRadius: 'var(--radius-md)',
-    border: '1px solid',
-    cursor: 'pointer',
-    textAlign: 'left',
-    transition: 'opacity 0.15s',
-  },
-  actionName: {
-    fontSize: '13px',
-    fontWeight: 600,
-  },
-  actionArrow: {
-    fontSize: '11px',
-    opacity: 0.85,
-  },
-  reassignSection: {
-    marginBottom: '8px',
-  },
-  reassignForm: {
-    marginTop: '10px',
-    padding: '12px',
-    backgroundColor: 'var(--surface-tertiary)',
-    borderRadius: 'var(--radius-md)',
-  },
-  quickChips: {
-    display: 'flex',
-    flexWrap: 'wrap',
-    gap: '6px',
-  },
-  chip: {
-    padding: '4px 10px',
-    fontSize: '12px',
-    borderRadius: '999px',
-    border: '1px solid var(--border-subtle)',
-    backgroundColor: 'var(--surface-primary)',
-    cursor: 'pointer',
-  },
-  chipActive: {
-    borderColor: 'var(--accent-primary)',
-    backgroundColor: 'var(--surface-hover)',
-    color: 'var(--accent-primary)',
   },
 };
 

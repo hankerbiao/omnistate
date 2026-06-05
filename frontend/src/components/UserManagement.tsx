@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../services/api';
 import type { UserResponse, RoleResponse } from '../types';
+import PageToolbar, { StatPill } from './ui/PageToolbar';
 
 type EditableUserField = 'username' | 'email';
 
@@ -294,52 +295,60 @@ const UserManagement: React.FC = () => {
     return role?.name || roleId;
   };
 
+  const activeCount = users.filter(u => u.status === 'ACTIVE').length;
+
   return (
-    <div className="workspace">
-      {/* Left Panel - User List */}
-      <div style={styles.leftPanel}>
-        <div style={styles.panelHeader}>
-          <div>
-            <h2 style={styles.panelTitle}>用户列表</h2>
-            <span style={styles.panelHint}>
-              {selectedIds.size > 0
-                ? `已选择 ${selectedIds.size} 项`
-                : `${users.length} 个用户`}
-            </span>
-          </div>
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            {selectedIds.size > 0 && (
-              <button
-                className="btn btn--sm"
-                style={{ backgroundColor: 'var(--status-error)', color: 'white' }}
-                onClick={() => setBatchDeleteConfirm(true)}
-              >
-                删除 ({selectedIds.size})
-              </button>
+    <div className="split-workspace">
+      <aside className="split-workspace__list">
+        <div className="split-panel-toolbar">
+          <PageToolbar
+            meta={(
+              <>
+                <StatPill label="用户" value={users.length} />
+                <StatPill label="启用" value={activeCount} tone="success" />
+                {selectedIds.size > 0 && (
+                  <StatPill label="已选" value={selectedIds.size} tone="info" />
+                )}
+              </>
             )}
-            <button className="btn btn--primary btn--sm" onClick={() => setCreateModalOpen(true)}>
-              + 新建
-            </button>
-          </div>
+            actions={(
+              <>
+                {selectedIds.size > 0 && (
+                  <button
+                    type="button"
+                    className="btn btn--danger btn--sm"
+                    onClick={() => setBatchDeleteConfirm(true)}
+                  >
+                    删除 ({selectedIds.size})
+                  </button>
+                )}
+                <button type="button" className="btn btn--primary btn--sm" onClick={() => setCreateModalOpen(true)}>
+                  + 新建
+                </button>
+              </>
+            )}
+          />
         </div>
 
-        <div style={styles.filterRow}>
+        <div className="filter-strip">
           <input
-            style={styles.searchInput}
-            placeholder="搜索用户名或ID..."
+            className="form-input"
+            placeholder="搜索用户名或 ID…"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
+            aria-label="搜索用户"
           />
           <select
-            style={styles.filterSelect}
+            className="form-input form-select"
             value={filterStatus}
             onChange={e => setFilterStatus(e.target.value)}
+            aria-label="按状态筛选"
           >
             <option value="">全部状态</option>
             <option value="ACTIVE">启用</option>
             <option value="INACTIVE">禁用</option>
           </select>
-          <button style={styles.refreshBtn} onClick={fetchUsers} disabled={loading}>
+          <button type="button" className="btn btn--secondary btn--sm" onClick={fetchUsers} disabled={loading}>
             刷新
           </button>
         </div>
@@ -349,7 +358,7 @@ const UserManagement: React.FC = () => {
             <div className="loading-spinner" />
           </div>
         ) : (
-          <div style={styles.userList}>
+          <div className="split-list-scroll" style={styles.userList}>
             <div style={styles.selectAllRow}>
               <label style={styles.checkboxLabel}>
                 <input
@@ -407,12 +416,11 @@ const UserManagement: React.FC = () => {
             })}
           </div>
         )}
-      </div>
+      </aside>
 
-      {/* Right Panel - User Details */}
-      <div style={styles.rightPanel}>
+      <main className="split-workspace__main">
         {selectedUser ? (
-          <div className="data-panel">
+          <div className="surface-card split-detail-scroll data-panel" style={{ margin: 'var(--space-5)', height: 'calc(100% - 40px)' }}>
             <div className="data-panel-header">
               <h3 className="data-panel-title">用户详情 - {selectedUser.username}</h3>
             </div>
@@ -575,7 +583,7 @@ const UserManagement: React.FC = () => {
             <p className="empty-state__text">选择左侧用户查看详情</p>
           </div>
         )}
-      </div>
+      </main>
 
       {/* Create User Modal */}
       {createModalOpen && (

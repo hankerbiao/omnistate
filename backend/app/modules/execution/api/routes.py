@@ -10,6 +10,7 @@ from app.modules.execution.application.agent_service import ExecutionAgentServic
 from app.modules.execution.application.task_command_service import ExecutionTaskCommandService
 from app.modules.execution.application.task_query_service import ExecutionTaskQueryService
 from app.modules.execution.schemas import (
+    AgentCleanupOfflineResponse,
     AgentHeartbeatRequest,
     AgentRegisterRequest,
     DispatchTaskRequest,
@@ -223,6 +224,21 @@ async def list_agents(
         status=status,
         online_only=online_only,
     )
+    return APIResponse(data=data)
+
+
+@router.post(
+    "/agents/cleanup-offline",
+    response_model=APIResponse[AgentCleanupOfflineResponse],
+    summary="清理离线执行代理",
+    dependencies=[Depends(require_permission("execution_agents:write"))],
+)
+async def cleanup_offline_agents(
+        service: ExecutionAgentServiceDep,
+        current_user=Depends(get_current_user),
+):
+    """批量逻辑删除当前判定为离线的执行代理。"""
+    data = await service.cleanup_offline_agents()
     return APIResponse(data=data)
 
 

@@ -8,15 +8,23 @@ DRAFT → SUBMIT → PENDING_REVIEW → APPROVE → PENDING_DEVELOP
 import pytest
 from httpx import AsyncClient
 
-from tests.integration.utils.helpers import create_requirement_data, create_transition_request, unique_id
+from tests.integration.conftest import TestDataRegistry
+from tests.integration.utils.helpers import (
+    create_requirement_data,
+    create_transition_request,
+    post_work_item,
+    unique_id,
+)
 
 
 @pytest.mark.asyncio
-async def test_tpm_create_requirement(client_admin: AsyncClient):
+async def test_tpm_create_requirement(
+    client_admin: AsyncClient,
+    test_data_registry: TestDataRegistry,
+):
     """4.1 - ADMIN/TPM creates requirement in DRAFT state."""
-    resp = await client_admin.post(
-        "/api/v1/work-items/",
-        json=create_requirement_data(),
+    resp = await post_work_item(
+        client_admin, test_data_registry, create_requirement_data()
     )
     assert resp.status_code == 201, f"Create requirement failed: {resp.text}"
     data = resp.json()["data"]
@@ -43,6 +51,7 @@ async def test_requirement_full_lifecycle(
     client_qa: AsyncClient,
     client_tpm: AsyncClient,
     test_users: dict,
+    test_data_registry: TestDataRegistry,
 ):
     """4.3-4.11 - Test full requirement lifecycle through all states."""
     reviewer_id = test_users["REVIEWER"]["user_id"]
@@ -50,9 +59,8 @@ async def test_requirement_full_lifecycle(
     qa_id = test_users["QA"]["user_id"]
     tpm_id = test_users["TPM"]["user_id"]
 
-    resp = await client_admin.post(
-        "/api/v1/work-items/",
-        json=create_requirement_data(),
+    resp = await post_work_item(
+        client_admin, test_data_registry, create_requirement_data()
     )
     assert resp.status_code == 201
     item_id = resp.json()["data"]["item_id"]
@@ -127,13 +135,13 @@ async def test_admin_cannot_approve_when_not_owner(
     client_admin: AsyncClient,
     client_reviewer: AsyncClient,
     test_users: dict,
+    test_data_registry: TestDataRegistry,
 ):
     """Admin 创建并提交后，若待办在审核人处，admin 不能代审。"""
     reviewer_id = test_users["REVIEWER"]["user_id"]
 
-    resp = await client_admin.post(
-        "/api/v1/work-items/",
-        json=create_requirement_data(),
+    resp = await post_work_item(
+        client_admin, test_data_registry, create_requirement_data()
     )
     assert resp.status_code == 201
     item_id = resp.json()["data"]["item_id"]
@@ -158,11 +166,13 @@ async def test_admin_cannot_approve_when_not_owner(
 
 
 @pytest.mark.asyncio
-async def test_terminal_state_cannot_transition(client_admin: AsyncClient):
+async def test_terminal_state_cannot_transition(
+    client_admin: AsyncClient,
+    test_data_registry: TestDataRegistry,
+):
     """4.12 - Terminal state cannot transition."""
-    resp = await client_admin.post(
-        "/api/v1/work-items/",
-        json=create_requirement_data(),
+    resp = await post_work_item(
+        client_admin, test_data_registry, create_requirement_data()
     )
     assert resp.status_code == 201
     item_id = resp.json()["data"]["item_id"]
@@ -193,11 +203,14 @@ async def test_terminal_state_cannot_transition(client_admin: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_unauthorized_transition(client_admin: AsyncClient, client_no_role: AsyncClient):
+async def test_unauthorized_transition(
+    client_admin: AsyncClient,
+    client_no_role: AsyncClient,
+    test_data_registry: TestDataRegistry,
+):
     """4.13 - Unauthorized role cannot perform transition."""
-    resp = await client_admin.post(
-        "/api/v1/work-items/",
-        json=create_requirement_data(),
+    resp = await post_work_item(
+        client_admin, test_data_registry, create_requirement_data()
     )
     assert resp.status_code == 201
     item_id = resp.json()["data"]["item_id"]
@@ -220,11 +233,13 @@ async def test_unauthorized_transition(client_admin: AsyncClient, client_no_role
 
 
 @pytest.mark.asyncio
-async def test_get_transition_logs(client_admin: AsyncClient):
+async def test_get_transition_logs(
+    client_admin: AsyncClient,
+    test_data_registry: TestDataRegistry,
+):
     """4.14 - Get transition logs should return 200."""
-    resp = await client_admin.post(
-        "/api/v1/work-items/",
-        json=create_requirement_data(),
+    resp = await post_work_item(
+        client_admin, test_data_registry, create_requirement_data()
     )
     assert resp.status_code == 201
     item_id = resp.json()["data"]["item_id"]
@@ -236,11 +251,15 @@ async def test_get_transition_logs(client_admin: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_get_available_transitions(client_admin: AsyncClient):
+async def test_get_available_transitions(
+    client_admin: AsyncClient,
+    test_data_registry: TestDataRegistry,
+):
     """4.15 - Get available transitions should return 200."""
-    resp = await client_admin.post(
-        "/api/v1/work-items/",
-        json=create_requirement_data(title=f"Test Transitions {unique_id()}"),
+    resp = await post_work_item(
+        client_admin,
+        test_data_registry,
+        create_requirement_data(title=f"Test Transitions {unique_id()}"),
     )
     assert resp.status_code == 201, f"Create failed: {resp.text}"
     item_id = resp.json()["data"]["item_id"]
@@ -252,11 +271,13 @@ async def test_get_available_transitions(client_admin: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_delete_requirement(client_admin: AsyncClient):
+async def test_delete_requirement(
+    client_admin: AsyncClient,
+    test_data_registry: TestDataRegistry,
+):
     """4.16 - Delete requirement should return 200."""
-    resp = await client_admin.post(
-        "/api/v1/work-items/",
-        json=create_requirement_data(),
+    resp = await post_work_item(
+        client_admin, test_data_registry, create_requirement_data()
     )
     assert resp.status_code == 201
     item_id = resp.json()["data"]["item_id"]

@@ -21,18 +21,18 @@ import type { PageType, NavItem } from './types/app'
 import './App.css'
 
 const navItems: NavItem[] = [
-  { key: 'dashboard', label: '数据统计', icon: '📊' },
+  { key: 'dashboard', label: '数据统计', icon: '◫' },
   { key: 'myTasks', label: '我的任务', icon: '☰' },
   { key: 'requirements', label: '测试需求', icon: '▣' },
-  { key: 'manualTestCases', label: '测试用例', icon: '📋' },
+  { key: 'manualTestCases', label: '测试用例', icon: '◧' },
   { key: 'testCases', label: '自动化用例', icon: '⚡' },
   { key: 'agents', label: '执行代理', icon: '◉' },
-  { key: 'tasks', label: '执行任务', icon: '▸' },
-  { key: 'terminal', label: '终端调试', icon: '⌘' },
-  { key: 'users', label: '用户管理', icon: '👤', permission: 'users:read' },
-  { key: 'roles', label: '角色管理', icon: '👥', permission: 'roles:read' },
-  { key: 'permissions', label: '权限管理', icon: '🔑', permission: 'permissions:read' },
-  { key: 'catalogLabs', label: 'Lab 管理', icon: '🗂', permission: 'catalog:labs:manage' },
+  { key: 'tasks', label: '执行任务', icon: '▶' },
+  { key: 'terminal', label: '终端调试', icon: '⎇' },
+  { key: 'users', label: '用户管理', icon: '⊕', permission: 'users:read' },
+  { key: 'roles', label: '角色管理', icon: '⊞', permission: 'roles:read' },
+  { key: 'permissions', label: '权限管理', icon: '◈', permission: 'permissions:read' },
+  { key: 'catalogLabs', label: 'Lab 管理', icon: '⊟', permission: 'catalog:labs:manage' },
 ]
 
 function App() {

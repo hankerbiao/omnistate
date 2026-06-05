@@ -42,7 +42,14 @@ export default withMermaid(
               { text: "配置与初始化", link: "/modules/workflow/configuration" },
             ],
           },
-          { text: "Test Specs", link: "/modules/test-specs/" },
+          {
+            text: "Test Specs",
+            collapsed: false,
+            items: [
+              { text: "概览", link: "/modules/test-specs/" },
+              { text: "变更记录", link: "/modules/test-specs/change-log" },
+            ],
+          },
           {
             text: "Execution",
             collapsed: false,

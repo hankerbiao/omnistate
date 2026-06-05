@@ -12,20 +12,21 @@ Tests the workflow APIs:
 import pytest
 from httpx import AsyncClient
 
-from tests.integration.utils.helpers import create_requirement_data, unique_id
+from tests.integration.conftest import TestDataRegistry
+from tests.integration.utils.helpers import create_requirement_data, post_work_item, unique_id
 
 
 # ==================== Sorting and Search Tests ====================
 
 
 @pytest.mark.asyncio
-async def test_list_work_items_sorted(client_admin: AsyncClient):
+async def test_list_work_items_sorted(
+    client_admin: AsyncClient,
+    test_data_registry: TestDataRegistry,
+):
     """8.1 - List sorted work items should return 200."""
     # Create a work item first
-    await client_admin.post(
-        "/api/v1/work-items/",
-        json=create_requirement_data(),
-    )
+    await post_work_item(client_admin, test_data_registry, create_requirement_data())
 
     # List sorted by created_at desc
     resp = await client_admin.get("/api/v1/work-items/sorted?order_by=created_at&direction=desc")
@@ -53,13 +54,17 @@ async def test_list_work_items_sorted_with_filters(client_admin: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_search_work_items(client_admin: AsyncClient):
+async def test_search_work_items(
+    client_admin: AsyncClient,
+    test_data_registry: TestDataRegistry,
+):
     """8.4 - Search work items by keyword should return 200."""
     # Create a work item with specific title
     title = f"Searchable Item {unique_id()}"
-    await client_admin.post(
-        "/api/v1/work-items/",
-        json=create_requirement_data(title=title),
+    await post_work_item(
+        client_admin,
+        test_data_registry,
+        create_requirement_data(title=title),
     )
 
     # Search by keyword
@@ -126,12 +131,16 @@ async def test_get_work_item_states_filtered_by_type(client_admin: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_get_test_cases_for_requirement(client_admin: AsyncClient):
+async def test_get_test_cases_for_requirement(
+    client_admin: AsyncClient,
+    test_data_registry: TestDataRegistry,
+):
     """8.10 - Get test cases for a requirement."""
     # Create a requirement
-    resp = await client_admin.post(
-        "/api/v1/work-items/",
-        json=create_requirement_data(title=f"Requirement {unique_id()}"),
+    resp = await post_work_item(
+        client_admin,
+        test_data_registry,
+        create_requirement_data(title=f"Requirement {unique_id()}"),
     )
     assert resp.status_code == 201
     item_id = resp.json()["data"]["item_id"]
@@ -150,12 +159,16 @@ async def test_get_test_cases_for_nonexistent_item(client_admin: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_get_requirement_for_test_case(client_admin: AsyncClient):
+async def test_get_requirement_for_test_case(
+    client_admin: AsyncClient,
+    test_data_registry: TestDataRegistry,
+):
     """8.12 - Get requirement for a test case."""
     # First create a test case with ref_req_id
-    req_resp = await client_admin.post(
-        "/api/v1/work-items/",
-        json=create_requirement_data(title=f"Requirement {unique_id()}"),
+    req_resp = await post_work_item(
+        client_admin,
+        test_data_registry,
+        create_requirement_data(title=f"Requirement {unique_id()}"),
     )
     assert req_resp.status_code == 201
     req_id = req_resp.json()["data"]["item_id"]

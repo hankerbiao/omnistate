@@ -105,6 +105,7 @@ class TestCaseResponse(BaseModel):
     case_id: str = Field(..., description="用例业务编号")
     ref_req_id: Optional[str] = Field(None, description="关联需求 req_id")
     lab_id: str = Field(..., description="所属 Lab")
+    lab_name: Optional[str] = Field(None, description="Lab 显示名称")
     catalog_path: List[str] = Field(..., description="目录路径")
     catalog_path_key: str = Field(..., description="目录路径查询键")
     catalog_breadcrumb: Optional[str] = Field(None, description="目录面包屑")

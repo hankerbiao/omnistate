@@ -299,7 +299,7 @@ const styles = {
     userSelect: 'none' as const,
   },
   checkboxInput: {
-    position: 'absolute',
+    position: 'absolute' as const,
     opacity: 0,
     width: 0,
     height: 0,

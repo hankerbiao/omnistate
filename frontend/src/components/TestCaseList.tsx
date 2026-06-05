@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { api } from '../services/api';
 import type { AutomationTestCaseResponse } from '../types';
 import CreateAutomationTestCaseForm from './CreateAutomationTestCaseForm';
+import PageToolbar, { StatPill } from './ui/PageToolbar';
 
 // 自动化用例状态中文映射
 const AUTO_CASE_STATUS_LABELS: Record<string, string> = {
@@ -131,37 +132,47 @@ const TestCaseList: React.FC = () => {
     return colors[status] || { bg: 'var(--bg-tertiary)', text: 'var(--text-secondary)' };
   };
 
+  const formatDefault = (value: unknown) => {
+    if (value === null || value === undefined || value === '') return '-';
+    if (typeof value === 'object') return JSON.stringify(value);
+    return String(value);
+  };
+
   return (
-    <div style={styles.container}>
-      <div style={styles.header}>
-        <div style={styles.headerLeft}>
-          <h1 style={styles.title}>自动化测试用例</h1>
-          <span style={styles.badge}>{testCases.length}</span>
-        </div>
-        <div style={styles.headerActions}>
-          <button style={styles.actionBtn} onClick={fetchTestCases} disabled={loading}>
-            <span style={styles.btnIcon}>↻</span>
-            {loading ? '加载中' : '刷新'}
-          </button>
-          {selectedCases.size > 0 && (
-            <button style={styles.dispatchBtn} onClick={() => setShowDispatchModal(true)}>
-              <span style={styles.btnIcon}>▶</span>
-              下发任务 ({selectedCases.size})
+    <div className="page-content">
+      <PageToolbar
+        meta={(
+          <>
+            <StatPill label="用例" value={testCases.length} />
+            {selectedCases.size > 0 && (
+              <StatPill label="已选" value={selectedCases.size} tone="info" />
+            )}
+          </>
+        )}
+        actions={(
+          <>
+            <button type="button" className="btn btn--secondary btn--sm" onClick={fetchTestCases} disabled={loading}>
+              {loading ? '加载中' : '刷新'}
             </button>
-          )}
-          <button style={styles.createBtn} onClick={() => setShowCreateAutomationForm(true)}>
-            <span style={styles.btnIcon}>+</span>
-            新建用例
-          </button>
-        </div>
-      </div>
+            {selectedCases.size > 0 && (
+              <button type="button" className="btn btn--primary btn--sm" onClick={() => setShowDispatchModal(true)}>
+                下发任务 ({selectedCases.size})
+              </button>
+            )}
+            <button type="button" className="btn btn--primary btn--sm" onClick={() => setShowCreateAutomationForm(true)}>
+              + 新建用例
+            </button>
+          </>
+        )}
+      />
 
       {error && (
-        <div style={styles.errorBanner}>
-          <span>⚠</span> {error}
+        <div className="error-banner" style={{ marginBottom: 16 }}>
+          {error}
         </div>
       )}
 
+      <div className="surface-card">
       <div style={styles.tableWrapper}>
         {loading ? (
           <div style={styles.loadingState}>
@@ -268,6 +279,7 @@ const TestCaseList: React.FC = () => {
             </tbody>
           </table>
         )}
+      </div>
       </div>
 
       {showCreateAutomationForm && (
@@ -501,7 +513,7 @@ const TestCaseList: React.FC = () => {
                             <div style={styles.paramBody}>
                               <div style={styles.paramRow}>
                                 <span style={styles.infoLabel}>默认值</span>
-                                <span style={styles.infoValueMono}>{param.default ?? '-'}</span>
+                                <span style={styles.infoValueMono}>{formatDefault(param.default)}</span>
                               </div>
                               {param.description && (
                                 <div style={styles.paramRow}>

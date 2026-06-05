@@ -270,3 +270,20 @@ class ExecutionAgentService:
         agent_doc.is_deleted = True
         await agent_doc.save()
         return {"agent_id": agent_id, "deleted": True}
+
+    async def cleanup_offline_agents(self) -> Dict[str, Any]:
+        """批量逻辑删除当前判定为离线的代理。"""
+        docs = await ExecutionAgentDoc.find({"is_deleted": False}).to_list()
+        now = datetime.now(timezone.utc)
+        deleted_ids: List[str] = []
+        for agent_doc in docs:
+            item = self._serialize_agent_doc(agent_doc, now=now)
+            if item["is_online"]:
+                continue
+            agent_doc.is_deleted = True
+            await agent_doc.save()
+            deleted_ids.append(agent_doc.agent_id)
+        return {
+            "deleted_count": len(deleted_ids),
+            "deleted_agent_ids": deleted_ids,
+        }

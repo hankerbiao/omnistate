@@ -21,13 +21,18 @@
 - `service/_service_support.py`
   共性 support：状态投影、workflow-aware 删除、事务模板
 - `repository/models/`
-  需求、用例、自动化用例模型
+  需求、用例、自动化用例、变更记录模型
+- `domain/field_diff.py`
+  用例字段 diff 与 `TRACKED_FIELDS`
+- `service/change_log_service.py`
+  变更记录写入与查询
 
 ## 核心模型
 
 - `TestRequirementDoc`
 - `TestCaseDoc`
 - `AutomationTestCaseDoc`
+- `TestCaseChangeLogDoc`（见 [变更记录](./change-log.md)）
 - `TestLabDoc` / `TestCatalogSegmentDoc`（规划，见 [测试用例目录设计](../../../docs/design/test-case-catalog.md)）
 
 ## 关键字段说明
@@ -84,6 +89,11 @@
 - `TestCaseDoc.ref_req_id` 指向需求
 - 业务文档通过 `workflow_item_id` 关联 workflow 事项
 - 自动化用例和手工用例通过 `auto_case_id` / `dml_manual_case_id` 对应
+- `TestCaseChangeLogDoc.case_id` 指向用例业务 ID，一对多变更记录（与 workflow 流转日志独立）
+
+## 专题文档
+
+- [测试用例变更记录](./change-log.md) — 字段级审计、`test_case_change_logs` 表、API 与 diff 规则
 
 ## 关键调用链
 

@@ -178,8 +178,8 @@ const CatalogPathEditor: React.FC<CatalogPathEditorProps> = ({
     return list.filter(s => s.toLowerCase().includes(q));
   };
 
-  const showDropdown = (index: number) =>
-    activeSegIndex === index && value.labId && !disabled && index >= lockedCount;
+  const showDropdown = (index: number): boolean =>
+    activeSegIndex === index && Boolean(value.labId) && !disabled && index >= lockedCount;
 
   const renderSegmentInput = (segment: string, index: number) => {
     const isLocked = index < lockedCount;
@@ -231,7 +231,7 @@ const CatalogPathEditor: React.FC<CatalogPathEditorProps> = ({
               }}
               disabled={disabled}
               autoComplete="off"
-              aria-expanded={showDropdown(index)}
+              aria-expanded={showDropdown(index) ? true : false}
               aria-controls={`${baseId}-suggest-${index}`}
             />
             {showDropdown(index) && (list.length > 0 || canCreate) && (

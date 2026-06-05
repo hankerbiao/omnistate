@@ -1,11 +1,27 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { api } from '../services/api';
 import type { RoleResponse, PermissionResponse } from '../types';
+import PageToolbar, { StatPill } from './ui/PageToolbar';
 
 const getErrorMessage = (err: unknown, fallback: string) => {
   if (err instanceof Error) return `${fallback}: ${err.message}`;
   return fallback;
 };
+
+const getPermissionKey = (perm: PermissionResponse) =>
+  perm.perm_id || perm.permission_id || perm.id;
+
+const groupPermissions = (perms: PermissionResponse[]) => {
+  const groups = new Map<string, PermissionResponse[]>();
+  for (const perm of perms) {
+    const group = perm.code.includes(':') ? perm.code.split(':')[0] : '其他';
+    if (!groups.has(group)) groups.set(group, []);
+    groups.get(group)!.push(perm);
+  }
+  return Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b));
+};
+
+type RoleFilter = 'all' | 'system' | 'custom';
 
 const RoleManagement: React.FC = () => {
   const [roles, setRoles] = useState<RoleResponse[]>([]);
@@ -13,9 +29,7 @@ const RoleManagement: React.FC = () => {
   const [selectedRole, setSelectedRole] = useState<RoleResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [editingName, setEditingName] = useState(false);
   const [editName, setEditName] = useState('');
-  const [editingDesc, setEditingDesc] = useState(false);
   const [editDesc, setEditDesc] = useState('');
   const [selectedPermissionIds, setSelectedPermissionIds] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
@@ -28,19 +42,24 @@ const RoleManagement: React.FC = () => {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [batchDeleteConfirm, setBatchDeleteConfirm] = useState(false);
   const [batchDeleting, setBatchDeleting] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [roleFilter, setRoleFilter] = useState<RoleFilter>('all');
+  const [permissionSearch, setPermissionSearch] = useState('');
 
-  const fetchRoles = useCallback(async (roleIdToRefresh?: string) => {
+  const fetchRoles = useCallback(async (roleIdToRefresh?: string, syncDrawer = false) => {
     setLoading(true);
     setError(null);
     try {
       const response = await api.listRoles();
       setRoles(response.data || []);
-      if (roleIdToRefresh || selectedRole) {
-        const targetId = roleIdToRefresh || selectedRole?.role_id;
+      const targetId = roleIdToRefresh ?? (syncDrawer ? selectedRole?.role_id : undefined);
+      if (targetId) {
         const updated = response.data?.find(r => r.role_id === targetId);
         if (updated) {
           setSelectedRole(updated);
           setSelectedPermissionIds(new Set(updated.permission_ids || []));
+          setEditName(updated.name);
+          setEditDesc(updated.description || '');
         }
       }
     } catch (err) {
@@ -65,47 +84,88 @@ const RoleManagement: React.FC = () => {
     fetchPermissions();
   }, [fetchRoles, fetchPermissions]);
 
-  const handleSelectRole = (role: RoleResponse) => {
+  const filteredRoles = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return roles.filter(role => {
+      if (roleFilter === 'system' && !role.is_system) return false;
+      if (roleFilter === 'custom' && role.is_system) return false;
+      if (!q) return true;
+      return (
+        role.name.toLowerCase().includes(q)
+        || role.role_id.toLowerCase().includes(q)
+        || (role.description?.toLowerCase().includes(q) ?? false)
+      );
+    });
+  }, [roles, searchQuery, roleFilter]);
+
+  const filteredPermissions = useMemo(() => {
+    const q = permissionSearch.trim().toLowerCase();
+    if (!q) return permissions;
+    return permissions.filter(perm =>
+      perm.name.toLowerCase().includes(q)
+      || perm.code.toLowerCase().includes(q)
+      || (perm.description?.toLowerCase().includes(q) ?? false),
+    );
+  }, [permissions, permissionSearch]);
+
+  const permissionGroups = useMemo(
+    () => groupPermissions(filteredPermissions),
+    [filteredPermissions],
+  );
+
+  const selectableRoles = useMemo(
+    () => filteredRoles.filter(r => !r.is_system),
+    [filteredRoles],
+  );
+
+  const openRoleDrawer = (role: RoleResponse) => {
     setSelectedRole(role);
     setSelectedPermissionIds(new Set(role.permission_ids || []));
-    setEditingName(false);
+    setEditName(role.name);
+    setEditDesc(role.description || '');
+    setPermissionSearch('');
+    setError(null);
   };
 
-  const handleEditName = () => {
-    if (selectedRole) {
-      setEditName(selectedRole.name);
-      setEditingName(true);
-    }
+  const closeRoleDrawer = () => {
+    setSelectedRole(null);
+    setPermissionSearch('');
   };
 
-  const handleSaveName = async () => {
+  const handleSaveBasicInfo = async () => {
     if (!selectedRole || !editName.trim()) return;
-
     setSaving(true);
+    setError(null);
     try {
-      await api.updateRole(selectedRole.role_id, { name: editName.trim() });
+      await api.updateRole(selectedRole.role_id, {
+        name: editName.trim(),
+        description: editDesc.trim() || undefined,
+      });
       await fetchRoles(selectedRole.role_id);
-      setEditingName(false);
     } catch (err) {
-      setError('保存角色名称失败');
-      console.error('Update role name error:', err);
+      setError('保存角色信息失败');
+      console.error('Update role error:', err);
     } finally {
       setSaving(false);
     }
   };
 
-  const handleCancelEditName = () => {
-    setEditingName(false);
-    setEditName('');
-  };
-
   const handleTogglePermission = (permissionId: string) => {
     setSelectedPermissionIds(prev => {
       const next = new Set(prev);
-      if (next.has(permissionId)) {
-        next.delete(permissionId);
-      } else {
-        next.add(permissionId);
+      if (next.has(permissionId)) next.delete(permissionId);
+      else next.add(permissionId);
+      return next;
+    });
+  };
+
+  const handleToggleGroup = (groupPerms: PermissionResponse[], selectAll: boolean) => {
+    setSelectedPermissionIds(prev => {
+      const next = new Set(prev);
+      for (const perm of groupPerms) {
+        const key = getPermissionKey(perm);
+        if (selectAll) next.add(key);
+        else next.delete(key);
       }
       return next;
     });
@@ -113,13 +173,13 @@ const RoleManagement: React.FC = () => {
 
   const handleSavePermissions = async () => {
     if (!selectedRole) return;
-
     setSaving(true);
+    setError(null);
     try {
       await api.updateRolePermissions(selectedRole.role_id, {
         permission_ids: Array.from(selectedPermissionIds),
       });
-      await fetchRoles();
+      await fetchRoles(selectedRole.role_id);
     } catch (err) {
       setError('保存角色权限失败');
       console.error('Update role permissions error:', err);
@@ -130,8 +190,8 @@ const RoleManagement: React.FC = () => {
 
   const handleCreateRole = async () => {
     if (!newRoleName.trim()) return;
-
     setCreating(true);
+    setError(null);
     try {
       await api.createRole({
         name: newRoleName.trim(),
@@ -142,7 +202,7 @@ const RoleManagement: React.FC = () => {
       setNewRoleName('');
       setNewRoleDesc('');
     } catch (err) {
-      setError('创建角色失败');
+      setError(getErrorMessage(err, '创建角色失败'));
       console.error('Create role error:', err);
     } finally {
       setCreating(false);
@@ -156,7 +216,7 @@ const RoleManagement: React.FC = () => {
     try {
       await api.deleteRole(deleteConfirm);
       setDeleteConfirm(null);
-      if (selectedRole?.role_id === deleteConfirm) setSelectedRole(null);
+      if (selectedRole?.role_id === deleteConfirm) closeRoleDrawer();
       await fetchRoles();
     } catch (err) {
       setError(getErrorMessage(err, '删除角色失败'));
@@ -169,21 +229,17 @@ const RoleManagement: React.FC = () => {
   const toggleSelect = (roleId: string) => {
     setSelectedIds(prev => {
       const next = new Set(prev);
-      if (next.has(roleId)) {
-        next.delete(roleId);
-      } else {
-        next.add(roleId);
-      }
+      if (next.has(roleId)) next.delete(roleId);
+      else next.add(roleId);
       return next;
     });
   };
 
   const toggleSelectAll = () => {
-    const selectable = roles.filter(r => !r.is_system);
-    if (selectedIds.size === selectable.length) {
+    if (selectedIds.size === selectableRoles.length) {
       setSelectedIds(new Set());
     } else {
-      setSelectedIds(new Set(selectable.map(r => r.role_id)));
+      setSelectedIds(new Set(selectableRoles.map(r => r.role_id)));
     }
   };
 
@@ -192,13 +248,10 @@ const RoleManagement: React.FC = () => {
     setBatchDeleting(true);
     setError(null);
     try {
-      const deletePromises = Array.from(selectedIds).map(id => api.deleteRole(id));
-      await Promise.all(deletePromises);
+      await Promise.all(Array.from(selectedIds).map(id => api.deleteRole(id)));
       setBatchDeleteConfirm(false);
+      if (selectedRole && selectedIds.has(selectedRole.role_id)) closeRoleDrawer();
       setSelectedIds(new Set());
-      if (selectedRole && selectedIds.has(selectedRole.role_id)) {
-        setSelectedRole(null);
-      }
       await fetchRoles();
     } catch (err) {
       setError(getErrorMessage(err, '批量删除失败'));
@@ -208,268 +261,373 @@ const RoleManagement: React.FC = () => {
     }
   };
 
-  const handleEditDesc = () => {
-    if (selectedRole) {
-      setEditDesc(selectedRole.description || '');
-      setEditingDesc(true);
-    }
-  };
+  const deleteTargetRole = deleteConfirm
+    ? roles.find(r => r.role_id === deleteConfirm)
+    : null;
 
-  const handleSaveDesc = async () => {
-    if (!selectedRole) return;
-    setSaving(true);
-    try {
-      await api.updateRole(selectedRole.role_id, { description: editDesc.trim() || undefined });
-      await fetchRoles(selectedRole.role_id);
-      setEditingDesc(false);
-    } catch (err) {
-      setError('保存描述失败');
-      console.error('Update role description error:', err);
-    } finally {
-      setSaving(false);
+  const hasBasicInfoChanges = selectedRole && (
+    editName.trim() !== selectedRole.name
+    || editDesc.trim() !== (selectedRole.description || '')
+  );
+
+  const hasPermissionChanges = selectedRole && (() => {
+    const current = new Set(selectedRole.permission_ids || []);
+    if (current.size !== selectedPermissionIds.size) return true;
+    for (const id of selectedPermissionIds) {
+      if (!current.has(id)) return true;
     }
-  };
+    return false;
+  })();
+
+  const systemRoleCount = roles.filter(r => r.is_system).length;
 
   return (
-    <div className="workspace">
-      {/* Left Panel - Role List */}
-      <div style={styles.leftPanel}>
-        <div style={styles.panelHeader}>
-          <div>
-            <h2 style={styles.panelTitle}>角色列表</h2>
-            <span style={styles.panelHint}>
-              {selectedIds.size > 0
-                ? `已选择 ${selectedIds.size} 项`
-                : `${roles.length} 个角色`}
-            </span>
-          </div>
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+    <div className="page-content">
+      <PageToolbar
+        meta={(
+          <>
+            <StatPill label="角色" value={roles.length} />
+            <StatPill label="系统" value={systemRoleCount} tone="info" />
+            <StatPill label="显示" value={filteredRoles.length} />
+            {selectedIds.size > 0 && (
+              <StatPill label="已选" value={selectedIds.size} tone="warning" />
+            )}
+          </>
+        )}
+        actions={(
+          <>
+            <input
+              className="form-input"
+              style={{ width: 220, fontSize: 13 }}
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="搜索名称、ID、描述…"
+              aria-label="搜索角色"
+            />
+            <select
+              className="form-input form-select"
+              style={{ width: 130 }}
+              value={roleFilter}
+              onChange={e => setRoleFilter(e.target.value as RoleFilter)}
+              aria-label="角色类型"
+            >
+              <option value="all">全部</option>
+              <option value="system">系统角色</option>
+              <option value="custom">自定义</option>
+            </select>
             {selectedIds.size > 0 && (
               <button
-                className="btn btn--sm"
-                style={{ backgroundColor: 'var(--status-error)', color: 'white' }}
+                type="button"
+                className="btn btn--danger btn--sm"
                 onClick={() => setBatchDeleteConfirm(true)}
               >
                 删除 ({selectedIds.size})
               </button>
             )}
-            <button className="btn btn--primary btn--sm" onClick={() => setCreateModalOpen(true)}>
-              + 新建
+            <button type="button" className="btn btn--primary btn--sm" onClick={() => setCreateModalOpen(true)}>
+              + 新建角色
             </button>
-          </div>
-        </div>
+          </>
+        )}
+      />
 
-        {loading && roles.length === 0 ? (
-          <div className="loading-overlay">
-            <div className="loading-spinner" />
-          </div>
-        ) : (
-          <div style={styles.roleList}>
-            <div style={styles.selectAllRow}>
-              <label style={styles.checkboxLabel}>
-                <input
-                  type="checkbox"
-                  checked={selectedIds.size > 0 && selectedIds.size === roles.filter(r => !r.is_system).length}
-                  onChange={toggleSelectAll}
-                  style={styles.checkbox}
-                />
-                <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>全选</span>
-              </label>
-            </div>
-            {roles.map(role => (
-              <div
-                key={role.role_id}
-                style={{
-                  ...styles.roleItem,
-                  ...(selectedRole?.role_id === role.role_id ? styles.roleItemSelected : {}),
-                }}
-                onClick={() => handleSelectRole(role)}
-              >
-                <div style={styles.itemHeader}>
-                  <div style={styles.itemHeaderLeft}>
+      {error && !selectedRole && (
+        <div className="error-banner" style={styles.errorBanner}>
+          <span>⚠</span> {error}
+          <button style={styles.errorClose} onClick={() => setError(null)}>×</button>
+        </div>
+      )}
+
+      {/* Role Table */}
+      {loading && roles.length === 0 ? (
+        <div className="loading-overlay">
+          <div className="loading-spinner" />
+        </div>
+      ) : filteredRoles.length === 0 ? (
+        <div className="empty-state">
+          <div className="empty-state__icon">👥</div>
+          <p className="empty-state__text">
+            {searchQuery || roleFilter !== 'all' ? '没有匹配的角色' : '暂无角色数据'}
+          </p>
+        </div>
+      ) : (
+        <div className="surface-card" style={{ overflow: 'hidden' }}>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th style={styles.colCheck}>
+                  <input
+                    type="checkbox"
+                    checked={selectableRoles.length > 0 && selectedIds.size === selectableRoles.length}
+                    onChange={toggleSelectAll}
+                    disabled={selectableRoles.length === 0}
+                    style={styles.checkbox}
+                  />
+                </th>
+                <th>角色名称</th>
+                <th>角色 ID</th>
+                <th>描述</th>
+                <th style={styles.colCount}>权限数</th>
+                <th style={styles.colType}>类型</th>
+                <th style={styles.colActions}>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredRoles.map(role => (
+                <tr
+                  key={role.role_id}
+                  className={selectedRole?.role_id === role.role_id ? 'selected' : ''}
+                  onClick={() => openRoleDrawer(role)}
+                  style={{ cursor: 'pointer' }}
+                >
+                  <td onClick={e => e.stopPropagation()}>
                     <input
                       type="checkbox"
                       checked={selectedIds.has(role.role_id)}
-                      onChange={() => toggleSelect(role.role_id)}
-                      onClick={e => e.stopPropagation()}
+                      onChange={() => !role.is_system && toggleSelect(role.role_id)}
+                      disabled={role.is_system}
                       style={styles.checkbox}
                     />
-                    <span style={styles.roleName}>{role.name}</span>
-                    {role.is_system && (
-                      <span style={styles.systemBadge}>系统</span>
+                  </td>
+                  <td>
+                    <span style={styles.roleNameCell}>{role.name}</span>
+                  </td>
+                  <td>
+                    <span className="mono" style={styles.roleIdCell}>{role.role_id}</span>
+                  </td>
+                  <td>
+                    <span style={styles.descCell}>
+                      {role.description || '—'}
+                    </span>
+                  </td>
+                  <td>
+                    <span style={styles.permCountBadge}>
+                      {role.permission_ids?.length || 0}
+                    </span>
+                  </td>
+                  <td>
+                    {role.is_system ? (
+                      <span className="status-badge status-badge--info">系统</span>
+                    ) : (
+                      <span className="status-badge status-badge--neutral">自定义</span>
                     )}
-                  </div>
-                </div>
-                {role.description && (
-                  <div style={styles.roleDesc}>{role.description}</div>
-                )}
-                <div style={styles.roleMeta}>
-                  {role.permission_ids?.length || 0} 个权限
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+                  </td>
+                  <td onClick={e => e.stopPropagation()}>
+                    <div style={styles.rowActions}>
+                      <button
+                        className="btn btn--ghost btn--sm"
+                        onClick={() => openRoleDrawer(role)}
+                      >
+                        配置
+                      </button>
+                      {!role.is_system && (
+                        <button
+                          className="btn btn--ghost btn--sm"
+                          style={{ color: 'var(--status-error)' }}
+                          onClick={() => setDeleteConfirm(role.role_id)}
+                        >
+                          删除
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
-      {/* Right Panel - Role Details */}
-      <div style={styles.rightPanel}>
-        {selectedRole ? (
-          <div className="data-panel">
-            <div className="data-panel-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h3 className="data-panel-title">角色详情 - {selectedRole.name}</h3>
-              {!selectedRole.is_system && (
+      {/* Slide-over Drawer */}
+      {selectedRole && (
+        <>
+          <div style={styles.drawerOverlay} onClick={closeRoleDrawer} />
+          <aside style={styles.drawer}>
+            <div style={styles.drawerHeader}>
+              <div>
+                <h3 style={styles.drawerTitle}>{selectedRole.name}</h3>
+                <span className="mono" style={styles.drawerSubtitle}>{selectedRole.role_id}</span>
+              </div>
+              <button style={styles.drawerClose} onClick={closeRoleDrawer} aria-label="关闭">
+                ×
+              </button>
+            </div>
+
+            <div style={styles.drawerBody}>
+              {error && (
+                <div className="error-banner" style={{ ...styles.errorBanner, marginBottom: 16 }}>
+                  <span>⚠</span> {error}
+                  <button style={styles.errorClose} onClick={() => setError(null)}>×</button>
+                </div>
+              )}
+
+              {/* Basic Info */}
+              <section style={styles.section}>
+                <h4 style={styles.sectionTitle}>基本信息</h4>
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>角色名称</label>
+                  <input
+                    className="form-input"
+                    value={editName}
+                    onChange={e => setEditName(e.target.value)}
+                    placeholder="输入角色名称"
+                    disabled={selectedRole.is_system}
+                  />
+                </div>
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>角色描述</label>
+                  <textarea
+                    className="form-input"
+                    style={styles.textarea}
+                    value={editDesc}
+                    onChange={e => setEditDesc(e.target.value)}
+                    placeholder="输入角色描述（可选）"
+                    rows={3}
+                    disabled={selectedRole.is_system}
+                  />
+                </div>
+                {!selectedRole.is_system && (
+                  <button
+                    className="btn btn--primary btn--sm"
+                    onClick={handleSaveBasicInfo}
+                    disabled={saving || !editName.trim() || !hasBasicInfoChanges}
+                  >
+                    {saving ? '保存中...' : '保存基本信息'}
+                  </button>
+                )}
+                {selectedRole.is_system && (
+                  <p style={styles.systemHint}>
+                    系统角色不可修改名称与描述，权限配置可调整
+                  </p>
+                )}
+              </section>
+
+              {/* Permissions */}
+              <section style={styles.section}>
+                <div style={styles.sectionHeader}>
+                  <h4 style={styles.sectionTitle}>
+                    权限配置
+                    <span style={styles.permSelectedCount}>
+                      已选 {selectedPermissionIds.size} / {permissions.length}
+                    </span>
+                  </h4>
+                  <button
+                    className="btn btn--primary btn--sm"
+                    onClick={handleSavePermissions}
+                    disabled={saving || !hasPermissionChanges}
+                  >
+                    {saving ? '保存中...' : '保存权限'}
+                  </button>
+                </div>
+
+                <input
+                  className="form-input"
+                  value={permissionSearch}
+                  onChange={e => setPermissionSearch(e.target.value)}
+                  placeholder="搜索权限名称或代码..."
+                  style={{ marginBottom: 12 }}
+                />
+
+                {permissionGroups.length === 0 ? (
+                  <p style={styles.noResults}>没有匹配的权限</p>
+                ) : (
+                  <div style={styles.permGroupList}>
+                    {permissionGroups.map(([groupName, groupPerms]) => {
+                      const selectedInGroup = groupPerms.filter(p =>
+                        selectedPermissionIds.has(getPermissionKey(p)),
+                      ).length;
+                      const allSelected = selectedInGroup === groupPerms.length;
+                      const someSelected = selectedInGroup > 0 && !allSelected;
+
+                      return (
+                        <div key={groupName} style={styles.permGroup}>
+                          <div style={styles.permGroupHeader}>
+                            <label style={styles.permGroupLabel}>
+                              <input
+                                type="checkbox"
+                                checked={allSelected}
+                                ref={el => {
+                                  if (el) el.indeterminate = someSelected;
+                                }}
+                                onChange={() => handleToggleGroup(groupPerms, !allSelected)}
+                                style={styles.checkbox}
+                              />
+                              <span style={styles.permGroupName}>{groupName}</span>
+                              <span style={styles.permGroupCount}>
+                                {selectedInGroup}/{groupPerms.length}
+                              </span>
+                            </label>
+                          </div>
+                          <div style={styles.permList}>
+                            {groupPerms.map(perm => {
+                              const permKey = getPermissionKey(perm);
+                              const checked = selectedPermissionIds.has(permKey);
+                              return (
+                                <label
+                                  key={permKey}
+                                  style={{
+                                    ...styles.permItem,
+                                    ...(checked ? styles.permItemSelected : {}),
+                                  }}
+                                  className="perm-item"
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={() => handleTogglePermission(permKey)}
+                                    style={styles.checkbox}
+                                  />
+                                  <div style={styles.permContent}>
+                                    <div style={styles.permName}>{perm.name}</div>
+                                    <div className="mono" style={styles.permCode}>{perm.code}</div>
+                                    <div style={styles.permDesc}>
+                                      {perm.description || '暂无说明'}
+                                    </div>
+                                  </div>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+            </div>
+
+            {!selectedRole.is_system && (
+              <div style={styles.drawerFooter}>
                 <button
-                  style={styles.deleteRoleBtn}
+                  className="btn btn--danger btn--sm"
                   onClick={() => setDeleteConfirm(selectedRole.role_id)}
                 >
                   删除角色
                 </button>
-              )}
-            </div>
-
-            {error && (
-              <div className="error-banner" style={{ marginBottom: '16px' }}>
-                <span>⚠</span> {error}
-                <button style={styles.errorClose} onClick={() => setError(null)}>×</button>
               </div>
             )}
-
-            <div style={styles.detailSection}>
-              <label style={styles.label}>角色名称</label>
-              {editingName ? (
-                <div style={styles.editNameRow}>
-                  <input
-                    style={styles.input}
-                    value={editName}
-                    onChange={e => setEditName(e.target.value)}
-                    placeholder="输入角色名称"
-                    autoFocus
-                  />
-                  <button
-                    style={styles.saveBtn}
-                    onClick={handleSaveName}
-                    disabled={saving || !editName.trim()}
-                  >
-                    {saving ? '保存中...' : '保存'}
-                  </button>
-                  <button style={styles.cancelBtn} onClick={handleCancelEditName}>
-                    取消
-                  </button>
-                </div>
-              ) : (
-                <div style={styles.nameDisplay}>
-                  <span style={styles.nameValue}>{selectedRole.name}</span>
-                  {!selectedRole.is_system && (
-                    <button style={styles.editNameBtn} onClick={handleEditName}>
-                      编辑
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-
-            <div style={styles.detailSection}>
-              <label style={styles.label}>角色描述</label>
-              {editingDesc ? (
-                <div style={styles.editNameRow}>
-                  <textarea
-                    style={styles.textarea}
-                    value={editDesc}
-                    onChange={e => setEditDesc(e.target.value)}
-                    placeholder="输入角色描述"
-                    rows={3}
-                    autoFocus
-                  />
-                  <button style={styles.saveBtn} onClick={handleSaveDesc} disabled={saving}>
-                    {saving ? '保存中...' : '保存'}
-                  </button>
-                  <button style={styles.cancelBtn} onClick={() => setEditingDesc(false)}>
-                    取消
-                  </button>
-                </div>
-              ) : (
-                <div style={styles.nameDisplay}>
-                  <span style={styles.descValue}>
-                    {selectedRole.description || '暂无描述'}
-                  </span>
-                  {!selectedRole.is_system && (
-                    <button style={styles.editNameBtn} onClick={handleEditDesc}>
-                      编辑
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-
-            <div style={styles.detailSection}>
-              <div style={styles.permissionHeader}>
-                <label style={styles.label}>权限配置</label>
-                <button
-                  style={{
-                    ...styles.savePermBtn,
-                    ...(saving ? styles.savePermBtnDisabled : {}),
-                  }}
-                  onClick={handleSavePermissions}
-                  disabled={saving}
-                >
-                  {saving ? '保存中...' : '保存权限'}
-                </button>
-              </div>
-              <div style={styles.permissionGrid}>
-                {permissions.map(perm => {
-                  const permKey = perm.permission_id || perm.id;
-                  return (
-                    <div
-                      key={perm.id}
-                      style={{
-                        ...styles.permissionItem,
-                        ...(selectedPermissionIds.has(permKey) ? styles.permissionItemSelected : {}),
-                      }}
-                      onClick={() => !selectedRole.is_system && handleTogglePermission(permKey)}
-                      className={!selectedRole.is_system ? 'perm-item' : ''}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selectedPermissionIds.has(permKey)}
-                        onChange={() => handleTogglePermission(permKey)}
-                        disabled={selectedRole.is_system}
-                        style={styles.permissionCheckbox}
-                      />
-                      <div style={styles.permissionContent}>
-                        <div style={styles.permissionName}>{perm.name}</div>
-                        <div style={styles.permissionCode}>{perm.code}</div>
-                        {perm.description && (
-                          <div style={styles.permissionDesc}>{perm.description}</div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="empty-state" style={{ height: '100%' }}>
-            <div className="empty-state__icon">👥</div>
-            <p className="empty-state__text">选择左侧角色查看详情</p>
-          </div>
-        )}
-      </div>
+          </aside>
+        </>
+      )}
 
       {/* Create Role Modal */}
       {createModalOpen && (
-        <div style={styles.modalOverlay} onClick={() => setCreateModalOpen(false)}>
-          <div style={styles.modal} onClick={e => e.stopPropagation()}>
-            <div style={styles.modalHeader}>
-              <h3 style={styles.modalTitle}>新建角色</h3>
-              <button style={styles.modalClose} onClick={() => setCreateModalOpen(false)}>×</button>
+        <div className="modal-overlay" onClick={() => setCreateModalOpen(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal__header">
+              <h3 className="modal__title">新建角色</h3>
+              <button className="modal__close" onClick={() => setCreateModalOpen(false)}>×</button>
             </div>
-            <div style={styles.modalBody}>
+            <div className="modal__body">
+              {error && (
+                <div className="error-banner" style={{ marginBottom: 16 }}>
+                  <span>⚠</span> {error}
+                </div>
+              )}
               <div style={styles.formGroup}>
                 <label style={styles.label}>角色名称 *</label>
                 <input
-                  style={styles.input}
+                  className="form-input"
                   value={newRoleName}
                   onChange={e => setNewRoleName(e.target.value)}
                   placeholder="输入角色名称"
@@ -479,6 +637,7 @@ const RoleManagement: React.FC = () => {
               <div style={styles.formGroup}>
                 <label style={styles.label}>角色描述</label>
                 <textarea
+                  className="form-input"
                   style={styles.textarea}
                   value={newRoleDesc}
                   onChange={e => setNewRoleDesc(e.target.value)}
@@ -487,15 +646,12 @@ const RoleManagement: React.FC = () => {
                 />
               </div>
             </div>
-            <div style={styles.modalFooter}>
-              <button
-                style={styles.cancelBtn}
-                onClick={() => setCreateModalOpen(false)}
-              >
+            <div className="modal__footer">
+              <button className="btn btn--secondary" onClick={() => setCreateModalOpen(false)}>
                 取消
               </button>
               <button
-                style={styles.saveBtn}
+                className="btn btn--primary"
                 onClick={handleCreateRole}
                 disabled={creating || !newRoleName.trim()}
               >
@@ -506,26 +662,25 @@ const RoleManagement: React.FC = () => {
         </div>
       )}
 
-      {/* Delete Confirmation Modal */}
+      {/* Delete Confirmation */}
       {deleteConfirm && (
-        <div style={styles.modalOverlay} onClick={() => setDeleteConfirm(null)}>
-          <div style={styles.modal} onClick={e => e.stopPropagation()}>
-            <div style={styles.modalHeader}>
-              <h3 style={styles.modalTitle}>确认删除</h3>
-              <button style={styles.modalClose} onClick={() => setDeleteConfirm(null)}>×</button>
+        <div className="modal-overlay" onClick={() => setDeleteConfirm(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal__header">
+              <h3 className="modal__title">确认删除</h3>
+              <button className="modal__close" onClick={() => setDeleteConfirm(null)}>×</button>
             </div>
-            <div style={styles.modalBody}>
-              <p style={{ fontSize: '14px', color: 'var(--text-primary)', margin: 0 }}>
-                确定要删除角色 <strong>{deleteConfirm}</strong> 吗？此操作不可恢复。
+            <div className="modal__body">
+              <p style={styles.confirmText}>
+                确定要删除角色 <strong>{deleteTargetRole?.name || deleteConfirm}</strong> 吗？此操作不可恢复。
               </p>
             </div>
-            <div style={styles.modalFooter}>
-              <button style={styles.cancelBtn} onClick={() => setDeleteConfirm(null)}>取消</button>
+            <div className="modal__footer">
+              <button className="btn btn--secondary" onClick={() => setDeleteConfirm(null)}>
+                取消
+              </button>
               <button
-                style={{
-                  ...styles.dangerBtn,
-                  ...(deleting ? { opacity: 0.6, cursor: 'wait' } : {}),
-                }}
+                className="btn btn--danger"
                 onClick={handleDeleteRole}
                 disabled={deleting}
               >
@@ -536,26 +691,25 @@ const RoleManagement: React.FC = () => {
         </div>
       )}
 
-      {/* Batch Delete Confirmation Modal */}
+      {/* Batch Delete Confirmation */}
       {batchDeleteConfirm && (
-        <div style={styles.modalOverlay} onClick={() => setBatchDeleteConfirm(false)}>
-          <div style={styles.modal} onClick={e => e.stopPropagation()}>
-            <div style={styles.modalHeader}>
-              <h3 style={styles.modalTitle}>确认批量删除</h3>
-              <button style={styles.modalClose} onClick={() => setBatchDeleteConfirm(false)}>×</button>
+        <div className="modal-overlay" onClick={() => setBatchDeleteConfirm(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal__header">
+              <h3 className="modal__title">确认批量删除</h3>
+              <button className="modal__close" onClick={() => setBatchDeleteConfirm(false)}>×</button>
             </div>
-            <div style={styles.modalBody}>
-              <p style={{ fontSize: '14px', color: 'var(--text-primary)', margin: 0 }}>
+            <div className="modal__body">
+              <p style={styles.confirmText}>
                 确定要删除选中的 <strong>{selectedIds.size}</strong> 个角色吗？此操作不可恢复。
               </p>
             </div>
-            <div style={styles.modalFooter}>
-              <button style={styles.cancelBtn} onClick={() => setBatchDeleteConfirm(false)}>取消</button>
+            <div className="modal__footer">
+              <button className="btn btn--secondary" onClick={() => setBatchDeleteConfirm(false)}>
+                取消
+              </button>
               <button
-                style={{
-                  ...styles.dangerBtn,
-                  ...(batchDeleting ? { opacity: 0.6, cursor: 'wait' } : {}),
-                }}
+                className="btn btn--danger"
                 onClick={handleBatchDelete}
                 disabled={batchDeleting}
               >
@@ -567,356 +721,52 @@ const RoleManagement: React.FC = () => {
       )}
 
       <style>{`
-        @keyframes spin {
-          to { transform: rotate(360deg); }
-        }
-        .perm-item:hover:not(.perm-item input:disabled) {
-          background-color: var(--bg-tertiary);
-          border-color: var(--accent-cyan);
+        .perm-item:hover:not(:has(input:disabled)) {
+          background-color: var(--surface-hover);
+          border-color: var(--accent-primary);
         }
       `}</style>
     </div>
   );
 };
 
-const styles = {
-  container: {
-    display: 'flex',
-    height: 'calc(100vh - 64px)',
-    animation: 'fadeIn 0.3s ease',
-  } as const,
-  leftPanel: {
-    width: '340px',
-    minWidth: '340px',
-    backgroundColor: 'var(--bg-secondary)',
-    borderRight: '1px solid var(--border-default)',
-    display: 'flex',
-    flexDirection: 'column' as const,
+const styles: Record<string, React.CSSProperties> = {
+  page: {
+    padding: 'var(--space-6)',
+    height: '100%',
+    overflow: 'auto',
   },
-  rightPanel: {
-    flex: 1,
-    padding: '28px 32px',
-    overflowY: 'auto' as const,
-  },
-  panelHeader: {
+  header: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: '20px 24px',
-    borderBottom: '1px solid var(--border-muted)',
+    marginBottom: 'var(--space-4)',
   },
-  panelTitle: {
+  title: {
+    margin: 0,
     fontSize: '18px',
     fontWeight: 600,
     color: 'var(--text-primary)',
-    margin: 0,
   },
-  panelHint: {
-    fontSize: '12px',
+  subtitle: {
+    fontSize: '13px',
     color: 'var(--text-tertiary)',
-    marginTop: '2px',
+    marginTop: '4px',
     display: 'block',
   },
-  createBtn: {
-    padding: '8px 14px',
-    fontSize: '13px',
-    fontWeight: 500,
-    color: 'var(--accent-cyan)',
-    backgroundColor: 'transparent',
-    border: '1px solid var(--accent-cyan)',
-    borderRadius: 'var(--radius-md)',
-    cursor: 'pointer',
-    transition: 'all var(--transition-fast)',
+  toolbar: {
+    marginBottom: 'var(--space-4)',
+    borderRadius: 'var(--radius-lg)',
+    border: '1px solid var(--border-subtle)',
   },
-  loadingState: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '12px',
-    padding: '60px',
-    color: 'var(--text-secondary)',
+  searchInput: {
+    maxWidth: '360px',
   },
-  spinner: {
-    width: '32px',
-    height: '32px',
-    border: '3px solid var(--border-default)',
-    borderTopColor: 'var(--accent-cyan)',
-    borderRadius: '50%',
-    animation: 'spin 0.8s linear infinite',
-  },
-  roleList: {
-    flex: 1,
-    overflowY: 'auto' as const,
-    padding: '12px',
-  },
-  selectAllRow: {
-    display: 'flex',
-    alignItems: 'center',
-    padding: '8px 4px',
-    marginBottom: '8px',
-    borderBottom: '1px solid var(--border-muted)',
-  },
-  checkboxLabel: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '6px',
-    cursor: 'pointer',
-  },
-  checkbox: {
-    width: '16px',
-    height: '16px',
-    cursor: 'pointer',
-    accentColor: 'var(--accent-cyan)',
-  },
-  itemHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '6px',
-  },
-  itemHeaderLeft: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-  },
-  roleItem: {
-    padding: '14px 16px',
-    marginBottom: '8px',
-    backgroundColor: 'var(--bg-primary)',
-    border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-md)',
-    cursor: 'pointer',
-    transition: 'all var(--transition-fast)',
-  },
-  roleItemSelected: {
-    borderColor: 'var(--accent-cyan)',
-    backgroundColor: 'var(--bg-tertiary)',
-  },
-  roleItemHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    marginBottom: '6px',
-  },
-  roleName: {
-    fontSize: '14px',
-    fontWeight: 600,
-    color: 'var(--text-primary)',
-  },
-  systemBadge: {
-    fontSize: '10px',
-    fontWeight: 600,
-    color: 'var(--accent-purple)',
-    backgroundColor: 'rgba(163, 113, 247, 0.15)',
-    padding: '2px 6px',
-    borderRadius: '4px',
-  },
-  roleDesc: {
-    fontSize: '12px',
-    color: 'var(--text-secondary)',
-    marginBottom: '6px',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap' as const,
-  },
-  roleMeta: {
-    fontSize: '11px',
-    color: 'var(--text-muted)',
-  },
-  detailSection: {
-    marginBottom: '28px',
-  },
-  label: {
-    display: 'block',
-    fontSize: '13px',
-    fontWeight: 600,
-    color: 'var(--text-secondary)',
-    marginBottom: '10px',
-    textTransform: 'uppercase' as const,
-    letterSpacing: '0.5px',
-  },
-  nameDisplay: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-  },
-  nameValue: {
-    fontSize: '20px',
-    fontWeight: 600,
-    color: 'var(--text-primary)',
-  },
-  editNameBtn: {
-    padding: '6px 12px',
-    fontSize: '12px',
-    fontWeight: 500,
-    color: 'var(--text-secondary)',
-    backgroundColor: 'var(--bg-secondary)',
-    border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-sm)',
-    cursor: 'pointer',
-  },
-  deleteRoleBtn: {
-    padding: '6px 14px',
-    fontSize: '12px',
-    fontWeight: 500,
-    color: 'var(--status-error)',
-    backgroundColor: 'transparent',
-    border: '1px solid var(--status-error)',
-    borderRadius: 'var(--radius-md)',
-    cursor: 'pointer',
-  },
-  dangerBtn: {
-    padding: '10px 18px',
-    fontSize: '13px',
-    fontWeight: 500,
-    color: 'white',
-    backgroundColor: 'var(--status-error)',
-    border: 'none',
-    borderRadius: 'var(--radius-md)',
-    cursor: 'pointer',
-  },
-  editNameRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
-  },
-  input: {
-    flex: 1,
-    padding: '10px 14px',
-    fontSize: '14px',
-    color: 'var(--text-primary)',
-    backgroundColor: 'var(--bg-primary)',
-    border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-md)',
-    outline: 'none',
-  },
-  textarea: {
-    width: '100%',
-    padding: '10px 14px',
-    fontSize: '14px',
-    color: 'var(--text-primary)',
-    backgroundColor: 'var(--bg-primary)',
-    border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-md)',
-    outline: 'none',
-    resize: 'vertical' as const,
-    fontFamily: 'inherit',
-  },
-  descValue: {
-    fontSize: '14px',
-    color: 'var(--text-secondary)',
-  },
-  saveBtn: {
-    padding: '10px 18px',
-    fontSize: '13px',
-    fontWeight: 500,
-    color: 'var(--bg-primary)',
-    backgroundColor: 'var(--accent-cyan)',
-    border: 'none',
-    borderRadius: 'var(--radius-md)',
-    cursor: 'pointer',
-    transition: 'all var(--transition-fast)',
-  },
-  cancelBtn: {
-    padding: '10px 18px',
-    fontSize: '13px',
-    fontWeight: 500,
-    color: 'var(--text-secondary)',
-    backgroundColor: 'transparent',
-    border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-md)',
-    cursor: 'pointer',
-  },
-  permissionHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '12px',
-  },
-  savePermBtn: {
-    padding: '8px 16px',
-    fontSize: '13px',
-    fontWeight: 500,
-    color: 'var(--bg-primary)',
-    backgroundColor: 'var(--accent-cyan)',
-    border: 'none',
-    borderRadius: 'var(--radius-md)',
-    cursor: 'pointer',
-  },
-  savePermBtnDisabled: {
-    opacity: 0.5,
-    cursor: 'not-allowed',
-  },
-  permissionGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-    gap: '12px',
-  },
-  permissionItem: {
-    display: 'flex',
-    alignItems: 'flex-start',
-    gap: '12px',
-    padding: '14px 16px',
-    backgroundColor: 'var(--bg-secondary)',
-    border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-md)',
-    cursor: 'pointer',
-    transition: 'all var(--transition-fast)',
-  },
-  permissionItemSelected: {
-    borderColor: 'var(--accent-green)',
-    backgroundColor: 'rgba(72, 199, 142, 0.08)',
-  },
-  permissionCheckbox: {
-    marginTop: '2px',
-    width: '16px',
-    height: '16px',
-    cursor: 'pointer',
-  },
-  permissionContent: {
-    flex: 1,
-  },
-  permissionName: {
-    fontSize: '14px',
-    fontWeight: 600,
-    color: 'var(--text-primary)',
-    marginBottom: '4px',
-  },
-  permissionCode: {
-    fontSize: '12px',
-    fontFamily: "'JetBrains Mono', monospace",
-    color: 'var(--accent-cyan)',
-    marginBottom: '4px',
-  },
-  permissionDesc: {
-    fontSize: '12px',
-    color: 'var(--text-muted)',
-  },
-  emptyDetail: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: '100%',
-    color: 'var(--text-muted)',
-  },
-  emptyIcon: {
-    fontSize: '64px',
-    opacity: 0.3,
-    marginBottom: '16px',
+  filterSelect: {
+    width: '140px',
   },
   errorBanner: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
-    padding: '14px 18px',
-    backgroundColor: 'var(--status-error-bg)',
-    border: '1px solid var(--status-error)',
-    borderRadius: 'var(--radius-md)',
-    color: 'var(--accent-red)',
-    fontSize: '14px',
-    marginBottom: '20px',
+    marginBottom: 'var(--space-4)',
   },
   errorClose: {
     marginLeft: 'auto',
@@ -924,62 +774,235 @@ const styles = {
     fontSize: '18px',
     background: 'none',
     border: 'none',
-    color: 'var(--accent-red)',
+    color: 'var(--status-error)',
     cursor: 'pointer',
   },
-  modalOverlay: {
-    position: 'fixed' as const,
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1000,
-  },
-  modal: {
-    width: '480px',
-    maxWidth: '90vw',
-    backgroundColor: 'var(--bg-secondary)',
+  tableCard: {
+    backgroundColor: 'var(--surface-primary)',
+    border: '1px solid var(--border-subtle)',
     borderRadius: 'var(--radius-lg)',
-    border: '1px solid var(--border-default)',
     overflow: 'hidden',
   },
-  modalHeader: {
+  colCheck: { width: '44px' },
+  colCount: { width: '80px', textAlign: 'center' as const },
+  colType: { width: '90px' },
+  colActions: { width: '140px' },
+  checkbox: {
+    width: '16px',
+    height: '16px',
+    cursor: 'pointer',
+    accentColor: 'var(--accent-primary)',
+  },
+  roleNameCell: {
+    fontWeight: 600,
+    color: 'var(--text-primary)',
+  },
+  roleIdCell: {
+    fontSize: '12px',
+    color: 'var(--accent-primary)',
+  },
+  descCell: {
+    fontSize: '13px',
+    color: 'var(--text-secondary)',
+    maxWidth: '280px',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap' as const,
+    display: 'block',
+  },
+  permCountBadge: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: '28px',
+    padding: '2px 8px',
+    fontSize: '12px',
+    fontWeight: 600,
+    color: 'var(--text-secondary)',
+    backgroundColor: 'var(--surface-tertiary)',
+    borderRadius: 'var(--radius-full)',
+  },
+  rowActions: {
+    display: 'flex',
+    gap: '4px',
+  },
+  drawerOverlay: {
+    position: 'fixed',
+    inset: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    zIndex: 1000,
+    animation: 'fadeIn 0.15s ease',
+  },
+  drawer: {
+    position: 'fixed',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    width: '520px',
+    maxWidth: '95vw',
+    backgroundColor: 'var(--surface-primary)',
+    boxShadow: 'var(--shadow-lg)',
+    zIndex: 1001,
+    display: 'flex',
+    flexDirection: 'column',
+    animation: 'slideInRight 0.25s ease',
+  },
+  drawerHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    padding: 'var(--space-5) var(--space-6)',
+    borderBottom: '1px solid var(--border-subtle)',
+  },
+  drawerTitle: {
+    margin: 0,
+    fontSize: '18px',
+    fontWeight: 600,
+    color: 'var(--text-primary)',
+  },
+  drawerSubtitle: {
+    fontSize: '12px',
+    color: 'var(--text-tertiary)',
+    marginTop: '4px',
+    display: 'block',
+  },
+  drawerClose: {
+    padding: '4px 8px',
+    fontSize: '22px',
+    color: 'var(--text-tertiary)',
+    lineHeight: 1,
+  },
+  drawerBody: {
+    flex: 1,
+    overflowY: 'auto',
+    padding: 'var(--space-6)',
+  },
+  drawerFooter: {
+    padding: 'var(--space-4) var(--space-6)',
+    borderTop: '1px solid var(--border-subtle)',
+  },
+  section: {
+    marginBottom: 'var(--space-8)',
+  },
+  sectionHeader: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: '18px 24px',
-    borderBottom: '1px solid var(--border-muted)',
+    marginBottom: 'var(--space-3)',
   },
-  modalTitle: {
-    fontSize: '16px',
-    fontWeight: 600,
-    color: 'var(--text-primary)',
+  sectionTitle: {
     margin: 0,
+    fontSize: '13px',
+    fontWeight: 600,
+    color: 'var(--text-secondary)',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px',
   },
-  modalClose: {
-    padding: '0 8px',
-    fontSize: '20px',
-    background: 'none',
-    border: 'none',
-    color: 'var(--text-muted)',
-    cursor: 'pointer',
-  },
-  modalBody: {
-    padding: '24px',
+  permSelectedCount: {
+    marginLeft: '8px',
+    fontSize: '11px',
+    fontWeight: 500,
+    color: 'var(--text-tertiary)',
+    textTransform: 'none',
+    letterSpacing: 0,
   },
   formGroup: {
-    marginBottom: '18px',
+    marginBottom: 'var(--space-4)',
   },
-  modalFooter: {
+  label: {
+    display: 'block',
+    fontSize: '13px',
+    fontWeight: 500,
+    color: 'var(--text-secondary)',
+    marginBottom: '6px',
+  },
+  textarea: {
+    resize: 'vertical' as const,
+    minHeight: '72px',
+  },
+  systemHint: {
+    fontSize: '12px',
+    color: 'var(--text-tertiary)',
+    margin: 0,
+  },
+  permGroupList: {
     display: 'flex',
-    justifyContent: 'flex-end',
-    gap: '10px',
-    padding: '18px 24px',
-    borderTop: '1px solid var(--border-muted)',
+    flexDirection: 'column',
+    gap: 'var(--space-4)',
+  },
+  permGroup: {
+    border: '1px solid var(--border-subtle)',
+    borderRadius: 'var(--radius-lg)',
+    overflow: 'hidden',
+  },
+  permGroupHeader: {
+    padding: 'var(--space-3) var(--space-4)',
+    backgroundColor: 'var(--surface-secondary)',
+    borderBottom: '1px solid var(--border-subtle)',
+  },
+  permGroupLabel: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-2)',
+    cursor: 'pointer',
+  },
+  permGroupName: {
+    fontSize: '13px',
+    fontWeight: 600,
+    color: 'var(--text-primary)',
+    textTransform: 'capitalize',
+  },
+  permGroupCount: {
+    marginLeft: 'auto',
+    fontSize: '11px',
+    color: 'var(--text-tertiary)',
+  },
+  permList: {
+    display: 'flex',
+    flexDirection: 'column',
+  },
+  permItem: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: 'var(--space-3)',
+    padding: 'var(--space-3) var(--space-4)',
+    borderBottom: '1px solid var(--border-subtle)',
+    cursor: 'pointer',
+    transition: 'background-color var(--transition-fast)',
+  },
+  permItemSelected: {
+    backgroundColor: 'rgba(22, 163, 74, 0.06)',
+  },
+  permContent: {
+    flex: 1,
+    minWidth: 0,
+  },
+  permName: {
+    fontSize: '13px',
+    fontWeight: 600,
+    color: 'var(--text-primary)',
+    marginBottom: '2px',
+  },
+  permCode: {
+    fontSize: '11px',
+    color: 'var(--accent-primary)',
+    marginBottom: '2px',
+  },
+  permDesc: {
+    fontSize: '11px',
+    color: 'var(--text-tertiary)',
+  },
+  noResults: {
+    fontSize: '13px',
+    color: 'var(--text-tertiary)',
+    textAlign: 'center' as const,
+    padding: 'var(--space-6)',
+  },
+  confirmText: {
+    fontSize: '14px',
+    color: 'var(--text-primary)',
+    margin: 0,
+    lineHeight: 1.6,
   },
 };
 

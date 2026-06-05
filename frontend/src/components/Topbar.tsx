@@ -34,7 +34,6 @@ const Topbar: React.FC<TopbarProps> = ({
   const [switching, setSwitching] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
-  // 点击外部关闭菜单
   useEffect(() => {
     if (!menuOpen) return
     const handleClick = (e: MouseEvent) => {
@@ -58,255 +57,118 @@ const Topbar: React.FC<TopbarProps> = ({
   }
 
   return (
-    <header style={styles.topbar}>
-      <div style={styles.left}>
-        <h1 style={styles.title}>{title}</h1>
-        {description && (
-          <span style={styles.description}>{description}</span>
-        )}
+    <header className="topbar">
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, minWidth: 0 }}>
+        <h1 className="topbar__title">{title}</h1>
+        {description && <span className="topbar__desc">{description}</span>}
       </div>
-      <div style={styles.right}>
-        {(currentUserId || currentUserRole) && (
-          <div style={styles.identityBanner} title="工作流测试提示：流转认此身份，非 admin 代操作">
-            <span style={styles.identityDot} />
-            <span style={styles.identityText}>
-              {currentUserRole && <strong>{currentUserRole}</strong>}
-              {currentUserRole && currentUserId && ' · '}
-              {currentUserId && <code style={styles.identityCode}>{currentUserId}</code>}
-            </span>
-          </div>
-        )}
-        <div ref={menuRef} style={{ position: 'relative' }}>
-          <div
-            style={styles.userInfo}
-            onClick={() => setMenuOpen(o => !o)}
-            role="button"
-            tabIndex={0}
-            onKeyDown={(e) => e.key === 'Enter' && setMenuOpen(o => !o)}
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        {(currentUserRole || currentUserId) && (
+          <span
+            className="stat-pill stat-pill--info"
+            title="当前工作流身份"
+            style={{ maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
           >
-            <div style={styles.avatar}>
-              {(currentUser || 'U').charAt(0).toUpperCase()}
-            </div>
-            <span style={styles.username}>{currentUser || '用户'}</span>
-            <span style={{ fontSize: '8px', color: 'var(--text-tertiary)', marginLeft: '2px' }}>▼</span>
-          </div>
+            {currentUserRole && <span className="stat-pill__value">{currentUserRole}</span>}
+            {currentUserRole && currentUserId && <span>·</span>}
+            {currentUserId && (
+              <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}>{currentUserId}</span>
+            )}
+          </span>
+        )}
+
+        <div ref={menuRef} style={{ position: 'relative' }}>
+          <button
+            type="button"
+            className="topbar__user-trigger"
+            onClick={() => setMenuOpen(o => !o)}
+            aria-expanded={menuOpen}
+            aria-haspopup="menu"
+          >
+            <span className="topbar__avatar">{(currentUser || 'U').charAt(0).toUpperCase()}</span>
+            <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-secondary)' }}>
+              {currentUser || '用户'}
+            </span>
+            <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>▾</span>
+          </button>
 
           {menuOpen && (
-            <div style={styles.dropdown}>
-              {/* 当前用户 */}
-              <div style={styles.dropdownHeader}>
-                <span style={styles.dropdownLabel}>切换用户</span>
+            <div
+              role="menu"
+              style={{
+                position: 'absolute',
+                top: 'calc(100% + 8px)',
+                right: 0,
+                width: 240,
+                backgroundColor: 'var(--surface-primary)',
+                border: '1px solid var(--border-default)',
+                borderRadius: 'var(--radius-xl)',
+                boxShadow: 'var(--shadow-lg)',
+                zIndex: 1000,
+                overflow: 'hidden',
+                animation: 'scaleIn 0.15s ease',
+              }}
+            >
+              <div style={{ padding: '10px 14px 6px', fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                切换用户
               </div>
 
-              {switchableUsers?.map((user) => {
+              {switchableUsers?.map(user => {
                 const isActive = currentUser === user.userId || currentUser === user.label
                 return (
-                  <div
+                  <button
                     key={user.userId}
+                    type="button"
+                    role="menuitem"
+                    disabled={switching || isActive}
+                    onClick={() => handleSwitch(user.userId, user.password)}
                     style={{
-                      ...styles.menuItem,
-                      ...(isActive ? styles.menuItemActive : {}),
-                      ...(switching ? { opacity: 0.6, cursor: 'wait' } : {}),
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      width: '100%',
+                      padding: '8px 14px',
+                      textAlign: 'left',
+                      background: isActive ? 'var(--surface-secondary)' : 'transparent',
+                      opacity: switching ? 0.6 : 1,
+                      cursor: switching || isActive ? 'default' : 'pointer',
                     }}
-                    onClick={() => !switching && !isActive && handleSwitch(user.userId, user.password)}
                   >
-                    <div style={styles.menuItemLeft}>
-                      <div style={styles.menuAvatar}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <span className="topbar__avatar" style={{ width: 28, height: 28, fontSize: 11 }}>
                         {user.label.charAt(0)}
-                      </div>
-                      <div>
-                        <div style={styles.menuName}>{user.label}</div>
-                        <div style={styles.menuRole}>{user.role}</div>
-                      </div>
-                    </div>
-                    {isActive && <span style={styles.checkmark}>✓</span>}
-                  </div>
+                      </span>
+                      <span>
+                        <div style={{ fontSize: 13, fontWeight: 500 }}>{user.label}</div>
+                        <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{user.role}</div>
+                      </span>
+                    </span>
+                    {isActive && <span style={{ color: 'var(--status-success)', fontWeight: 700 }}>✓</span>}
+                  </button>
                 )
               })}
 
-              <div style={styles.divider} />
+              <div style={{ height: 1, background: 'var(--border-subtle)', margin: '4px 0' }} />
 
-              {/* 查看个人信息 */}
-              <div style={styles.menuItem} onClick={() => { onUserClick?.(); setMenuOpen(false) }}>
-                <span style={styles.menuIcon}>👤</span>
-                <span>个人信息</span>
-              </div>
-
-              {/* 退出登录 */}
-              <div style={{ ...styles.menuItem, color: 'var(--status-error)' }} onClick={onLogout}>
-                <span style={styles.menuIcon}>⏻</span>
-                <span>退出登录</span>
-              </div>
+              <button type="button" role="menuitem" className="btn btn--ghost" style={{ width: '100%', justifyContent: 'flex-start', borderRadius: 0 }} onClick={() => { onUserClick?.(); setMenuOpen(false) }}>
+                个人信息
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="btn btn--ghost"
+                style={{ width: '100%', justifyContent: 'flex-start', borderRadius: 0, color: 'var(--status-error)' }}
+                onClick={onLogout}
+              >
+                退出登录
+              </button>
             </div>
           )}
         </div>
       </div>
     </header>
   )
-}
-
-const styles: Record<string, any> = {
-  topbar: {
-    height: '56px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '0 24px',
-    backgroundColor: 'var(--surface-primary)',
-    borderBottom: '1px solid var(--border-subtle)',
-  },
-  left: {
-    display: 'flex',
-    alignItems: 'baseline',
-    gap: '12px',
-  },
-  title: {
-    fontSize: '18px',
-    fontWeight: 600,
-    color: 'var(--text-primary)',
-    margin: 0,
-  },
-  description: {
-    fontSize: '13px',
-    color: 'var(--text-tertiary)',
-  },
-  right: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '16px',
-  },
-  identityBanner: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    padding: '6px 12px',
-    backgroundColor: 'var(--surface-tertiary)',
-    borderRadius: '999px',
-    border: '1px solid var(--border-subtle)',
-    maxWidth: '280px',
-  },
-  identityDot: {
-    width: '8px',
-    height: '8px',
-    borderRadius: '50%',
-    backgroundColor: 'var(--status-success)',
-    flexShrink: 0,
-  },
-  identityText: {
-    fontSize: '12px',
-    color: 'var(--text-secondary)',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap' as const,
-  },
-  identityCode: {
-    fontFamily: 'monospace',
-    fontSize: '11px',
-  },
-  userInfo: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
-    cursor: 'pointer',
-    padding: '4px 8px',
-    borderRadius: 'var(--radius-md)',
-    transition: 'background-color var(--transition-fast)',
-  },
-  avatar: {
-    width: '32px',
-    height: '32px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'var(--surface-secondary)',
-    borderRadius: '50%',
-    fontSize: '13px',
-    fontWeight: 600,
-    color: 'var(--text-secondary)',
-  },
-  username: {
-    fontSize: '13px',
-    fontWeight: 500,
-    color: 'var(--text-secondary)',
-  },
-  // Dropdown
-  dropdown: {
-    position: 'absolute' as const,
-    top: 'calc(100% + 6px)',
-    right: 0,
-    width: '220px',
-    backgroundColor: 'var(--surface-primary)',
-    border: '1px solid var(--border-default)',
-    borderRadius: '10px',
-    boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
-    zIndex: 1000,
-    overflow: 'hidden',
-  },
-  dropdownHeader: {
-    padding: '10px 14px 6px',
-    fontSize: '11px',
-    fontWeight: 600,
-    color: 'var(--text-tertiary)',
-    textTransform: 'uppercase' as const,
-    letterSpacing: '0.5px',
-  },
-  dropdownLabel: {},
-  menuItem: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: '10px',
-    padding: '8px 14px',
-    cursor: 'pointer',
-    fontSize: '13px',
-    color: 'var(--text-primary)',
-    transition: 'background-color 0.15s',
-  },
-  menuItemActive: {
-    backgroundColor: 'var(--surface-secondary)',
-  },
-  menuItemLeft: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
-  },
-  menuAvatar: {
-    width: '28px',
-    height: '28px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'var(--surface-secondary)',
-    borderRadius: '50%',
-    fontSize: '12px',
-    fontWeight: 600,
-    color: 'var(--text-secondary)',
-    flexShrink: 0,
-  },
-  menuName: {
-    fontSize: '13px',
-    fontWeight: 500,
-    lineHeight: '1.3',
-  },
-  menuRole: {
-    fontSize: '11px',
-    color: 'var(--text-tertiary)',
-  },
-  checkmark: {
-    fontSize: '14px',
-    color: 'var(--status-success)',
-    fontWeight: 700,
-  },
-  menuIcon: {
-    fontSize: '14px',
-    width: '20px',
-    textAlign: 'center' as const,
-  },
-  divider: {
-    height: '1px',
-    backgroundColor: 'var(--border-subtle)',
-    margin: '4px 0',
-  },
 }
 
 export default Topbar

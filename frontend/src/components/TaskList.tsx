@@ -10,6 +10,7 @@ import type {
   DispatchTaskResponse,
   AttachmentInfo,
 } from '../types';
+import PageToolbar, { StatPill } from './ui/PageToolbar';
 
 interface TaskListProps {
   onLogout?: () => void;
@@ -592,15 +593,20 @@ const TaskList: React.FC<TaskListProps> = () => {
   };
 
   return (
-    <div className="workspace" style={s.wrapper}>
-      {/* ──────── HEADER ──────── */}
-      <div style={s.header}>
-        <div style={s.headerTop}>
-          <h1 style={s.title}>执行任务</h1>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+    <div className="page-content" style={s.wrapper}>
+      <PageToolbar
+        meta={(
+          <>
+            <StatPill label="全部" value={tasks.length} />
+            <StatPill label="当前筛选" value={filteredTasks.length} tone="info" />
+          </>
+        )}
+        actions={(
+          <>
             <div style={s.searchBox}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-muted)', flexShrink: 0 }}><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
               <input
+                className="form-input"
                 style={s.searchInput}
                 type="text"
                 placeholder="搜索任务 ID..."
@@ -608,40 +614,40 @@ const TaskList: React.FC<TaskListProps> = () => {
                 onChange={e => setSearchQuery(e.target.value)}
               />
             </div>
-            <button style={s.refreshBtn} onClick={fetchTasks} disabled={loading}>↻</button>
-            <button style={s.dispatchBtn} onClick={openDispatchModal}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3" /></svg>
+            <button type="button" className="btn btn--secondary btn--sm" onClick={fetchTasks} disabled={loading}>
+              刷新
+            </button>
+            <button type="button" className="btn btn--primary btn--sm" onClick={openDispatchModal}>
               下发任务
             </button>
-          </div>
-        </div>
+          </>
+        )}
+      />
 
-        {/* ──────── FILTER TABS (居中显示) ──────── */}
-        <div style={s.filterWrapper}>
-          <div style={s.filterTabs}>
-            {FILTER_TABS.map(tab => (
-              <button
-                key={tab.key || 'all'}
-                style={{
-                  ...s.filterTab,
-                  ...(activeFilter === tab.key ? s.filterTabActive : {}),
-                }}
-                onClick={() => setActiveFilter(tab.key)}
+      <div className="filter-strip" style={{ marginBottom: 16 }}>
+        <div className="segmented-control" role="group" aria-label="任务状态筛选">
+          {FILTER_TABS.map(tab => (
+            <button
+              key={tab.key || 'all'}
+              type="button"
+              className={`segmented-control__btn${activeFilter === tab.key ? ' segmented-control__btn--active' : ''}`}
+              onClick={() => setActiveFilter(tab.key)}
+            >
+              {tab.label}
+              <span style={{
+                marginLeft: 6,
+                fontSize: 11,
+                opacity: activeFilter === tab.key ? 1 : 0.7,
+              }}
               >
-                {tab.label}
-                <span style={{
-                  ...s.filterCount,
-                  ...(activeFilter === tab.key ? s.filterCountActive : {}),
-                }}>{getFilterCount(tab.key)}</span>
-              </button>
-            ))}
-          </div>
-          <span style={s.subtitle}>共 {tasks.length} 个任务</span>
+                {getFilterCount(tab.key)}
+              </span>
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* ──────── BANNERS ──────── */}
-      {error && <div style={s.errorBanner}><span>⚠</span> {error}</div>}
+      {error && <div className="error-banner" style={{ marginBottom: 16 }}>{error}</div>}
       {successMessage && <div style={s.successBanner}><span>✓</span> {successMessage}</div>}
 
       {/* ──────── TASK LIST (中间) ──────── */}

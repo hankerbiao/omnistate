@@ -27,23 +27,23 @@ from app.shared.db.config import settings
 from app.shared.auth import hash_password
 from app.modules.auth.repository.models import UserDoc, RoleDoc, PermissionDoc
 
-# 预置的所有权限
+# 与 init_rbac.py 保持一致的权限名称/说明（完整列表请运行 init_rbac.py）
 ALL_PERMISSIONS = [
-    ("work_items:read", "工作流读取"),
-    ("work_items:write", "工作流写入"),
-    ("work_items:transition", "工作流流转"),
-    ("users:read", "用户读取"),
-    ("users:write", "用户写入"),
-    ("roles:read", "角色读取"),
-    ("roles:write", "角色写入"),
-    ("permissions:read", "权限读取"),
-    ("permissions:write", "权限写入"),
-    ("requirements:read", "需求读取"),
-    ("requirements:write", "需求写入"),
-    ("test_cases:read", "测试用例读取"),
-    ("test_cases:write", "测试用例写入"),
-    ("navigation:read", "导航读取"),
-    ("navigation:write", "导航写入"),
+    ("work_items:read", "工作流查看", "查看工作事项列表、详情、排序检索、流转日志及关联测试用例。"),
+    ("work_items:write", "工作流创建编辑", "创建、编辑、删除工作事项（需求/用例等工作流实体）。"),
+    ("work_items:transition", "工作流流转", "执行状态流转、改派负责人等流程操作。"),
+    ("users:read", "用户查看", "查看用户列表、用户详情及当前用户权限信息。"),
+    ("users:write", "用户管理", "创建、编辑、删除用户，修改密码与角色分配。"),
+    ("roles:read", "角色查看", "查看系统角色列表及角色已绑定的权限。"),
+    ("roles:write", "角色管理", "创建、编辑、删除角色，配置角色权限集合。"),
+    ("permissions:read", "权限查看", "查看系统权限项列表及权限说明。"),
+    ("permissions:write", "权限管理", "创建、编辑、删除权限定义（一般仅管理员使用）。"),
+    ("requirements:read", "需求查看", "查看测试需求列表、详情及关联信息。"),
+    ("requirements:write", "需求编辑", "创建、更新、删除测试需求业务数据。"),
+    ("test_cases:read", "测试用例查看", "查看测试用例列表、详情、目录路径及关联需求。"),
+    ("test_cases:write", "测试用例编辑", "创建、更新、删除测试用例及目录字段。"),
+    ("navigation:read", "导航配置查看", "查看侧边栏导航页面配置。"),
+    ("navigation:write", "导航配置管理", "创建、编辑、删除导航页面及可见性配置。"),
 ]
 
 # 测试角色定义: (role_id, name, permission_codes)
@@ -82,10 +82,12 @@ TEST_USERS = [
 
 async def ensure_permissions():
     """确保所有预置权限存在。"""
-    for code, name in ALL_PERMISSIONS:
+    for code, name, description in ALL_PERMISSIONS:
         await PermissionDoc.find_one(PermissionDoc.perm_id == code).upsert(
-            {"$set": {"code": code, "name": name}},
-            on_insert=PermissionDoc(perm_id=code, code=code, name=name),
+            {"$set": {"code": code, "name": name, "description": description}},
+            on_insert=PermissionDoc(
+                perm_id=code, code=code, name=name, description=description
+            ),
         )
     print(f"  ✓ 已确保 {len(ALL_PERMISSIONS)} 个权限存在")
 

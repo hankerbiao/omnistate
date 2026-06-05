@@ -1,12 +1,13 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { api } from '../services/api';
 import type { WorkItem, TestCaseResponse, RequirementResponse } from '../types';
-import { WorkflowPanel } from './workflow';
+import { WorkflowPanel, WorkflowActionToolbar } from './workflow';
 import {
   getStateLabel,
   getWorkflowStateStyle,
   type WorkflowTypeCode,
 } from '../constants/workflowLabels';
+import PageToolbar, { StatPill } from './ui/PageToolbar';
 
 const TYPE_LABELS: Record<string, string> = {
   REQUIREMENT: '需求',
@@ -29,6 +30,7 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [itemDetail, setItemDetail] = useState<RequirementResponse | TestCaseResponse | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
+  const [workflowRefreshSignal, setWorkflowRefreshSignal] = useState(0);
 
   const fetchMyTasks = useCallback(async () => {
     if (!userId) return;
@@ -81,6 +83,11 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
     if (item) await loadItemDetail(item);
   };
 
+  const handleTaskWorkflowSuccess = async () => {
+    await fetchMyTasks();
+    setWorkflowRefreshSignal((n) => n + 1);
+  };
+
   const groupedItems = items.reduce<Record<string, WorkItem[]>>((acc, item) => {
     const type = item.type_code;
     if (!acc[type]) acc[type] = [];
@@ -94,33 +101,30 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
     type === 'TEST_CASE' ? 'TEST_CASE' : 'REQUIREMENT';
 
   return (
-    <div style={styles.container}>
-      <div style={styles.header}>
-        <div>
-          <h2 style={styles.title}>我的任务</h2>
-          <span style={styles.subtitle}>
-            共 {items.length} 项待处理 · 当前用户 <code style={styles.code}>{userId}</code>
-          </span>
-        </div>
-        <button
-          className="btn btn--ghost btn--sm"
-          onClick={fetchMyTasks}
-          disabled={loading}
-          style={{ fontSize: '18px', padding: '4px 12px' }}
-        >
-          ↻
-        </button>
-      </div>
+    <div className="page-content">
+      <PageToolbar
+        meta={(
+          <>
+            <StatPill label="待处理" value={items.length} />
+            <StatPill label="用户" value={userId} tone="info" />
+          </>
+        )}
+        actions={(
+          <button type="button" className="btn btn--secondary btn--sm" onClick={fetchMyTasks} disabled={loading}>
+            刷新
+          </button>
+        )}
+      />
 
-      <div style={styles.hintBar}>
-        展开任务卡片即可<strong>流转状态</strong>、查看<strong>流转历史</strong>、<strong>改派</strong>。
+      <div className="info-banner">
+        卡片<strong>右上角</strong>可直接<strong>流转状态</strong>；展开卡片可查看<strong>流转历史</strong>与详情。
         无可用操作时请 Topbar 切换对应角色用户。
       </div>
 
       {error && (
-        <div className="error-message" style={styles.error}>
+        <div className="error-banner" style={{ marginBottom: 16, justifyContent: 'space-between' }}>
           {error}
-          <button type="button" style={styles.errorClose} onClick={() => setError(null)}>×</button>
+          <button type="button" className="btn btn--ghost btn--sm" onClick={() => setError(null)}>×</button>
         </div>
       )}
 
@@ -141,7 +145,10 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
             return (
               <div key={type} style={styles.group}>
                 <div style={styles.groupHeader}>
-                  <span style={styles.groupBadge(TYPE_COLORS[type] || { bg: '#f5f5f5', color: '#666' })}>
+                  <span
+                    className="task-group__badge"
+                    style={groupBadgeStyle(TYPE_COLORS[type] || { bg: '#f5f5f5', color: '#666' })}
+                  >
                     {TYPE_LABELS[type] || type}
                   </span>
                   <span style={styles.groupCount}>{typeItems.length} 项</span>
@@ -150,31 +157,44 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
                   const isExpanded = expandedId === item.item_id;
                   const typeCode = getTypeCode(item.type_code);
                   return (
-                    <div key={item.item_id} style={styles.card(isExpanded)}>
-                      <div
-                        style={styles.cardHeader}
-                        onClick={() => { void handleToggleExpand(item.item_id); }}
-                      >
-                        <div style={styles.cardTitleRow}>
-                          <span style={styles.cardTitle}>{item.title}</span>
-                          <span style={isExpanded ? styles.arrowExpanded : styles.arrow}>▶</span>
+                    <div key={item.item_id} className={`task-card${isExpanded ? ' task-card--expanded' : ''}`}>
+                      <div style={styles.cardTopRow}>
+                        <div
+                          style={styles.cardHeader}
+                          onClick={() => { void handleToggleExpand(item.item_id); }}
+                        >
+                          <div style={styles.cardTitleRow}>
+                            <span style={styles.cardTitle}>{item.title}</span>
+                            <span style={isExpanded ? styles.arrowExpanded : styles.arrow}>▶</span>
+                          </div>
+                          <div style={styles.cardMeta}>
+                            <span
+                              className="status-badge"
+                              style={getWorkflowStateStyle(item.current_state)}
+                            >
+                              {getStateLabel(item.current_state, typeCode)}
+                            </span>
+                            <span style={styles.metaTime}>
+                              {new Date(item.updated_at).toLocaleString('zh-CN', {
+                                month: '2-digit',
+                                day: '2-digit',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}
+                            </span>
+                          </div>
                         </div>
-                        <div style={styles.cardMeta}>
-                          <span
-                            className="status-badge"
-                            style={getWorkflowStateStyle(item.current_state)}
-                          >
-                            {getStateLabel(item.current_state, typeCode)}
-                          </span>
-                          <span style={styles.metaTime}>
-                            {new Date(item.updated_at).toLocaleString('zh-CN', {
-                              month: '2-digit',
-                              day: '2-digit',
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            })}
-                          </span>
-                        </div>
+                        <WorkflowActionToolbar
+                          workflowItemId={item.item_id}
+                          typeCode={typeCode}
+                          defaultPriority={
+                            itemDetail && 'priority' in itemDetail
+                              ? String(itemDetail.priority || '')
+                              : ''
+                          }
+                          onTransitionSuccess={handleTaskWorkflowSuccess}
+                          compact
+                        />
                       </div>
 
                       {isExpanded && (
@@ -203,8 +223,10 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
                                 ? String(itemDetail.priority || '')
                                 : ''
                             }
-                            onTransitionSuccess={fetchMyTasks}
+                            onTransitionSuccess={handleTaskWorkflowSuccess}
                             compact
+                            hideToolbar
+                            refreshSignal={workflowRefreshSignal}
                           />
                         </div>
                       )}
@@ -220,64 +242,17 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
   );
 };
 
-const styles: Record<string, React.CSSProperties | ((...args: never[]) => React.CSSProperties)> = {
-  container: {
-    padding: '24px',
-    height: '100%',
-    overflow: 'auto',
-  },
-  header: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '12px',
-  },
-  title: {
-    margin: 0,
-    fontSize: '18px',
-    fontWeight: 600,
-  },
-  subtitle: {
-    fontSize: '13px',
-    color: 'var(--text-tertiary)',
-    marginTop: '4px',
-    display: 'block',
-  },
-  code: {
-    fontFamily: 'monospace',
-    fontSize: '12px',
-    backgroundColor: 'var(--surface-tertiary)',
-    padding: '1px 6px',
-    borderRadius: '4px',
-  },
-  hintBar: {
-    fontSize: '12px',
-    color: 'var(--text-secondary)',
-    padding: '10px 14px',
-    backgroundColor: 'var(--surface-tertiary)',
-    borderRadius: 'var(--radius-md)',
-    marginBottom: '16px',
-    lineHeight: 1.5,
-  },
-  error: {
-    padding: '8px 16px',
-    backgroundColor: 'var(--status-error-bg)',
-    color: 'var(--status-error)',
-    borderRadius: '8px',
-    fontSize: '13px',
-    marginBottom: '12px',
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  errorClose: {
-    background: 'none',
-    border: 'none',
-    cursor: 'pointer',
-    fontSize: '16px',
-    color: 'var(--status-error)',
-    padding: '0 4px',
-  },
+const groupBadgeStyle = (colors: { bg: string; color: string }): React.CSSProperties => ({
+  display: 'inline-block',
+  padding: '2px 10px',
+  borderRadius: '4px',
+  fontSize: '12px',
+  fontWeight: 600,
+  backgroundColor: colors.bg,
+  color: colors.color,
+});
+
+const styles: Record<string, React.CSSProperties> = {
   list: {
     display: 'flex',
     flexDirection: 'column',
@@ -294,33 +269,25 @@ const styles: Record<string, React.CSSProperties | ((...args: never[]) => React.
     marginBottom: '8px',
     padding: '0 4px',
   },
-  groupBadge: (colors: { bg: string; color: string }) => ({
-    display: 'inline-block',
-    padding: '2px 10px',
-    borderRadius: '4px',
-    fontSize: '12px',
-    fontWeight: 600,
-    backgroundColor: colors.bg,
-    color: colors.color,
-  }),
   groupCount: {
     fontSize: '12px',
     color: 'var(--text-tertiary)',
   },
-  card: (isExpanded: boolean) => ({
-    backgroundColor: 'var(--surface-primary)',
-    border: '1px solid var(--border-color)',
-    borderRadius: '8px',
-    marginBottom: '6px',
-    overflow: 'hidden',
-    ...(isExpanded ? { borderColor: 'var(--accent-primary)' } : {}),
-  }),
+  cardTopRow: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: '12px',
+    padding: '12px 16px 12px 0',
+  },
   cardHeader: {
-    padding: '12px 16px',
+    padding: '0 0 0 16px',
     cursor: 'pointer',
     display: 'flex',
     flexDirection: 'column',
     gap: '6px',
+    flex: 1,
+    minWidth: 0,
   },
   cardTitleRow: {
     display: 'flex',

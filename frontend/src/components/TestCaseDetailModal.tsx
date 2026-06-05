@@ -1,55 +1,152 @@
-import React from 'react';
-import type { TestCaseResponse } from '../types';
-import { WorkflowPanel } from './workflow';
-import { getStateLabel } from '../constants/workflowLabels';
+import React, { useEffect, useMemo, useState } from 'react';
+import type { TestCaseResponse, UserResponse } from '../types';
+import { WorkflowPanel, WorkflowActionToolbar, WorkflowOverflowMenu } from './workflow';
+import { useWorkflow } from '../hooks/useWorkflow';
+import { getStateLabel, getWorkflowStateStyle } from '../constants/workflowLabels';
+import { PRIORITY_LABELS } from '../constants/testCaseLabels';
 import { catalogStyles } from './catalog/catalogStyles';
+import { SWITCHABLE_USERS } from '../config/users';
+import { api } from '../services/api';
+import TestCaseHistoryPanel from './TestCaseHistoryPanel';
 
 interface TestCaseDetailModalProps {
   testCase: TestCaseResponse;
   onClose: () => void;
   onEdit?: () => void;
+  /** 递增时刷新变更记录（如编辑保存后） */
+  changeLogRefreshSignal?: number;
 }
+
+type DetailTab = 'overview' | 'workflow' | 'details' | 'condition' | 'advanced';
+
+const DETAIL_TABS: { id: DetailTab; label: string }[] = [
+  { id: 'overview', label: '概览' },
+  { id: 'workflow', label: '工作流' },
+  { id: 'details', label: '详情' },
+  { id: 'condition', label: '条件与环境' },
+  { id: 'advanced', label: '高级' },
+];
+
+const CONDITION_SUMMARY_MAX_LEN = 120;
 
 const NON_EDITABLE_STATES = new Set(['PENDING_REVIEW', 'DONE']);
 
-const TestCaseDetailModal: React.FC<TestCaseDetailModalProps> = ({ testCase, onClose, onEdit }) => {
+function hasDisplayValue(value: unknown): boolean {
+  if (value === undefined || value === null || value === '') return false;
+  if (Array.isArray(value) && value.length === 0) return false;
+  if (typeof value === 'object' && !Array.isArray(value) && Object.keys(value as object).length === 0) {
+    return false;
+  }
+  return true;
+}
+
+function buildUserNameMap(users: UserResponse[]): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const u of SWITCHABLE_USERS) {
+    map.set(u.userId, u.label);
+  }
+  for (const u of users) {
+    map.set(u.user_id, u.username);
+  }
+  return map;
+}
+
+function resolveUserName(map: Map<string, string>, userId?: string | null): string | null {
+  if (!userId) return null;
+  return map.get(userId) || userId;
+}
+
+function formatFileSize(bytes: unknown): string {
+  const n = typeof bytes === 'number' ? bytes : Number(bytes);
+  if (!Number.isFinite(n) || n <= 0) return '';
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+const TestCaseDetailModal: React.FC<TestCaseDetailModalProps> = ({
+  testCase,
+  onClose,
+  onEdit,
+  changeLogRefreshSignal = 0,
+}) => {
   const showEdit = Boolean(onEdit) && !NON_EDITABLE_STATES.has(testCase.status);
-  const catalogBreadcrumb = testCase.catalog_breadcrumb
-    || (testCase.catalog_path?.length ? testCase.catalog_path.join(' / ') : '');
-  const catalogParts = catalogBreadcrumb
-    ? catalogBreadcrumb.split(/\s*\/\s*/).filter(Boolean)
-    : [];
-  const [expandedSections, setExpandedSections] = React.useState<Set<string>>(new Set([
-    'workflow', 'basic', 'person', 'exec', 'condition', 'automation', 'meta', 'custom', 'approval', 'time'
-  ]));
+  const labLabel = testCase.lab_name || testCase.lab_id || '';
+  const catalogPathParts = testCase.catalog_path?.length ? testCase.catalog_path : [];
+  const [activeTab, setActiveTab] = useState<DetailTab>('overview');
+  const [workflowRefreshSignal, setWorkflowRefreshSignal] = useState(0);
+  const [userNameMap, setUserNameMap] = useState<Map<string, string>>(() => buildUserNameMap([]));
+  const wf = useWorkflow(testCase.workflow_item_id);
 
-  const toggleSection = (section: string) => {
-    const newExpanded = new Set(expandedSections);
-    if (newExpanded.has(section)) {
-      newExpanded.delete(section);
-    } else {
-      newExpanded.add(section);
-    }
-    setExpandedSections(newExpanded);
+  useEffect(() => {
+    let cancelled = false;
+    api.listUsers({ limit: 100 })
+      .then((res) => {
+        if (!cancelled) {
+          setUserNameMap(buildUserNameMap(res.data || []));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setUserNameMap(buildUserNameMap([]));
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const ownerName = resolveUserName(userNameMap, testCase.owner_id);
+  const reviewerName = resolveUserName(userNameMap, testCase.reviewer_id);
+  const autoDevName = resolveUserName(userNameMap, testCase.auto_dev_id);
+  const stateStyle = getWorkflowStateStyle(testCase.status);
+  const priorityLabel = testCase.priority
+    ? (PRIORITY_LABELS[testCase.priority as keyof typeof PRIORITY_LABELS] || testCase.priority)
+    : null;
+
+  const hasAutomationSection = Boolean(
+    testCase.automation_case_ref
+    || testCase.is_automated
+    || testCase.is_need_auto
+    || testCase.automation_type
+    || testCase.script_entity_id,
+  );
+
+  const hasAdvancedExtras = useMemo(() => (
+    hasDisplayValue(testCase.failure_analysis)
+    || hasDisplayValue(testCase.deprecation_reason)
+    || (testCase.custom_fields && Object.keys(testCase.custom_fields).length > 0)
+    || (testCase.attachments && testCase.attachments.length > 0)
+    || (testCase.approval_history && testCase.approval_history.length > 0)
+  ), [testCase]);
+
+  const handleWorkflowSuccess = () => {
+    setWorkflowRefreshSignal((n) => n + 1);
+    void wf.refresh();
+    void wf.refreshLogs();
   };
 
-  const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleString('zh-CN');
-  };
+  const historyRefreshSignal = changeLogRefreshSignal + workflowRefreshSignal;
 
-  const renderInfoGrid = (children: React.ReactNode) => (
-    <div style={styles.infoGrid}>{children}</div>
+  const hasConditionContent = Boolean(
+    testCase.pre_condition
+    || testCase.post_condition
+    || testCase.tags?.length
+    || (testCase.required_env && Object.keys(testCase.required_env).length > 0),
+  );
+
+  const formatDate = (dateStr: string) => new Date(dateStr).toLocaleString('zh-CN');
+
+  const isShortCondition = (text?: string | null) => (
+    Boolean(text && text.length <= CONDITION_SUMMARY_MAX_LEN)
+  );
+
+  const renderEmptyState = (message: string) => (
+    <p style={styles.emptyState}>{message}</p>
   );
 
   const renderField = (label: string, value: React.ReactNode) => {
-    if (value === undefined || value === null || value === '' || value === '-') {
-      return (
-        <div style={styles.infoRow}>
-          <span style={styles.infoLabel}>{label}</span>
-          <span style={styles.infoValue}>-</span>
-        </div>
-      );
-    }
+    if (!hasDisplayValue(value)) return null;
     return (
       <div style={styles.infoRow}>
         <span style={styles.infoLabel}>{label}</span>
@@ -58,10 +155,24 @@ const TestCaseDetailModal: React.FC<TestCaseDetailModalProps> = ({ testCase, onC
     );
   };
 
+  const renderPersonField = (label: string, userId?: string | null, displayName?: string | null) => {
+    if (!userId) return null;
+    const name = displayName || userId;
+    return (
+      <div style={styles.infoRow}>
+        <span style={styles.infoLabel}>{label}</span>
+        <span style={styles.infoValue}>
+          {name}
+          {name !== userId && (
+            <span style={styles.userIdHint} title={userId}>{userId}</span>
+          )}
+        </span>
+      </div>
+    );
+  };
+
   const renderTags = () => {
-    if (!testCase.tags || testCase.tags.length === 0) {
-      return renderField('标签', '-');
-    }
+    if (!testCase.tags?.length) return null;
     return (
       <div style={styles.infoRowFull}>
         <span style={styles.infoLabel}>标签</span>
@@ -75,9 +186,7 @@ const TestCaseDetailModal: React.FC<TestCaseDetailModalProps> = ({ testCase, onC
   };
 
   const renderRequiredEnv = () => {
-    if (!testCase.required_env || Object.keys(testCase.required_env).length === 0) {
-      return renderField('运行环境', '-');
-    }
+    if (!testCase.required_env || Object.keys(testCase.required_env).length === 0) return null;
     return (
       <div style={styles.infoRowFull}>
         <span style={styles.infoLabel}>运行环境</span>
@@ -93,311 +202,387 @@ const TestCaseDetailModal: React.FC<TestCaseDetailModalProps> = ({ testCase, onC
     );
   };
 
-  const renderCustomFields = () => {
-    if (!testCase.custom_fields || Object.keys(testCase.custom_fields).length === 0) {
-      return null;
-    }
-    return (
-      <div style={styles.section}>
-        <div style={styles.sectionHeader} onClick={() => toggleSection('custom')}>
-          <span style={styles.sectionArrow}>{expandedSections.has('custom') ? '▼' : '▶'}</span>
-          <span style={styles.sectionTitle}>自定义字段</span>
-        </div>
-        {expandedSections.has('custom') && (
-          <div style={styles.sectionContent}>
-            <pre style={styles.codeBlock}>{JSON.stringify(testCase.custom_fields, null, 2)}</pre>
-          </div>
-        )}
-      </div>
-    );
-  };
-
   const renderAttachments = () => {
-    if (!testCase.attachments || testCase.attachments.length === 0) {
-      return null;
-    }
+    if (!testCase.attachments?.length) return null;
     return (
-      <div style={styles.section}>
-        <div style={styles.sectionHeader} onClick={() => toggleSection('attachments')}>
-          <span style={styles.sectionArrow}>{expandedSections.has('attachments') ? '▼' : '▶'}</span>
-          <span style={styles.sectionTitle}>附件</span>
-          <span style={styles.sectionCount}>({testCase.attachments.length}个)</span>
-        </div>
-        {expandedSections.has('attachments') && (
-          <div style={styles.sectionContent}>
-            <pre style={styles.codeBlock}>{JSON.stringify(testCase.attachments, null, 2)}</pre>
-          </div>
-        )}
-      </div>
+      <ul style={styles.attachmentList}>
+        {testCase.attachments.map((att, index) => {
+          const filename = String(att.original_filename || att.file_id || `附件 ${index + 1}`);
+          const size = formatFileSize(att.size);
+          return (
+            <li key={`${filename}-${index}`} style={styles.attachmentItem}>
+              <span style={styles.attachmentName}>{filename}</span>
+              {size && <span style={styles.attachmentMeta}>{size}</span>}
+              {att.content_type && (
+                <span style={styles.attachmentMeta}>{String(att.content_type)}</span>
+              )}
+            </li>
+          );
+        })}
+      </ul>
     );
   };
 
   const renderApprovalHistory = () => {
-    if (!testCase.approval_history || testCase.approval_history.length === 0) {
-      return null;
-    }
+    if (!testCase.approval_history?.length) return null;
     return (
-      <div style={styles.section}>
-        <div style={styles.sectionHeader} onClick={() => toggleSection('approval')}>
-          <span style={styles.sectionArrow}>{expandedSections.has('approval') ? '▼' : '▶'}</span>
-          <span style={styles.sectionTitle}>审批历史</span>
-          <span style={styles.sectionCount}>({testCase.approval_history.length}条)</span>
-        </div>
-        {expandedSections.has('approval') && (
-          <div style={styles.sectionContent}>
-            <pre style={styles.codeBlock}>{JSON.stringify(testCase.approval_history, null, 2)}</pre>
-          </div>
-        )}
+      <div style={styles.approvalList}>
+        {testCase.approval_history.map((entry, index) => {
+          const action = entry.action ?? entry.status ?? entry.result;
+          const actor = entry.operator_id ?? entry.user_id ?? entry.reviewer_id;
+          const at = entry.created_at ?? entry.approved_at ?? entry.timestamp;
+          const actorName = typeof actor === 'string' ? resolveUserName(userNameMap, actor) : null;
+          if (action || actor || at) {
+            return (
+              <div key={index} style={styles.approvalItem}>
+                {action && <span style={styles.approvalAction}>{String(action)}</span>}
+                {actorName && <span>{actorName}</span>}
+                {at && (
+                  <span style={styles.approvalTime}>
+                    {formatDate(String(at))}
+                  </span>
+                )}
+              </div>
+            );
+          }
+          return (
+            <pre key={index} style={styles.codeBlockCompact}>
+              {JSON.stringify(entry, null, 2)}
+            </pre>
+          );
+        })}
       </div>
     );
   };
 
+  const detailFields = (
+    <div style={styles.infoGrid}>
+      {renderField('状态', getStateLabel(testCase.status, 'TEST_CASE'))}
+      {renderField('关联需求', testCase.ref_req_id)}
+      {renderField('版本', `v${testCase.version}`)}
+      {renderField('优先级', priorityLabel)}
+      {renderField('测试类别', testCase.test_category)}
+      {renderField('风险等级', testCase.risk_level)}
+      {renderField('预计时长', testCase.estimated_duration_sec ? `${testCase.estimated_duration_sec} 秒` : null)}
+      {renderField('保密级别', testCase.confidentiality)}
+      {renderField('可见范围', testCase.visibility_scope)}
+      {testCase.is_destructive && renderField('破坏性测试', '是')}
+      {testCase.is_need_auto && renderField('需要自动化', '是')}
+      {testCase.is_automated && renderField('已自动化', '是')}
+      {!testCase.is_active && renderField('激活状态', '未激活')}
+      {renderPersonField('负责人', testCase.owner_id, ownerName)}
+      {renderPersonField('审核人', testCase.reviewer_id, reviewerName)}
+      {renderPersonField('自动化开发', testCase.auto_dev_id, autoDevName)}
+    </div>
+  );
+
+  const conditionFields = hasConditionContent ? (
+    <div style={styles.infoGrid}>
+      {renderField('前置条件', testCase.pre_condition)}
+      {renderField('后置条件', testCase.post_condition)}
+      {renderTags()}
+      {renderRequiredEnv()}
+    </div>
+  ) : (
+    <p style={styles.sectionEmptyHint}>暂无前置/后置条件、标签或运行环境配置</p>
+  );
+
+  const automationFields = (
+    <div style={styles.infoGrid}>
+      {renderField('自动化用例 ID', testCase.automation_case_ref?.auto_case_id)}
+      {renderField('自动化版本', testCase.automation_case_ref?.version)}
+      {renderField('自动化类型', testCase.automation_type)}
+      {renderField('脚本实体 ID', testCase.script_entity_id)}
+    </div>
+  );
+
+  const mergedDetailFields = (
+    <>
+      {detailFields}
+      {hasAutomationSection && (
+        <div style={styles.subBlock}>
+          <span style={styles.subBlockTitle}>自动化</span>
+          {automationFields}
+        </div>
+      )}
+    </>
+  );
+
+  const overviewContent = (
+    <>
+      {(ownerName || reviewerName || autoDevName) && (
+        <div style={styles.personSummary}>
+          {ownerName && (
+            <div style={styles.personCard}>
+              <span style={styles.personRole}>负责人</span>
+              <span style={styles.personName}>{ownerName}</span>
+            </div>
+          )}
+          {reviewerName && (
+            <div style={styles.personCard}>
+              <span style={styles.personRole}>审核人</span>
+              <span style={styles.personName}>{reviewerName}</span>
+            </div>
+          )}
+          {autoDevName && (
+            <div style={styles.personCard}>
+              <span style={styles.personRole}>自动化开发</span>
+              <span style={styles.personName}>{autoDevName}</span>
+            </div>
+          )}
+        </div>
+      )}
+      <div style={styles.infoGrid}>
+        {renderField('状态', getStateLabel(testCase.status, 'TEST_CASE'))}
+        {renderField('优先级', priorityLabel)}
+        {renderField('关联需求', testCase.ref_req_id)}
+        {renderField('版本', `v${testCase.version}`)}
+      </div>
+      {testCase.tags?.length ? (
+        <div style={{ ...styles.infoRowFull, marginTop: 16 }}>
+          <span style={styles.infoLabel}>标签</span>
+          <div style={styles.tagList}>
+            {testCase.tags.slice(0, 8).map((tag, index) => (
+              <span key={index} style={styles.tag}>{tag}</span>
+            ))}
+            {testCase.tags.length > 8 && (
+              <span style={styles.tagMore}>+{testCase.tags.length - 8}</span>
+            )}
+          </div>
+        </div>
+      ) : null}
+      {(isShortCondition(testCase.pre_condition) || isShortCondition(testCase.post_condition)) && (
+        <div style={{ ...styles.infoGrid, marginTop: 16 }}>
+          {isShortCondition(testCase.pre_condition) && renderField('前置条件', testCase.pre_condition)}
+          {isShortCondition(testCase.post_condition) && renderField('后置条件', testCase.post_condition)}
+        </div>
+      )}
+      {!ownerName && !reviewerName && !autoDevName
+        && !priorityLabel && !testCase.ref_req_id && !testCase.tags?.length
+        && !isShortCondition(testCase.pre_condition) && !isShortCondition(testCase.post_condition)
+        && renderEmptyState('关键信息已在上方概览条展示，可切换其他标签查看完整内容')}
+    </>
+  );
+
+  const workflowContent = testCase.workflow_item_id ? (
+    <WorkflowPanel
+      workflowItemId={testCase.workflow_item_id}
+      entityLabel={`${testCase.case_id} · ${testCase.title}`}
+      typeCode="TEST_CASE"
+      defaultPriority={testCase.priority}
+      creatorName={ownerName || testCase.owner_id}
+      currentOwnerName={ownerName || testCase.owner_id}
+      createdAt={testCase.created_at}
+      updatedAt={testCase.updated_at}
+      compact
+      hideToolbar
+      showMetaGrid={false}
+      showPermissionHint={false}
+      showLogs={false}
+      defaultLogsCollapsed
+      refreshSignal={workflowRefreshSignal}
+      onTransitionSuccess={handleWorkflowSuccess}
+    />
+  ) : (
+    renderEmptyState('此用例未关联工作流')
+  );
+
+  const advancedFields = (
+    <>
+      <div style={styles.infoGrid}>
+        {renderField('故障分析', testCase.failure_analysis)}
+        {renderField('弃用原因', testCase.deprecation_reason)}
+        {renderField('创建时间', formatDate(testCase.created_at))}
+        {renderField('更新时间', formatDate(testCase.updated_at))}
+      </div>
+      {testCase.custom_fields && Object.keys(testCase.custom_fields).length > 0 && (
+        <div style={styles.subBlock}>
+          <span style={styles.subBlockTitle}>自定义字段</span>
+          <pre style={styles.codeBlockCompact}>{JSON.stringify(testCase.custom_fields, null, 2)}</pre>
+        </div>
+      )}
+      {testCase.attachments?.length > 0 && (
+        <div style={styles.subBlock}>
+          <span style={styles.subBlockTitle}>附件</span>
+          {renderAttachments()}
+        </div>
+      )}
+      {testCase.approval_history?.length > 0 && (
+        <div style={styles.subBlock}>
+          <span style={styles.subBlockTitle}>审批记录</span>
+          {renderApprovalHistory()}
+        </div>
+      )}
+    </>
+  );
+
   return (
     <div style={styles.overlay} onClick={onClose} onKeyDown={(e) => e.key === 'Escape' && onClose()} tabIndex={0}>
-      <div style={styles.modal} onClick={e => e.stopPropagation()}>
+      <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
         <div style={styles.modalHeader}>
-          <div>
+          <div style={styles.modalHeaderMain}>
             <span style={styles.caseId}>{testCase.case_id}</span>
             <h2 style={styles.modalTitle}>{testCase.title}</h2>
           </div>
           <div style={styles.headerActions}>
+            {testCase.workflow_item_id && (
+              <WorkflowActionToolbar
+                workflowItemId={testCase.workflow_item_id}
+                typeCode="TEST_CASE"
+                defaultPriority={testCase.priority}
+                compact
+                showStateBadge
+                overflowMenu
+                workflow={wf}
+                onTransitionSuccess={handleWorkflowSuccess}
+              />
+            )}
             {showEdit && (
               <button type="button" style={styles.editButton} onClick={onEdit}>
                 编辑
               </button>
             )}
+            <TestCaseHistoryPanel
+              caseId={testCase.case_id}
+              workflowItemId={testCase.workflow_item_id}
+              typeCode="TEST_CASE"
+              refreshSignal={historyRefreshSignal}
+            />
+            {testCase.workflow_item_id && (
+              <WorkflowOverflowMenu
+                workflowItemId={testCase.workflow_item_id}
+                workflow={wf}
+                onTransitionSuccess={handleWorkflowSuccess}
+              />
+            )}
             <button type="button" style={styles.closeButton} onClick={onClose}>×</button>
           </div>
         </div>
 
-        {catalogParts.length > 0 && (
-          <div style={styles.catalogBanner} aria-label="所属目录">
-            <span style={styles.catalogBannerLabel}>所属目录</span>
-            <div style={styles.catalogBannerChips}>
-              {catalogParts.map((part, i) => (
-                <React.Fragment key={`${part}-${i}`}>
-                  {i > 0 && <span style={styles.catalogSep}>/</span>}
-                  <span
-                    style={{
-                      ...catalogStyles.chip,
-                      ...(i === 0 ? catalogStyles.chipLab : {}),
-                      ...(i === catalogParts.length - 1 ? styles.catalogChipLeaf : {}),
-                    }}
-                  >
-                    {part}
-                  </span>
-                </React.Fragment>
-              ))}
-            </div>
+        {(labLabel || catalogPathParts.length > 0) && (
+          <div style={styles.catalogBanner} aria-label="Lab 与目录">
+            {labLabel && (
+              <div style={styles.catalogBannerRow}>
+                <span style={styles.catalogBannerLabel}>所属 Lab</span>
+                <span style={{ ...catalogStyles.chip, ...catalogStyles.chipLab }}>{labLabel}</span>
+              </div>
+            )}
+            {catalogPathParts.length > 0 && (
+              <div style={styles.catalogBannerRow}>
+                <span style={styles.catalogBannerLabel}>分类目录</span>
+                <div style={styles.catalogBannerChips}>
+                  {catalogPathParts.map((part, i) => (
+                    <React.Fragment key={`${part}-${i}`}>
+                      {i > 0 && <span style={styles.catalogSep}>/</span>}
+                      <span
+                        style={{
+                          ...catalogStyles.chip,
+                          ...(i === catalogPathParts.length - 1 ? styles.catalogChipLeaf : {}),
+                        }}
+                      >
+                        {part}
+                      </span>
+                    </React.Fragment>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
+        <div style={styles.overviewStrip}>
+          <span className="status-badge" style={stateStyle}>
+            {getStateLabel(testCase.status, 'TEST_CASE')}
+          </span>
+          <span style={styles.overviewItem}>v{testCase.version}</span>
+          {priorityLabel && <span style={styles.overviewItem}>{priorityLabel}</span>}
+          {ownerName && <span style={styles.overviewItem}>负责人 {ownerName}</span>}
+          {testCase.ref_req_id && (
+            <span style={styles.overviewItem}>需求 {testCase.ref_req_id}</span>
+          )}
+          <span style={styles.overviewMuted}>
+            更新于 {formatDate(testCase.updated_at)}
+          </span>
+        </div>
+
+        {testCase.change_log && (
+          <div style={styles.versionNote}>
+            <span style={styles.versionNoteLabel}>版本说明</span>
+            <p style={styles.versionNoteText}>{testCase.change_log}</p>
+          </div>
+        )}
+
+        <div style={styles.tabBar} role="tablist" aria-label="用例详情分区">
+          {DETAIL_TABS.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === tab.id}
+              aria-controls={`test-case-detail-panel-${tab.id}`}
+              id={`test-case-detail-tab-${tab.id}`}
+              style={{
+                ...styles.tab,
+                ...(activeTab === tab.id ? styles.activeTab : {}),
+              }}
+              onClick={() => setActiveTab(tab.id)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
         <div style={styles.modalBody}>
-          {/* 工作流流转 — 测试入口 */}
-          <div style={styles.workflowSection}>
-            <div style={styles.sectionHeader} onClick={() => toggleSection('workflow')}>
-              <span style={styles.sectionArrow}>{expandedSections.has('workflow') ? '▼' : '▶'}</span>
-              <span style={styles.sectionTitle}>工作流流转</span>
-              <span style={styles.workflowBadge}>测试</span>
+          {activeTab === 'overview' && (
+            <div
+              id="test-case-detail-panel-overview"
+              role="tabpanel"
+              aria-labelledby="test-case-detail-tab-overview"
+            >
+              {overviewContent}
             </div>
-            {expandedSections.has('workflow') && (
-              <div style={styles.sectionContent}>
-                <WorkflowPanel
-                  workflowItemId={testCase.workflow_item_id}
-                  entityLabel={`${testCase.case_id} · ${testCase.title}`}
-                  typeCode="TEST_CASE"
-                  defaultPriority={testCase.priority}
-                  creatorName={testCase.owner_id}
-                  currentOwnerName={testCase.owner_id}
-                  createdAt={testCase.created_at}
-                  updatedAt={testCase.updated_at}
-                  compact
-                />
-              </div>
-            )}
-          </div>
-
-          {/* 基本信息 */}
-          <div style={styles.section}>
-            <div style={styles.sectionHeader} onClick={() => toggleSection('basic')}>
-              <span style={styles.sectionArrow}>{expandedSections.has('basic') ? '▼' : '▶'}</span>
-              <span style={styles.sectionTitle}>基本信息</span>
+          )}
+          {activeTab === 'workflow' && (
+            <div
+              id="test-case-detail-panel-workflow"
+              role="tabpanel"
+              aria-labelledby="test-case-detail-tab-workflow"
+            >
+              {workflowContent}
             </div>
-            {expandedSections.has('basic') && (
-              <div style={styles.sectionContent}>
-                {renderInfoGrid(
-                  <>
-                    {renderField('用例ID', testCase.case_id)}
-                    {renderField('所属目录', testCase.catalog_breadcrumb || testCase.catalog_path?.join(' / ') || '-')}
-                    {renderField('关联需求ID', testCase.ref_req_id || '-')}
-                    {renderField('版本', `v${testCase.version}`)}
-                    {renderField('状态', getStateLabel(testCase.status, 'TEST_CASE'))}
-                    {renderField('是否激活', testCase.is_active ? '是' : '否')}
-                    {renderField('优先级', testCase.priority || '-')}
-                    {renderField('测试类别', testCase.test_category || '-')}
-                    {renderField('风险等级', testCase.risk_level || '-')}
-                  </>
-                )}
-                {renderInfoGrid(
-                  <>
-                    {renderField('是否破坏性测试', testCase.is_destructive ? '是' : '否')}
-                    {renderField('是否需要自动化', testCase.is_need_auto ? '是' : '否')}
-                    {renderField('是否已自动化', testCase.is_automated ? '是' : '否')}
-                    {renderField('保密级别', testCase.confidentiality || '-')}
-                    {renderField('可见范围', testCase.visibility_scope || '-')}
-                    {renderField('预计时长', testCase.estimated_duration_sec ? `${testCase.estimated_duration_sec}秒` : '-')}
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* 人员信息 */}
-          <div style={styles.section}>
-            <div style={styles.sectionHeader} onClick={() => toggleSection('person')}>
-              <span style={styles.sectionArrow}>{expandedSections.has('person') ? '▼' : '▶'}</span>
-              <span style={styles.sectionTitle}>人员信息</span>
+          )}
+          {activeTab === 'details' && (
+            <div
+              id="test-case-detail-panel-details"
+              role="tabpanel"
+              aria-labelledby="test-case-detail-tab-details"
+            >
+              {mergedDetailFields}
             </div>
-            {expandedSections.has('person') && (
-              <div style={styles.sectionContent}>
-                {renderInfoGrid(
-                  <>
-                    {renderField('负责人ID', testCase.owner_id || '-')}
-                    {renderField('审核人ID', testCase.reviewer_id || '-')}
-                    {renderField('自动化开发ID', testCase.auto_dev_id || '-')}
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* 执行信息 */}
-          <div style={styles.section}>
-            <div style={styles.sectionHeader} onClick={() => toggleSection('exec')}>
-              <span style={styles.sectionArrow}>{expandedSections.has('exec') ? '▼' : '▶'}</span>
-              <span style={styles.sectionTitle}>执行信息</span>
+          )}
+          {activeTab === 'condition' && (
+            <div
+              id="test-case-detail-panel-condition"
+              role="tabpanel"
+              aria-labelledby="test-case-detail-tab-condition"
+            >
+              {conditionFields}
             </div>
-            {expandedSections.has('exec') && (
-              <div style={styles.sectionContent}>
-                {renderInfoGrid(
-                  <>
-                    {renderField('自动化类型', testCase.automation_type || '-')}
-                    {renderField('脚本实体ID', testCase.script_entity_id || '-')}
-                    {renderField('故障分析', testCase.failure_analysis || '-')}
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* 前置/后置条件 */}
-          <div style={styles.section}>
-            <div style={styles.sectionHeader} onClick={() => toggleSection('condition')}>
-              <span style={styles.sectionArrow}>{expandedSections.has('condition') ? '▼' : '▶'}</span>
-              <span style={styles.sectionTitle}>前置/后置条件</span>
-            </div>
-            {expandedSections.has('condition') && (
-              <div style={styles.sectionContent}>
-                {renderInfoGrid(
-                  <>
-                    {renderField('前置条件', testCase.pre_condition || '-')}
-                    {renderField('后置条件', testCase.post_condition || '-')}
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* 自动化关联 */}
-          {testCase.automation_case_ref && (
-            <div style={styles.section}>
-              <div style={styles.sectionHeader} onClick={() => toggleSection('automation')}>
-                <span style={styles.sectionArrow}>{expandedSections.has('automation') ? '▼' : '▶'}</span>
-                <span style={styles.sectionTitle}>自动化关联</span>
-              </div>
-              {expandedSections.has('automation') && (
-                <div style={styles.sectionContent}>
-                  {renderInfoGrid(
-                    <>
-                      {renderField('自动化用例ID', testCase.automation_case_ref.auto_case_id)}
-                      {renderField('版本', testCase.automation_case_ref.version || '-')}
-                    </>
-                  )}
-                </div>
+          )}
+          {activeTab === 'advanced' && (
+            <div
+              id="test-case-detail-panel-advanced"
+              role="tabpanel"
+              aria-labelledby="test-case-detail-tab-advanced"
+            >
+              {advancedFields}
+              {!hasAdvancedExtras && (
+                <p style={styles.emptyStateHint}>
+                  暂无故障分析、弃用说明、自定义字段、附件或审批记录
+                </p>
               )}
             </div>
           )}
-
-          {/* 标签和运行环境 */}
-          <div style={styles.section}>
-            <div style={styles.sectionHeader} onClick={() => toggleSection('meta')}>
-              <span style={styles.sectionArrow}>{expandedSections.has('meta') ? '▼' : '▶'}</span>
-              <span style={styles.sectionTitle}>标签与运行环境</span>
-            </div>
-            {expandedSections.has('meta') && (
-              <div style={styles.sectionContent}>
-                {renderInfoGrid(renderTags())}
-                {renderInfoGrid(renderRequiredEnv())}
-              </div>
-            )}
-          </div>
-
-          {/* 变更日志 */}
-          {testCase.change_log && (
-            <div style={styles.section}>
-              <div style={styles.sectionHeader} onClick={() => toggleSection('changelog')}>
-                <span style={styles.sectionArrow}>{expandedSections.has('changelog') ? '▼' : '▶'}</span>
-                <span style={styles.sectionTitle}>变更日志</span>
-              </div>
-              {expandedSections.has('changelog') && (
-                <div style={styles.sectionContent}>
-                  <div style={styles.changeLog}>{testCase.change_log}</div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* 弃用信息 */}
-          {testCase.deprecation_reason && (
-            <div style={styles.section}>
-              <div style={styles.sectionHeader} onClick={() => toggleSection('deprecate')}>
-                <span style={styles.sectionArrow}>{expandedSections.has('deprecate') ? '▼' : '▶'}</span>
-                <span style={styles.sectionTitle}>弃用信息</span>
-              </div>
-              {expandedSections.has('deprecate') && (
-                <div style={styles.sectionContent}>
-                  {renderField('弃用原因', testCase.deprecation_reason)}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* 自定义字段 */}
-          {renderCustomFields()}
-
-          {/* 附件 */}
-          {renderAttachments()}
-
-          {/* 审批历史 */}
-          {renderApprovalHistory()}
-
-          {/* 时间戳 */}
-          <div style={styles.section}>
-            <div style={styles.sectionHeader} onClick={() => toggleSection('time')}>
-              <span style={styles.sectionArrow}>{expandedSections.has('time') ? '▼' : '▶'}</span>
-              <span style={styles.sectionTitle}>时间戳</span>
-            </div>
-            {expandedSections.has('time') && (
-              <div style={styles.sectionContent}>
-                {renderInfoGrid(
-                  <>
-                    {renderField('创建时间', formatDate(testCase.created_at))}
-                    {renderField('更新时间', formatDate(testCase.updated_at))}
-                  </>
-                )}
-              </div>
-            )}
-          </div>
         </div>
       </div>
     </div>
@@ -441,6 +626,10 @@ const styles = {
     backgroundColor: 'var(--bg-tertiary)',
     borderRadius: '12px 12px 0 0',
   } as const,
+  modalHeaderMain: {
+    minWidth: 0,
+    flex: 1,
+  } as const,
   caseId: {
     fontSize: '13px',
     color: 'var(--accent-cyan)',
@@ -453,12 +642,15 @@ const styles = {
     fontSize: '18px',
     fontWeight: 600,
     color: 'var(--text-primary)',
+    wordBreak: 'break-word' as const,
   } as const,
   headerActions: {
     display: 'flex',
     alignItems: 'center',
     gap: '10px',
     flexShrink: 0,
+    flexWrap: 'wrap' as const,
+    justifyContent: 'flex-end' as const,
   } as const,
   editButton: {
     padding: '6px 14px',
@@ -483,12 +675,17 @@ const styles = {
   } as const,
   catalogBanner: {
     display: 'flex',
-    flexWrap: 'wrap',
-    alignItems: 'center',
-    gap: 'var(--space-3)',
+    flexDirection: 'column',
+    gap: 'var(--space-2)',
     padding: 'var(--space-3) var(--space-6)',
     backgroundColor: 'var(--status-info-bg)',
     borderBottom: '1px solid var(--border-subtle)',
+  } as const,
+  catalogBannerRow: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 'var(--space-3)',
   } as const,
   catalogBannerLabel: {
     fontSize: 11,
@@ -514,71 +711,137 @@ const styles = {
     fontWeight: 600,
     borderStyle: 'dashed',
   } as const,
+  overviewStrip: {
+    display: 'flex',
+    flexWrap: 'wrap' as const,
+    alignItems: 'center',
+    gap: '10px 16px',
+    padding: '12px 24px',
+    borderBottom: '1px solid var(--border-subtle)',
+    backgroundColor: 'var(--bg-primary)',
+  } as const,
+  overviewItem: {
+    fontSize: 13,
+    color: 'var(--text-secondary)',
+  } as const,
+  overviewMuted: {
+    fontSize: 12,
+    color: 'var(--text-muted)',
+    marginLeft: 'auto',
+  } as const,
+  versionNote: {
+    padding: '12px 24px',
+    borderBottom: '1px solid var(--border-subtle)',
+    backgroundColor: 'var(--bg-secondary)',
+  } as const,
+  versionNoteLabel: {
+    fontSize: 11,
+    fontWeight: 600,
+    color: 'var(--text-muted)',
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.5px',
+    display: 'block',
+    marginBottom: 6,
+  } as const,
+  versionNoteText: {
+    margin: 0,
+    fontSize: 13,
+    color: 'var(--text-secondary)',
+    whiteSpace: 'pre-wrap' as const,
+    lineHeight: 1.6,
+  } as const,
+  tabBar: {
+    display: 'flex',
+    gap: 'var(--space-2)',
+    padding: '0 24px',
+    borderBottom: '1px solid var(--border-subtle)',
+    backgroundColor: 'var(--bg-primary)',
+    overflowX: 'auto' as const,
+    flexShrink: 0,
+    WebkitOverflowScrolling: 'touch' as const,
+  } as const,
+  tab: {
+    padding: 'var(--space-3) var(--space-4)',
+    border: 'none',
+    background: 'transparent',
+    color: 'var(--text-secondary)',
+    cursor: 'pointer',
+    fontSize: 13,
+    fontWeight: 500,
+    borderBottom: '2px solid transparent',
+    marginBottom: -1,
+    whiteSpace: 'nowrap' as const,
+    flexShrink: 0,
+    transition: 'color var(--transition-fast), border-color var(--transition-fast)',
+  } as const,
+  activeTab: {
+    color: 'var(--accent-primary)',
+    borderBottomColor: 'var(--accent-primary)',
+    outline: 'none',
+  } as const,
   modalBody: {
     padding: '16px 24px',
     overflowY: 'auto' as const,
     flex: 1,
+    minHeight: 0,
   } as const,
-  workflowSection: {
-    marginBottom: '16px',
-    border: '2px solid var(--accent-primary)',
-    borderRadius: '8px',
-    overflow: 'hidden',
-    backgroundColor: 'var(--surface-primary)',
-  } as const,
-  workflowBadge: {
-    marginLeft: 'auto',
-    fontSize: '10px',
-    fontWeight: 600,
-    padding: '2px 8px',
-    borderRadius: '999px',
-    backgroundColor: 'var(--accent-primary)',
-    color: 'white',
-    textTransform: 'none' as const,
-    letterSpacing: 0,
-  } as const,
-  section: {
-    marginBottom: '12px',
-    border: '1px solid var(--border-muted)',
-    borderRadius: '8px',
-    overflow: 'hidden',
-  } as const,
-  sectionHeader: {
+  personSummary: {
     display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    padding: '12px 16px',
+    flexWrap: 'wrap' as const,
+    gap: 12,
+    marginBottom: 16,
+  } as const,
+  personCard: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: 4,
+    padding: '10px 14px',
     backgroundColor: 'var(--bg-secondary)',
-    cursor: 'pointer',
-    transition: 'background-color var(--transition-fast)',
-    userSelect: 'none' as const,
+    borderRadius: 8,
+    border: '1px solid var(--border-muted)',
+    minWidth: 120,
   } as const,
-  sectionArrow: {
-    fontSize: '10px',
+  personRole: {
+    fontSize: 11,
+    fontWeight: 500,
     color: 'var(--text-muted)',
-    width: '12px',
-  } as const,
-  sectionTitle: {
-    fontSize: '13px',
-    fontWeight: 600,
-    color: 'var(--text-primary)',
     textTransform: 'uppercase' as const,
     letterSpacing: '0.5px',
   } as const,
-  sectionCount: {
-    fontSize: '12px',
-    color: 'var(--text-muted)',
-    fontWeight: 400,
+  personName: {
+    fontSize: 14,
+    fontWeight: 500,
+    color: 'var(--text-primary)',
   } as const,
-  sectionContent: {
-    padding: '16px',
-    backgroundColor: 'var(--bg-primary)',
+  tagMore: {
+    padding: '4px 10px',
+    fontSize: 12,
+    color: 'var(--text-muted)',
+  } as const,
+  emptyState: {
+    margin: 0,
+    fontSize: 13,
+    color: 'var(--text-muted)',
+    lineHeight: 1.6,
+    textAlign: 'center' as const,
+    padding: '24px 16px',
+  } as const,
+  emptyStateHint: {
+    margin: '16px 0 0',
+    fontSize: 13,
+    color: 'var(--text-muted)',
+    lineHeight: 1.6,
+  } as const,
+  sectionEmptyHint: {
+    margin: 0,
+    fontSize: 13,
+    color: 'var(--text-muted)',
+    lineHeight: 1.6,
   } as const,
   infoGrid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(2, 1fr)',
     gap: '12px',
-    marginBottom: '12px',
   } as const,
   infoRow: {
     display: 'flex',
@@ -602,6 +865,13 @@ const styles = {
     fontSize: '13px',
     color: 'var(--text-primary)',
     wordBreak: 'break-word' as const,
+  } as const,
+  userIdHint: {
+    display: 'block',
+    marginTop: 2,
+    fontSize: 11,
+    fontFamily: "'JetBrains Mono', monospace",
+    color: 'var(--text-tertiary)',
   } as const,
   tagList: {
     display: 'flex',
@@ -642,24 +912,81 @@ const styles = {
     color: 'var(--text-primary)',
     wordBreak: 'break-all' as const,
   } as const,
-  changeLog: {
-    padding: '12px',
-    backgroundColor: 'var(--bg-secondary)',
-    borderRadius: '6px',
-    fontSize: '13px',
-    color: 'var(--text-secondary)',
-    whiteSpace: 'pre-wrap' as const,
-    lineHeight: 1.6,
+  subBlock: {
+    marginTop: 16,
+    paddingTop: 12,
+    borderTop: '1px solid var(--border-muted)',
   } as const,
-  codeBlock: {
+  subBlockTitle: {
+    display: 'block',
+    fontSize: 11,
+    fontWeight: 600,
+    color: 'var(--text-muted)',
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.5px',
+    marginBottom: 8,
+  } as const,
+  attachmentList: {
     margin: 0,
-    padding: '12px',
+    padding: 0,
+    listStyle: 'none',
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: 8,
+  } as const,
+  attachmentItem: {
+    display: 'flex',
+    flexWrap: 'wrap' as const,
+    alignItems: 'center',
+    gap: '8px 12px',
+    padding: '8px 12px',
+    backgroundColor: 'var(--bg-secondary)',
+    borderRadius: 6,
+    border: '1px solid var(--border-muted)',
+  } as const,
+  attachmentName: {
+    fontSize: 13,
+    color: 'var(--text-primary)',
+    fontWeight: 500,
+  } as const,
+  attachmentMeta: {
+    fontSize: 11,
+    color: 'var(--text-muted)',
+    fontFamily: "'JetBrains Mono', monospace",
+  } as const,
+  approvalList: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: 8,
+  } as const,
+  approvalItem: {
+    display: 'flex',
+    flexWrap: 'wrap' as const,
+    alignItems: 'center',
+    gap: '8px 12px',
+    padding: '8px 12px',
+    backgroundColor: 'var(--bg-secondary)',
+    borderRadius: 6,
+    fontSize: 13,
+  } as const,
+  approvalAction: {
+    fontWeight: 600,
+    color: 'var(--accent-primary)',
+  } as const,
+  approvalTime: {
+    fontSize: 12,
+    color: 'var(--text-muted)',
+    marginLeft: 'auto',
+  } as const,
+  codeBlockCompact: {
+    margin: 0,
+    padding: '10px 12px',
     backgroundColor: 'var(--bg-secondary)',
     borderRadius: '6px',
     fontSize: '12px',
     color: 'var(--text-secondary)',
     overflow: 'auto' as const,
-    maxHeight: '200px',
+    maxHeight: '160px',
   } as const,
 };
 

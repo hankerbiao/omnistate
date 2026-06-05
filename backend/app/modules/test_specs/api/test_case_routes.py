@@ -19,6 +19,7 @@ from app.modules.test_specs.domain.exceptions import TestCaseNotFoundError
 from app.modules.test_specs.schemas import (
     CreateTestCaseRequest,
     LinkAutomationCaseRequest,
+    TestCaseChangeLogListResponse,
     TestCaseResponse,
     UpdateTestCaseRequest,
 )
@@ -50,6 +51,25 @@ async def create_test_case(
         raise HTTPException(status_code=409, detail=str(e))
     except KeyError:
         raise HTTPException(status_code=404, detail="requirement not found")
+
+
+@router.get(
+    "/{case_id}/change-logs",
+    response_model=APIResponse[TestCaseChangeLogListResponse],
+    summary="获取测试用例变更记录",
+    dependencies=[Depends(require_permission("test_cases:read"))],
+)
+async def list_test_case_change_logs(
+    case_id: str,
+    command_service: TestCaseCommandServiceDep,
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+):
+    try:
+        data = await command_service.list_change_logs(case_id, limit=limit, offset=offset)
+        return APIResponse(data=data)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="test case not found")
 
 
 @router.get(

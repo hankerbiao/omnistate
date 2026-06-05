@@ -3,6 +3,7 @@ from .requirement import TestRequirementDoc, TestRequirementModel
 from .test_case import TestCaseDoc, TestCaseModel
 from .test_lab import TestLabDoc
 from .test_catalog_segment import TestCatalogSegmentDoc
+from .test_case_change_log import TestCaseChangeLogDoc
 from .automation_test_case import (
     AutomationTestCaseDoc,
     AutomationTestCaseModel,
@@ -19,6 +20,7 @@ __all__ = [
     "TestCaseModel",
     "TestLabDoc",
     "TestCatalogSegmentDoc",
+    "TestCaseChangeLogDoc",
     "AutomationTestCaseDoc",
     "AutomationTestCaseModel",
     "ScriptRefModel",
@@ -33,5 +35,6 @@ DOCUMENT_MODELS = [
     TestCaseDoc,
     TestLabDoc,
     TestCatalogSegmentDoc,
+    TestCaseChangeLogDoc,
     AutomationTestCaseDoc,
 ]

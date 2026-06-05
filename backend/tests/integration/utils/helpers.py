@@ -109,6 +109,64 @@ def register_created_lab(registry: "TestDataRegistry", lab_data: dict[str, Any])
         registry.register_lab(lab_id)
 
 
+def register_created_work_item(registry: "TestDataRegistry", data: dict[str, Any]) -> None:
+    """Track a work item (and linked req_id if present) for teardown cleanup."""
+    item_id = data.get("item_id") or data.get("id")
+    if item_id:
+        registry.register_work_item(str(item_id))
+    req_id = data.get("req_id")
+    if req_id:
+        registry.register_requirement(req_id)
+
+
+def register_created_requirement(registry: "TestDataRegistry", data: dict[str, Any]) -> None:
+    """Track a test requirement (and linked work item) for teardown cleanup."""
+    req_id = data.get("req_id")
+    if req_id:
+        registry.register_requirement(req_id)
+    workflow_item_id = data.get("workflow_item_id")
+    if workflow_item_id:
+        registry.register_work_item(str(workflow_item_id))
+
+
+def register_created_test_case(registry: "TestDataRegistry", data: dict[str, Any]) -> None:
+    """Track a test case for teardown cleanup."""
+    case_id = data.get("case_id")
+    if case_id:
+        registry.register_test_case(case_id)
+
+
+def register_created_role(registry: "TestDataRegistry", data: dict[str, Any]) -> None:
+    """Track a role created during an integration test for teardown cleanup."""
+    role_id = data.get("role_id")
+    if role_id:
+        registry.register_role(role_id)
+
+
+async def post_work_item(
+    client: Any,
+    registry: "TestDataRegistry | None",
+    payload: dict[str, Any],
+) -> Any:
+    """POST /work-items/ and register created item for teardown cleanup."""
+    resp = await client.post("/api/v1/work-items/", json=payload)
+    if registry is not None and resp.status_code == 201:
+        register_created_work_item(registry, resp.json()["data"])
+    return resp
+
+
+async def post_requirement(
+    client: Any,
+    registry: "TestDataRegistry | None",
+    payload: dict[str, Any],
+) -> Any:
+    """POST /requirements and register created requirement for teardown cleanup."""
+    resp = await client.post("/api/v1/requirements", json=payload)
+    if registry is not None and resp.status_code == 201:
+        register_created_requirement(registry, resp.json()["data"])
+    return resp
+
+
 async def delete_catalog_lab(client: Any, lab_id: str) -> None:
     """Best-effort delete of a catalog lab (204/404 acceptable)."""
     resp = await client.delete(f"/api/v1/catalog/labs/{lab_id}")

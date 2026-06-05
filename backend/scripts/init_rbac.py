@@ -25,30 +25,133 @@ if str(ROOT) not in sys.path:
 from app.shared.db.config import settings
 from app.modules.auth.repository.models import PermissionDoc, RoleDoc
 
-DEFAULT_PERMISSIONS = [
-    ("nav:public", "Public navigation (all logged-in users)"),  # 公共页面权限
-    ("work_items:read", "Workflow read"),
-    ("work_items:write", "Workflow write"),
-    ("work_items:transition", "Workflow transition"),
-    ("users:read", "Users read"),
-    ("users:write", "Users write"),
-    ("roles:read", "Roles read"),
-    ("roles:write", "Roles write"),
-    ("permissions:read", "Permissions read"),
-    ("permissions:write", "Permissions write"),
-    ("requirements:read", "Requirements read"),
-    ("requirements:write", "Requirements write"),
-    ("test_cases:read", "Test cases read"),
-    ("test_cases:write", "Test cases write"),
-    ("catalog:labs:read", "Catalog labs read"),
-    ("catalog:labs:manage", "Catalog labs manage"),
-    ("execution_tasks:read", "Execution tasks read"),
-    ("execution_tasks:write", "Execution tasks write"),
-    ("execution_agents:read", "Execution agents read"),
-    ("execution_agents:write", "Execution agents write"),
-    ("terminal:connect", "Terminal connect"),
-    ("navigation:read", "Navigation read"),
-    ("navigation:write", "Navigation write"),
+# (perm_id/code, 显示名称, 权限说明)
+DEFAULT_PERMISSIONS: list[tuple[str, str, str]] = [
+    (
+        "nav:public",
+        "公共导航",
+        "登录后即可访问的公共页面（如首页、个人资料），不绑定具体业务角色。",
+    ),
+    (
+        "work_items:read",
+        "工作流查看",
+        "查看工作事项列表、详情、排序检索、流转日志及关联测试用例。",
+    ),
+    (
+        "work_items:write",
+        "工作流创建编辑",
+        "创建、编辑、删除工作事项（需求/用例等工作流实体）。",
+    ),
+    (
+        "work_items:transition",
+        "工作流流转",
+        "执行状态流转、改派负责人等流程操作。",
+    ),
+    (
+        "users:read",
+        "用户查看",
+        "查看用户列表、用户详情及当前用户权限信息。",
+    ),
+    (
+        "users:write",
+        "用户管理",
+        "创建、编辑、删除用户，修改密码与角色分配。",
+    ),
+    (
+        "roles:read",
+        "角色查看",
+        "查看系统角色列表及角色已绑定的权限。",
+    ),
+    (
+        "roles:write",
+        "角色管理",
+        "创建、编辑、删除角色，配置角色权限集合。",
+    ),
+    (
+        "permissions:read",
+        "权限查看",
+        "查看系统权限项列表及权限说明。",
+    ),
+    (
+        "permissions:write",
+        "权限管理",
+        "创建、编辑、删除权限定义（一般仅管理员使用）。",
+    ),
+    (
+        "requirements:read",
+        "需求查看",
+        "查看测试需求列表、详情及关联信息。",
+    ),
+    (
+        "requirements:write",
+        "需求编辑",
+        "创建、更新、删除测试需求业务数据。",
+    ),
+    (
+        "test_cases:read",
+        "测试用例查看",
+        "查看测试用例列表、详情、目录路径及关联需求。",
+    ),
+    (
+        "test_cases:write",
+        "测试用例编辑",
+        "创建、更新、删除测试用例及目录字段。",
+    ),
+    (
+        "catalog:labs:read",
+        "Lab 目录查看",
+        "查看 Lab 列表、目录树与路径联想建议。",
+    ),
+    (
+        "catalog:labs:manage",
+        "Lab 目录管理",
+        "创建/编辑/停用 Lab，维护目录结构。",
+    ),
+    (
+        "duts:read",
+        "被测设备查看",
+        "查看被测设备（DUT）列表、配置与关联信息。",
+    ),
+    (
+        "duts:write",
+        "被测设备管理",
+        "创建、编辑、删除被测设备（DUT）及绑定关系。",
+    ),
+    (
+        "execution_tasks:read",
+        "执行任务查看",
+        "查看测试执行任务列表、状态与执行结果。",
+    ),
+    (
+        "execution_tasks:write",
+        "执行任务操作",
+        "创建、调度、重跑、取消测试执行任务。",
+    ),
+    (
+        "execution_agents:read",
+        "执行 Agent 查看",
+        "查看已注册的执行 Agent 及其在线状态。",
+    ),
+    (
+        "execution_agents:write",
+        "执行 Agent 管理",
+        "注册、编辑、下线执行 Agent。",
+    ),
+    (
+        "terminal:connect",
+        "终端连接",
+        "通过 Web 终端连接执行环境（调试/执行场景）。",
+    ),
+    (
+        "navigation:read",
+        "导航配置查看",
+        "查看侧边栏导航页面配置。",
+    ),
+    (
+        "navigation:write",
+        "导航配置管理",
+        "创建、编辑、删除导航页面及可见性配置。",
+    ),
 ]
 
 # 公共权限分组
@@ -67,7 +170,7 @@ _EXEC_WRITE = ["execution_tasks:write", "execution_agents:write"]
 DEFAULT_ROLES = {
     "ADMIN": {
         "name": "ADMIN", "description": "系统管理员，拥有所有权限", "is_system": True,
-        "permission_ids": [code for code, _ in DEFAULT_PERMISSIONS],
+        "permission_ids": [code for code, _, _ in DEFAULT_PERMISSIONS],
     },
     "TPM": {
         "name": "TPM", "description": "测试项目管理员，负责项目管理和协调", "is_system": True,
@@ -110,21 +213,19 @@ DEFAULT_ROLES = {
 
 
 async def init_permissions() -> None:
-    for code, name in DEFAULT_PERMISSIONS:
+    for code, name, description in DEFAULT_PERMISSIONS:
         existing = await PermissionDoc.find_one(PermissionDoc.perm_id == code)
         if existing:
-            # 如果权限已存在，更新名称
             existing.name = name
+            existing.description = description
             await existing.save()
         else:
-            # 如果权限不存在，创建新的权限
-            new_permission = PermissionDoc(
+            await PermissionDoc(
                 perm_id=code,
                 code=code,
                 name=name,
-                description=None
-            )
-            await new_permission.insert()
+                description=description,
+            ).insert()
 
 
 async def init_roles() -> None:

@@ -1,6 +1,6 @@
 import React from 'react';
 import type { RequirementResponse } from '../types';
-import { WorkflowPanel } from './workflow';
+import { WorkflowPanel, WorkflowActionToolbar } from './workflow';
 import { getStateLabel, getWorkflowStateStyle } from '../constants/workflowLabels';
 
 interface RequirementDetailModalProps {
@@ -10,6 +10,7 @@ interface RequirementDetailModalProps {
 }
 
 const RequirementDetailModal: React.FC<RequirementDetailModalProps> = ({ requirement, onClose, onUpdated }) => {
+  const [workflowRefreshSignal, setWorkflowRefreshSignal] = React.useState(0);
   const [expandedSections, setExpandedSections] = React.useState<Set<string>>(new Set([
     'workflowActions', 'basic', 'workflow', 'components', 'params', 'meta', 'time',
   ]));
@@ -22,6 +23,11 @@ const RequirementDetailModal: React.FC<RequirementDetailModalProps> = ({ require
       newExpanded.add(section);
     }
     setExpandedSections(newExpanded);
+  };
+
+  const handleWorkflowUpdated = () => {
+    onUpdated?.();
+    setWorkflowRefreshSignal((n) => n + 1);
   };
 
   const formatDate = (dateStr: string) => {
@@ -49,11 +55,23 @@ const RequirementDetailModal: React.FC<RequirementDetailModalProps> = ({ require
     <div style={styles.overlay} onClick={onClose} onKeyDown={(e) => e.key === 'Escape' && onClose()} tabIndex={0}>
       <div style={styles.modal} onClick={e => e.stopPropagation()}>
         <div style={styles.modalHeader}>
-          <div>
+          <div style={styles.modalHeaderMain}>
             <span style={styles.reqId}>{requirement.req_id}</span>
             <h2 style={styles.modalTitle}>{requirement.title}</h2>
           </div>
-          <button style={styles.closeButton} onClick={onClose}>×</button>
+          <div style={styles.headerActions}>
+            {requirement.workflow_item_id && (
+              <WorkflowActionToolbar
+                workflowItemId={requirement.workflow_item_id}
+                typeCode="REQUIREMENT"
+                defaultPriority={requirement.priority}
+                onTransitionSuccess={handleWorkflowUpdated}
+                compact
+                showStateBadge
+              />
+            )}
+            <button style={styles.closeButton} onClick={onClose}>×</button>
+          </div>
         </div>
 
         <div style={styles.modalBody}>
@@ -76,7 +94,9 @@ const RequirementDetailModal: React.FC<RequirementDetailModalProps> = ({ require
                     createdAt={requirement.created_at}
                     updatedAt={requirement.updated_at}
                     compact
-                    onTransitionSuccess={onUpdated}
+                    hideToolbar
+                    refreshSignal={workflowRefreshSignal}
+                    onTransitionSuccess={handleWorkflowUpdated}
                   />
                 </div>
               )}
@@ -296,6 +316,16 @@ const styles = {
     borderBottom: '1px solid var(--border-default)',
     backgroundColor: 'var(--bg-tertiary)',
     borderRadius: '12px 12px 0 0',
+  } as const,
+  modalHeaderMain: {
+    flex: 1,
+    minWidth: 0,
+  } as const,
+  headerActions: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: '12px',
+    flexShrink: 0,
   } as const,
   reqId: {
     fontSize: '13px',

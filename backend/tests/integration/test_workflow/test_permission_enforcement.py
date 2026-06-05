@@ -5,16 +5,21 @@ Tests that permission boundaries are correctly enforced across roles.
 import pytest
 from httpx import AsyncClient
 
-from tests.integration.utils.helpers import create_requirement_data, create_transition_request
+from tests.integration.conftest import TestDataRegistry
+from tests.integration.utils.helpers import create_requirement_data, create_transition_request, post_work_item
 
 
 @pytest.mark.asyncio
-async def test_tpm_cannot_finish_developing(client_tpm: AsyncClient, client_reviewer: AsyncClient, client_tester: AsyncClient):
+async def test_tpm_cannot_finish_developing(
+    client_tpm: AsyncClient,
+    client_reviewer: AsyncClient,
+    client_tester: AsyncClient,
+    test_data_registry: TestDataRegistry,
+):
     """7.1 - TPM cannot execute DEVELOPING→FINISH (needs DEV role)."""
     # Create and advance requirement to DEVELOPING
-    resp = await client_tester.post(
-        "/api/v1/work-items/",
-        json=create_requirement_data(),
+    resp = await post_work_item(
+        client_tester, test_data_registry, create_requirement_data()
     )
     item_id = resp.json()["data"]["item_id"]
 
@@ -47,15 +52,19 @@ async def test_tpm_cannot_finish_developing(client_tpm: AsyncClient, client_revi
 
 
 @pytest.mark.asyncio
-async def test_dev_cannot_approve(client_dev: AsyncClient, client_tester: AsyncClient, client_reviewer: AsyncClient):
+async def test_dev_cannot_approve(
+    client_dev: AsyncClient,
+    client_tester: AsyncClient,
+    client_reviewer: AsyncClient,
+    test_data_registry: TestDataRegistry,
+):
     """7.2 - DEV cannot execute PENDING_REVIEW→APPROVE (needs REVIEWER).
 
     Note: Returns 400 (missing fields) or 403 (permission denied) - both mean action blocked.
     """
     # Create and advance to PENDING_REVIEW
-    resp = await client_tester.post(
-        "/api/v1/work-items/",
-        json=create_requirement_data(),
+    resp = await post_work_item(
+        client_tester, test_data_registry, create_requirement_data()
     )
     item_id = resp.json()["data"]["item_id"]
 
@@ -117,12 +126,15 @@ async def test_invalid_token_denied(app_with_lifespan):
 
 
 @pytest.mark.asyncio
-async def test_cannot_modify_others_requirement(client_tpm: AsyncClient, client_qa: AsyncClient):
+async def test_cannot_modify_others_requirement(
+    client_tpm: AsyncClient,
+    client_qa: AsyncClient,
+    test_data_registry: TestDataRegistry,
+):
     """7.7 - Non-creator cannot modify requirement (except TPM/ADMIN)."""
     # TPM creates requirement
-    resp = await client_tpm.post(
-        "/api/v1/work-items/",
-        json=create_requirement_data(),
+    resp = await post_work_item(
+        client_tpm, test_data_registry, create_requirement_data()
     )
     item_id = resp.json()["data"]["item_id"]
 

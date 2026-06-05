@@ -1,4 +1,4 @@
-import type { LoginRequest, LoginResponse, ApiResponse, CreateRequirementRequest, RequirementResponse, ListRequirementsParams, CreateTestCaseRequest, UpdateTestCaseRequest, TestCaseResponse, ListTestCasesParams, CatalogLab, CreateCatalogLabRequest, UpdateCatalogLabRequest, CatalogTreeResponse, DispatchTaskRequest, DispatchTaskResponse, ExecutionAgent, ListAgentsParams, CreateAutomationTestCaseRequest, AutomationTestCaseResponse, ListAutomationTestCasesParams, ExecutionTask, ListTasksParams, TaskStatus, RerunTaskRequest, AttachmentInfo, WorkflowTransitionRequest, WorkflowTransitionResponse, WorkflowTransitionsResponse, WorkflowTransitionLog, RoleResponse, PermissionResponse, CreateRoleRequest, UpdateRoleRequest, UpdateRolePermissionsRequest, CurrentUserPermissionsResponse, UserResponse, CreateUserRequest, UpdateUserRequest, UpdateUserRolesRequest, UpdateUserPasswordRequest, ListUsersParams, WorkItem } from '../types';
+import type { LoginRequest, LoginResponse, ApiResponse, CreateRequirementRequest, RequirementResponse, ListRequirementsParams, CreateTestCaseRequest, UpdateTestCaseRequest, TestCaseResponse, TestCaseChangeLogListResponse, ListTestCasesParams, CatalogLab, CreateCatalogLabRequest, UpdateCatalogLabRequest, CatalogTreeResponse, DispatchTaskRequest, DispatchTaskResponse, ExecutionAgent, AgentCleanupOfflineResponse, ListAgentsParams, CreateAutomationTestCaseRequest, AutomationTestCaseResponse, ListAutomationTestCasesParams, ExecutionTask, ListTasksParams, TaskStatus, RerunTaskRequest, AttachmentInfo, WorkflowTransitionRequest, WorkflowTransitionResponse, WorkflowTransitionsResponse, WorkflowTransitionLog, RoleResponse, PermissionResponse, CreateRoleRequest, UpdateRoleRequest, UpdateRolePermissionsRequest, CurrentUserPermissionsResponse, UserResponse, CreateUserRequest, UpdateUserRequest, UpdateUserRolesRequest, UpdateUserPasswordRequest, ListUsersParams, WorkItem } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
 
@@ -114,6 +114,19 @@ class ApiClient {
 
   async getTestCase(caseId: string): Promise<ApiResponse<TestCaseResponse>> {
     return this.request<TestCaseResponse>(`/test-cases/${caseId}`, {
+      method: 'GET',
+    });
+  }
+
+  async getTestCaseChangeLogs(
+    caseId: string,
+    params?: { limit?: number; offset?: number },
+  ): Promise<ApiResponse<TestCaseChangeLogListResponse>> {
+    const searchParams = new URLSearchParams();
+    if (params?.limit != null) searchParams.set('limit', String(params.limit));
+    if (params?.offset != null) searchParams.set('offset', String(params.offset));
+    const qs = searchParams.toString();
+    return this.request(`/test-cases/${caseId}/change-logs${qs ? `?${qs}` : ''}`, {
       method: 'GET',
     });
   }
@@ -284,6 +297,12 @@ class ApiClient {
   async deleteAgent(agentId: string): Promise<ApiResponse<{ agent_id: string; deleted: boolean }>> {
     return this.request<{ agent_id: string; deleted: boolean }>(`/execution/agents/${agentId}`, {
       method: 'DELETE',
+    });
+  }
+
+  async cleanupOfflineAgents(): Promise<ApiResponse<AgentCleanupOfflineResponse>> {
+    return this.request<AgentCleanupOfflineResponse>('/execution/agents/cleanup-offline', {
+      method: 'POST',
     });
   }
 

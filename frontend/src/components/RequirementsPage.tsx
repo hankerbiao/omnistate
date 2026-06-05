@@ -6,12 +6,13 @@ import CreateRequirementForm from './CreateRequirementForm';
 import CreateTestCaseForm from './CreateTestCaseForm';
 import TestCaseDetailModal from './TestCaseDetailModal';
 import RequirementDetailModal from './RequirementDetailModal';
-import { WorkflowPanel } from './workflow';
+import { WorkflowPanel, WorkflowActionToolbar } from './workflow';
 import {
   getStateLabel,
   getWorkflowStateStyle,
   REQUIREMENT_STATUS_FILTER_OPTIONS,
 } from '../constants/workflowLabels';
+import PageToolbar, { StatPill } from './ui/PageToolbar';
 
 type ActiveTab = 'workflow' | 'testcases';
 
@@ -40,6 +41,8 @@ const RequirementsPage: React.FC<RequirementsPageProps> = ({ initialStatusFilter
   const [selectedRequirementDetail, setSelectedRequirementDetail] = useState<RequirementResponse | null>(null);
   const [workflowTestCase, setWorkflowTestCase] = useState<TestCaseResponse | null>(null);
   const [defaultCatalogLabId, setDefaultCatalogLabId] = useState('');
+  const [requirementWorkflowSignal, setRequirementWorkflowSignal] = useState(0);
+  const [caseWorkflowSignal, setCaseWorkflowSignal] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -160,6 +163,11 @@ const RequirementsPage: React.FC<RequirementsPageProps> = ({ initialStatusFilter
     await fetchRequirements(selectedRequirement.req_id);
   };
 
+  const handleRequirementWorkflowSuccess = async () => {
+    await refreshRequirementData();
+    setRequirementWorkflowSignal((n) => n + 1);
+  };
+
   const refreshTestCaseData = async () => {
     if (!selectedRequirementId) return;
     await fetchTestCases(selectedRequirementId);
@@ -171,6 +179,11 @@ const RequirementsPage: React.FC<RequirementsPageProps> = ({ initialStatusFilter
         // ignore
       }
     }
+  };
+
+  const handleCaseWorkflowSuccess = async () => {
+    await refreshTestCaseData();
+    setCaseWorkflowSignal((n) => n + 1);
   };
 
   const onlineCount = requirements.filter(r => r.status === 'RELEASED').length;
@@ -257,47 +270,56 @@ const RequirementsPage: React.FC<RequirementsPageProps> = ({ initialStatusFilter
   };
 
   return (
-    <div className="workspace">
-      {/* Left Panel - Requirements List */}
-      <div style={styles.leftPanel}>
-        <div style={styles.panelHeader}>
-          <div>
-            <h2 style={styles.panelTitle}>需求列表</h2>
-            <span style={styles.panelHint}>
-              {selectedIds.size > 0
-                ? `已选择 ${selectedIds.size} 项`
-                : `${requirements.length} 个需求，已发布 ${onlineCount}`}
-            </span>
-          </div>
-          <div style={styles.panelActions}>
-            {selectedIds.size > 0 && (
-              <button
-                className="btn btn--sm"
-                style={{ backgroundColor: 'var(--status-error)', color: 'white' }}
-                onClick={() => setBatchDeleteConfirm(true)}
-              >
-                删除 ({selectedIds.size})
-              </button>
+    <div className="split-workspace">
+      <aside className="split-workspace__list">
+        <div className="split-panel-toolbar">
+          <PageToolbar
+            meta={(
+              <>
+                <StatPill label="全部" value={requirements.length} />
+                <StatPill label="已发布" value={onlineCount} tone="success" />
+                {selectedIds.size > 0 && (
+                  <StatPill label="已选" value={selectedIds.size} tone="info" />
+                )}
+              </>
             )}
-            <button className="btn btn--ghost btn--sm" onClick={() => fetchRequirements()} disabled={loadingRequirements}>
-              ↻
-            </button>
-            <button className="btn btn--primary btn--sm" onClick={() => setShowCreateRequirement(true)}>
-              + 新建
-            </button>
-          </div>
+            actions={(
+              <>
+                {selectedIds.size > 0 && (
+                  <button
+                    type="button"
+                    className="btn btn--danger btn--sm"
+                    onClick={() => setBatchDeleteConfirm(true)}
+                  >
+                    删除 ({selectedIds.size})
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="btn btn--secondary btn--sm"
+                  onClick={() => fetchRequirements()}
+                  disabled={loadingRequirements}
+                >
+                  刷新
+                </button>
+                <button type="button" className="btn btn--primary btn--sm" onClick={() => setShowCreateRequirement(true)}>
+                  + 新建
+                </button>
+              </>
+            )}
+          />
         </div>
 
-        <div style={styles.filterBar}>
+        <div className="filter-strip">
           <select
             className="form-input form-select"
             value={statusFilter}
+            aria-label="按状态筛选需求"
             onChange={(e) => {
               const next = e.target.value;
               setStatusFilter(next);
               fetchRequirements(undefined, next);
             }}
-            style={{ fontSize: '12px', padding: '6px 10px' }}
           >
             {REQUIREMENT_STATUS_FILTER_OPTIONS.map((opt) => (
               <option key={opt.value || 'all'} value={opt.value}>{opt.label}</option>
@@ -315,7 +337,7 @@ const RequirementsPage: React.FC<RequirementsPageProps> = ({ initialStatusFilter
             <p className="empty-state__text">暂无需求，点击上方"新建"创建</p>
           </div>
         ) : (
-          <div style={styles.list}>
+          <div className="split-list-scroll">
             {/* Select All Header */}
             <div style={styles.selectAllRow}>
               <label style={styles.checkboxLabel}>
@@ -397,32 +419,42 @@ const RequirementsPage: React.FC<RequirementsPageProps> = ({ initialStatusFilter
             })}
           </div>
         )}
-      </div>
+      </aside>
 
-      {/* Right Panel - Detail Workspace */}
-      <div style={styles.rightPanel}>
+      <main className="split-workspace__main">
         {selectedRequirement ? (
           <>
             <div style={styles.detailHeader}>
-              <div>
-                <h2 style={styles.detailTitle}>{selectedRequirement.title}</h2>
-                <div style={styles.detailMeta}>
-                  <span className="mono" style={styles.detailId}>{selectedRequirement.req_id}</span>
-                  <span
-                    className="status-badge"
-                    style={getWorkflowStateStyle(selectedRequirement.status)}
-                  >
-                    {getStateLabel(selectedRequirement.status, 'REQUIREMENT')}
-                  </span>
-                  <span
-                    className="status-badge"
-                    style={getPriorityStyle(selectedRequirement.priority)}
-                  >
-                    {selectedRequirement.priority}
-                  </span>
+              <div style={styles.detailHeaderRow}>
+                <div style={styles.detailHeaderMain}>
+                  <h2 style={styles.detailTitle}>{selectedRequirement.title}</h2>
+                  <div style={styles.detailMeta}>
+                    <span className="mono" style={styles.detailId}>{selectedRequirement.req_id}</span>
+                    <span
+                      className="status-badge"
+                      style={getWorkflowStateStyle(selectedRequirement.status)}
+                    >
+                      {getStateLabel(selectedRequirement.status, 'REQUIREMENT')}
+                    </span>
+                    <span
+                      className="status-badge"
+                      style={getPriorityStyle(selectedRequirement.priority)}
+                    >
+                      {selectedRequirement.priority}
+                    </span>
+                  </div>
+                  {selectedRequirement.description && (
+                    <p style={styles.description}>{selectedRequirement.description}</p>
+                  )}
                 </div>
-                {selectedRequirement.description && (
-                  <p style={styles.description}>{selectedRequirement.description}</p>
+                {selectedRequirement.workflow_item_id && (
+                  <WorkflowActionToolbar
+                    workflowItemId={selectedRequirement.workflow_item_id}
+                    typeCode="REQUIREMENT"
+                    defaultPriority={selectedRequirement.priority}
+                    onTransitionSuccess={handleRequirementWorkflowSuccess}
+                    showStateBadge
+                  />
                 )}
               </div>
             </div>
@@ -459,7 +491,9 @@ const RequirementsPage: React.FC<RequirementsPageProps> = ({ initialStatusFilter
                     currentOwnerName={selectedRequirement.current_owner_name || selectedRequirement.current_owner}
                     createdAt={selectedRequirement.created_at}
                     updatedAt={selectedRequirement.updated_at}
-                    onTransitionSuccess={refreshRequirementData}
+                    onTransitionSuccess={handleRequirementWorkflowSuccess}
+                    hideToolbar
+                    refreshSignal={requirementWorkflowSignal}
                   />
                 </div>
               ) : (
@@ -563,6 +597,19 @@ const RequirementsPage: React.FC<RequirementsPageProps> = ({ initialStatusFilter
 
                   {workflowTestCase && (
                     <div style={styles.caseWorkflowPanel}>
+                      <div style={styles.caseWorkflowHeader}>
+                        <h4 style={styles.caseWorkflowTitle}>
+                          用例工作流 · {workflowTestCase.case_id}
+                        </h4>
+                        <WorkflowActionToolbar
+                          workflowItemId={workflowTestCase.workflow_item_id}
+                          typeCode="TEST_CASE"
+                          defaultPriority={workflowTestCase.priority}
+                          onTransitionSuccess={handleCaseWorkflowSuccess}
+                          compact
+                          showStateBadge
+                        />
+                      </div>
                       <WorkflowPanel
                         key={workflowTestCase.workflow_item_id || workflowTestCase.case_id}
                         workflowItemId={workflowTestCase.workflow_item_id}
@@ -573,8 +620,10 @@ const RequirementsPage: React.FC<RequirementsPageProps> = ({ initialStatusFilter
                         currentOwnerName={workflowTestCase.owner_id}
                         createdAt={workflowTestCase.created_at}
                         updatedAt={workflowTestCase.updated_at}
-                        onTransitionSuccess={refreshTestCaseData}
+                        onTransitionSuccess={handleCaseWorkflowSuccess}
                         compact
+                        hideToolbar
+                        refreshSignal={caseWorkflowSignal}
                       />
                     </div>
                   )}
@@ -588,7 +637,7 @@ const RequirementsPage: React.FC<RequirementsPageProps> = ({ initialStatusFilter
             <p className="empty-state__text">从左侧选择一条需求查看详情</p>
           </div>
         )}
-      </div>
+      </main>
 
       {error && (
         <div style={styles.errorToast}>
@@ -773,55 +822,6 @@ const RequirementsPage: React.FC<RequirementsPageProps> = ({ initialStatusFilter
 };
 
 const styles = {
-  leftPanel: {
-    width: '340px',
-    minWidth: '340px',
-    height: 'calc(100vh - 56px - 48px)',
-    display: 'flex',
-    flexDirection: 'column' as const,
-    backgroundColor: 'var(--surface-primary)',
-    borderRight: '1px solid var(--border-subtle)',
-    overflow: 'hidden',
-  },
-  rightPanel: {
-    flex: 1,
-    display: 'flex',
-    flexDirection: 'column' as const,
-    overflow: 'hidden',
-  },
-  panelHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: '16px 20px',
-    borderBottom: '1px solid var(--border-subtle)',
-  },
-  panelTitle: {
-    fontSize: '15px',
-    fontWeight: 600,
-    color: 'var(--text-primary)',
-    margin: 0,
-  },
-  panelHint: {
-    fontSize: '12px',
-    color: 'var(--text-tertiary)',
-    marginTop: '2px',
-    display: 'block',
-  },
-  panelActions: {
-    display: 'flex',
-    gap: '8px',
-    alignItems: 'center',
-  },
-  filterBar: {
-    padding: '8px 20px',
-    borderBottom: '1px solid var(--border-subtle)',
-  },
-  list: {
-    flex: 1,
-    overflow: 'auto',
-    padding: '12px',
-  },
   selectAllRow: {
     display: 'flex',
     alignItems: 'center',
@@ -899,6 +899,17 @@ const styles = {
     padding: '20px 24px',
     backgroundColor: 'var(--surface-primary)',
     borderBottom: '1px solid var(--border-subtle)',
+  },
+  detailHeaderRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: '16px',
+    flexWrap: 'wrap' as const,
+  },
+  detailHeaderMain: {
+    flex: 1,
+    minWidth: 0,
   },
   detailTitle: {
     fontSize: '18px',
@@ -989,6 +1000,20 @@ const styles = {
     marginTop: '16px',
     paddingTop: '16px',
     borderTop: '1px solid var(--border-subtle)',
+  },
+  caseWorkflowHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: '12px',
+    marginBottom: '12px',
+    flexWrap: 'wrap' as const,
+  },
+  caseWorkflowTitle: {
+    margin: 0,
+    fontSize: '14px',
+    fontWeight: 600,
+    color: 'var(--text-secondary)',
   },
   caseWorkflowHint: {
     margin: '8px 0 0',

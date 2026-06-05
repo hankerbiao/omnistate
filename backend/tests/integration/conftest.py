@@ -15,8 +15,9 @@ Before running tests, ensure test_admin user exists in MongoDB (recommended: cd 
         salt = secrets.token_hex(16)
         pwd_hash = hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), 100000).hex()
         return salt, pwd_hash
-    client = MongoClient('mongodb://10.17.154.252:27018')
-    db = client['workflow_db']
+    from app.shared.db.config import settings
+    client = MongoClient(settings.MONGO_URI)
+    db = client[settings.MONGO_DB_NAME]
     db['users'].delete_one({'user_id': 'test_admin'})
     salt, pwd_hash = hash_password('Admin@123')
     db['users'].insert_one({
@@ -34,7 +35,7 @@ NOTE: Due to pytest-asyncio event loop scoping, tests work best when run individ
 or with --dist=no flag for parallel execution.
 """
 import asyncio
-import time
+import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
@@ -44,6 +45,9 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
 from app.main import app
+from app.shared.db.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 # ==================== Test Data Registry ====================
@@ -62,6 +66,7 @@ class TestDataRegistry:
         self._perm_ids: list[str] = []
         self._nav_views: list[str] = []
         self._lab_ids: list[str] = []
+        self._role_ids: list[str] = []
 
     def register_work_item(self, item_id: str):
         """Register a work item for cleanup."""
@@ -95,21 +100,35 @@ class TestDataRegistry:
         """Register a catalog lab for cleanup."""
         self._lab_ids.append(lab_id)
 
+    def register_role(self, role_id: str):
+        """Register a test role for cleanup."""
+        self._role_ids.append(role_id)
+
     async def cleanup(self):
         """Clean up all registered test data."""
+        from bson import ObjectId
         from pymongo import MongoClient
 
-        client = MongoClient("mongodb://10.17.154.252:27018")
-        db = client["workflow_db"]
+        client = MongoClient(settings.MONGO_URI)
+        db = client[settings.MONGO_DB_NAME]
 
-        # Cleanup work items (soft delete by setting is_deleted=True)
+        def _warn(entity: str, entity_id: str, exc: Exception) -> None:
+            logger.warning("Failed to cleanup %s %s: %s", entity, entity_id, exc)
+
+        def _soft_delete_work_item(item_id: str) -> None:
+            if not ObjectId.is_valid(item_id):
+                return
+            db["bus_work_items"].update_one(
+                {"_id": ObjectId(item_id)},
+                {"$set": {"is_deleted": True}},
+            )
+
+        # Cleanup work items (bus_work_items collection)
         for item_id in self._work_item_ids:
             try:
-                db["work_items"].update_one(
-                    {"item_id": item_id}, {"$set": {"is_deleted": True}}
-                )
-            except Exception:
-                pass
+                _soft_delete_work_item(item_id)
+            except Exception as exc:
+                _warn("work_item", item_id, exc)
 
         # Cleanup test cases
         for case_id in self._case_ids:
@@ -117,54 +136,69 @@ class TestDataRegistry:
                 db["test_cases"].update_one(
                     {"case_id": case_id}, {"$set": {"is_deleted": True}}
                 )
-            except Exception:
-                pass
+            except Exception as exc:
+                _warn("test_case", case_id, exc)
 
-        # Cleanup requirements
+        # Cleanup requirements (test_requirements collection)
         for req_id in self._req_ids:
             try:
-                db["requirements"].update_one(
+                req_doc = db["test_requirements"].find_one(
+                    {"req_id": req_id},
+                    {"workflow_item_id": 1},
+                )
+                db["test_requirements"].update_one(
                     {"req_id": req_id}, {"$set": {"is_deleted": True}}
                 )
-            except Exception:
-                pass
+                wf_id = (req_doc or {}).get("workflow_item_id")
+                if wf_id:
+                    _soft_delete_work_item(str(wf_id))
+            except Exception as exc:
+                _warn("requirement", req_id, exc)
 
         # Cleanup relations
         for relation_id in self._relation_ids:
             try:
                 db["work_item_relations"].delete_many({"relation_id": relation_id})
-            except Exception:
-                pass
+            except Exception as exc:
+                _warn("relation", relation_id, exc)
 
         # Cleanup users (not test_admin)
         for user_id in self._user_ids:
             if user_id != "test_admin":
                 try:
                     db["users"].delete_many({"user_id": user_id})
-                except Exception:
-                    pass
+                except Exception as exc:
+                    _warn("user", user_id, exc)
 
         # Cleanup integration-test permissions (test_perm_* etc.)
         for perm_id in self._perm_ids:
             try:
                 db["permissions"].delete_many({"perm_id": perm_id})
-            except Exception:
-                pass
+            except Exception as exc:
+                _warn("permission", perm_id, exc)
 
         # Cleanup integration-test navigation pages
         for view in self._nav_views:
             try:
                 db["navigation_pages"].delete_many({"view": view})
-            except Exception:
-                pass
+            except Exception as exc:
+                _warn("navigation_page", view, exc)
 
         # Cleanup catalog labs (after test cases are soft-deleted)
         for lab_id in self._lab_ids:
             try:
                 db["test_catalog_segments"].delete_many({"lab_id": lab_id})
                 db["test_labs"].delete_many({"lab_id": lab_id})
-            except Exception:
-                pass
+            except Exception as exc:
+                _warn("lab", lab_id, exc)
+
+        # Cleanup integration-test roles (role_test_* etc.)
+        for role_id in self._role_ids:
+            if role_id not in {"ADMIN", "TPM", "REVIEWER", "MANUAL_DEV", "QA", "TESTER", "AUTO_DEV"}:
+                try:
+                    db["roles"].delete_many({"role_id": role_id})
+                except Exception as exc:
+                    _warn("role", role_id, exc)
 
         client.close()
 
@@ -198,6 +232,7 @@ async def cleanup_test_data():
     _test_data_registry._perm_ids.clear()
     _test_data_registry._nav_views.clear()
     _test_data_registry._lab_ids.clear()
+    _test_data_registry._role_ids.clear()
 
 
 @pytest_asyncio.fixture
@@ -221,31 +256,37 @@ async def admin_token(app_with_lifespan) -> str:
         raise RuntimeError(f"Failed to login as admin: {resp.status_code} {resp.text}")
 
 
+# Fixed integration-test accounts — reused across runs, not deleted per test.
+INTEGRATION_TEST_USERS = [
+    {"user_id": "integ_tpm", "role": "TPM", "name": "Integration TPM"},
+    {"user_id": "integ_reviewer", "role": "REVIEWER", "name": "Integration Reviewer"},
+    {"user_id": "integ_dev", "role": "MANUAL_DEV", "name": "Integration Developer"},
+    {"user_id": "integ_qa", "role": "QA", "name": "Integration QA"},
+    {"user_id": "integ_tester", "role": "TESTER", "name": "Integration Tester"},
+    {"user_id": "integ_auto_dev", "role": "AUTO_DEV", "name": "Integration Auto Dev"},
+    {"user_id": "integ_no_role", "role": None, "name": "Integration No Role"},
+]
+
+
 @pytest_asyncio.fixture
 async def test_users(app_with_lifespan, admin_token) -> dict[str, dict[str, Any]]:
-    """Create test users and return their tokens.
+    """Ensure fixed integration users exist and return their tokens.
 
-    Returns dict mapping role name to {"user_id": ..., "token": ...}
+    Reuses stable user_id values (integ_*) instead of creating timestamped users
+    on every test. Ephemeral users from individual tests are still tracked via
+    TestDataRegistry and cleaned up after each test.
     """
-    timestamp = int(time.time())
     base_password = "Test@123"
-
-    users_to_create = [
-        {"user_id": f"test_tpm_{timestamp}", "role": "TPM", "name": "Test TPM"},
-        {"user_id": f"test_reviewer_{timestamp}", "role": "REVIEWER", "name": "Test Reviewer"},
-        {"user_id": f"test_dev_{timestamp}", "role": "MANUAL_DEV", "name": "Test Developer"},
-        {"user_id": f"test_qa_{timestamp}", "role": "QA", "name": "Test QA"},
-        {"user_id": f"test_tester_{timestamp}", "role": "TESTER", "name": "Test Tester"},
-        {"user_id": f"test_auto_dev_{timestamp}", "role": "AUTO_DEV", "name": "Test Auto Dev"},
-        {"user_id": f"test_no_role_{timestamp}", "role": None, "name": "Test No Role"},
-    ]
-
-    created_users = {}
+    created_users: dict[str, dict[str, Any]] = {}
 
     async with ASGITransport(app=app_with_lifespan) as transport:
-        client = AsyncClient(transport=transport, base_url="http://test", headers={"Authorization": f"Bearer {admin_token}"})
+        client = AsyncClient(
+            transport=transport,
+            base_url="http://test",
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
 
-        for user_spec in users_to_create:
+        for user_spec in INTEGRATION_TEST_USERS:
             resp = await client.post(
                 "/api/v1/auth/users",
                 json={
@@ -255,17 +296,22 @@ async def test_users(app_with_lifespan, admin_token) -> dict[str, dict[str, Any]
                     "email": f"{user_spec['user_id']}@test.local",
                 },
             )
-            # Register user for cleanup (except test_admin)
-            _test_data_registry.register_user(user_spec["user_id"])
+            if resp.status_code not in (201, 409):
+                print(
+                    f"Warning: ensure user {user_spec['user_id']}: "
+                    f"{resp.status_code} {resp.text}"
+                )
 
-            if resp.status_code == 201:
-                if user_spec["role"]:
-                    role_resp = await client.patch(
-                        f"/api/v1/auth/users/{user_spec['user_id']}/roles",
-                        json={"role_ids": [user_spec["role"]]},
+            if user_spec["role"]:
+                role_resp = await client.patch(
+                    f"/api/v1/auth/users/{user_spec['user_id']}/roles",
+                    json={"role_ids": [user_spec["role"]]},
+                )
+                if role_resp.status_code != 200:
+                    print(
+                        f"Warning: Failed to assign role {user_spec['role']}: "
+                        f"{role_resp.text}"
                     )
-                    if role_resp.status_code != 200:
-                        print(f"Warning: Failed to assign role {user_spec['role']}: {role_resp.text}")
 
             login_resp = await client.post(
                 "/api/v1/auth/login",
@@ -277,7 +323,10 @@ async def test_users(app_with_lifespan, admin_token) -> dict[str, dict[str, Any]
                     "token": login_resp.json()["data"]["access_token"],
                 }
             else:
-                print(f"Warning: Failed to login {user_spec['user_id']}: {login_resp.status_code} {login_resp.text}")
+                print(
+                    f"Warning: Failed to login {user_spec['user_id']}: "
+                    f"{login_resp.status_code} {login_resp.text}"
+                )
 
     return created_users
 

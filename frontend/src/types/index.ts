@@ -234,6 +234,7 @@ export interface TestCaseResponse {
   case_id: string;
   ref_req_id?: string | null;
   lab_id: string;
+  lab_name?: string | null;
   catalog_path: string[];
   catalog_path_key?: string;
   catalog_breadcrumb?: string | null;
@@ -271,6 +272,30 @@ export interface TestCaseResponse {
   updated_at: string;
 }
 
+export interface TestCaseFieldChange {
+  field: string;
+  old_value: unknown;
+  new_value: unknown;
+  change_type: 'added' | 'removed' | 'modified';
+}
+
+export interface TestCaseChangeLog {
+  id: string;
+  case_id: string;
+  revision_no: number;
+  action: string;
+  operator_id: string;
+  operator_name?: string | null;
+  changes: TestCaseFieldChange[];
+  remark?: string | null;
+  created_at: string;
+}
+
+export interface TestCaseChangeLogListResponse {
+  items: TestCaseChangeLog[];
+  total: number;
+}
+
 export interface ListTestCasesParams {
   ref_req_id?: string;
   status?: string;
@@ -296,6 +321,7 @@ export interface AttachmentInfo {
   storage_path: string;
   size: number;
   content_type: string;
+  sha256?: string | null;
   uploaded_by?: string;
   uploaded_at: string;
   download_url?: string | null;
@@ -382,6 +408,11 @@ export interface ListAgentsParams {
   region?: string;
   status?: string;
   online_only?: boolean;
+}
+
+export interface AgentCleanupOfflineResponse {
+  deleted_count: number;
+  deleted_agent_ids: string[];
 }
 
 export interface CreateAutomationTestCaseRequest {
@@ -621,7 +652,10 @@ export interface TerminalExitMessage {
 // Role and Permission types
 export interface PermissionResponse {
   id: string;
-  permission_id: string;
+  /** 业务权限 ID，与角色 permission_ids 一致 */
+  perm_id: string;
+  /** @deprecated 使用 perm_id */
+  permission_id?: string;
   name: string;
   code: string;
   description?: string;
