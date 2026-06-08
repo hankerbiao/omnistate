@@ -13,6 +13,10 @@ const emptyNewUser = {
   role_ids: [] as string[],
 };
 
+interface UserManagementProps {
+  onNavigate?: (page: string) => void;
+}
+
 const getErrorMessage = (err: unknown, fallback: string) => {
   if (err instanceof Error) {
     return `${fallback}: ${err.message}`;
@@ -20,7 +24,7 @@ const getErrorMessage = (err: unknown, fallback: string) => {
   return fallback;
 };
 
-const UserManagement: React.FC = () => {
+const UserManagement: React.FC<UserManagementProps> = ({ onNavigate }) => {
   const [users, setUsers] = useState<UserResponse[]>([]);
   const [roles, setRoles] = useState<RoleResponse[]>([]);
   const [selectedUser, setSelectedUser] = useState<UserResponse | null>(null);
@@ -530,7 +534,18 @@ const UserManagement: React.FC = () => {
                   <div style={styles.userId}>{user.user_id}</div>
                   <div style={styles.userRoles}>
                     {user.role_ids.slice(0, 2).map(rid => (
-                      <span key={rid} style={styles.roleTag}>{getRoleName(rid)}</span>
+                      <button
+                        key={rid}
+                        type="button"
+                        style={{ ...styles.roleTag, cursor: onNavigate ? 'pointer' : 'default', border: 'none' }}
+                        title="点击查看角色配置"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onNavigate?.('roles');
+                        }}
+                      >
+                        {getRoleName(rid)}
+                      </button>
                     ))}
                     {user.role_ids.length > 2 && (
                       <span style={styles.roleTagMore}>+{user.role_ids.length - 2}</span>
@@ -687,6 +702,19 @@ const UserManagement: React.FC = () => {
                       style={styles.checkbox}
                     />
                     <span style={styles.roleName}>{role.name}</span>
+                    {onNavigate && (
+                      <button
+                        type="button"
+                        style={{ ...styles.roleNavBtn }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onNavigate('roles');
+                        }}
+                        title="查看角色配置"
+                      >
+                        ↗
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
@@ -1350,6 +1378,17 @@ const styles = {
   roleName: {
     fontSize: '13px',
     color: 'var(--text-primary)',
+  },
+  roleNavBtn: {
+    fontSize: '11px',
+    color: 'var(--accent-primary)',
+    backgroundColor: 'transparent',
+    border: 'none',
+    cursor: 'pointer',
+    padding: '2px 6px',
+    borderRadius: '4px',
+    opacity: 0.5,
+    marginLeft: 'auto',
   },
   checkbox: {
     width: '16px',

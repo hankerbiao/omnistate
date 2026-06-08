@@ -8,11 +8,10 @@ import {
   type WorkflowTypeCode,
 } from '../constants/workflowLabels';
 import PageToolbar, { StatPill } from './ui/PageToolbar';
-import PageHero from './ui/PageHero';
 import PlanTaskTable from './PlanTaskTable';
 import ResultBackfillModal from './ResultBackfillModal';
 import SingleDispatchModal from './SingleDispatchModal';
-import BatchDispatchModal from './BatchDispatchModal';
+import DispatchWorkflow from './DispatchWorkflow';
 import type { PlanTask, PlanTaskResult } from './myTasksTypes';
 import { MOCK_PLAN_TASKS, TYPE_LABELS, TYPE_COLORS, groupBadgeStyle, myTasksStyles } from './myTasksTypes';
 
@@ -179,12 +178,6 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
 
   return (
     <div className="page-content">
-      <PageHero
-        badge="My Workspace"
-        description="查看和处理分配给你的工作项与执行计划任务。"
-        accent="#0d9488"
-        gradient={["#f0fdfa", "#ccfbf1", "#f0fdf4"]}
-      />
       <PageToolbar
         meta={(
           <>
@@ -200,8 +193,8 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
       />
 
       <div className="info-banner">
-        我的任务汇总了工作流指派和<strong>执行计划分配</strong>的待办事项。
-        计划任务可直接<strong>回填测试结果</strong>。
+        我的任务汇总了工作流指派和执行计划分配的待办事项。
+        计划任务可直接回填测试结果。
       </div>
 
       {error && (
@@ -364,13 +357,15 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
       />
 
       {/* ════════════════════════════════════════════════════════ */}
-      {/*  Batch Dispatch Dashboard                              */}
+      {/*  Dispatch Workflow (2-step: DUT select → Configure)   */}
       {/* ════════════════════════════════════════════════════════ */}
-      <BatchDispatchModal
+      <DispatchWorkflow
         open={batchOpen}
         autoTasks={autoTasksForDispatch}
         onClose={handleCloseBatchDispatch}
-        onSubmit={handleBatchSubmit}
+        onFinish={(caseIds) => {
+          handleBatchSubmit(caseIds);
+        }}
       />
     </div>
   );

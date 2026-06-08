@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import GlobalSearch from './GlobalSearch'
 
 interface SwitchableUser {
   userId: string
@@ -17,6 +18,7 @@ interface TopbarProps {
   onUserClick?: () => void
   onSwitchUser?: (userId: string, password: string) => Promise<void>
   switchableUsers?: SwitchableUser[]
+  onSearchNavigate?: (page: string) => void
 }
 
 const Topbar: React.FC<TopbarProps> = ({
@@ -24,11 +26,10 @@ const Topbar: React.FC<TopbarProps> = ({
   description,
   onLogout,
   currentUser,
-  currentUserId,
-  currentUserRole,
   onUserClick,
   onSwitchUser,
   switchableUsers,
+  onSearchNavigate,
 }) => {
   const [menuOpen, setMenuOpen] = useState(false)
   const [switching, setSwitching] = useState(false)
@@ -63,20 +64,8 @@ const Topbar: React.FC<TopbarProps> = ({
         {description && <span className="topbar__desc">{description}</span>}
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        {(currentUserRole || currentUserId) && (
-          <span
-            className="stat-pill stat-pill--info"
-            title="当前工作流身份"
-            style={{ maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-          >
-            {currentUserRole && <span className="stat-pill__value">{currentUserRole}</span>}
-            {currentUserRole && currentUserId && <span>·</span>}
-            {currentUserId && (
-              <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}>{currentUserId}</span>
-            )}
-          </span>
-        )}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: '0 0 auto' }}>
+        {onSearchNavigate && <GlobalSearch onNavigate={onSearchNavigate} />}
 
         <div ref={menuRef} style={{ position: 'relative' }}>
           <button
@@ -86,7 +75,16 @@ const Topbar: React.FC<TopbarProps> = ({
             aria-expanded={menuOpen}
             aria-haspopup="menu"
           >
-            <span className="topbar__avatar">{(currentUser || 'U').charAt(0).toUpperCase()}</span>
+            <span
+              style={{
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                width: 26, height: 26, borderRadius: 6, fontSize: 12,
+                fontWeight: 600, color: '#fff', background: 'var(--accent-primary)',
+                flexShrink: 0,
+              }}
+            >
+              {(currentUser || 'U').charAt(0).toUpperCase()}
+            </span>
             <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-secondary)' }}>
               {currentUser || '用户'}
             </span>
@@ -136,7 +134,14 @@ const Topbar: React.FC<TopbarProps> = ({
                     }}
                   >
                     <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <span className="topbar__avatar" style={{ width: 28, height: 28, fontSize: 11 }}>
+                      <span
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                          width: 26, height: 26, borderRadius: 6, fontSize: 11,
+                          fontWeight: 600, color: '#fff', background: 'var(--accent-primary)',
+                          flexShrink: 0,
+                        }}
+                      >
                         {user.label.charAt(0)}
                       </span>
                       <span>

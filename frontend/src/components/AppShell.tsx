@@ -9,7 +9,6 @@ const PAGE_TITLES: Record<PageType, { title: string; description?: string }> = {
   testCases: { title: '用例看板', description: '概览、浏览和管理测试用例' },
   agents: { title: '执行代理', description: '监控代理运行状态' },
   tasks: { title: '执行任务', description: '下发和管理测试任务' },
-  terminal: { title: '终端调试', description: '开发调试工具' },
   users: { title: '用户管理', description: '管理系统用户和权限' },
   roles: { title: '角色管理', description: '配置角色和权限' },
   profile: { title: '个人信息', description: '查看个人信息和权限' },
@@ -17,9 +16,9 @@ const PAGE_TITLES: Record<PageType, { title: string; description?: string }> = {
   dashboard: { title: '数据统计', description: '测试数据整体概览' },
   catalogLabs: { title: 'Lab 管理', description: '管理测试用例目录 Lab' },
   testPlanStudio: { title: '执行计划', description: '测试计划与排期管理' },
-  failureAnalysis: { title: '失效分析', description: '测试失败模式分析与稳定性监控' },
   lineageView: { title: '测试血缘', description: '从结果追溯完整测试链路' },
-  traceability: { title: '追溯矩阵', description: '需求-用例覆盖分析与追溯' },
+  collections: { title: '用例集合', description: '管理测试用例集合' },
+  search: { title: '全局搜索', description: '跨模块搜索' },
 }
 
 interface SwitchableUser {
@@ -42,6 +41,7 @@ interface AppShellProps {
   onUserClick?: () => void
   onSwitchUser?: (userId: string, password: string) => Promise<void>
   switchableUsers?: SwitchableUser[]
+  onSearchNavigate?: (page: string) => void
 }
 
 const AppShell: React.FC<AppShellProps> = ({
@@ -57,6 +57,7 @@ const AppShell: React.FC<AppShellProps> = ({
   onUserClick,
   onSwitchUser,
   switchableUsers,
+  onSearchNavigate,
 }) => {
   const pageInfo = PAGE_TITLES[currentPage] || { title: 'TestHub' }
 
@@ -79,6 +80,7 @@ const AppShell: React.FC<AppShellProps> = ({
           onUserClick={onUserClick}
           onSwitchUser={onSwitchUser}
           switchableUsers={switchableUsers}
+          onSearchNavigate={onSearchNavigate}
         />
         <main style={styles.workspace}>
           {children}

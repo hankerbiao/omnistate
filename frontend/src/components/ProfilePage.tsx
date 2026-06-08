@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { api } from '../services/api';
 import type { UserResponse, CurrentUserPermissionsResponse, PermissionResponse } from '../types';
 
@@ -9,36 +9,71 @@ const USER_STATUS_LABELS: Record<string, string> = {
   PENDING: '待激活',
 };
 
+// ── 权限分类元数据 ──
+interface CategoryMeta {
+  icon: string;
+  color: string;
+  bg: string;
+  label: string;
+}
+
+const CATEGORY_META: Record<string, CategoryMeta> = {
+  users:        { icon: '👤', color: '#3b82f6', bg: 'rgba(59,130,246,0.08)', label: '用户管理' },
+  roles:        { icon: '👥', color: '#8b5cf6', bg: 'rgba(139,92,246,0.08)', label: '角色管理' },
+  permissions:  { icon: '🔐', color: '#ec4899', bg: 'rgba(236,72,153,0.08)', label: '权限管理' },
+  requirements: { icon: '📐', color: '#f59e0b', bg: 'rgba(245,158,11,0.08)', label: '需求管理' },
+  test_cases:   { icon: '📋', color: '#10b981', bg: 'rgba(16,185,129,0.08)', label: '测试用例' },
+  work_items:   { icon: '⚙️', color: '#6366f1', bg: 'rgba(99,102,241,0.08)', label: '工作流' },
+  catalog:      { icon: '📁', color: '#06b6d4', bg: 'rgba(6,182,212,0.08)', label: '目录管理' },
+  execution:    { icon: '▶️', color: '#f97316', bg: 'rgba(249,115,22,0.08)', label: '执行管理' },
+  automation:   { icon: '🤖', color: '#14b8a6', bg: 'rgba(20,184,166,0.08)', label: '自动化' },
+  navigation:   { icon: '🧭', color: '#a855f7', bg: 'rgba(168,85,247,0.08)', label: '导航管理' },
+  other:        { icon: '📦', color: '#6b7280', bg: 'rgba(107,114,128,0.08)', label: '其他' },
+};
+
 const ProfilePage: React.FC = () => {
   const [userInfo, setUserInfo] = useState<UserResponse | null>(null);
   const [permissionsInfo, setPermissionsInfo] = useState<CurrentUserPermissionsResponse | null>(null);
   const [allPermissions, setAllPermissions] = useState<PermissionResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [permSearch, setPermSearch] = useState('');
+  const [permModalOpen, setPermModalOpen] = useState(false);
+  const [editingEmail, setEditingEmail] = useState(false);
+  const [emailDraft, setEmailDraft] = useState('');
+  const [savingEmail, setSavingEmail] = useState(false);
+  const [emailSuccess, setEmailSuccess] = useState<string | null>(null);
+  const [emailError, setEmailError] = useState<string | null>(null);
 
   const fetchUserData = useCallback(async () => {
     setLoading(true);
     setError(null);
-
     try {
-      const [userRes, permsRes, allPermsRes] = await Promise.all([
+      // 核心数据：个人信息 + 自己的权限 — 所有用户都能访问
+      const [userRes, permsRes] = await Promise.all([
         api.getCurrentUser(),
         api.getCurrentUserPermissions(),
-        api.listPermissions(),
       ]);
 
       if (userRes.code === 0 || userRes.code === 200) {
         setUserInfo(userRes.data);
       } else {
         setError(userRes.message || '获取用户信息失败');
+        setLoading(false);
+        return;
       }
-
       if (permsRes.code === 0 || permsRes.code === 200) {
         setPermissionsInfo(permsRes.data);
       }
 
-      if (allPermsRes.code === 0 || allPermsRes.code === 200) {
-        setAllPermissions(allPermsRes.data || []);
+      // 扩展数据：全量权限和角色列表 — 仅管理员有权限，非管理员静默降级
+      try {
+        const allPermsRes = await api.listPermissions();
+        if (allPermsRes.code === 0 || allPermsRes.code === 200) {
+          setAllPermissions(allPermsRes.data || []);
+        }
+      } catch {
+        // 非管理员无权限查看全量权限列表，不影响页面展示
       }
     } catch (err) {
       setError('获取用户信息失败');
@@ -48,43 +83,71 @@ const ProfilePage: React.FC = () => {
     }
   }, []);
 
-  useEffect(() => {
-    fetchUserData();
-  }, [fetchUserData]);
+  useEffect(() => { fetchUserData(); }, [fetchUserData]);
 
-  const getPermissionName = (code: string): string => {
-    const perm = allPermissions.find(p => p.code === code);
-    if (perm) {
-      return `${perm.name} (${code})`;
-    }
-    return code;
-  };
+  // ── 权限查询表 ──
+  const permMap = useMemo(() => {
+    const map = new Map<string, PermissionResponse>();
+    for (const p of allPermissions) map.set(p.code, p);
+    return map;
+  }, [allPermissions]);
 
-  const getPermissionCategory = (code: string): string => {
+  const getPermissionName = (code: string): string =>
+    permMap.get(code)?.name || code;
+
+  const getPermissionDescription = (code: string): string | undefined =>
+    permMap.get(code)?.description || undefined;
+
+  const getCategoryKey = (code: string): string => {
     const [resource] = code.split(':');
     return resource || 'other';
   };
 
-  const groupedPermissions = permissionsInfo?.permissions.reduce((acc, code) => {
-    const category = getPermissionCategory(code);
-    if (!acc[category]) {
-      acc[category] = [];
+  // ── 全量分类汇总（用于卡片预览） ──
+  const allPermCategories = useMemo(() => {
+    const codes = permissionsInfo?.permissions || [];
+    const grouped: Record<string, string[]> = {};
+    for (const code of codes) {
+      const cat = getCategoryKey(code);
+      if (!grouped[cat]) grouped[cat] = [];
+      grouped[cat].push(code);
     }
-    acc[category].push(code);
-    return acc;
-  }, {} as Record<string, string[]>) || {};
+    return Object.entries(grouped)
+      .map(([key, items]) => ({
+        key,
+        label: CATEGORY_META[key]?.label || key,
+        icon: CATEGORY_META[key]?.icon || '📦',
+        color: CATEGORY_META[key]?.color || '#6b7280',
+        bg: CATEGORY_META[key]?.bg || 'rgba(107,114,128,0.08)',
+        items,
+      }))
+      .sort((a, b) => b.items.length - a.items.length);
+  }, [permissionsInfo]);
 
-  const categoryLabels: Record<string, string> = {
-    users: '用户管理',
-    roles: '角色管理',
-    requirements: '需求管理',
-    test_cases: '测试用例',
-    work_items: '工作流',
-    assets: '资产管理',
-    execution: '执行管理',
-    automation: '自动化',
-    other: '其他',
-  };
+  // ── 分组 + 搜索（用于弹窗） ──
+  const groupedAndFiltered = useMemo(() => {
+    const codes = permissionsInfo?.permissions || [];
+    const q = permSearch.trim().toLowerCase();
+
+    const grouped: Record<string, string[]> = {};
+    for (const code of codes) {
+      if (q && !code.toLowerCase().includes(q) && !getPermissionName(code).toLowerCase().includes(q)) continue;
+      const cat = getCategoryKey(code);
+      if (!grouped[cat]) grouped[cat] = [];
+      grouped[cat].push(code);
+    }
+
+    return Object.entries(grouped)
+      .map(([key, items]) => ({
+        key,
+        label: CATEGORY_META[key]?.label || key,
+        icon: CATEGORY_META[key]?.icon || '📦',
+        color: CATEGORY_META[key]?.color || '#6b7280',
+        bg: CATEGORY_META[key]?.bg || 'rgba(107,114,128,0.08)',
+        items: items.sort(),
+      }))
+      .sort((a, b) => b.items.length - a.items.length);
+  }, [permissionsInfo, permSearch, permMap]);
 
   const getStatusStyle = (status: string) => {
     const styleMap: Record<string, { bg: string; color: string }> = {
@@ -93,6 +156,46 @@ const ProfilePage: React.FC = () => {
       PENDING: { bg: 'var(--status-warning-bg)', color: 'var(--status-warning)' },
     };
     return styleMap[status] || { bg: 'var(--surface-tertiary)', color: 'var(--text-secondary)' };
+  };
+
+  const handleStartEditEmail = () => {
+    setEmailDraft(userInfo?.email || '');
+    setEditingEmail(true);
+    setEmailError(null);
+    setEmailSuccess(null);
+  };
+
+  const handleCancelEditEmail = () => {
+    setEditingEmail(false);
+    setEmailDraft('');
+    setEmailError(null);
+  };
+
+  const handleSaveEmail = async () => {
+    if (!userInfo) return;
+    const trimmed = emailDraft.trim();
+    if (trimmed && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+      setEmailError('邮箱格式不正确');
+      return;
+    }
+    setSavingEmail(true);
+    setEmailError(null);
+    setEmailSuccess(null);
+    try {
+      const res = await api.updateUser(userInfo.user_id, { email: trimmed || undefined });
+      if (res.code === 0 || res.code === 200) {
+        setUserInfo({ ...userInfo, email: res.data?.email || trimmed });
+        setEditingEmail(false);
+        setEmailSuccess('邮箱已更新');
+        setTimeout(() => setEmailSuccess(null), 3000);
+      } else {
+        setEmailError(res.message || '更新邮箱失败');
+      }
+    } catch {
+      setEmailError('更新邮箱失败，请稍后重试');
+    } finally {
+      setSavingEmail(false);
+    }
   };
 
   if (loading) {
@@ -112,9 +215,7 @@ const ProfilePage: React.FC = () => {
         <div style={styles.errorBanner}>
           <span>⚠</span> {error || '获取用户信息失败'}
         </div>
-        <button style={styles.retryBtn} onClick={fetchUserData}>
-          重试
-        </button>
+        <button style={styles.retryBtn} onClick={fetchUserData}>重试</button>
       </div>
     );
   }
@@ -126,7 +227,7 @@ const ProfilePage: React.FC = () => {
       </div>
 
       <div style={styles.content}>
-        {/* User Info Card */}
+        {/* ── User Info Card ── */}
         <div style={styles.card}>
           <div style={styles.cardHeader}>
             <h2 style={styles.cardTitle}>基本信息</h2>
@@ -138,10 +239,7 @@ const ProfilePage: React.FC = () => {
               </div>
               <div style={styles.userNameSection}>
                 <span style={styles.userName}>{userInfo.username || userInfo.user_id}</span>
-                <span
-                  className="status-badge"
-                  style={getStatusStyle(userInfo.status)}
-                >
+                <span className="status-badge" style={getStatusStyle(userInfo.status)}>
                   {USER_STATUS_LABELS[userInfo.status] || userInfo.status}
                 </span>
               </div>
@@ -158,7 +256,58 @@ const ProfilePage: React.FC = () => {
               </div>
               <div style={styles.infoItem}>
                 <span style={styles.infoLabel}>邮箱</span>
-                <span style={styles.infoValue}>{userInfo.email || '-'}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {editingEmail ? (
+                    <>
+                      <input
+                        className="form-input"
+                        style={{ flex: 1, fontSize: 13, minWidth: 180 }}
+                        value={emailDraft}
+                        onChange={e => setEmailDraft(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') handleSaveEmail(); if (e.key === 'Escape') handleCancelEditEmail(); }}
+                        placeholder="输入邮箱地址"
+                        autoFocus
+                        disabled={savingEmail}
+                      />
+                      <button
+                        className="btn btn--primary btn--sm"
+                        onClick={handleSaveEmail}
+                        disabled={savingEmail}
+                        style={{ whiteSpace: 'nowrap', fontSize: 12, padding: '5px 12px' }}
+                      >
+                        {savingEmail ? '保存中…' : '保存'}
+                      </button>
+                      <button
+                        className="btn btn--ghost btn--sm"
+                        onClick={handleCancelEditEmail}
+                        disabled={savingEmail}
+                        style={{ whiteSpace: 'nowrap', fontSize: 12, padding: '5px 12px' }}
+                      >
+                        取消
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <span style={styles.infoValue}>{userInfo.email || (
+                        <span style={{ color: 'var(--text-tertiary)', fontStyle: 'italic' }}>未设置</span>
+                      )}</span>
+                      <button
+                        className="btn btn--ghost btn--sm"
+                        onClick={handleStartEditEmail}
+                        title="编辑邮箱"
+                        style={{ fontSize: 11, padding: '2px 8px', lineHeight: 1.4 }}
+                      >
+                        ✏️ 编辑
+                      </button>
+                    </>
+                  )}
+                </div>
+                {emailError && (
+                  <span style={{ fontSize: 11, color: 'var(--status-error)', marginTop: 2 }}>{emailError}</span>
+                )}
+                {emailSuccess && (
+                  <span style={{ fontSize: 11, color: 'var(--status-success)', marginTop: 2 }}>{emailSuccess}</span>
+                )}
               </div>
               <div style={styles.infoItem}>
                 <span style={styles.infoLabel}>状态</span>
@@ -184,65 +333,142 @@ const ProfilePage: React.FC = () => {
           </div>
         </div>
 
-        {/* Roles Card */}
+        {/* ── Permissions Card ── */}
         <div style={styles.card}>
-          <div style={styles.cardHeader}>
-            <h2 style={styles.cardTitle}>角色信息</h2>
-            <span style={styles.badge}>{permissionsInfo?.roles?.length || 0}</span>
-          </div>
-          <div style={styles.cardBody}>
-            {permissionsInfo?.roles && permissionsInfo.roles.length > 0 ? (
-              <div style={styles.rolesList}>
-                {permissionsInfo.roles.map((role) => (
-                  <div key={role.role_id} style={styles.roleItem}>
-                    <span style={styles.roleIcon}>👥</span>
-                    <div style={styles.roleInfo}>
-                      <span style={styles.roleName}>{role.role_name}</span>
-                      <span style={styles.roleId} className="mono">{role.role_id}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div style={styles.emptyState}>
-                <span>暂无角色</span>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Permissions Card */}
-        <div style={styles.card}>
-          <div style={styles.cardHeader}>
+          <div style={{ ...styles.cardHeader, cursor: 'pointer' }} onClick={() => setPermModalOpen(true)}>
             <h2 style={styles.cardTitle}>权限列表</h2>
-            <span style={styles.badge}>{permissionsInfo?.permissions?.length || 0}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={styles.badge}>{permissionsInfo?.permissions?.length || 0}</span>
+              <span style={{ fontSize: 12, color: 'var(--accent-primary)', fontWeight: 500 }}>
+                查看详情 →
+              </span>
+            </div>
           </div>
+          {/* Summary preview */}
           <div style={styles.cardBody}>
-            {Object.keys(groupedPermissions).length > 0 ? (
-              <div style={styles.permissionsGrid}>
-                {Object.entries(groupedPermissions).map(([category, codes]) => (
-                  <div key={category} style={styles.permissionCategory}>
-                    <h3 style={styles.categoryTitle}>
-                      {categoryLabels[category] || category}
-                    </h3>
-                    <div style={styles.permissionsList}>
-                      {codes.map((code) => (
-                        <span key={code} style={styles.permissionTag}>
-                          {getPermissionName(code)}
-                        </span>
-                      ))}
-                    </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+              {allPermCategories.map(cat => (
+                <div key={cat.key} style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  padding: '8px 12px', borderRadius: 8, background: cat.bg,
+                  border: `0.5px solid ${cat.color}20`,
+                }}>
+                  <span style={{ fontSize: 16 }}>{cat.icon}</span>
+                  <div>
+                    <span style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 500, display: 'block' }}>{cat.label}</span>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: cat.color }}>{cat.items.length}</span>
                   </div>
-                ))}
-              </div>
-            ) : (
-              <div style={styles.emptyState}>
-                <span>暂无权限</span>
-              </div>
-            )}
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </div>
+
+      {/* ── Permissions Modal ── */}
+      {permModalOpen && (
+        <div
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}
+          onClick={() => setPermModalOpen(false)}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: 'var(--bg-elevated)', borderRadius: 12, width: 720, maxWidth: '90vw',
+              maxHeight: '80vh', display: 'flex', flexDirection: 'column',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.3)', border: '1px solid var(--border-default)',
+            }}
+          >
+            {/* Modal header */}
+            <div style={{
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              padding: '18px 24px', borderBottom: '1px solid var(--border-subtle)', flexShrink: 0,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <h3 style={{ margin: 0, fontSize: 17, fontWeight: 600, color: 'var(--text-primary)' }}>权限列表</h3>
+                <span style={styles.badge}>{permissionsInfo?.permissions?.length || 0}</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <input
+                  className="form-input"
+                  style={{ width: 200, fontSize: 12, padding: '5px 10px' }}
+                  value={permSearch}
+                  onChange={e => setPermSearch(e.target.value)}
+                  placeholder="搜索权限名称或代码…"
+                />
+                <button
+                  style={{ fontSize: 20, color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer', lineHeight: 1 }}
+                  onClick={() => setPermModalOpen(false)}
+                >×</button>
+              </div>
+            </div>
+
+            {/* Modal body */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
+              {groupedAndFiltered.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                  {groupedAndFiltered.map(cat => (
+                    <div key={cat.key}>
+                      {/* Category header */}
+                      <div style={{
+                        display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10,
+                        paddingBottom: 8, borderBottom: `2px solid ${cat.color}`,
+                      }}>
+                        <span style={{ fontSize: 20 }}>{cat.icon}</span>
+                        <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)', flex: 1 }}>{cat.label}</span>
+                        <span style={{
+                          fontSize: 11, fontWeight: 600, padding: '2px 10px', borderRadius: 8,
+                          color: cat.color, background: `color-mix(in srgb, ${cat.color} 15%, transparent)`,
+                        }}>{cat.items.length} 项</span>
+                      </div>
+
+                      {/* Permission cards */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {cat.items.map(code => {
+                          const name = getPermissionName(code);
+                          const desc = getPermissionDescription(code);
+                          return (
+                            <div key={code} style={{
+                              padding: '10px 14px', borderRadius: 8, background: 'var(--surface-secondary)',
+                              border: `0.5px solid ${cat.color}20`,
+                            }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)' }}>{name}</span>
+                                <span style={{
+                                  fontSize: 10, color: 'var(--text-tertiary)', fontFamily: 'monospace',
+                                  background: 'var(--surface-tertiary)', padding: '1px 6px', borderRadius: 4,
+                                }}>{code}</span>
+                              </div>
+                              {desc && (
+                                <p style={{
+                                  margin: '4px 0 0', fontSize: 12, color: 'var(--text-secondary)',
+                                  lineHeight: 1.5,
+                                }}>{desc}</p>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 14 }}>
+                  {permSearch ? '无匹配的权限' : '暂无权限'}
+                </div>
+              )}
+            </div>
+
+            {/* Modal footer */}
+            <div style={{
+              padding: '12px 24px', borderTop: '1px solid var(--border-subtle)',
+              textAlign: 'right', fontSize: 12, color: 'var(--text-tertiary)',
+            }}>
+              共 {permissionsInfo?.permissions?.length || 0} 项权限
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -356,66 +582,22 @@ const styles = {
     fontSize: '14px',
     color: 'var(--text-primary)',
   } as const,
-  rolesList: {
+  // ── New permission styles ──
+  catGrid: {
     display: 'flex',
     flexDirection: 'column' as const,
-    gap: '12px',
+    gap: '16px',
   } as const,
-  roleItem: {
+  catCard: {
+    padding: '14px 16px',
+    borderRadius: 'var(--radius-md)',
+    border: '0.5px solid var(--border-subtle)',
+    transition: 'box-shadow 0.15s',
+  } as const,
+  catHeader: {
     display: 'flex',
     alignItems: 'center',
-    gap: '12px',
-    padding: '12px 16px',
-    backgroundColor: 'var(--surface-secondary)',
-    borderRadius: 'var(--radius-md)',
-    border: '1px solid var(--border-subtle)',
-  } as const,
-  roleIcon: {
-    fontSize: '20px',
-  } as const,
-  roleInfo: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: '2px',
-  } as const,
-  roleName: {
-    fontSize: '14px',
-    fontWeight: 500,
-    color: 'var(--text-primary)',
-  } as const,
-  roleId: {
-    fontSize: '11px',
-    color: 'var(--text-tertiary)',
-  } as const,
-  permissionsGrid: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: '20px',
-  } as const,
-  permissionCategory: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: '8px',
-  } as const,
-  categoryTitle: {
-    fontSize: '13px',
-    fontWeight: 600,
-    color: 'var(--text-secondary)',
-    margin: 0,
-  } as const,
-  permissionsList: {
-    display: 'flex',
-    flexWrap: 'wrap' as const,
-    gap: '8px',
-  } as const,
-  permissionTag: {
-    display: 'inline-flex',
-    padding: '4px 10px',
-    fontSize: '12px',
-    color: 'var(--accent-primary)',
-    backgroundColor: 'var(--status-info-bg)',
-    borderRadius: 'var(--radius-sm)',
-    border: '1px solid rgba(37, 99, 235, 0.2)',
+    gap: 4,
   } as const,
   emptyState: {
     display: 'flex',

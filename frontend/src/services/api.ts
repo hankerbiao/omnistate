@@ -1,4 +1,4 @@
-import type { LoginRequest, LoginResponse, ApiResponse, CreateRequirementRequest, RequirementResponse, ListRequirementsParams, CreateTestCaseRequest, UpdateTestCaseRequest, TestCaseResponse, TestCaseChangeLogListResponse, ListTestCasesParams, CatalogLab, CreateCatalogLabRequest, UpdateCatalogLabRequest, CatalogTreeResponse, DispatchTaskRequest, DispatchTaskResponse, ExecutionAgent, AgentCleanupOfflineResponse, ListAgentsParams, CreateAutomationTestCaseRequest, AutomationTestCaseResponse, ListAutomationTestCasesParams, ExecutionTask, ListTasksParams, TaskStatus, RerunTaskRequest, AttachmentInfo, WorkflowTransitionRequest, WorkflowTransitionResponse, WorkflowTransitionsResponse, WorkflowTransitionLog, RoleResponse, PermissionResponse, CreateRoleRequest, UpdateRoleRequest, UpdateRolePermissionsRequest, CurrentUserPermissionsResponse, UserResponse, CreateUserRequest, UpdateUserRequest, UpdateUserRolesRequest, UpdateUserPasswordRequest, ListUsersParams, NavigationPageResponse, UserNavigationResponse, UpdateUserNavigationRequest, WorkItem, LineageGraphResponse, FailureAnalysisDashboard, CommentListResponse, CreateCommentRequest, TestCaseComment } from '../types';
+import type { LoginRequest, LoginResponse, ApiResponse, CreateRequirementRequest, RequirementResponse, ListRequirementsParams, CreateTestCaseRequest, UpdateTestCaseRequest, TestCaseResponse, TestCaseChangeLogListResponse, ListTestCasesParams, CatalogLab, CreateCatalogLabRequest, UpdateCatalogLabRequest, CatalogTreeResponse, DispatchTaskRequest, DispatchTaskResponse, ExecutionAgent, AgentCleanupOfflineResponse, ListAgentsParams, CreateAutomationTestCaseRequest, AutomationTestCaseResponse, ListAutomationTestCasesParams, ExecutionTask, ListTasksParams, TaskStatus, RerunTaskRequest, AttachmentInfo, WorkflowTransitionRequest, WorkflowTransitionResponse, WorkflowTransitionsResponse, WorkflowTransitionLog, RoleResponse, PermissionResponse, CreateRoleRequest, UpdateRoleRequest, UpdateRolePermissionsRequest, CurrentUserPermissionsResponse, UserResponse, CreateUserRequest, UpdateUserRequest, UpdateUserRolesRequest, UpdateUserPasswordRequest, ListUsersParams, NavigationPageResponse, UserNavigationResponse, UpdateUserNavigationRequest, WorkItem, LineageGraphResponse, CommentListResponse, CreateCommentRequest, TestCaseComment } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
 
@@ -462,6 +462,13 @@ class ApiClient {
     });
   }
 
+  async updatePermission(permId: string, data: { name?: string; description?: string }): Promise<ApiResponse<PermissionResponse>> {
+    return this.request<PermissionResponse>(`/auth/permissions/${permId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
   async getCurrentUserPermissions(): Promise<ApiResponse<CurrentUserPermissionsResponse>> {
     return this.request<CurrentUserPermissionsResponse>('/auth/users/me/permissions', {
       method: 'GET',
@@ -621,18 +628,58 @@ class ApiClient {
     return this.request<LineageGraphResponse>(`/lineage/graph?${params.toString()}`, { method: 'GET' });
   }
 
-  // === Failure Analysis API ===
-  async getFailureAnalysisDashboard(
-    timeRange = '30d',
-    limitFlaky = 20,
-    limitHighFreq = 20,
-  ): Promise<ApiResponse<FailureAnalysisDashboard>> {
-    const params = new URLSearchParams({
-      time_range: timeRange,
-      limit_flaky: String(limitFlaky),
-      limit_high_freq: String(limitHighFreq),
+  // ── Global Search ────────────────────────────────────────────────
+
+  async search(q: string, options?: { types?: string; limit?: number; offset?: number }): Promise<ApiResponse<SearchResponse>> {
+    const params = new URLSearchParams({ q });
+    if (options?.types) params.set('types', options.types);
+    if (options?.limit) params.set('limit', String(options.limit));
+    if (options?.offset) params.set('offset', String(options.offset));
+    return this.request<SearchResponse>(`/search?${params.toString()}`, { method: 'GET' });
+  }
+
+  // ── TestCaseCollection ──────────────────────────────────────────
+
+  async listCollections(q?: string): Promise<ApiResponse<CollectionListItem[]>> {
+    const params = q ? `?${new URLSearchParams({ q }).toString()}` : '';
+    return this.request<CollectionListItem[]>(`/collections${params}`, { method: 'GET' });
+  }
+
+  async searchCollections(q: string, limit = 10): Promise<ApiResponse<CollectionListItem[]>> {
+    const params = new URLSearchParams({ q, limit: String(limit) });
+    return this.request<CollectionListItem[]>(`/collections/search?${params.toString()}`, { method: 'GET' });
+  }
+
+  async getCollection(id: string): Promise<ApiResponse<CollectionResponse>> {
+    return this.request<CollectionResponse>(`/collections/${id}`, { method: 'GET' });
+  }
+
+  async createCollection(data: CreateCollectionRequest): Promise<ApiResponse<CollectionResponse>> {
+    return this.request<CollectionResponse>('/collections', {
+      method: 'POST', body: JSON.stringify(data),
     });
-    return this.request<FailureAnalysisDashboard>(`/failure-analysis/dashboard?${params.toString()}`, { method: 'GET' });
+  }
+
+  async updateCollection(id: string, data: UpdateCollectionRequest): Promise<ApiResponse<CollectionResponse>> {
+    return this.request<CollectionResponse>(`/collections/${id}`, {
+      method: 'PUT', body: JSON.stringify(data),
+    });
+  }
+
+  async deleteCollection(id: string): Promise<ApiResponse<{ deleted: string }>> {
+    return this.request<{ deleted: string }>(`/collections/${id}`, { method: 'DELETE' });
+  }
+
+  async addCasesToCollection(id: string, data: AddCasesRequest): Promise<ApiResponse<CollectionResponse>> {
+    return this.request<CollectionResponse>(`/collections/${id}/cases`, {
+      method: 'POST', body: JSON.stringify(data),
+    });
+  }
+
+  async removeCasesFromCollection(id: string, data: RemoveCasesRequest): Promise<ApiResponse<CollectionResponse>> {
+    return this.request<CollectionResponse>(`/collections/${id}/cases`, {
+      method: 'DELETE', body: JSON.stringify(data),
+    });
   }
 }
 
