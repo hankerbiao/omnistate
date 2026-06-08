@@ -1,8 +1,12 @@
 import React, { useState, useCallback } from 'react';
+import { api } from '../services/api';
+import type { PlanItemDispatchRequest } from '../types';
 
 interface SingleDispatchModalProps {
   /** 是否打开弹窗 */
   open: boolean;
+  /** 计划条目 ID */
+  itemId: string;
   /** 用例 ID */
   caseId: string;
   /** 用例标题 */
@@ -17,48 +21,55 @@ type DispatchStrategy = 'immediate' | 'scheduled';
 
 /**
  * SingleDispatchModal — 单个自动化用例下发模态框
- * 支持立即执行和定时执行两种策略，包含执行环境、超时、重试等配置。
+ * 支持立即执行和定时执行两种策略，集成后端 API 调用。
  */
 const SingleDispatchModal: React.FC<SingleDispatchModalProps> = ({
-  open, caseId, caseTitle, onClose, onSuccess,
+  open, itemId, caseId, caseTitle, onClose, onSuccess,
 }) => {
   const [strategy, setStrategy] = useState<DispatchStrategy>('immediate');
   const [plannedAt, setPlannedAt] = useState('');
-  const [environment, setEnvironment] = useState('staging');
-  const [timeout, setTimeout_] = useState(30);
-  const [retry, setRetry] = useState(0);
-  const [notify, setNotify] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const resetForm = () => {
+    setStrategy('immediate');
+    setPlannedAt('');
+    setSubmitting(false);
+    setSuccess(false);
+    setError(null);
+  };
 
   const handleSubmit = useCallback(async () => {
     if (strategy === 'scheduled' && !plannedAt) {
       setError('请选择计划执行时间');
       return;
     }
+
     setSubmitting(true);
     setError(null);
-    await new Promise(r => setTimeout(r, 1200));
-    setSubmitting(false);
-    setSuccess(true);
-    setTimeout(() => {
-      onSuccess();
-      resetForm();
-      onClose();
-    }, 2000);
-  }, [strategy, plannedAt, onSuccess, onClose]);
 
-  const resetForm = () => {
-    setStrategy('immediate');
-    setPlannedAt('');
-    setEnvironment('staging');
-    setTimeout_(30);
-    setRetry(0);
-    setNotify(true);
-    setSuccess(false);
-    setError(null);
-  };
+    const request: PlanItemDispatchRequest = {
+      schedule_type: strategy === 'scheduled' ? 'SCHEDULED' : 'IMMEDIATE',
+      planned_at: strategy === 'scheduled' && plannedAt
+        ? new Date(plannedAt).toISOString()
+        : undefined,
+    };
+
+    try {
+      await api.dispatchPlanItem(itemId, request);
+      setSubmitting(false);
+      setSuccess(true);
+      setTimeout(() => {
+        onSuccess();
+        resetForm();
+        onClose();
+      }, 2000);
+    } catch (err) {
+      setSubmitting(false);
+      setError(err instanceof Error ? err.message : '下发失败，请重试');
+    }
+  }, [strategy, plannedAt, itemId, onSuccess, onClose]);
 
   const handleClose = () => {
     resetForm();
@@ -170,83 +181,6 @@ const SingleDispatchModal: React.FC<SingleDispatchModalProps> = ({
             </div>
           )}
 
-          {/* Execution config */}
-          <div>
-            <span style={{
-              display: 'block', fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)',
-              textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 6,
-            }}>
-              执行配置
-            </span>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-              <div>
-                <label style={{ display: 'block', fontSize: 11, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 3 }}>
-                  环境
-                </label>
-                <select
-                  className="form-input form-select" value={environment}
-                  onChange={e => setEnvironment(e.target.value)}
-                  style={{ width: '100%', fontSize: 12 }}
-                >
-                  <option value="staging">🟡 Staging</option>
-                  <option value="testing">🔵 Testing</option>
-                  <option value="production">🔴 Production</option>
-                  <option value="dev">🟢 Dev</option>
-                </select>
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: 11, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 3 }}>
-                  超时
-                </label>
-                <div style={{ display: 'flex', gap: 4 }}>
-                  {[15, 30, 60].map(t => (
-                    <button
-                      key={t}
-                      onClick={() => setTimeout_(t)}
-                      style={{
-                        flex: 1, padding: '5px 0', fontSize: 11,
-                        border: timeout === t ? '1.5px solid var(--accent-primary)' : '1px solid var(--border-subtle)',
-                        borderRadius: 6, cursor: 'pointer',
-                        background: timeout === t ? 'color-mix(in srgb, var(--accent-primary) 8%, transparent)' : 'var(--bg-primary)',
-                        color: timeout === t ? 'var(--accent-primary)' : 'var(--text-secondary)',
-                        fontWeight: timeout === t ? 600 : 400,
-                      }}
-                    >
-                      {t}min
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: 11, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 3 }}>
-                  重试
-                </label>
-                <select
-                  className="form-input form-select" value={retry}
-                  onChange={e => setRetry(Number(e.target.value))}
-                  style={{ width: '100%', fontSize: 12 }}
-                >
-                  <option value={0}>不重试</option>
-                  <option value={1}>1 次</option>
-                  <option value={2}>2 次</option>
-                </select>
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: 11, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 3 }}>
-                  通知
-                </label>
-                <select
-                  className="form-input form-select" value={notify ? 'on' : 'off'}
-                  onChange={e => setNotify(e.target.value === 'on')}
-                  style={{ width: '100%', fontSize: 12 }}
-                >
-                  <option value="on">🔔 通知</option>
-                  <option value="off">🔕 静默</option>
-                </select>
-              </div>
-            </div>
-          </div>
-
           {/* Error */}
           {error && (
             <div style={{
@@ -266,20 +200,10 @@ const SingleDispatchModal: React.FC<SingleDispatchModalProps> = ({
               <div style={{ fontSize: 24, marginBottom: 4 }}>✅</div>
               <div style={{ fontSize: 13, fontWeight: 600, color: '#3fb950' }}>下发成功</div>
               <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4 }}>
-                任务ID: <span style={{ fontFamily: 'monospace', color: 'var(--accent-primary)' }}>TASK-{String(Date.now()).slice(-6)}</span>
+                任务已提交到执行引擎
               </div>
             </div>
           )}
-
-          {/* History */}
-          <div style={{
-            padding: '8px 12px', background: 'var(--bg-secondary)', borderRadius: 8,
-            fontSize: 10, color: 'var(--text-tertiary)', lineHeight: 1.8,
-          }}>
-            <span style={{ fontWeight: 600 }}>📋 历史记录</span>
-            <div>TC-003 固件版本升级测试 → <span style={{ color: '#3fb950' }}>✅ 已通过</span>（06-04）</div>
-            <div>TC-005 CI/CD 管道集成测试 → <span style={{ color: '#f0883e' }}>⏳ 执行中</span>（06-05）</div>
-          </div>
         </div>
 
         {/* Footer */}

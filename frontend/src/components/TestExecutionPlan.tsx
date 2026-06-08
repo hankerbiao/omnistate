@@ -1,26 +1,17 @@
-import React, { useState, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import DatePicker from 'react-datepicker';
+import 'react-datepicker/dist/react-datepicker.css';
+import { api } from '../services/api';
 
 // ═══════════════════════════════════════════════════════════════════
-//  Mock Data
+//  Mock data for the wizard (case/component/user selection UI only)
+//  Actual plan CRUD uses the backend API.
 // ═══════════════════════════════════════════════════════════════════
 
-interface MockUser {
-  id: string; name: string;
-}
-interface MockComponent {
-  id: string; name: string;
-}
-interface MockCase {
-  id: string; title: string; type: 'auto' | 'manual'; component: string; priority: string; duration: number;
-}
-interface MockPlanCase {
-  caseId: string; status: 'pending' | 'running' | 'done' | 'fail'; assignee?: string;
-}
-interface MockPlan {
-  id: string; title: string; description: string; startDate: string; endDate: string;
-  triggerAt: string; status: 'draft' | 'active' | 'done'; progress: number;
-  cases: MockPlanCase[];
-}
+interface MockUser { id: string; name: string; }
+interface MockComponent { id: string; name: string; }
+interface MockCase { id: string; title: string; type: 'auto' | 'manual'; component: string; priority: string; duration: number; }
+interface MockCollection { id: string; name: string; description?: string; caseIds: string[]; }
 
 const MOCK_USERS: MockUser[] = [
   { id: 'zhangwei', name: '张伟' }, { id: 'lina', name: '李娜' },
@@ -53,51 +44,53 @@ const MOCK_CASES: MockCase[] = [
   { id: 'TC-015', title: '跨固件版本回滚测试', type: 'auto', component: 'fw', priority: 'P1', duration: 35 },
 ];
 
-const MOCK_PLANS: MockPlan[] = [
-  {
-    id: 'plan-1', title: 'Sprint 1 · 固件基线验证', description: '针对 v2.3 固件版本的全面验证，覆盖核心功能与稳定性',
-    startDate: '2026-06-15', endDate: '2026-07-15', triggerAt: '2026-06-20 10:00',
-    status: 'active', progress: 65,
-    cases: [
-      { caseId: 'TC-001', status: 'done', assignee: 'zhangwei' },
-      { caseId: 'TC-002', status: 'pending', assignee: 'lina' },
-      { caseId: 'TC-003', status: 'running', assignee: 'wanghao' },
-      { caseId: 'TC-004', status: 'pending' },
-      { caseId: 'TC-006', status: 'done', assignee: 'chenyu' },
-      { caseId: 'TC-007', status: 'running', assignee: 'zhaomin' },
-      { caseId: 'TC-010', status: 'pending', assignee: 'liuqing' },
-    ],
-  },
-  {
-    id: 'plan-2', title: 'Sprint 2 · 性能基准测试', description: '存储与内存性能基线，为下一迭代提供参考数据',
-    startDate: '2026-07-01', endDate: '2026-07-31', triggerAt: '2026-07-05 09:00',
-    status: 'active', progress: 30,
-    cases: [
-      { caseId: 'TC-005', status: 'running', assignee: 'huxin' },
-      { caseId: 'TC-007', status: 'pending' },
-      { caseId: 'TC-009', status: 'pending', assignee: 'sunjie' },
-      { caseId: 'TC-011', status: 'done', assignee: 'zhangwei' },
-      { caseId: 'TC-013', status: 'pending' },
-    ],
-  },
-  {
-    id: 'plan-3', title: 'Sprint 3 · 安全与兼容性', description: '安全审计、跨平台兼容性验证、边界条件测试',
-    startDate: '2026-07-15', endDate: '2026-08-15', triggerAt: '2026-07-20 10:00',
-    status: 'draft', progress: 0,
-    cases: [
-      { caseId: 'TC-008', status: 'pending' },
-      { caseId: 'TC-012', status: 'pending' },
-      { caseId: 'TC-014', status: 'pending', assignee: 'wanghao' },
-      { caseId: 'TC-015', status: 'pending' },
-    ],
-  },
+const MOCK_COLLECTIONS: MockCollection[] = [
+  { id: 'col-1', name: 'Sprint 1 回归用例集', description: 'Sprint 1 阶段的全部回归测试用例', caseIds: ['TC-001', 'TC-003', 'TC-007', 'TC-011'] },
+  { id: 'col-2', name: '核心功能冒烟测试', description: '每次提交前必跑的冒烟测试集合', caseIds: ['TC-001', 'TC-003', 'TC-009'] },
+  { id: 'col-3', name: '内存子系统全量', description: '内存模块的所有测试用例', caseIds: ['TC-001', 'TC-002', 'TC-011'] },
+  { id: 'col-4', name: '稳定性长稳测试集', description: '长时间稳定性测试用例', caseIds: ['TC-004', 'TC-008', 'TC-013'] },
 ];
 
 const PRIORITY_COLORS: Record<string, string> = { P0: '#f85149', P1: '#d29922', P2: '#58a6ff', P3: '#8b949e' };
-
 const caseMap = new Map(MOCK_CASES.map(c => [c.id, c]));
-const userMap = new Map(MOCK_USERS.map(u => [u.id, u]));
-const compCases = (component: string) => MOCK_CASES.filter(c => c.component === component);
+
+// ── PlanSummary — 轻量结构，匹配后端 PlanListItem ──
+interface PlanSummary {
+  plan_id: string;
+  title: string;
+  description: string;
+  status: string;   // 'draft' | 'active' | 'done' | 'archived'
+  start_date: string;
+  end_date: string;
+  trigger_at: string;
+  created_by: string;
+  item_count: number;
+  done_count: number;
+  progress_percent: number;
+  created_at: string;
+  updated_at: string;
+}
+
+// ── PlanItem — 计划内条目的摘要 ──
+interface PlanItemSummary {
+  item_id: string;
+  case_id: string;
+  case_title: string;
+  ref_type: string;
+  component: string;
+  priority: string;
+  assignee_id: string | null;
+  status: string;
+  order_no: number;
+}
+
+const STATUS_COLORS: Record<string, string> = {
+  pending: '#8b949e', running: '#58a6ff', done: '#3fb950', fail: '#f85149',
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  pending: '待执行', running: '执行中', done: '已完成', fail: '失败',
+};
 
 // ═══════════════════════════════════════════════════════════════════
 //  Component
@@ -106,76 +99,67 @@ const compCases = (component: string) => MOCK_CASES.filter(c => c.component === 
 type ViewMode = 'board' | 'list';
 
 const TestExecutionPlan: React.FC = () => {
-  const [plans, setPlans] = useState<MockPlan[]>(MOCK_PLANS);
-  const [activePlanId, setActivePlanId] = useState<string>('plan-1');
+  const [plans, setPlans] = useState<PlanSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [activePlanId, setActivePlanId] = useState<string>('');
   const [viewMode, setViewMode] = useState<ViewMode>('board');
   const [showWizard, setShowWizard] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
-  const activePlan = plans.find(p => p.id === activePlanId);
+  // ── Plan detail (items) ──
+  const [activePlanItems, setActivePlanItems] = useState<PlanItemSummary[]>([]);
+  const [detailLoading, setDetailLoading] = useState(false);
 
-  const refreshProgress = (planId: string) => {
-    setPlans(prev => prev.map(p => {
-      if (p.id !== planId) return p;
-      const done = p.cases.filter(c => c.status === 'done').length;
-      const progress = p.cases.length > 0 ? Math.round((done / p.cases.length) * 100) : 0;
-      return { ...p, progress };
-    }));
-  };
+  // ── Fetch plan list ──
 
-  const updateCaseStatus = (planId: string, caseId: string, status: string) => {
-    setPlans(prev => prev.map(p => {
-      if (p.id !== planId) return p;
-      return {
-        ...p,
-        cases: p.cases.map(c => c.caseId === caseId ? { ...c, status: status as any } : c),
-      };
-    }));
-    refreshProgress(planId);
-  };
+  const fetchPlans = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await api.listPlans();
+      setPlans(res.data || []);
+    } catch {
+      setError('获取计划列表失败');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-  // ── Dispatch modal state ──
-  const [dispatchModal, setDispatchModal] = useState<{
-    open: boolean; caseId: string;
-    strategy: 'immediate' | 'scheduled' | 'queue';
-    plannedAt: string; environment: string; timeout: number; retry: number; notify: boolean;
-    submitting: boolean; success: boolean; error: string | null;
-  }>({
-    open: false, caseId: '', strategy: 'immediate', plannedAt: '', environment: 'staging',
-    timeout: 30, retry: 0, notify: true, submitting: false, success: false, error: null,
-  });
+  useEffect(() => { void fetchPlans(); }, [fetchPlans]);
 
-  const openDispatchModal = (caseId: string) => {
-    setDispatchModal({
-      open: true, caseId, strategy: 'immediate', plannedAt: '',
-      environment: 'staging', timeout: 30, retry: 0, notify: true,
-      submitting: false, success: false, error: null,
-    });
-  };
+  // ── Fetch active plan detail ──
 
-  const closeDispatchModal = () => {
-    setDispatchModal(prev => ({ ...prev, open: false, success: false }));
-  };
-
-  const handleDispatchSubmit = async () => {
-    const dm = dispatchModal;
-    if (dm.strategy === 'scheduled' && !dm.plannedAt) {
-      setDispatchModal(prev => ({ ...prev, error: '请选择计划执行时间' }));
+  useEffect(() => {
+    if (!activePlanId) {
+      setActivePlanItems([]);
       return;
     }
-    setDispatchModal(prev => ({ ...prev, submitting: true, error: null }));
-    await new Promise(resolve => setTimeout(resolve, 1200));
-    setDispatchModal(prev => ({ ...prev, submitting: false, success: true }));
-    setTimeout(() => closeDispatchModal(), 2000);
-  };
+    setDetailLoading(true);
+    api.getPlanDetail(activePlanId)
+      .then(res => {
+        const d = res.data as Record<string, unknown> | undefined;
+        setActivePlanItems((d?.items as PlanItemSummary[]) || []);
+      })
+      .catch(() => setActivePlanItems([]))
+      .finally(() => setDetailLoading(false));
+  }, [activePlanId]);
 
-  const planCardProgress = plans.map(p => {
-    const done = p.cases.filter(c => c.status === 'done').length;
-    return { ...p, progress: p.cases.length > 0 ? Math.round((done / p.cases.length) * 100) : 0 };
-  });
+  const activePlan = plans.find(p => p.plan_id === activePlanId);
+
+  // ── Stats for plan cards ──
+
+  const planCardData = useMemo(() =>
+    plans.map(p => ({ ...p, progress: p.progress_percent ?? 0 })),
+    [plans],
+  );
 
   // ── Wizard state ──
+
   const [wizardStep, setWizardStep] = useState(1);
+  const [caseSearch, setCaseSearch] = useState('');
+  const [submittingPlan, setSubmittingPlan] = useState(false);
+
   const [newPlan, setNewPlan] = useState<{
     title: string; description: string; startDate: string; endDate: string; triggerAt: string;
     selectedCases: string[]; assignments: Record<string, { component: string; assignee: string }>;
@@ -186,25 +170,51 @@ const TestExecutionPlan: React.FC = () => {
 
   const resetWizard = () => {
     setWizardStep(1);
+    setCaseSearch('');
+    setSubmittingPlan(false);
     setNewPlan({ title: '', description: '', startDate: '', endDate: '', triggerAt: '', selectedCases: [], assignments: {} });
   };
 
-  const handleCreatePlan = () => {
-    if (!newPlan.title.trim()) return;
-    const planCases = newPlan.selectedCases.map(cid => ({
-      caseId: cid, status: 'pending' as const,
-      assignee: newPlan.assignments[cid]?.assignee || undefined,
-    }));
-    const newId = `plan-${plans.length + 1}`;
-    setPlans(prev => [...prev, {
-      id: newId, title: newPlan.title, description: newPlan.description,
-      startDate: newPlan.startDate, endDate: newPlan.endDate, triggerAt: newPlan.triggerAt,
-      status: 'draft', progress: 0, cases: planCases,
-    }]);
-    setActivePlanId(newId);
-    setShowWizard(false);
-    resetWizard();
+  const handleCreatePlan = async () => {
+    if (!newPlan.title.trim() || newPlan.selectedCases.length === 0) return;
+    setSubmittingPlan(true);
+
+    try {
+      // Step 1: Create plan
+      const planRes = await api.createPlan({
+        title: newPlan.title,
+        description: newPlan.description || undefined,
+        start_date: newPlan.startDate || undefined,
+        end_date: newPlan.endDate || undefined,
+        trigger_at: newPlan.triggerAt || undefined,
+      });
+      const planId = (planRes.data as Record<string, unknown>)?.plan_id as string;
+
+      // Step 2: Add items
+      const items = newPlan.selectedCases.map(cid => {
+        const tc = caseMap.get(cid);
+        return {
+          ref_type: tc?.type === 'auto' ? 'auto' : 'manual',
+          case_id: cid,
+          assignee_id: newPlan.assignments[cid]?.assignee || undefined,
+          component: newPlan.assignments[cid]?.component || tc?.component || undefined,
+        };
+      });
+      await api.addPlanItems(planId, { items });
+
+      // Step 3: Refresh
+      await fetchPlans();
+      setActivePlanId(planId);
+    } catch (err) {
+      console.error('创建计划失败:', err);
+    } finally {
+      setSubmittingPlan(false);
+      setShowWizard(false);
+      resetWizard();
+    }
   };
+
+  // ── Case selection helpers ──
 
   const toggleSelectCase = (cid: string) => {
     setNewPlan(prev => ({
@@ -213,6 +223,18 @@ const TestExecutionPlan: React.FC = () => {
         ? prev.selectedCases.filter(c => c !== cid)
         : [...prev.selectedCases, cid],
     }));
+  };
+
+  const toggleSelectCollection = (col: MockCollection) => {
+    setNewPlan(prev => {
+      const allSelected = col.caseIds.every(cid => prev.selectedCases.includes(cid));
+      const ids = new Set(prev.selectedCases);
+      for (const cid of col.caseIds) {
+        if (allSelected) ids.delete(cid);
+        else ids.add(cid);
+      }
+      return { ...prev, selectedCases: Array.from(ids) };
+    });
   };
 
   const setAssignment = (caseId: string, field: 'component' | 'assignee', value: string) => {
@@ -231,7 +253,7 @@ const TestExecutionPlan: React.FC = () => {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <span style={{ fontSize: 20, fontWeight: 700, letterSpacing: '-0.3px' }}>🎯 测试执行计划</span>
-          <input className="form-input" style={{ width: 200, fontSize: 13 }} value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="搜索计划、用例…" />
+          <input className="form-input" style={{ width: 200, fontSize: 13 }} value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="搜索计划…" />
           <div style={{ display: 'flex', gap: 2, background: 'var(--surface-secondary)', borderRadius: 8, padding: 2 }}>
             {(['board', 'list'] as ViewMode[]).map(m => (
               <button key={m} onClick={() => setViewMode(m)} style={{
@@ -247,229 +269,77 @@ const TestExecutionPlan: React.FC = () => {
       </div>
 
       {/* ── Plan cards (horizontal scroll) ── */}
-      <div style={{ display: 'flex', gap: 12, marginBottom: 20, overflowX: 'auto', flexShrink: 0, paddingBottom: 4 }}>
-        {planCardProgress.map(p => {
-          const isActive = p.id === activePlanId;
-          return (
-            <div key={p.id} onClick={() => setActivePlanId(p.id)} style={{
-              minWidth: 200, cursor: 'pointer', borderRadius: 12, padding: '14px 18px',
-              border: isActive ? '2px solid var(--accent-primary)' : '1px solid var(--border-subtle)',
-              background: isActive ? 'color-mix(in srgb, var(--accent-primary) 6%, transparent)' : 'var(--surface-primary)',
-              transition: 'all 0.15s', flexShrink: 0,
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                <span style={{ fontSize: 13, fontWeight: 600 }}>{p.title}</span>
-                <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 8,
-                  background: p.status === 'active' ? 'rgba(63,185,80,0.15)' : p.status === 'draft' ? 'rgba(88,166,255,0.15)' : 'rgba(139,148,158,0.15)',
-                  color: p.status === 'active' ? '#3fb950' : p.status === 'draft' ? '#58a6ff' : '#8b949e',
-                  fontWeight: 600,
-                }}>
-                  {p.status === 'active' ? '进行中' : p.status === 'draft' ? '草稿' : '已完成'}
-                </span>
-              </div>
-              <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 8 }}>
-                {p.startDate} → {p.endDate}
-              </div>
-              {/* Progress bar */}
-              <div style={{ height: 4, background: 'var(--surface-tertiary)', borderRadius: 2, overflow: 'hidden' }}>
-                <div style={{ width: `${p.progress}%`, height: '100%', background: p.status === 'active' ? 'var(--accent-primary)' : 'var(--text-tertiary)', borderRadius: 2, transition: 'width 0.3s' }} />
-              </div>
-              <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4, textAlign: 'right' }}>{p.progress}%</div>
+      {loading ? (
+        <div style={{ marginBottom: 20, fontSize: 13, color: 'var(--text-tertiary)' }}>加载计划列表...</div>
+      ) : (
+        <div style={{ display: 'flex', gap: 12, marginBottom: 20, overflowX: 'auto', flexShrink: 0, paddingBottom: 4 }}>
+          {planCardData.length === 0 && (
+            <div style={{ minWidth: 280, padding: '20px 24px', borderRadius: 12, border: '1px dashed var(--border-subtle)', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 13 }}>
+              暂无执行计划，点击「+ 新建计划」开始
             </div>
-          );
-        })}
-      </div>
-
-      {/* ── Board / List content ── */}
-      {dispatchModal.open && (() => {
-        const dm = dispatchModal;
-        const tc = caseMap.get(dm.caseId);
-        if (!tc) return null;
-        return (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000 }}>
-          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg-elevated)', borderRadius: 16, width: 520, maxWidth: '94vw', boxShadow: '0 30px 80px rgba(0,0,0,0.35)', border: '1px solid var(--border-default)', overflow: 'hidden' }}>
-
-            {/* Header with gradient-like background */}
-            <div style={{ background: 'linear-gradient(135deg, rgba(57,208,214,0.08) 0%, rgba(163,113,247,0.08) 100%)', padding: '20px 24px 16px', borderBottom: '1px solid var(--border-subtle)' }}>
-              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                    <span style={{ fontSize: 14 }}>⚡</span>
-                    <span style={{ fontSize: 12, fontFamily: 'monospace', color: 'var(--text-tertiary)', background: 'var(--surface-tertiary)', padding: '1px 8px', borderRadius: 4 }}>{tc.id}</span>
-                    <span style={{ fontSize: 11, padding: '1px 8px', borderRadius: 4, background: 'rgba(57,208,214,0.12)', color: '#39d0d6', fontWeight: 600 }}>{tc.type === 'auto' ? '自动化' : '手动'}</span>
-                    <span style={{ fontSize: 11, color: '#d29922', fontWeight: 600 }}>{tc.priority}</span>
-                  </div>
-                  <h3 style={{ margin: 0, fontSize: 17, fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.4 }}>{tc.title}</h3>
-                  <div style={{ display: 'flex', gap: 16, marginTop: 6, fontSize: 12, color: 'var(--text-tertiary)' }}>
-                    <span>⏱ 预估 {tc.duration} 分钟</span>
-                    <span>📂 {MOCK_COMPONENTS.find(c => c.id === tc.component)?.name || tc.component}</span>
-                  </div>
-                </div>
-                <button onClick={closeDispatchModal} style={{ fontSize: 24, color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, lineHeight: 1 }}>×</button>
-              </div>
-            </div>
-
-            {/* Scrollable body */}
-            <div style={{ padding: '20px 24px', maxHeight: '50vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 18 }}>
-
-              {/* Strategy selection */}
-              <div>
-                <span style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 8 }}>执行策略</span>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
-                  {[
-                    { key: 'immediate', icon: '🚀', title: '立即执行', desc: '不排队，立即下发' },
-                    { key: 'scheduled', icon: '⏰', title: '定时执行', desc: '指定时间自动触发' },
-                    { key: 'queue', icon: '🔁', title: '队列等待', desc: '加入执行队列轮候' },
-                  ].map(opt => (
-                    <button key={opt.key} onClick={() => setDispatchModal(prev => ({ ...prev, strategy: opt.key as any, error: null }))} style={{
-                      padding: '10px 8px', border: dm.strategy === opt.key ? '2px solid var(--accent-primary)' : '1px solid var(--border-subtle)',
-                      borderRadius: 10, cursor: 'pointer', textAlign: 'left',
-                      background: dm.strategy === opt.key ? 'color-mix(in srgb, var(--accent-primary) 6%, transparent)' : 'var(--bg-primary)',
-                      transition: 'all 0.12s',
-                    }}>
-                      <div style={{ fontSize: 16, marginBottom: 2 }}>{opt.icon}</div>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: dm.strategy === opt.key ? 'var(--accent-primary)' : 'var(--text-primary)' }}>{opt.title}</div>
-                      <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 1 }}>{opt.desc}</div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Scheduled time (expandable) */}
-              {dm.strategy === 'scheduled' && (
-                <div style={{ animation: 'fadeIn 0.2s ease' }}>
-                  <span style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 6 }}>计划执行时间</span>
-                  <input type="datetime-local" className="form-input" value={dm.plannedAt}
-                    onChange={e => setDispatchModal(prev => ({ ...prev, plannedAt: e.target.value, error: null }))}
-                    style={{ width: '100%', fontSize: 13 }} />
-                </div>
-              )}
-
-              {/* Queue position hint */}
-              {dm.strategy === 'queue' && (
-                <div style={{ padding: '10px 14px', background: 'rgba(88,166,255,0.08)', borderRadius: 8, fontSize: 12, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 14 }}>🔁</span>
-                  <span>当前队列中有 <strong style={{ color: '#58a6ff' }}>3</strong> 个任务待执行，预计等待 <strong style={{ color: '#58a6ff' }}>~12</strong> 分钟</span>
-                </div>
-              )}
-
-              {/* Execution config */}
-              <div>
-                <span style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 8 }}>执行配置</span>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                  <div>
-                    <label style={{ display: 'block', fontSize: 11, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>目标环境</label>
-                    <select className="form-input form-select" value={dm.environment}
-                      onChange={e => setDispatchModal(prev => ({ ...prev, environment: e.target.value }))}
-                      style={{ width: '100%', fontSize: 12 }}>
-                      <option value="staging">🟡 Staging 预发布</option>
-                      <option value="testing">🔵 Testing 测试环境</option>
-                      <option value="production">🔴 Production 生产</option>
-                      <option value="dev">🟢 Dev 开发环境</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', fontSize: 11, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>超时时间（分钟）</label>
-                    <div style={{ display: 'flex', gap: 4 }}>
-                      {[15, 30, 60, 120].map(t => (
-                        <button key={t} onClick={() => setDispatchModal(prev => ({ ...prev, timeout: t }))} style={{
-                          flex: 1, padding: '5px 0', fontSize: 11, border: dm.timeout === t ? '1.5px solid var(--accent-primary)' : '1px solid var(--border-subtle)',
-                          borderRadius: 6, cursor: 'pointer', background: dm.timeout === t ? 'color-mix(in srgb, var(--accent-primary) 8%, transparent)' : 'var(--bg-primary)',
-                          color: dm.timeout === t ? 'var(--accent-primary)' : 'var(--text-secondary)', fontWeight: dm.timeout === t ? 600 : 400,
-                        }}>{t}min</button>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', fontSize: 11, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>失败重试</label>
-                    <select className="form-input form-select" value={dm.retry}
-                      onChange={e => setDispatchModal(prev => ({ ...prev, retry: Number(e.target.value) }))}
-                      style={{ width: '100%', fontSize: 12 }}>
-                      <option value={0}>不重试</option>
-                      <option value={1}>1 次</option>
-                      <option value={2}>2 次</option>
-                      <option value={3}>3 次</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', fontSize: 11, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>通知</label>
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      {[
-                        { key: true, label: '🔔 开启' },
-                        { key: false, label: '🔕 关闭' },
-                      ].map(opt => (
-                        <button key={String(opt.key)} onClick={() => setDispatchModal(prev => ({ ...prev, notify: opt.key }))} style={{
-                          flex: 1, padding: '5px 0', fontSize: 11, border: dm.notify === opt.key ? '1.5px solid var(--accent-primary)' : '1px solid var(--border-subtle)',
-                          borderRadius: 6, cursor: 'pointer', background: dm.notify === opt.key ? 'color-mix(in srgb, var(--accent-primary) 8%, transparent)' : 'var(--bg-primary)',
-                          color: dm.notify === opt.key ? 'var(--accent-primary)' : 'var(--text-secondary)', fontWeight: dm.notify === opt.key ? 600 : 400,
-                        }}>{opt.label}</button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Error */}
-              {dm.error && (
-                <div style={{ padding: '10px 14px', background: 'rgba(248,81,73,0.08)', borderRadius: 8, fontSize: 13, color: '#f85149', display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span>⚠️</span> {dm.error}
-                </div>
-              )}
-
-              {/* Success */}
-              {dm.success && (
-                <div style={{ padding: '14px 16px', background: 'linear-gradient(135deg, rgba(63,185,80,0.1) 0%, rgba(57,208,214,0.06) 100%)', borderRadius: 10, border: '1px solid rgba(63,185,80,0.2)', textAlign: 'center' }}>
-                  <div style={{ fontSize: 28, marginBottom: 6 }}>✅</div>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: '#3fb950', marginBottom: 4 }}>下发成功</div>
-                  <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
-                    任务已进入执行队列 · 任务ID: <span style={{ fontFamily: 'monospace', color: 'var(--accent-primary)' }}>TASK-{String(Date.now()).slice(-6)}</span>
-                  </div>
-                </div>
-              )}
-
-              {/* Mock history */}
-              {!dm.success && (
-                <div style={{ padding: '10px 14px', background: 'var(--bg-secondary)', borderRadius: 8, fontSize: 11, color: 'var(--text-tertiary)', lineHeight: 1.7 }}>
-                  <span style={{ fontWeight: 600 }}>📋 上次下发记录</span>
-                  <div style={{ marginTop: 2 }}>
-                    TC-003 固件版本升级测试 → <span style={{ color: '#3fb950' }}>✅ 已通过</span> （06-04 14:30）
-                  </div>
-                  <div>
-                    TC-005 CI/CD 管道集成测试 → <span style={{ color: '#f0883e' }}>⏳ 执行中</span> （06-05 09:15）
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Footer */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 24px', borderTop: '1px solid var(--border-subtle)', background: 'var(--bg-tertiary)' }}>
-              <button className="btn btn--ghost btn--sm" onClick={closeDispatchModal} disabled={dm.submitting}>
-                {dm.success ? '关闭' : '取消'}
-              </button>
-              <button className="btn btn--primary" onClick={handleDispatchSubmit}
-                disabled={dm.submitting || dm.success}
-                style={{ padding: '8px 24px', fontSize: 13, fontWeight: 600 }}>
-                {dm.submitting ? (
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ width: 12, height: 12, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.6s linear infinite' }} />
-                    下发中...
+          )}
+          {planCardData
+            .filter(p => !searchQuery || p.title.includes(searchQuery))
+            .map(p => {
+            const isActive = p.plan_id === activePlanId;
+            const statusLabel = p.status === 'active' ? '进行中' : p.status === 'draft' ? '草稿' : p.status === 'done' ? '已完成' : '已归档';
+            const statusColor = p.status === 'active' ? '#3fb950' : p.status === 'draft' ? '#58a6ff' : '#8b949e';
+            return (
+              <div key={p.plan_id} onClick={() => setActivePlanId(p.plan_id)} style={{
+                minWidth: 200, cursor: 'pointer', borderRadius: 12, padding: '14px 18px',
+                border: isActive ? '2px solid var(--accent-primary)' : '1px solid var(--border-subtle)',
+                background: isActive ? 'color-mix(in srgb, var(--accent-primary) 6%, transparent)' : 'var(--surface-primary)',
+                transition: 'all 0.15s', flexShrink: 0,
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <span style={{ fontSize: 13, fontWeight: 600 }}>{p.title}</span>
+                  <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 8,
+                    background: `${statusColor}20`, color: statusColor, fontWeight: 600,
+                  }}>
+                    {statusLabel}
                   </span>
-                ) : dm.success ? '✓ 已完成' : '🚀 确认下发'}
-              </button>
-            </div>
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 8 }}>
+                  {p.start_date || '?'} → {p.end_date || '?'}
+                </div>
+                <div style={{ height: 4, background: 'var(--surface-tertiary)', borderRadius: 2, overflow: 'hidden' }}>
+                  <div style={{ width: `${p.progress}%`, height: '100%', background: p.status === 'active' ? 'var(--accent-primary)' : 'var(--text-tertiary)', borderRadius: 2, transition: 'width 0.3s' }} />
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4, textAlign: 'right' }}>
+                  {p.done_count}/{p.item_count} · {p.progress}%
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
-            <style>{`@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }`}</style>
-          </div>
-        </div>);
-      })()}
+      {error && (
+        <div style={{ padding: '8px 14px', marginBottom: 12, background: 'rgba(248,81,73,0.08)', borderRadius: 8, fontSize: 12, color: '#f85149', display: 'flex', alignItems: 'center', gap: 6 }}>
+          ⚠️ {error}
+          <button onClick={() => setError(null)} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: '#f85149', fontSize: 14 }}>×</button>
+        </div>
+      )}
+
+      {/* ── Plan detail content (read-only, progress only) ── */}
       {!activePlan ? (
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-tertiary)', fontSize: 14 }}>
           选择一个计划或新建一个计划
         </div>
+      ) : detailLoading ? (
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-tertiary)', fontSize: 14 }}>
+          加载计划详情...
+        </div>
       ) : viewMode === 'board' ? (
-        <BoardView plan={activePlan} caseMap={caseMap} userMap={userMap} onStatusChange={updateCaseStatus} onDispatch={openDispatchModal} />
+        <BoardView
+          plan={activePlan}
+          items={activePlanItems}
+        />
       ) : (
-        <ListView plan={activePlan} caseMap={caseMap} userMap={userMap} onStatusChange={updateCaseStatus} onDispatch={openDispatchModal} />
+        <ListView
+          plan={activePlan}
+          items={activePlanItems}
+        />
       )}
 
       {/* ════════════════════════════════════════════════ */}
@@ -510,15 +380,13 @@ const TestExecutionPlan: React.FC = () => {
                     <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>描述</label>
                     <textarea className="form-input" value={newPlan.description} onChange={e => setNewPlan(p => ({ ...p, description: e.target.value }))} placeholder="计划的目地、范围、备注…" rows={3} style={{ width: '100%', resize: 'vertical' }} />
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-                    <div>
-                      <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>开始日期</label>
-                      <input type="date" className="form-input" value={newPlan.startDate} onChange={e => setNewPlan(p => ({ ...p, startDate: e.target.value }))} style={{ width: '100%' }} />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>结束日期</label>
-                      <input type="date" className="form-input" value={newPlan.endDate} onChange={e => setNewPlan(p => ({ ...p, endDate: e.target.value }))} style={{ width: '100%' }} />
-                    </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>📅 计划周期</label>
+                    <DateRangePicker
+                      startDate={newPlan.startDate}
+                      endDate={newPlan.endDate}
+                      onChange={(start, end) => setNewPlan(p => ({ ...p, startDate: start, endDate: end }))}
+                    />
                   </div>
                 </div>
               )}
@@ -529,31 +397,89 @@ const TestExecutionPlan: React.FC = () => {
                   <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: '0 0 12px' }}>
                     从用例库中选择要执行的用例，已选 <strong>{newPlan.selectedCases.length}</strong> 个
                   </p>
+                  <div style={{ position: 'relative', marginBottom: 12 }}>
+                    <input className="form-input" value={caseSearch} onChange={e => setCaseSearch(e.target.value)}
+                      placeholder="搜索用例名称、ID 或用例集合…" style={{ width: '100%', fontSize: 13, padding: '7px 12px', boxSizing: 'border-box' }} />
+                  </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    {MOCK_CASES.map(tc => {
-                      const sel = newPlan.selectedCases.includes(tc.id);
+                    {(() => {
+                      const q = caseSearch.trim().toLowerCase();
+                      const matchedCollections = q
+                        ? MOCK_COLLECTIONS.filter(col =>
+                            col.name.toLowerCase().includes(q) ||
+                            (col.description || '').toLowerCase().includes(q) ||
+                            col.caseIds.some(cid => cid.toLowerCase().includes(q)))
+                        : MOCK_COLLECTIONS;
+                      const matchedCases = q
+                        ? MOCK_CASES.filter(tc => tc.id.toLowerCase().includes(q) || tc.title.toLowerCase().includes(q))
+                        : MOCK_CASES;
                       return (
-                        <label key={tc.id} onClick={() => toggleSelectCase(tc.id)} style={{
-                          display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px',
-                          borderRadius: 8, cursor: 'pointer', border: sel ? '1px solid var(--accent-primary)' : '1px solid var(--border-subtle)',
-                          background: sel ? 'color-mix(in srgb, var(--accent-primary) 6%, transparent)' : 'var(--bg-primary)',
-                          transition: 'all 0.1s',
-                        }}>
-                          <input type="checkbox" checked={sel} onChange={() => {}} style={{ accentColor: 'var(--accent-primary)' }} />
-                          <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--text-tertiary)', minWidth: 60 }}>{tc.id}</span>
-                          <span style={{ flex: 1, fontSize: 13, fontWeight: sel ? 600 : 400 }}>{tc.title}</span>
-                          <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6,
-                            background: tc.type === 'auto' ? 'rgba(57,208,214,0.15)' : 'rgba(163,113,247,0.15)',
-                            color: tc.type === 'auto' ? '#39d0d6' : '#a371f7', fontWeight: 600,
-                          }}>
-                            {tc.type === 'auto' ? '⚡ 自动化' : '📋 手动'}
-                          </span>
-                          <span style={{ fontSize: 11, color: PRIORITY_COLORS[tc.priority], fontWeight: 600 }}>{tc.priority}</span>
-                          <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--text-tertiary)' }}>{tc.duration}min</span>
-                          <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{MOCK_COMPONENTS.find(c => c.id === tc.component)?.name}</span>
-                        </label>
+                        <>
+                          {matchedCollections.length > 0 && (
+                            <div style={{ marginBottom: 8 }}>
+                              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', padding: '4px 2px 8px', textTransform: 'uppercase', letterSpacing: '0.3px' }}>
+                                📂 用例集合 ({matchedCollections.length})
+                              </div>
+                              {matchedCollections.map(col => {
+                                const allSelected = col.caseIds.every(cid => newPlan.selectedCases.includes(cid));
+                                const someSelected = col.caseIds.some(cid => newPlan.selectedCases.includes(cid));
+                                return (
+                                  <label key={col.id} onClick={() => toggleSelectCollection(col)} style={{
+                                    display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px',
+                                    borderRadius: 8, cursor: 'pointer', marginBottom: 4,
+                                    border: allSelected ? '1px solid var(--accent-primary)' : '1px solid var(--border-subtle)',
+                                    background: allSelected ? 'color-mix(in srgb, var(--accent-primary) 6%, transparent)' : 'var(--bg-primary)',
+                                  }}>
+                                    <input type="checkbox" checked={allSelected}
+                                      ref={el => { if (el) el.indeterminate = someSelected && !allSelected; }}
+                                      onChange={() => {}} style={{ accentColor: 'var(--accent-primary)' }} />
+                                    <span style={{ fontSize: 13 }}>📂</span>
+                                    <div style={{ flex: 1 }}>
+                                      <div style={{ fontSize: 13, fontWeight: allSelected ? 600 : 500 }}>{col.name}</div>
+                                      {col.description && <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 1 }}>{col.description}</div>}
+                                    </div>
+                                    <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--text-tertiary)' }}>{col.caseIds.length} 个用例</span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          )}
+                          {matchedCases.length > 0 && (
+                            <div>
+                              {!q && <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', padding: '4px 2px 8px', textTransform: 'uppercase', letterSpacing: '0.3px' }}>
+                                🔬 用例 ({matchedCases.length})
+                              </div>}
+                              {matchedCases.map(tc => {
+                                const sel = newPlan.selectedCases.includes(tc.id);
+                                return (
+                                  <label key={tc.id} onClick={() => toggleSelectCase(tc.id)} style={{
+                                    display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px',
+                                    borderRadius: 8, cursor: 'pointer',
+                                    border: sel ? '1px solid var(--accent-primary)' : '1px solid var(--border-subtle)',
+                                    background: sel ? 'color-mix(in srgb, var(--accent-primary) 6%, transparent)' : 'var(--bg-primary)',
+                                    transition: 'all 0.1s', marginBottom: 4,
+                                  }}>
+                                    <input type="checkbox" checked={sel} onChange={() => {}} style={{ accentColor: 'var(--accent-primary)' }} />
+                                    <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--text-tertiary)', minWidth: 60 }}>{tc.id}</span>
+                                    <span style={{ flex: 1, fontSize: 13, fontWeight: sel ? 600 : 400 }}>{tc.title}</span>
+                                    <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6,
+                                      background: tc.type === 'auto' ? 'rgba(57,208,214,0.15)' : 'rgba(163,113,247,0.15)',
+                                      color: tc.type === 'auto' ? '#39d0d6' : '#a371f7', fontWeight: 600,
+                                    }}>{tc.type === 'auto' ? '⚡ 自动化' : '📋 手动'}</span>
+                                    <span style={{ fontSize: 11, color: PRIORITY_COLORS[tc.priority], fontWeight: 600 }}>{tc.priority}</span>
+                                    <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--text-tertiary)' }}>{tc.duration}min</span>
+                                    <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{MOCK_COMPONENTS.find(c => c.id === tc.component)?.name}</span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          )}
+                          {matchedCollections.length === 0 && matchedCases.length === 0 && (
+                            <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 13 }}>无匹配的用例或集合</div>
+                          )}
+                        </>
                       );
-                    })}
+                    })()}
                   </div>
                 </div>
               )}
@@ -562,7 +488,7 @@ const TestExecutionPlan: React.FC = () => {
               {wizardStep === 3 && (
                 <div>
                   <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: '0 0 12px' }}>
-                    为已选用例分配组件和执行人
+                    为已选用例分配组件和执行人（提交后将在「我的任务」中可见）
                   </p>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {newPlan.selectedCases.map(cid => {
@@ -576,11 +502,13 @@ const TestExecutionPlan: React.FC = () => {
                             background: tc.type === 'auto' ? 'rgba(57,208,214,0.15)' : 'rgba(163,113,247,0.15)',
                             color: tc.type === 'auto' ? '#39d0d6' : '#a371f7', fontWeight: 600,
                           }}>{tc.type === 'auto' ? '⚡' : '📋'}</span>
-                          <select className="form-input form-select" style={{ width: 140, fontSize: 12 }} value={newPlan.assignments[cid]?.component || tc.component}
+                          <select className="form-input form-select" style={{ width: 140, fontSize: 12 }}
+                            value={newPlan.assignments[cid]?.component || tc.component}
                             onChange={e => setAssignment(cid, 'component', e.target.value)}>
                             {MOCK_COMPONENTS.map(comp => <option key={comp.id} value={comp.id}>{comp.name}</option>)}
                           </select>
-                          <select className="form-input form-select" style={{ width: 100, fontSize: 12 }} value={newPlan.assignments[cid]?.assignee || ''}
+                          <select className="form-input form-select" style={{ width: 100, fontSize: 12 }}
+                            value={newPlan.assignments[cid]?.assignee || ''}
                             onChange={e => setAssignment(cid, 'assignee', e.target.value)}>
                             <option value="">执行人</option>
                             {MOCK_USERS.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
@@ -597,10 +525,10 @@ const TestExecutionPlan: React.FC = () => {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
                   <div>
                     <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>⏰ 自动触发时间</label>
-                    <input type="datetime-local" className="form-input" value={newPlan.triggerAt} onChange={e => setNewPlan(p => ({ ...p, triggerAt: e.target.value }))} style={{ width: 280 }} />
+                    <input type="datetime-local" className="form-input" value={newPlan.triggerAt}
+                      onChange={e => setNewPlan(p => ({ ...p, triggerAt: e.target.value }))} style={{ width: 280 }} />
                     <p style={{ fontSize: 11, color: 'var(--text-tertiary)', margin: '4px 0 0' }}>到达设定时间后自动开始执行所有待执行的用例</p>
                   </div>
-
                   <div style={{ background: 'var(--bg-secondary)', borderRadius: 10, padding: 16, border: '1px solid var(--border-subtle)' }}>
                     <h4 style={{ margin: '0 0 10px', fontSize: 13, fontWeight: 600 }}>📋 计划概览</h4>
                     <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '6px 16px', fontSize: 13 }}>
@@ -625,8 +553,9 @@ const TestExecutionPlan: React.FC = () => {
                   下一步
                 </button>
               ) : (
-                <button className="btn btn--primary" onClick={handleCreatePlan} disabled={newPlan.selectedCases.length === 0}>
-                  ✓ 创建计划
+                <button className="btn btn--primary" onClick={handleCreatePlan}
+                  disabled={newPlan.selectedCases.length === 0 || submittingPlan}>
+                  {submittingPlan ? '创建中...' : '✓ 创建计划'}
                 </button>
               )}
             </div>
@@ -638,7 +567,7 @@ const TestExecutionPlan: React.FC = () => {
 };
 
 // ═══════════════════════════════════════════════════════════════════
-//  Board View
+//  Board View — 只读看板，展示进度
 // ═══════════════════════════════════════════════════════════════════
 
 const COL_STATUS = [
@@ -658,86 +587,73 @@ const STATUS_BORDER: Record<string, string> = {
 };
 
 const BoardView: React.FC<{
-  plan: MockPlan; caseMap: Map<string, MockCase>; userMap: Map<string, MockUser>;
-  onStatusChange: (planId: string, caseId: string, status: string) => void;
-  onDispatch: (caseId: string) => void;
-}> = ({ plan, caseMap, userMap, onStatusChange, onDispatch }) => {
-  // Group cases by component
+  plan: PlanSummary;
+  items: PlanItemSummary[];
+}> = ({ plan, items }) => {
   const componentGroups = useMemo(() => {
-    const groups = new Map<string, MockPlanCase[]>();
-    for (const pc of plan.cases) {
-      const tc = caseMap.get(pc.caseId);
-      const comp = tc?.component || 'other';
+    const groups = new Map<string, PlanItemSummary[]>();
+    for (const item of items) {
+      const comp = item.component || 'other';
       if (!groups.has(comp)) groups.set(comp, []);
-      groups.get(comp)!.push(pc);
+      groups.get(comp)!.push(item);
     }
     return Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b));
-  }, [plan.cases, caseMap]);
+  }, [items]);
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       {/* Plan meta bar */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 12, flexShrink: 0, padding: '10px 14px', background: 'var(--bg-secondary)', borderRadius: 10, border: '1px solid var(--border-subtle)' }}>
         <span style={{ fontSize: 15, fontWeight: 600 }}>{plan.title}</span>
-        <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{plan.startDate} → {plan.endDate}</span>
-        <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>⏰ 触发: {plan.triggerAt}</span>
+        <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{plan.start_date || '?'} → {plan.end_date || '?'}</span>
+        {plan.trigger_at && <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>⏰ 触发: {plan.trigger_at}</span>}
         <div style={{ flex: 1 }} />
-        <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>进度 {plan.progress}%</span>
+        <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>进度 {plan.progress_percent ?? 0}% · {plan.done_count}/{plan.item_count}</span>
+        <div style={{ width: 80, height: 4, background: 'var(--surface-tertiary)', borderRadius: 2, overflow: 'hidden' }}>
+          <div style={{ width: `${plan.progress_percent ?? 0}%`, height: '100%', background: plan.status === 'active' ? 'var(--accent-primary)' : 'var(--text-tertiary)', borderRadius: 2, transition: 'width 0.3s' }} />
+        </div>
       </div>
 
-      {/* Kanban board */}
+      {/* Read-only kanban board — 仅展示进度，无操作按钮 */}
       <div style={{ flex: 1, overflow: 'auto', display: 'flex', gap: 12, minHeight: 0 }}>
-        {componentGroups.map(([compId, cases]) => {
+        {componentGroups.length === 0 && (
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-tertiary)', fontSize: 13 }}>
+            该计划暂无条目
+          </div>
+        )}
+        {componentGroups.map(([compId, caseItems]) => {
           const compName = [...MOCK_COMPONENTS, { id: 'other', name: '其他' }].find(c => c.id === compId)?.name || compId;
           return (
             <div key={compId} style={{ minWidth: 260, maxWidth: 300, display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
-              {/* Component header */}
               <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', padding: '6px 10px', marginBottom: 6, display: 'flex', justifyContent: 'space-between' }}>
                 <span>{compName}</span>
-                <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{cases.length}</span>
+                <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{caseItems.length}</span>
               </div>
-              {/* Column */}
               <div style={{ flex: 1, background: 'var(--bg-secondary)', borderRadius: 10, padding: 8, display: 'flex', flexDirection: 'column', gap: 6, overflowY: 'auto' }}>
-                {cases.map(pc => {
-                  const tc = caseMap.get(pc.caseId);
-                  if (!tc) return null;
-                  return (
-                    <div key={pc.caseId} style={{
-                      background: STATUS_BG[pc.status], borderRadius: 8, padding: '10px 12px',
-                      border: STATUS_BORDER[pc.status], cursor: 'pointer', transition: 'all 0.1s',
-                    }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                        <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--text-tertiary)' }}>{tc.id}</span>
-                        <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4,
-                          background: tc.type === 'auto' ? 'rgba(57,208,214,0.15)' : 'rgba(163,113,247,0.15)',
-                          color: tc.type === 'auto' ? '#39d0d6' : '#a371f7', fontWeight: 600,
-                        }}>{tc.type === 'auto' ? '⚡' : '📋'}</span>
-                      </div>
-                      <div style={{ fontSize: 12, fontWeight: 500, marginBottom: 6, lineHeight: 1.4 }}>{tc.title}</div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontSize: 10, color: PRIORITY_COLORS[tc.priority], fontWeight: 600 }}>{tc.priority}</span>
-                        {pc.assignee && <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>{userMap.get(pc.assignee)?.name || pc.assignee}</span>}
-                      </div>
-                      {/* Quick status buttons */}
-                      <div style={{ display: 'flex', gap: 2, marginTop: 6 }}>
-                        {COL_STATUS.map(s => (
-                          <button key={s.key} onClick={e => { e.stopPropagation(); onStatusChange(plan.id, pc.caseId, s.key); }} style={{
-                            flex: 1, padding: '3px 0', fontSize: 9, border: 'none', borderRadius: 4, cursor: 'pointer',
-                            background: pc.status === s.key ? s.color : 'var(--surface-tertiary)',
-                            color: pc.status === s.key ? '#fff' : 'var(--text-tertiary)',
-                            fontWeight: pc.status === s.key ? 600 : 400, transition: 'all 0.1s',
-                          }}>{s.label}</button>
-                        ))}
-                        {tc.type === 'auto' && (
-                          <button onClick={e => { e.stopPropagation(); onDispatch(pc.caseId); }} style={{
-                            padding: '3px 8px', fontSize: 9, border: 'none', borderRadius: 4, cursor: 'pointer',
-                            background: 'rgba(57,208,214,0.15)', color: '#39d0d6', fontWeight: 600, whiteSpace: 'nowrap',
-                          }}>▶ 下发</button>
-                        )}
-                      </div>
+                {caseItems.map(item => (
+                  <div key={item.item_id} style={{
+                    background: STATUS_BG[item.status], borderRadius: 8, padding: '10px 12px',
+                    border: STATUS_BORDER[item.status],
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                      <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--text-tertiary)' }}>{item.case_id}</span>
+                      <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4,
+                        background: item.ref_type === 'auto' ? 'rgba(57,208,214,0.15)' : 'rgba(163,113,247,0.15)',
+                        color: item.ref_type === 'auto' ? '#39d0d6' : '#a371f7', fontWeight: 600,
+                      }}>{item.ref_type === 'auto' ? '⚡' : '📋'}</span>
                     </div>
-                  );
-                })}
+                    <div style={{ fontSize: 12, fontWeight: 500, marginBottom: 6, lineHeight: 1.4 }}>{item.case_title}</div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: 10, color: PRIORITY_COLORS[item.priority] || '#8b949e', fontWeight: 600 }}>{item.priority}</span>
+                      <span style={{
+                        fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 4,
+                        color: STATUS_COLORS[item.status], background: `${STATUS_COLORS[item.status]}15`,
+                      }}>
+                        {STATUS_LABELS[item.status] || item.status}
+                      </span>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           );
@@ -748,16 +664,25 @@ const BoardView: React.FC<{
 };
 
 // ═══════════════════════════════════════════════════════════════════
-//  List View
+//  List View — 只读列表，展示进度
 // ═══════════════════════════════════════════════════════════════════
 
 const ListView: React.FC<{
-  plan: MockPlan; caseMap: Map<string, MockCase>; userMap: Map<string, MockUser>;
-  onStatusChange: (planId: string, caseId: string, status: string) => void;
-  onDispatch: (caseId: string) => void;
-}> = ({ plan, caseMap, userMap, onStatusChange, onDispatch }) => {
+  plan: PlanSummary;
+  items: PlanItemSummary[];
+}> = ({ plan, items }) => {
   return (
     <div style={{ flex: 1, overflow: 'auto' }}>
+      {/* Plan meta bar */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 12, flexShrink: 0, padding: '10px 14px', background: 'var(--bg-secondary)', borderRadius: 10, border: '1px solid var(--border-subtle)' }}>
+        <span style={{ fontSize: 15, fontWeight: 600 }}>{plan.title}</span>
+        <div style={{ flex: 1 }} />
+        <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>进度 {plan.progress_percent ?? 0}% · {plan.done_count}/{plan.item_count}</span>
+        <div style={{ width: 80, height: 4, background: 'var(--surface-tertiary)', borderRadius: 2, overflow: 'hidden' }}>
+          <div style={{ width: `${plan.progress_percent ?? 0}%`, height: '100%', background: plan.status === 'active' ? 'var(--accent-primary)' : 'var(--text-tertiary)', borderRadius: 2, transition: 'width 0.3s' }} />
+        </div>
+      </div>
+
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
         <thead>
           <tr style={{ background: 'var(--surface-secondary)' }}>
@@ -767,57 +692,95 @@ const ListView: React.FC<{
             <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 600, color: 'var(--text-secondary)', fontSize: 11 }}>优先级</th>
             <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 600, color: 'var(--text-secondary)', fontSize: 11 }}>执行人</th>
             <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 600, color: 'var(--text-secondary)', fontSize: 11 }}>状态</th>
-            <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 600, color: 'var(--text-secondary)', fontSize: 11 }}>操作</th>
           </tr>
         </thead>
         <tbody>
-          {plan.cases.map(pc => {
-            const tc = caseMap.get(pc.caseId);
-            if (!tc) return null;
-            return (
-              <tr key={pc.caseId} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
-                <td style={{ padding: '8px 14px' }}><span style={{ fontWeight: 500 }}>{tc.title}</span><br /><span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--text-tertiary)' }}>{tc.id}</span></td>
-                <td style={{ padding: '8px 14px' }}>
-                  <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6,
-                    background: tc.type === 'auto' ? 'rgba(57,208,214,0.15)' : 'rgba(163,113,247,0.15)',
-                    color: tc.type === 'auto' ? '#39d0d6' : '#a371f7', fontWeight: 600,
-                  }}>{tc.type === 'auto' ? '⚡ 自动化' : '📋 手动'}</span>
-                </td>
-                <td style={{ padding: '8px 14px', color: 'var(--text-secondary)' }}>{MOCK_COMPONENTS.find(c => c.id === tc.component)?.name}</td>
-                <td style={{ padding: '8px 14px', color: PRIORITY_COLORS[tc.priority], fontWeight: 600 }}>{tc.priority}</td>
-                <td style={{ padding: '8px 14px', color: 'var(--text-secondary)' }}>{pc.assignee ? (userMap.get(pc.assignee)?.name || pc.assignee) : '-'}</td>
-                <td style={{ padding: '8px 14px' }}>
-                  <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 10,
-                    background: pc.status === 'done' ? 'rgba(63,185,80,0.15)' : pc.status === 'running' ? 'rgba(88,166,255,0.15)' : pc.status === 'fail' ? 'rgba(248,81,73,0.15)' : 'rgba(139,148,158,0.1)',
-                    color: pc.status === 'done' ? '#3fb950' : pc.status === 'running' ? '#58a6ff' : pc.status === 'fail' ? '#f85149' : '#8b949e',
-                    fontWeight: 600,
-                  }}>
-                    {pc.status === 'done' ? '✓ 已完成' : pc.status === 'running' ? '▶ 执行中' : pc.status === 'fail' ? '✗ 失败' : '○ 待执行'}
-                  </span>
-                </td>
-                <td style={{ padding: '8px 14px' }}>
-                  <div style={{ display: 'flex', gap: 4 }}>
-                    <select className="form-input form-select" style={{ width: 90, fontSize: 11 }} value={pc.status} onChange={e => onStatusChange(plan.id, pc.caseId, e.target.value)}>
-                      <option value="pending">待执行</option>
-                      <option value="running">执行中</option>
-                      <option value="done">已完成</option>
-                      <option value="fail">失败</option>
-                    </select>
-                    {tc.type === 'auto' && (
-                      <button onClick={() => onDispatch(pc.caseId)} style={{
-                        padding: '4px 10px', fontSize: 10, border: 'none', borderRadius: 4, cursor: 'pointer',
-                        background: 'rgba(57,208,214,0.15)', color: '#39d0d6', fontWeight: 600, whiteSpace: 'nowrap',
-                      }}>▶ 下发</button>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            );
-          })}
+          {items.length === 0 && (
+            <tr><td colSpan={6} style={{ padding: '24px', textAlign: 'center', color: 'var(--text-tertiary)' }}>该计划暂无条目</td></tr>
+          )}
+          {items.map(item => (
+            <tr key={item.item_id} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+              <td style={{ padding: '8px 14px' }}>
+                <span style={{ fontWeight: 500 }}>{item.case_title}</span>
+                <br /><span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--text-tertiary)' }}>{item.case_id}</span>
+              </td>
+              <td style={{ padding: '8px 14px' }}>
+                <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6,
+                  background: item.ref_type === 'auto' ? 'rgba(57,208,214,0.15)' : 'rgba(163,113,247,0.15)',
+                  color: item.ref_type === 'auto' ? '#39d0d6' : '#a371f7', fontWeight: 600,
+                }}>{item.ref_type === 'auto' ? '⚡ 自动化' : '📋 手动'}</span>
+              </td>
+              <td style={{ padding: '8px 14px', color: 'var(--text-secondary)' }}>
+                {[...MOCK_COMPONENTS, { id: 'other', name: '其他' }].find(c => c.id === item.component)?.name || item.component}
+              </td>
+              <td style={{ padding: '8px 14px', color: PRIORITY_COLORS[item.priority] || '#8b949e', fontWeight: 600 }}>{item.priority}</td>
+              <td style={{ padding: '8px 14px', color: 'var(--text-secondary)' }}>
+                {item.assignee_id ? ([...MOCK_USERS].find(u => u.id === item.assignee_id)?.name || item.assignee_id) : '-'}
+              </td>
+              <td style={{ padding: '8px 14px' }}>
+                <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 10,
+                  background: `${STATUS_COLORS[item.status] || '#8b949e'}15`,
+                  color: STATUS_COLORS[item.status] || '#8b949e', fontWeight: 600,
+                }}>
+                  {STATUS_LABELS[item.status] || item.status}
+                </span>
+              </td>
+            </tr>
+          ))}
         </tbody>
       </table>
     </div>
   );
 };
+
+// ═══════════════════════════════════════════════════════════════════
+//  DateRangePicker
+// ═══════════════════════════════════════════════════════════════════
+
+function DateRangePicker({ startDate, endDate, onChange }: {
+  startDate: string;
+  endDate: string;
+  onChange: (start: string, end: string) => void;
+}) {
+  const parseDate = (s: string) => s ? new Date(s + 'T00:00:00') : null;
+  const fmtDate = (d: Date | null) => d ? d.toISOString().slice(0, 10) : '';
+  const [start, setStart] = useState<Date | null>(parseDate(startDate));
+  const [end, setEnd] = useState<Date | null>(parseDate(endDate));
+  const handleChange = (dates: [Date | null, Date | null]) => {
+    const [s, e] = dates;
+    setStart(s);
+    setEnd(e);
+    onChange(fmtDate(s), fmtDate(e));
+  };
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <DatePicker selected={start} onChange={handleChange} startDate={start} endDate={end}
+        selectsRange inline monthsShown={1} dateFormat="yyyy-MM-dd"
+        calendarClassName="compact-datepicker"
+        dayClassName={d => {
+          const ds = fmtDate(d);
+          if (startDate && endDate && ds >= startDate && ds <= endDate) return 'rdp-in-range';
+          if (ds === startDate || ds === endDate) return 'rdp-selected';
+          return '';
+        }}
+      />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
+        <span style={{ fontWeight: 500, color: start ? 'var(--accent-primary)' : 'var(--text-tertiary)' }}>{startDate || '未选'}</span>
+        <span style={{ color: 'var(--text-tertiary)' }}>→</span>
+        <span style={{ fontWeight: 500, color: end ? 'var(--accent-primary)' : 'var(--text-tertiary)' }}>{endDate || '未选'}</span>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
+          <button className="btn btn--ghost btn--sm" onClick={() => { setStart(null); setEnd(null); onChange('', ''); }}
+            style={{ fontSize: 10, padding: '2px 8px', lineHeight: 1.6 }}>清除</button>
+          <button className="btn btn--ghost btn--sm" onClick={() => { const t = new Date(); const t2 = new Date(t); setStart(t); setEnd(t2); onChange(fmtDate(t), fmtDate(t2)); }}
+            style={{ fontSize: 10, padding: '2px 8px', lineHeight: 1.6 }}>今天</button>
+          <button className="btn btn--ghost btn--sm" onClick={() => { const t = new Date(); const n = new Date(t); n.setDate(t.getDate() + 7); setStart(t); setEnd(n); onChange(fmtDate(t), fmtDate(n)); }}
+            style={{ fontSize: 10, padding: '2px 8px', lineHeight: 1.6 }}>7天</button>
+          <button className="btn btn--ghost btn--sm" onClick={() => { const t = new Date(); const n = new Date(t); n.setDate(t.getDate() + 30); setStart(t); setEnd(n); onChange(fmtDate(t), fmtDate(n)); }}
+            style={{ fontSize: 10, padding: '2px 8px', lineHeight: 1.6 }}>30天</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default TestExecutionPlan;

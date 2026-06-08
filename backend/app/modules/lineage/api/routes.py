@@ -1,8 +1,8 @@
 """测试血缘图谱 API 路由。"""
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from app.modules.lineage.api.dependencies import LineageServiceDep
 from app.modules.lineage.schemas.lineage import LineageGraphResponse
-from app.modules.lineage.service.lineage_service import LineageService
 from app.shared.api.schemas.base import APIResponse
 from app.shared.auth import get_current_user, require_permission
 
@@ -23,6 +23,7 @@ async def get_lineage_graph(
     entity_id: str = Query(..., description="Entity ID"),
     max_nodes: int = Query(50, ge=1, le=200, description="Max number of nodes"),
     current_user=Depends(get_current_user),
+    service: LineageServiceDep = None,
 ):
     """获取测试血缘图谱。
 
@@ -34,11 +35,15 @@ async def get_lineage_graph(
         entity_id: 实体 ID
         max_nodes: 最大节点数
         current_user: 当前用户
+        service: 血缘图谱服务实例
 
     Returns:
         包含节点和边的图谱数据
+
+    Raises:
+        404: 入口实体不存在时
+        400: 不支持的实体类型时
     """
-    service = LineageService()
     try:
         data = await service.get_lineage_graph(
             entity_type=entity_type,

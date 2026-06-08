@@ -47,7 +47,7 @@ interface DispatchWorkflowProps {
   open: boolean;
   autoTasks: PlanTask[];
   onClose: () => void;
-  onFinish: (caseIds: string[]) => void;
+  onFinish: (caseIds: string[]) => Promise<void> | void;
 }
 
 type WorkflowStep = 'select-cases' | 'select-dut' | 'configure' | 'confirm';
@@ -179,14 +179,18 @@ const DispatchWorkflow: React.FC<DispatchWorkflowProps> = ({ open, autoTasks, on
 
   const handleDispatch = async () => {
     setSubmitting(true);
-    await new Promise(r => setTimeout(r, 1200));
-    onFinish(selectedCaseIds);
-    setSubmitting(false);
-    setSuccess(true);
-    setTimeout(() => {
-      setSuccess(false);
-      onClose();
-    }, 2000);
+    try {
+      // 触发父组件的 API 调用
+      await onFinish(selectedCaseIds);
+      setSubmitting(false);
+      setSuccess(true);
+      setTimeout(() => {
+        setSuccess(false);
+        onClose();
+      }, 2000);
+    } catch {
+      setSubmitting(false);
+    }
   };
 
   const handleClose = () => {

@@ -1,4 +1,4 @@
-import type { LoginRequest, LoginResponse, ApiResponse, CreateRequirementRequest, RequirementResponse, ListRequirementsParams, CreateTestCaseRequest, UpdateTestCaseRequest, TestCaseResponse, TestCaseChangeLogListResponse, ListTestCasesParams, CatalogLab, CreateCatalogLabRequest, UpdateCatalogLabRequest, CatalogTreeResponse, DispatchTaskRequest, DispatchTaskResponse, ExecutionAgent, AgentCleanupOfflineResponse, ListAgentsParams, CreateAutomationTestCaseRequest, AutomationTestCaseResponse, ListAutomationTestCasesParams, ExecutionTask, ListTasksParams, TaskStatus, RerunTaskRequest, AttachmentInfo, WorkflowTransitionRequest, WorkflowTransitionResponse, WorkflowTransitionsResponse, WorkflowTransitionLog, RoleResponse, PermissionResponse, CreateRoleRequest, UpdateRoleRequest, UpdateRolePermissionsRequest, CurrentUserPermissionsResponse, UserResponse, CreateUserRequest, UpdateUserRequest, UpdateUserRolesRequest, UpdateUserPasswordRequest, ListUsersParams, NavigationPageResponse, UserNavigationResponse, UpdateUserNavigationRequest, WorkItem, LineageGraphResponse, CommentListResponse, CreateCommentRequest, TestCaseComment } from '../types';
+import type { LoginRequest, LoginResponse, ApiResponse, CreateRequirementRequest, RequirementResponse, ListRequirementsParams, CreateTestCaseRequest, UpdateTestCaseRequest, TestCaseResponse, TestCaseChangeLogListResponse, ListTestCasesParams, CatalogLab, CreateCatalogLabRequest, UpdateCatalogLabRequest, CatalogTreeResponse, DispatchTaskRequest, DispatchTaskResponse, ExecutionAgent, AgentCleanupOfflineResponse, ListAgentsParams, CreateAutomationTestCaseRequest, AutomationTestCaseResponse, ListAutomationTestCasesParams, ExecutionTask, ListTasksParams, TaskStatus, RerunTaskRequest, AttachmentInfo, WorkflowTransitionRequest, WorkflowTransitionResponse, WorkflowTransitionsResponse, WorkflowTransitionLog, RoleResponse, PermissionResponse, CreateRoleRequest, UpdateRoleRequest, UpdateRolePermissionsRequest, CurrentUserPermissionsResponse, UserResponse, CreateUserRequest, UpdateUserRequest, UpdateUserRolesRequest, UpdateUserPasswordRequest, ListUsersParams, NavigationPageResponse, UserNavigationResponse, UpdateUserNavigationRequest, WorkItem, LineageGraphResponse, CommentListResponse, CreateCommentRequest, TestCaseComment, PlanTaskItemResponse, SubmitManualResultRequest, PlanItemDispatchRequest, BatchDispatchPlanItemsRequest, CreatePlanRequest, AddPlanItemsRequest } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
 
@@ -679,6 +679,126 @@ class ApiClient {
   async removeCasesFromCollection(id: string, data: RemoveCasesRequest): Promise<ApiResponse<CollectionResponse>> {
     return this.request<CollectionResponse>(`/collections/${id}/cases`, {
       method: 'DELETE', body: JSON.stringify(data),
+    });
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  //  执行计划 / My Tasks API
+  // ══════════════════════════════════════════════════════════════
+
+  /** 获取当前用户的计划任务列表 */
+  async listMyPlanItems(assigneeId: string): Promise<ApiResponse<PlanTaskItemResponse[]>> {
+    return this.request<PlanTaskItemResponse[]>(
+      `/execution-plans/items/my-items?assignee_id=${encodeURIComponent(assigneeId)}`,
+      { method: 'GET' },
+    );
+  }
+
+  /** 更新计划条目（状态/指派人等） */
+  async updatePlanItem(
+    planId: string,
+    itemId: string,
+    data: { status?: string; assignee_id?: string; component?: string },
+  ): Promise<ApiResponse<PlanTaskItemResponse>> {
+    return this.request<PlanTaskItemResponse>(`/execution-plans/plans/${planId}/items/${itemId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  /** 提交手工测试结果回填 */
+  async submitPlanItemResult(
+    itemId: string,
+    data: SubmitManualResultRequest,
+  ): Promise<ApiResponse<Record<string, unknown>>> {
+    return this.request<Record<string, unknown>>(`/execution-plans/items/${itemId}/result`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  /** 获取已有的手工结果回填 */
+  async getPlanItemResult(itemId: string): Promise<ApiResponse<Record<string, unknown>>> {
+    return this.request<Record<string, unknown>>(`/execution-plans/items/${itemId}/result`, {
+      method: 'GET',
+    });
+  }
+
+  /** 单条自动化用例计划内下发 */
+  async dispatchPlanItem(
+    itemId: string,
+    data: PlanItemDispatchRequest,
+  ): Promise<ApiResponse<Record<string, unknown>>> {
+    return this.request<Record<string, unknown>>(`/execution-plans/items/${itemId}/dispatch`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  /** 批量下发自动化用例 */
+  async batchDispatchPlanItems(
+    data: BatchDispatchPlanItemsRequest,
+  ): Promise<ApiResponse<Array<Record<string, unknown>>>> {
+    return this.request<Array<Record<string, unknown>>>('/execution-plans/items/batch-dispatch', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  //  执行计划 — Plan CRUD
+  // ══════════════════════════════════════════════════════════════
+
+  /** 获取执行计划列表 */
+  async listPlans(status?: string): Promise<ApiResponse<Array<Record<string, unknown>>>> {
+    const query = status ? `?status=${encodeURIComponent(status)}` : '';
+    return this.request<Array<Record<string, unknown>>>(`/execution-plans/plans${query}`, {
+      method: 'GET',
+    });
+  }
+
+  /** 创建执行计划 */
+  async createPlan(data: CreatePlanRequest): Promise<ApiResponse<Record<string, unknown>>> {
+    return this.request<Record<string, unknown>>('/execution-plans/plans', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  /** 获取执行计划详情（含条目） */
+  async getPlanDetail(planId: string): Promise<ApiResponse<Record<string, unknown>>> {
+    return this.request<Record<string, unknown>>(`/execution-plans/plans/${encodeURIComponent(planId)}`, {
+      method: 'GET',
+    });
+  }
+
+  /** 更新执行计划 */
+  async updatePlan(planId: string, data: Record<string, unknown>): Promise<ApiResponse<Record<string, unknown>>> {
+    return this.request<Record<string, unknown>>(`/execution-plans/plans/${encodeURIComponent(planId)}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  /** 删除执行计划 */
+  async deletePlan(planId: string): Promise<ApiResponse<Record<string, unknown>>> {
+    return this.request<Record<string, unknown>>(`/execution-plans/plans/${encodeURIComponent(planId)}`, {
+      method: 'DELETE',
+    });
+  }
+
+  /** 为执行计划添加条目 */
+  async addPlanItems(planId: string, data: AddPlanItemsRequest): Promise<ApiResponse<Record<string, unknown>>> {
+    return this.request<Record<string, unknown>>(`/execution-plans/plans/${encodeURIComponent(planId)}/items`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  /** 从执行计划中移除条目 */
+  async deletePlanItem(planId: string, itemId: string): Promise<ApiResponse<Record<string, unknown>>> {
+    return this.request<Record<string, unknown>>(`/execution-plans/plans/${encodeURIComponent(planId)}/items/${encodeURIComponent(itemId)}`, {
+      method: 'DELETE',
     });
   }
 }

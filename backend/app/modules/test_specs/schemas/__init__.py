@@ -1,23 +1,29 @@
 """定义层 API 模型汇总"""
-from .requirement import (
-    CreateRequirementRequest,
-    UpdateRequirementRequest,
-    RequirementResponse,
-)
 from .change_log import (
     TestCaseChangeLogListResponse,
     TestCaseChangeLogResponse,
     TestCaseFieldChangeResponse,
 )
+from .comment import (
+    CommentListResponse,
+    CommentResponse,
+    CreateCommentRequest,
+    UpdateCommentRequest,
+)
+from .requirement import (
+    CreateRequirementRequest,
+    UpdateRequirementRequest,
+    RequirementResponse,
+)
 from .test_case import (
     AutomationTestCaseReportResponse,
     AutomationTestCaseResponse,
-    CreateTestCaseRequest,
     CreateAutomationTestCaseRequest,
-    ReportAutomationCaseMetadataRequest,
-    UpdateTestCaseRequest,
-    TestCaseResponse,
+    CreateTestCaseRequest,
     LinkAutomationCaseRequest,
+    ReportAutomationCaseMetadataRequest,
+    TestCaseResponse,
+    UpdateTestCaseRequest,
 )
 
 
@@ -36,4 +42,8 @@ __all__ = [
     "TestCaseChangeLogListResponse",
     "TestCaseChangeLogResponse",
     "TestCaseFieldChangeResponse",
+    "CreateCommentRequest",
+    "UpdateCommentRequest",
+    "CommentResponse",
+    "CommentListResponse",
 ]

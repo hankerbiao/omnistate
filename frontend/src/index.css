@@ -897,7 +897,99 @@ input, select, textarea {
   font-weight: 600;
 }
 
-/* === PAGE LAYOUT === */
+/* ═══════════════════════════════════════════════════════════════
+   react-datepicker 紧凑主题覆盖
+   ═══════════════════════════════════════════════════════════════ */
+
+.compact-datepicker {
+  font-size: 12px !important;
+  border: none !important;
+  background: transparent !important;
+  width: 100% !important;
+}
+.compact-datepicker .react-datepicker__month-container {
+  float: none !important;
+  width: 100% !important;
+}
+.compact-datepicker .react-datepicker__header {
+  background: transparent !important;
+  border-bottom: none !important;
+  padding-top: 0 !important;
+}
+.compact-datepicker .react-datepicker__current-month {
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  color: var(--text-primary) !important;
+  padding: 4px 0 !important;
+}
+.compact-datepicker .react-datepicker__day-names {
+  margin-top: 0 !important;
+}
+.compact-datepicker .react-datepicker__day-name {
+  font-size: 10px !important;
+  font-weight: 600 !important;
+  color: var(--text-tertiary) !important;
+  width: 28px !important;
+  line-height: 24px !important;
+  margin: 0 !important;
+}
+.compact-datepicker .react-datepicker__day {
+  font-size: 11px !important;
+  width: 28px !important;
+  line-height: 24px !important;
+  margin: 0 !important;
+  border-radius: 4px !important;
+  color: var(--text-primary) !important;
+}
+.compact-datepicker .react-datepicker__day:hover {
+  background: var(--surface-secondary) !important;
+  border-radius: 4px !important;
+}
+.compact-datepicker .react-datepicker__day--selected,
+.compact-datepicker .rdp-selected {
+  background: var(--accent-primary) !important;
+  color: #fff !important;
+  font-weight: 700 !important;
+}
+.compact-datepicker .react-datepicker__day--keyboard-selected {
+  background: var(--accent-primary) !important;
+  color: #fff !important;
+}
+.compact-datepicker .react-datepicker__day--in-range,
+.compact-datepicker .rdp-in-range {
+  background: color-mix(in srgb, var(--accent-primary) 15%, transparent) !important;
+  color: var(--accent-primary) !important;
+  font-weight: 600 !important;
+  border-radius: 0 !important;
+}
+.compact-datepicker .react-datepicker__day--range-start,
+.compact-datepicker .react-datepicker__day--range-end {
+  background: var(--accent-primary) !important;
+  color: #fff !important;
+  font-weight: 700 !important;
+  border-radius: 4px !important;
+}
+.compact-datepicker .react-datepicker__day--outside-month {
+  color: var(--text-tertiary) !important;
+  opacity: 0.3 !important;
+}
+.compact-datepicker .react-datepicker__navigation {
+  top: 8px !important;
+}
+.compact-datepicker .react-datepicker__navigation-icon::before {
+  border-color: var(--text-secondary) !important;
+  border-width: 1.5px !important;
+}
+.compact-datepicker .react-datepicker__triangle {
+  display: none !important;
+}
+.compact-datepicker .react-datepicker__month {
+  margin: 0 !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   PAGE LAYOUT
+   ═══════════════════════════════════════════════════════════════ */
 
 .page-content {
   width: 100%;

@@ -952,3 +952,98 @@ export interface RemoveCasesRequest {
   case_ids?: string[];
   auto_case_ids?: string[];
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+//  执行计划（ExecutionPlan / My Tasks）
+// ═══════════════════════════════════════════════════════════════════════
+
+export interface PlanTaskResultPayload {
+  passed: boolean;
+  notes: string;
+  severity: string;
+  actual: string;
+  expected: string;
+  env: string;
+  test_data: string;
+  bug_id: string;
+  actual_duration: string;
+  attachments: string[];
+  executed_at?: string;
+}
+
+export interface PlanTaskItemResponse {
+  item_id: string;
+  plan_id: string;
+  plan_title: string;
+  case_id: string;
+  case_title: string;
+  ref_type: string;       // 'manual' | 'auto'
+  component: string;
+  priority: string;
+  assignee_id: string | null;
+  status: string;          // 'pending' | 'running' | 'done' | 'fail'
+  order_no: number;
+  execution_task_id: string | null;
+  result: PlanTaskResultPayload | null;
+}
+
+export interface SubmitManualResultRequest {
+  passed: boolean;
+  notes?: string;
+  severity?: string;
+  actual?: string;
+  expected?: string;
+  env?: string;
+  test_data?: string;
+  bug_id?: string;
+  actual_duration?: string;
+  attachments?: string[];
+  executed_at?: string;
+}
+
+export interface PlanItemDispatchRequest {
+  agent_id?: string;
+  schedule_type?: string;
+  planned_at?: string;
+  category?: string;
+  project_tag?: string;
+  repo_url?: string;
+  branch?: string;
+  pytest_options?: Record<string, unknown>;
+  timeout?: number;
+  parameters?: Record<string, unknown>;
+  config?: Record<string, unknown>;
+}
+
+export interface BatchDispatchPlanItemsRequest {
+  item_ids: string[];
+  agent_id?: string;
+  schedule_type?: string;
+  planned_at?: string;
+  category?: string;
+  project_tag?: string;
+  pytest_options?: Record<string, unknown>;
+  timeout?: number;
+  parameters?: Record<string, unknown>;
+}
+
+export interface CreatePlanRequest {
+  title: string;
+  description?: string;
+  status?: string;
+  start_date?: string;
+  end_date?: string;
+  trigger_at?: string;
+}
+
+export interface PlanItemInput {
+  ref_type: string;    // 'manual' | 'auto'
+  case_id: string;
+  assignee_id?: string;
+  component?: string;
+  order_no?: number;
+}
+
+export interface AddPlanItemsRequest {
+  items: PlanItemInput[];
+}

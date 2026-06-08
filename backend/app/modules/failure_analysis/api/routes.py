@@ -1,11 +1,9 @@
 """失效分析 API 路由。"""
 from fastapi import APIRouter, Depends, Query
 
+from app.modules.failure_analysis.api.dependencies import FailureAnalysisServiceDep
 from app.modules.failure_analysis.schemas.failure_analysis import (
     FailureAnalysisDashboard,
-)
-from app.modules.failure_analysis.service.failure_analysis_service import (
-    FailureAnalysisService,
 )
 from app.shared.api.schemas.base import APIResponse
 from app.shared.auth import get_current_user, require_permission
@@ -24,6 +22,7 @@ async def get_failure_analysis_dashboard(
     limit_flaky: int = Query(20, ge=1, le=100),
     limit_high_freq: int = Query(20, ge=1, le=100),
     current_user=Depends(get_current_user),
+    service: FailureAnalysisServiceDep = None,
 ):
     """获取失效分析仪表盘数据。
 
@@ -31,7 +30,6 @@ async def get_failure_analysis_dashboard(
     - limit_flaky: 不稳定测试返回数量上限
     - limit_high_freq: 高频失败返回数量上限
     """
-    service = FailureAnalysisService()
     data = await service.get_dashboard(
         time_range=time_range,
         limit_flaky=limit_flaky,
