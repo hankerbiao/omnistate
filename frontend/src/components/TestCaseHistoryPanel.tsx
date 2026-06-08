@@ -262,7 +262,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   tabActive: {
     color: 'var(--text-primary)',
-    borderBottomColor: 'var(--accent-primary)',
+    borderBottom: '2px solid var(--accent-primary)',
     fontWeight: 600,
   },
   tabBadge: {

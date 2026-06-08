@@ -6,4 +6,8 @@ export { default as WorkflowTransitionModal } from './WorkflowTransitionModal';
 export { default as WorkflowLogsPanel, WorkflowLogsTimeline } from './WorkflowLogsPanel';
 export { default as WorkflowStateStepper } from './WorkflowStateStepper';
 export { default as WorkflowOverviewSection } from './WorkflowOverviewSection';
+export { default as WorkflowCurrentStateBadge } from './WorkflowCurrentStateBadge';
+export type { WorkflowCurrentStateBadgeProps } from './WorkflowCurrentStateBadge';
+export { buildWorkflowStateBadgeStyle } from './workflowStateStyles';
+export type { WorkflowStateBadgeVariant } from './workflowStateStyles';
 export type { WorkflowNavigateTarget } from './WorkflowOverviewSection';

@@ -1746,7 +1746,7 @@ const s = {
   } as const,
   checkboxChecked: {
     background: 'linear-gradient(135deg, #06b6d4, #0891b2)',
-    borderColor: '#06b6d4',
+    border: '2px solid #06b6d4',
   } as const,
   caseItemName: {
     flex: 1,

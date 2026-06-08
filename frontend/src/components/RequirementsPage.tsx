@@ -5,7 +5,6 @@ import type { RequirementResponse, TestCaseResponse } from '../types';
 import CreateRequirementForm from './CreateRequirementForm';
 import CreateTestCaseForm from './CreateTestCaseForm';
 import TestCaseDetailModal from './TestCaseDetailModal';
-import RequirementDetailModal from './RequirementDetailModal';
 import { WorkflowPanel, WorkflowActionToolbar } from './workflow';
 import {
   getStateLabel,
@@ -69,7 +68,6 @@ const RequirementsPage: React.FC<RequirementsPageProps> = ({ initialStatusFilter
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [batchDeleteConfirm, setBatchDeleteConfirm] = useState(false);
   const [deleteCaseConfirm, setDeleteCaseConfirm] = useState<{ open: boolean; caseId?: string; title?: string }>({ open: false });
-  const [selectedRequirementDetail, setSelectedRequirementDetail] = useState<RequirementResponse | null>(null);
   const [workflowTestCase, setWorkflowTestCase] = useState<TestCaseResponse | null>(null);
   const [defaultCatalogLabId, setDefaultCatalogLabId] = useState('');
   const [requirementWorkflowSignal, setRequirementWorkflowSignal] = useState(0);
@@ -301,7 +299,7 @@ const RequirementsPage: React.FC<RequirementsPageProps> = ({ initialStatusFilter
   };
 
   return (
-    <div className="split-workspace">
+    <div className={`split-workspace${selectedRequirement ? ' split-workspace--has-selection' : ''}`}>
       <aside className="split-workspace__list">
         <div className="split-panel-toolbar">
           <PageToolbar
@@ -466,17 +464,6 @@ const RequirementsPage: React.FC<RequirementsPageProps> = ({ initialStatusFilter
                         {new Date(requirement.created_at).toLocaleDateString('zh-CN')}
                       </span>
                     </div>
-                    <button
-                      type="button"
-                      style={styles.detailBtn}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedRequirementId(requirement.req_id);
-                        setSelectedRequirementDetail(requirement);
-                      }}
-                    >
-                      详情
-                    </button>
                   </div>
                 </div>
               );
@@ -489,6 +476,13 @@ const RequirementsPage: React.FC<RequirementsPageProps> = ({ initialStatusFilter
         {selectedRequirement ? (
           <>
             <div style={styles.detailHeader}>
+              <button
+                type="button"
+                className="split-workspace__back"
+                onClick={() => setSelectedRequirementId(null)}
+              >
+                ← 返回列表
+              </button>
               <div style={styles.detailHeaderRow}>
                 <div style={styles.detailHeaderMain}>
                   <h2 style={styles.detailTitle}>{selectedRequirement.title}</h2>
@@ -748,14 +742,6 @@ const RequirementsPage: React.FC<RequirementsPageProps> = ({ initialStatusFilter
         />
       )}
 
-      {selectedRequirementDetail && (
-        <RequirementDetailModal
-          requirement={selectedRequirementDetail}
-          onClose={() => setSelectedRequirementDetail(null)}
-          onUpdated={() => fetchRequirements(selectedRequirementDetail.req_id)}
-        />
-      )}
-
       {/* Delete Confirm Modal */}
       {deleteConfirm.open && (
         <div className="modal-overlay" onClick={() => setDeleteConfirm({ open: false })}>
@@ -944,16 +930,6 @@ const styles = {
     alignItems: 'center',
     gap: '8px',
     minWidth: 0,
-  },
-  detailBtn: {
-    flexShrink: 0,
-    padding: '2px 10px',
-    fontSize: '12px',
-    color: 'var(--accent-primary)',
-    backgroundColor: 'transparent',
-    border: '1px solid var(--border-default)',
-    borderRadius: '4px',
-    cursor: 'pointer',
   },
   metaTime: {
     fontSize: '11px',

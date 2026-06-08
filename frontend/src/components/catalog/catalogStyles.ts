@@ -35,7 +35,7 @@ export const catalogStyles = {
   } satisfies CSSProperties,
   chipLab: {
     backgroundColor: 'var(--status-info-bg)',
-    borderColor: 'var(--accent-primary)',
+    border: '1px solid var(--accent-primary)',
     color: 'var(--accent-primary)',
     fontWeight: 600,
   } satisfies CSSProperties,
@@ -65,7 +65,7 @@ export const catalogStyles = {
   } satisfies CSSProperties,
   previewBarActive: {
     backgroundColor: 'var(--status-info-bg)',
-    borderColor: 'color-mix(in srgb, var(--accent-primary) 35%, var(--border-subtle))',
+    border: '1px solid color-mix(in srgb, var(--accent-primary) 35%, var(--border-subtle))',
   } satisfies CSSProperties,
   suggestionPanel: {
     position: 'absolute' as const,

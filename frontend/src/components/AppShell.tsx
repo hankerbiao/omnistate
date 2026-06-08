@@ -1,12 +1,12 @@
 import Sidebar from './Sidebar'
 import Topbar from './Topbar'
-import type { PageType, NavItem } from '../types/app'
+import type { PageType, NavItem, NavSection } from '../types/app'
 
 const PAGE_TITLES: Record<PageType, { title: string; description?: string }> = {
   requirements: { title: '测试需求', description: '管理和跟踪测试需求' },
   myTasks: { title: '我的任务', description: '待处理的工作项' },
   manualTestCases: { title: '测试用例', description: '查看和管理手工测试用例' },
-  testCases: { title: '自动化用例', description: '查看和管理自动化测试用例' },
+  testCases: { title: '用例看板', description: '概览、浏览和管理测试用例' },
   agents: { title: '执行代理', description: '监控代理运行状态' },
   tasks: { title: '执行任务', description: '下发和管理测试任务' },
   terminal: { title: '终端调试', description: '开发调试工具' },
@@ -16,6 +16,10 @@ const PAGE_TITLES: Record<PageType, { title: string; description?: string }> = {
   permissions: { title: '权限管理', description: '管理系统权限项' },
   dashboard: { title: '数据统计', description: '测试数据整体概览' },
   catalogLabs: { title: 'Lab 管理', description: '管理测试用例目录 Lab' },
+  testPlanStudio: { title: '执行计划', description: '测试计划与排期管理' },
+  failureAnalysis: { title: '失效分析', description: '测试失败模式分析与稳定性监控' },
+  lineageView: { title: '测试血缘', description: '从结果追溯完整测试链路' },
+  traceability: { title: '追溯矩阵', description: '需求-用例覆盖分析与追溯' },
 }
 
 interface SwitchableUser {
@@ -30,6 +34,7 @@ interface AppShellProps {
   currentPage: PageType
   onNavigate: (page: PageType) => void
   visibleNavItems: NavItem[]
+  navSections: NavSection[]
   onLogout: () => void
   currentUser?: string
   currentUserId?: string
@@ -44,6 +49,7 @@ const AppShell: React.FC<AppShellProps> = ({
   currentPage,
   onNavigate,
   visibleNavItems,
+  navSections,
   onLogout,
   currentUser,
   currentUserId,
@@ -60,6 +66,7 @@ const AppShell: React.FC<AppShellProps> = ({
         currentPage={currentPage}
         onNavigate={onNavigate}
         visibleItems={visibleNavItems}
+        sections={navSections}
       />
       <div style={styles.main}>
         <Topbar

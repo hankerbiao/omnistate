@@ -127,7 +127,9 @@ class UserNavigationResponse(BaseModel):
     user_id: str = Field(..., description="用户 ID")
     role_ids: List[str] = Field(..., description="角色 ID 列表")
     permissions: List[str] = Field(..., description="权限码列表")
-    allowed_nav_views: List[str] = Field(..., description="允许访问的导航视图列表")
+    allowed_nav_views: List[str] = Field(..., description="当前生效的导航视图列表")
+    role_derived_nav_views: List[str] = Field(..., description="仅由角色权限推导的导航视图列表")
+    has_nav_override: bool = Field(..., description="是否设置了用户级导航覆盖")
 
 
 class UpdateUserNavigationRequest(BaseModel):

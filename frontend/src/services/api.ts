@@ -1,4 +1,4 @@
-import type { LoginRequest, LoginResponse, ApiResponse, CreateRequirementRequest, RequirementResponse, ListRequirementsParams, CreateTestCaseRequest, UpdateTestCaseRequest, TestCaseResponse, TestCaseChangeLogListResponse, ListTestCasesParams, CatalogLab, CreateCatalogLabRequest, UpdateCatalogLabRequest, CatalogTreeResponse, DispatchTaskRequest, DispatchTaskResponse, ExecutionAgent, AgentCleanupOfflineResponse, ListAgentsParams, CreateAutomationTestCaseRequest, AutomationTestCaseResponse, ListAutomationTestCasesParams, ExecutionTask, ListTasksParams, TaskStatus, RerunTaskRequest, AttachmentInfo, WorkflowTransitionRequest, WorkflowTransitionResponse, WorkflowTransitionsResponse, WorkflowTransitionLog, RoleResponse, PermissionResponse, CreateRoleRequest, UpdateRoleRequest, UpdateRolePermissionsRequest, CurrentUserPermissionsResponse, UserResponse, CreateUserRequest, UpdateUserRequest, UpdateUserRolesRequest, UpdateUserPasswordRequest, ListUsersParams, WorkItem } from '../types';
+import type { LoginRequest, LoginResponse, ApiResponse, CreateRequirementRequest, RequirementResponse, ListRequirementsParams, CreateTestCaseRequest, UpdateTestCaseRequest, TestCaseResponse, TestCaseChangeLogListResponse, ListTestCasesParams, CatalogLab, CreateCatalogLabRequest, UpdateCatalogLabRequest, CatalogTreeResponse, DispatchTaskRequest, DispatchTaskResponse, ExecutionAgent, AgentCleanupOfflineResponse, ListAgentsParams, CreateAutomationTestCaseRequest, AutomationTestCaseResponse, ListAutomationTestCasesParams, ExecutionTask, ListTasksParams, TaskStatus, RerunTaskRequest, AttachmentInfo, WorkflowTransitionRequest, WorkflowTransitionResponse, WorkflowTransitionsResponse, WorkflowTransitionLog, RoleResponse, PermissionResponse, CreateRoleRequest, UpdateRoleRequest, UpdateRolePermissionsRequest, CurrentUserPermissionsResponse, UserResponse, CreateUserRequest, UpdateUserRequest, UpdateUserRolesRequest, UpdateUserPasswordRequest, ListUsersParams, NavigationPageResponse, UserNavigationResponse, UpdateUserNavigationRequest, WorkItem, LineageGraphResponse, FailureAnalysisDashboard, CommentListResponse, CreateCommentRequest, TestCaseComment } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
 
@@ -143,6 +143,44 @@ class ApiClient {
 
   async deleteTestCase(caseId: string): Promise<ApiResponse<{ deleted: boolean }>> {
     return this.request<{ deleted: boolean }>(`/test-cases/${caseId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  /* ── Test Case Comments ── */
+  async listComments(
+    caseId: string,
+    params?: { limit?: number; offset?: number },
+  ): Promise<ApiResponse<CommentListResponse>> {
+    const qs = new URLSearchParams()
+    if (params?.limit) qs.set('limit', String(params.limit))
+    if (params?.offset) qs.set('offset', String(params.offset))
+    const query = qs.toString()
+    return this.request<CommentListResponse>(`/test-cases/${caseId}/comments${query ? `?${query}` : ''}`, {
+      method: 'GET',
+    });
+  }
+
+  async createComment(caseId: string, data: CreateCommentRequest): Promise<ApiResponse<TestCaseComment>> {
+    return this.request<TestCaseComment>(`/test-cases/${caseId}/comments`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateComment(
+    caseId: string,
+    commentId: string,
+    data: CreateCommentRequest,
+  ): Promise<ApiResponse<TestCaseComment>> {
+    return this.request<TestCaseComment>(`/test-cases/${caseId}/comments/${commentId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteComment(caseId: string, commentId: string): Promise<void> {
+    return this.request<void>(`/test-cases/${caseId}/comments/${commentId}`, {
       method: 'DELETE',
     });
   }
@@ -494,6 +532,34 @@ class ApiClient {
     });
   }
 
+  async listNavigationPages(params: { include_inactive?: boolean } = {}): Promise<ApiResponse<NavigationPageResponse[]>> {
+    const query = new URLSearchParams();
+    if (params.include_inactive === false) {
+      query.append('include_inactive', 'false');
+    }
+    const qs = query.toString();
+    return this.request<NavigationPageResponse[]>(
+      `/auth/admin/navigation/pages${qs ? `?${qs}` : ''}`,
+      { method: 'GET' },
+    );
+  }
+
+  async getUserNavigation(userId: string): Promise<ApiResponse<UserNavigationResponse>> {
+    return this.request<UserNavigationResponse>(`/auth/admin/users/${userId}/navigation`, {
+      method: 'GET',
+    });
+  }
+
+  async updateUserNavigation(
+    userId: string,
+    data: UpdateUserNavigationRequest,
+  ): Promise<ApiResponse<UserNavigationResponse>> {
+    return this.request<UserNavigationResponse>(`/auth/admin/users/${userId}/navigation`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
   // Catalog Lab APIs
   async listCatalogLabs(params: { active_only?: boolean } = {}): Promise<ApiResponse<CatalogLab[]>> {
     const query = new URLSearchParams();
@@ -547,6 +613,26 @@ class ApiClient {
     return this.request<CatalogTreeResponse>(`/catalog/tree?lab_id=${encodeURIComponent(labId)}`, {
       method: 'GET',
     });
+  }
+
+  // === Lineage Graph API ===
+  async getLineageGraph(entityType: string, entityId: string, maxNodes = 50): Promise<ApiResponse<LineageGraphResponse>> {
+    const params = new URLSearchParams({ entity_type: entityType, entity_id: entityId, max_nodes: String(maxNodes) });
+    return this.request<LineageGraphResponse>(`/lineage/graph?${params.toString()}`, { method: 'GET' });
+  }
+
+  // === Failure Analysis API ===
+  async getFailureAnalysisDashboard(
+    timeRange = '30d',
+    limitFlaky = 20,
+    limitHighFreq = 20,
+  ): Promise<ApiResponse<FailureAnalysisDashboard>> {
+    const params = new URLSearchParams({
+      time_range: timeRange,
+      limit_flaky: String(limitFlaky),
+      limit_high_freq: String(limitHighFreq),
+    });
+    return this.request<FailureAnalysisDashboard>(`/failure-analysis/dashboard?${params.toString()}`, { method: 'GET' });
   }
 }
 

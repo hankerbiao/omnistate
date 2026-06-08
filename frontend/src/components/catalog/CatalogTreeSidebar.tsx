@@ -214,7 +214,7 @@ const styles: Record<string, React.CSSProperties> = {
     transition: 'background-color var(--transition-fast), border-color var(--transition-fast)',
   },
   allBtnSelected: {
-    borderColor: 'var(--accent-primary)',
+    border: '1px solid var(--accent-primary)',
     backgroundColor: 'color-mix(in srgb, var(--accent-primary) 8%, var(--surface-primary))',
   },
   allBtnMeta: {

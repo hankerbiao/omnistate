@@ -1,617 +1,453 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { api } from '../services/api';
 import type { AutomationTestCaseResponse } from '../types';
 import CreateAutomationTestCaseForm from './CreateAutomationTestCaseForm';
-import PageToolbar, { StatPill } from './ui/PageToolbar';
 
-// 自动化用例状态中文映射
-const AUTO_CASE_STATUS_LABELS: Record<string, string> = {
-  ACTIVE: '激活',
-  INACTIVE: '未激活',
-  DRAFT: '草稿',
-  DEPRECATED: '已弃用',
+type DetailTab = 'code' | 'params' | 'relations' | 'meta';
+
+interface DetailTabDef {
+  id: DetailTab;
+  label: string;
+  condition?: boolean;
+}
+
+// 自动化用例状态映射
+const AUTO_STATUS_LABELS: Record<string, string> = {
+  ACTIVE: 'Active', INACTIVE: 'Inactive', DRAFT: 'Draft', DEPRECATED: 'Deprecated',
+};
+const STATUS_DOT: Record<string, string> = {
+  ACTIVE: '#3fb950', INACTIVE: '#8b949e', DRAFT: '#58a6ff', DEPRECATED: '#f85149',
+};
+
+const FW_ICONS: Record<string, string> = {
+  pytest: '🐍', Pytest: '🐍', PyTest: '🐍', unittest: '🐍',
+  robotframework: '🤖', RobotFramework: '🤖', Robot: '🤖',
+  playwright: '🎭', Playwright: '🎭', cypress: '🌲', Cypress: '🌲',
+  selenium: '🌐', Selenium: '🌐', appium: '📱', Appium: '📱',
+  requests: '📡', Requests: '📡', go: '🔵', Go: '🔵', junit: '☕', JUnit: '☕',
+};
+
+const FW_COLORS: Record<string, string> = {
+  pytest: '#9cf', Playwright: '#e8e8e8', Cypress: '#69d3a8',
+  Selenium: '#43b02a', Appium: '#ee6d4a', Requests: '#6cac4d',
+  Go: '#00add8', RobotFramework: '#000', JUnit: '#25a162',
 };
 
 const TestCaseList: React.FC = () => {
-  const [testCases, setTestCases] = useState<AutomationTestCaseResponse[]>([]);
+  const [cases, setCases] = useState<AutomationTestCaseResponse[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showCreateAutomationForm, setShowCreateAutomationForm] = useState(false);
-  const [selectedCases, setSelectedCases] = useState<Set<string>>(new Set());
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showDispatchModal, setShowDispatchModal] = useState(false);
   const [dispatching, setDispatching] = useState(false);
   const [dispatchError, setDispatchError] = useState<string | null>(null);
   const [dispatchSuccess, setDispatchSuccess] = useState<string | null>(null);
-  const [selectedTestCase, setSelectedTestCase] = useState<AutomationTestCaseResponse | null>(null);
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['basic', 'code', 'snapshot', 'script', 'params', 'env', 'meta', 'time']));
+  const [selected, setSelected] = useState<AutomationTestCaseResponse | null>(null);
+  const [tab, setTab] = useState<DetailTab>('code');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
 
-  const toggleSection = (section: string) => {
-    const newExpanded = new Set(expandedSections);
-    if (newExpanded.has(section)) {
-      newExpanded.delete(section);
-    } else {
-      newExpanded.add(section);
+  const categoryCounts = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const c of cases) {
+      const fw = c.framework || '其他';
+      map.set(fw, (map.get(fw) || 0) + 1);
     }
-    setExpandedSections(newExpanded);
-  };
+    const sorted = Array.from(map.entries()).sort(([, a], [, b]) => b - a);
+    return sorted;
+  }, [cases]);
 
-  const handleCaseClick = (testCase: AutomationTestCaseResponse, e: React.MouseEvent) => {
-    const target = e.target as HTMLElement;
-    if (target.tagName === 'INPUT' || target.tagName === 'CHECKBOX') {
-      return;
-    }
-    setSelectedTestCase(testCase);
-  };
+  const filtered = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return cases.filter(c => {
+      if (statusFilter !== 'all' && c.status !== statusFilter) return false;
+      if (categoryFilter !== 'all' && (c.framework || '其他') !== categoryFilter) return false;
+      if (!q) return true;
+      return (
+        c.name.toLowerCase().includes(q) ||
+        c.auto_case_id.toLowerCase().includes(q) ||
+        (c.framework || '').toLowerCase().includes(q) ||
+        (c.automation_type || '').toLowerCase().includes(q)
+      );
+    });
+  }, [cases, searchQuery, statusFilter, categoryFilter]);
 
-  const closeDetailModal = () => {
-    setSelectedTestCase(null);
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Escape') {
-      closeDetailModal();
-    }
-  };
-
-  const fetchTestCases = useCallback(async () => {
+  const fetchAll = useCallback(async () => {
     setLoading(true);
     setError(null);
-
     try {
-      const response = await api.listAutomationTestCases({ limit: 50 });
-      setTestCases(response.data || []);
-    } catch (err) {
+      const res = await api.listAutomationTestCases({ limit: 200 });
+      setCases(res.data || []);
+    } catch {
       setError('获取自动化测试用例列表失败');
-      console.error('Fetch automation test cases error:', err);
     } finally {
       setLoading(false);
     }
   }, []);
 
-  useEffect(() => {
-    fetchTestCases();
-  }, [fetchTestCases]);
+  useEffect(() => { fetchAll(); }, [fetchAll]);
 
-  const handleSelectCase = (caseId: string) => {
-    const newSelected = new Set(selectedCases);
-    if (newSelected.has(caseId)) {
-      newSelected.delete(caseId);
-    } else {
-      newSelected.add(caseId);
-    }
-    setSelectedCases(newSelected);
+  const handleSelect = (id: string) => {
+    setSelectedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   };
 
-  const handleSelectAll = () => {
-    if (selectedCases.size === testCases.length) {
-      setSelectedCases(new Set());
-    } else {
-      setSelectedCases(new Set(testCases.map(tc => tc.auto_case_id)));
-    }
-  };
+  const fwIcon = (fw?: string) => fw ? (FW_ICONS[fw] || '⚙️') : '⚙️';
+  const fwColor = (fw?: string) => fw ? (FW_COLORS[fw] || 'var(--accent-purple)') : 'var(--accent-purple)';
 
   const handleDispatch = async () => {
-    if (selectedCases.size === 0) {
-      setDispatchError('请选择至少一个测试用例');
-      return;
-    }
-
+    if (selectedIds.size === 0) return;
     setDispatching(true);
-    setDispatchError(null);
-    setDispatchSuccess(null);
-
+    setDispatchError(null); setDispatchSuccess(null);
     try {
-      const response = await api.dispatchTask({
-        cases: Array.from(selectedCases).map((auto_case_id) => ({ auto_case_id })),
-      });
-
-      if (response.code === 0 || response.code === 200) {
-        setDispatchSuccess(`成功下发 ${selectedCases.size} 个测试用例，任务ID: ${response.data?.task_id}`);
-        setSelectedCases(new Set());
-        setTimeout(() => {
-          setShowDispatchModal(false);
-          setDispatchSuccess(null);
-        }, 2000);
-      } else {
-        setDispatchError(response.message || '下发任务失败');
-      }
-    } catch (err) {
-      setDispatchError('下发任务失败，请稍后重试');
-      console.error('Dispatch task error:', err);
-    } finally {
-      setDispatching(false);
-    }
+      const res = await api.dispatchTask({ cases: Array.from(selectedIds).map(id => ({ auto_case_id: id })) });
+      if (res.code === 0 || res.code === 200) {
+        setDispatchSuccess(`成功下发 ${selectedIds.size} 个，任务ID: ${res.data?.task_id}`);
+        setSelectedIds(new Set());
+        setTimeout(() => { setShowDispatchModal(false); setDispatchSuccess(null); }, 2000);
+      } else setDispatchError(res.message || '下发任务失败');
+    } catch { setDispatchError('下发任务失败'); } finally { setDispatching(false); }
   };
 
-  const getStatusColor = (status: string) => {
-    const colors: Record<string, { bg: string; text: string }> = {
-      ACTIVE: { bg: 'var(--status-success-bg)', text: 'var(--accent-green)' },
-      INACTIVE: { bg: 'var(--bg-tertiary)', text: 'var(--text-muted)' },
-      DRAFT: { bg: 'var(--status-info-bg)', text: 'var(--accent-blue)' },
-    };
-    return colors[status] || { bg: 'var(--bg-tertiary)', text: 'var(--text-secondary)' };
-  };
-
-  const formatDefault = (value: unknown) => {
-    if (value === null || value === undefined || value === '') return '-';
-    if (typeof value === 'object') return JSON.stringify(value);
-    return String(value);
-  };
+  const TABS: DetailTabDef[] = [
+    { id: 'code', label: '代码与脚本' },
+    { id: 'params', label: '参数与环境', condition: Boolean(selected && ((selected.param_spec?.length ?? 0) > 0 || (selected.runtime_env && Object.keys(selected.runtime_env).length > 0))) },
+    { id: 'relations', label: '关联' },
+    { id: 'meta', label: '元数据' },
+  ];
 
   return (
-    <div className="page-content">
-      <PageToolbar
-        meta={(
-          <>
-            <StatPill label="用例" value={testCases.length} />
-            {selectedCases.size > 0 && (
-              <StatPill label="已选" value={selectedCases.size} tone="info" />
-            )}
-          </>
-        )}
-        actions={(
-          <>
-            <button type="button" className="btn btn--secondary btn--sm" onClick={fetchTestCases} disabled={loading}>
-              {loading ? '加载中' : '刷新'}
+    <div className="page-content" style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      {/* Toolbar */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 12, flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontSize: 17, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+            ⚡ 自动化
+            <span style={{ fontSize: 12, fontWeight: 500, padding: '1px 10px', borderRadius: 12, background: 'color-mix(in srgb, var(--accent-purple) 12%, transparent)', color: 'var(--accent-purple)', fontFamily: 'monospace' }}>{cases.length}</span>
+          </span>
+          {selectedIds.size > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 12px', background: 'color-mix(in srgb, var(--accent-blue) 8%, transparent)', borderRadius: 8, border: '1px solid color-mix(in srgb, var(--accent-blue) 18%, transparent)' }}>
+              <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--accent-blue)' }}>已选 {selectedIds.size}</span>
+              <button className="btn btn--primary btn--sm" onClick={() => setShowDispatchModal(true)}>下发</button>
+              <button className="btn btn--ghost btn--sm" onClick={() => setSelectedIds(new Set())}>取消</button>
+            </div>
+          )}
+          {selected && (
+            <button className="btn btn--primary btn--sm" onClick={() => { setSelectedIds(new Set([selected.auto_case_id])); setShowDispatchModal(true); }}>
+              ▶ 下发当前
             </button>
-            {selectedCases.size > 0 && (
-              <button type="button" className="btn btn--primary btn--sm" onClick={() => setShowDispatchModal(true)}>
-                下发任务 ({selectedCases.size})
-              </button>
-            )}
-            <button type="button" className="btn btn--primary btn--sm" onClick={() => setShowCreateAutomationForm(true)}>
-              + 新建用例
-            </button>
-          </>
-        )}
-      />
-
-      {error && (
-        <div className="error-banner" style={{ marginBottom: 16 }}>
-          {error}
+          )}
         </div>
-      )}
-
-      <div className="surface-card">
-      <div style={styles.tableWrapper}>
-        {loading ? (
-          <div style={styles.loadingState}>
-            <div style={styles.spinner} />
-            <span>加载中...</span>
-          </div>
-        ) : testCases.length === 0 ? (
-          <div style={styles.emptyState}>
-            <span style={styles.emptyIcon}>⚡</span>
-            <p>暂无自动化测试用例</p>
-          </div>
-        ) : (
-          <table style={styles.table}>
-            <thead>
-              <tr style={styles.tableHeader}>
-                <th style={{ ...styles.th, width: '40px' }}>
-                  <input
-                    type="checkbox"
-                    checked={testCases.length > 0 && selectedCases.size === testCases.length}
-                    onChange={handleSelectAll}
-                    style={styles.checkbox}
-                  />
-                </th>
-                <th style={styles.th}>用例ID</th>
-                <th style={styles.th}>用例名称</th>
-                <th style={styles.th}>框架</th>
-                <th style={styles.th}>自动化类型</th>
-                <th style={styles.th}>状态</th>
-                <th style={styles.th}>版本</th>
-                <th style={styles.th}>标签</th>
-                <th style={styles.th}>维护人</th>
-                <th style={styles.th}>创建时间</th>
-              </tr>
-            </thead>
-            <tbody>
-              {testCases.map((testCase, index) => {
-                const statusStyle = getStatusColor(testCase.status);
-                return (
-                  <tr
-                    key={testCase.id}
-                    onClick={(e) => handleCaseClick(testCase, e)}
-                    style={{
-                      ...styles.tr,
-                      cursor: 'pointer',
-                      animationDelay: `${index * 30}ms`,
-                      backgroundColor: selectedCases.has(testCase.auto_case_id) ? 'var(--status-info-bg)' : undefined,
-                    }}
-                  >
-                    <td style={styles.td} onClick={(e) => e.stopPropagation()}>
-                      <input
-                        type="checkbox"
-                        checked={selectedCases.has(testCase.auto_case_id)}
-                        onChange={() => handleSelectCase(testCase.auto_case_id)}
-                        style={styles.checkbox}
-                      />
-                    </td>
-                    <td style={styles.td}>
-                      <span style={styles.caseId}>{testCase.auto_case_id}</span>
-                    </td>
-                    <td style={styles.td}>
-                      <span style={styles.caseTitle}>{testCase.name}</span>
-                    </td>
-                    <td style={styles.td}>
-                      <span style={styles.frameworkBadge}>{testCase.framework || '-'}</span>
-                    </td>
-                    <td style={styles.td}>
-                      <span style={styles.typeBadge}>{testCase.automation_type || '-'}</span>
-                    </td>
-                    <td style={styles.td}>
-                      <span
-                        style={{
-                          ...styles.statusBadge,
-                          backgroundColor: statusStyle.bg,
-                          color: statusStyle.text,
-                        }}
-                      >
-                        {AUTO_CASE_STATUS_LABELS[testCase.status] || testCase.status}
-                      </span>
-                    </td>
-                    <td style={styles.td}>
-                      <span style={styles.versionBadge}>v{testCase.version}</span>
-                    </td>
-                    <td style={styles.td}>
-                      <div style={styles.tagList}>
-                        {testCase.tags?.slice(0, 2).map((tag, i) => (
-                          <span key={i} style={styles.tag}>{tag}</span>
-                        ))}
-                        {testCase.tags && testCase.tags.length > 2 && (
-                          <span style={styles.moreTag}>+{testCase.tags.length - 2}</span>
-                        )}
-                      </div>
-                    </td>
-                    <td style={styles.td}>
-                      <span style={styles.ownerBadge}>{testCase.maintainer_id || '-'}</span>
-                    </td>
-                    <td style={styles.td}>
-                      <span style={styles.timeText}>
-                        {new Date(testCase.created_at).toLocaleString('zh-CN')}
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
-      </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <input className="form-input" style={{ width: 180, fontSize: 13 }} value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="搜索名称、ID、框架…" />
+          <select className="form-input form-select" style={{ width: 120 }} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+            <option value="all">全部状态</option>
+            <option value="ACTIVE">Active</option>
+            <option value="DRAFT">Draft</option>
+            <option value="INACTIVE">Inactive</option>
+            <option value="DEPRECATED">Deprecated</option>
+          </select>
+          <button className="btn btn--ghost btn--sm" onClick={fetchAll} disabled={loading}>{loading ? '⋯' : '↻'}</button>
+          <button className="btn btn--primary btn--sm" onClick={() => setShowCreateForm(true)}>+ 新建</button>
+        </div>
       </div>
 
-      {showCreateAutomationForm && (
-        <CreateAutomationTestCaseForm
-          onClose={() => setShowCreateAutomationForm(false)}
-          onSuccess={fetchTestCases}
-        />
-      )}
+      {error && <div className="error-banner" style={{ marginBottom: 8, flexShrink: 0 }}>{error}</div>}
 
-      {showDispatchModal && (
-        <div style={styles.modalOverlay} onClick={() => setShowDispatchModal(false)}>
-          <div style={styles.modalContent} onClick={e => e.stopPropagation()}>
-            <h2 style={styles.modalTitle}>下发任务</h2>
-            <p style={styles.modalDesc}>已选择 {selectedCases.size} 个测试用例</p>
+      {/* Split body */}
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: 0, overflow: 'hidden', border: '1px solid var(--border-default)', borderRadius: 'var(--radius-lg)', backgroundColor: 'var(--surface-primary)' }}>
+        {/* ── Left list ── */}
+        <div style={{ width: 300, minWidth: 300, borderRight: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-primary)' }}>
+          {/* Header */}
+          <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--border-subtle)', fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', display: 'flex', justifyContent: 'space-between' }}>
+            <span>测试用例</span>
+            <span>{filtered.length}/{cases.length}</span>
+          </div>
 
-            {dispatchError && (
-              <div style={styles.errorBanner}>
-                <span>⚠</span> {dispatchError}
-              </div>
-            )}
-
-            {dispatchSuccess && (
-              <div style={styles.successBanner}>
-                <span>✓</span> {dispatchSuccess}
-              </div>
-            )}
-
-            <div style={styles.modalActions}>
+          {/* Category pills */}
+          <div style={{ padding: '6px 8px', borderBottom: '1px solid var(--border-subtle)', display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+            <button
+              onClick={() => setCategoryFilter('all')}
+              style={{
+                fontSize: 11, padding: '3px 10px', border: 'none', borderRadius: 12, cursor: 'pointer',
+                background: categoryFilter === 'all' ? 'color-mix(in srgb, var(--accent-primary) 15%, transparent)' : 'var(--surface-tertiary)',
+                color: categoryFilter === 'all' ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                fontWeight: categoryFilter === 'all' ? 600 : 500, transition: 'all 0.1s',
+              }}
+            >全部 {cases.length}</button>
+            {categoryCounts.map(([fw, count]) => (
               <button
-                style={styles.cancelBtn}
-                onClick={() => setShowDispatchModal(false)}
-                disabled={dispatching}
-              >
-                取消
-              </button>
-              <button
-                style={styles.confirmBtn}
-                onClick={handleDispatch}
-                disabled={dispatching}
-              >
-                {dispatching ? '下发中...' : '确认下发'}
-              </button>
-            </div>
+                key={fw}
+                onClick={() => setCategoryFilter(fw)}
+                style={{
+                  fontSize: 11, padding: '3px 10px', border: 'none', borderRadius: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3,
+                  background: categoryFilter === fw ? `${fwColor(fw)}20` : 'var(--surface-tertiary)',
+                  color: categoryFilter === fw ? fwColor(fw) : 'var(--text-secondary)',
+                  fontWeight: categoryFilter === fw ? 600 : 500, transition: 'all 0.1s',
+                }}
+              >{fwIcon(fw)} {fw} {count}</button>
+            ))}
+          </div>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+            {loading && cases.length === 0 ? (
+              <div style={{ padding: 32, textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 13 }}>加载中...</div>
+            ) : filtered.length === 0 ? (
+              <div style={{ padding: 32, textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 13 }}>
+                {searchQuery || statusFilter !== 'all' ? '无匹配' : '暂无用例'}
+              </div>
+            ) : filtered.map(c => {
+              const isSel = selected?.auto_case_id === c.auto_case_id;
+              const dot = STATUS_DOT[c.status] || '#8b949e';
+              return (
+                <div
+                  key={c.id}
+                  onClick={() => { setSelected(c); setTab('code'); }}
+                  style={{
+                    padding: '8px 12px', cursor: 'pointer', borderLeft: `2px solid ${isSel ? 'var(--accent-primary)' : 'transparent'}`,
+                    backgroundColor: isSel ? 'color-mix(in srgb, var(--accent-primary) 6%, transparent)' : undefined,
+                    borderBottom: '0.5px solid var(--border-subtle)', transition: 'background-color 0.1s',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: dot, flexShrink: 0 }} />
+                    <span style={{ fontSize: 13, fontWeight: isSel ? 600 : 500, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
+                    {c.framework && (
+                      <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: `${fwColor(c.framework)}18`, color: fwColor(c.framework), fontWeight: 600, whiteSpace: 'nowrap' }}>
+                        {fwIcon(c.framework)} {c.framework}
+                      </span>
+                    )}
+                    {c.automation_type && <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>{c.automation_type}</span>}
+                    <span style={{ fontSize: 10, fontFamily: 'monospace', color: 'var(--text-tertiary)', marginLeft: 'auto' }}>v{c.version}</span>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
-      )}
 
-      {selectedTestCase && (
-        <div
-          style={styles.detailModalOverlay}
-          onClick={closeDetailModal}
-          onKeyDown={handleKeyDown}
-          tabIndex={0}
-        >
-          <div style={styles.detailModalContent} onClick={e => e.stopPropagation()}>
-            <div style={styles.detailModalHeader}>
-              <h2 style={styles.detailModalTitle}>自动化测试用例详情</h2>
-              <button style={styles.closeBtn} onClick={closeDetailModal}>×</button>
+        {/* ── Right detail ── */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-elevated)', minWidth: 0 }}>
+          {!selected ? (
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-tertiary)', fontSize: 14, gap: 8 }}>
+              ← 从左侧选择一个自动化用例
             </div>
-
-            <div style={styles.detailModalBody}>
-              {/* 基本信息 */}
-              <div style={styles.section}>
-                <div style={styles.sectionHeader} onClick={() => toggleSection('basic')}>
-                  <span style={styles.sectionArrow}>{expandedSections.has('basic') ? '▼' : '▶'}</span>
-                  <span style={styles.sectionTitle}>基本信息</span>
+          ) : (
+            <>
+              {/* Detail header */}
+              <div style={{ padding: '16px 24px 12px', borderBottom: '1px solid var(--border-subtle)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 12, fontFamily: 'monospace', color: 'var(--accent-purple)', fontWeight: 500 }}>{selected.auto_case_id}</span>
+                  {selected.framework && (
+                    <span style={{ fontSize: 11, padding: '1px 8px', borderRadius: 6, background: `${fwColor(selected.framework)}18`, color: fwColor(selected.framework), fontWeight: 600 }}>
+                      {fwIcon(selected.framework)} {selected.framework}
+                    </span>
+                  )}
+                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: STATUS_DOT[selected.status] || '#8b949e' }} />
+                  <span style={{ fontSize: 12, color: STATUS_DOT[selected.status] || '#8b949e', fontWeight: 600 }}>{AUTO_STATUS_LABELS[selected.status] || selected.status}</span>
+                  <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--text-tertiary)', padding: '1px 6px', borderRadius: 4, background: 'var(--surface-tertiary)' }}>v{selected.version}</span>
+                  {selected.automation_type && <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{selected.automation_type}</span>}
                 </div>
-                {expandedSections.has('basic') && (
-                  <div style={styles.sectionContent}>
-                    <div style={styles.infoGrid}>
-                      <div style={styles.infoRow}>
-                        <span style={styles.infoLabel}>用例ID</span>
-                        <span style={styles.infoValue}>{selectedTestCase.auto_case_id || '-'}</span>
-                      </div>
-                      <div style={styles.infoRow}>
-                        <span style={styles.infoLabel}>手工用例ID</span>
-                        <span style={styles.infoValue}>{selectedTestCase.dml_manual_case_id || '-'}</span>
-                      </div>
-                      <div style={styles.infoRow}>
-                        <span style={styles.infoLabel}>名称</span>
-                        <span style={styles.infoValueLarge}>{selectedTestCase.name || '-'}</span>
-                      </div>
-                      <div style={styles.infoRow}>
-                        <span style={styles.infoLabel}>版本</span>
-                        <span style={styles.infoValue}>v{selectedTestCase.version}</span>
-                      </div>
-                      <div style={styles.infoRow}>
-                        <span style={styles.infoLabel}>状态</span>
-                        <span style={{...styles.statusBadge, backgroundColor: getStatusColor(selectedTestCase.status).bg, color: getStatusColor(selectedTestCase.status).text}}>
-                          {AUTO_CASE_STATUS_LABELS[selectedTestCase.status] || selectedTestCase.status}
-                        </span>
-                      </div>
-                      <div style={styles.infoRow}>
-                        <span style={styles.infoLabel}>框架</span>
-                        <span style={styles.frameworkBadge}>{selectedTestCase.framework || '-'}</span>
-                      </div>
-                      <div style={styles.infoRow}>
-                        <span style={styles.infoLabel}>自动化类型</span>
-                        <span style={styles.typeBadge}>{selectedTestCase.automation_type || '-'}</span>
-                      </div>
-                    </div>
-                  </div>
-                )}
+                <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600, color: 'var(--text-primary)' }}>{selected.name}</h2>
               </div>
 
-              {/* 代码信息 */}
-              <div style={styles.section}>
-                <div style={styles.sectionHeader} onClick={() => toggleSection('code')}>
-                  <span style={styles.sectionArrow}>{expandedSections.has('code') ? '▼' : '▶'}</span>
-                  <span style={styles.sectionTitle}>代码信息</span>
-                </div>
-                {expandedSections.has('code') && (
-                  <div style={styles.sectionContent}>
-                    <div style={styles.infoGrid}>
-                      <div style={styles.infoRow}>
-                        <span style={styles.infoLabel}>仓库地址</span>
-                        <span style={styles.infoValueMono}>{selectedTestCase.repo_url || '-'}</span>
-                      </div>
-                      <div style={styles.infoRow}>
-                        <span style={styles.infoLabel}>分支</span>
-                        <span style={styles.infoValue}>{selectedTestCase.repo_branch || '-'}</span>
-                      </div>
-                      <div style={styles.infoRow}>
-                        <span style={styles.infoLabel}>脚本路径</span>
-                        <span style={styles.infoValueMono}>{selectedTestCase.script_path || '-'}</span>
-                      </div>
-                      <div style={styles.infoRow}>
-                        <span style={styles.infoLabel}>脚本名称</span>
-                        <span style={styles.infoValue}>{selectedTestCase.script_name || '-'}</span>
-                      </div>
-                      <div style={styles.infoRow}>
-                        <span style={styles.infoLabel}>脚本实体ID</span>
-                        <span style={styles.infoValueMono}>{selectedTestCase.script_entity_id || '-'}</span>
-                      </div>
-                      <div style={styles.infoRow}>
-                        <span style={styles.infoLabel}>执行命令</span>
-                        <span style={styles.infoValueMono}>{selectedTestCase.entry_command || '-'}</span>
-                      </div>
-                    </div>
-                  </div>
-                )}
+              {/* Tabs */}
+              <div style={{ display: 'flex', gap: 0, padding: '0 24px', borderBottom: '1px solid var(--border-subtle)', flexShrink: 0 }}>
+                {TABS.filter(t => t.condition !== false).map(t => (
+                  <button key={t.id} type="button" style={{
+                    padding: '10px 18px', border: 'none', background: 'transparent', color: tab === t.id ? 'var(--accent-primary)' : 'var(--text-tertiary)',
+                    cursor: 'pointer', fontSize: 13, fontWeight: tab === t.id ? 600 : 500, borderBottom: `2px solid ${tab === t.id ? 'var(--accent-primary)' : 'transparent'}`, marginBottom: -1,
+                    transition: 'color 0.15s',
+                  }} onClick={() => setTab(t.id)}>{t.label}</button>
+                ))}
               </div>
 
-              {/* 代码快照 */}
-              {selectedTestCase.code_snapshot && (
-                <div style={styles.section}>
-                  <div style={styles.sectionHeader} onClick={() => toggleSection('snapshot')}>
-                    <span style={styles.sectionArrow}>{expandedSections.has('snapshot') ? '▼' : '▶'}</span>
-                    <span style={styles.sectionTitle}>代码快照</span>
-                  </div>
-                  {expandedSections.has('snapshot') && (
-                    <div style={styles.sectionContent}>
-                      <div style={styles.infoGrid}>
-                        <div style={styles.infoRow}>
-                          <span style={styles.infoLabel}>分支</span>
-                          <span style={styles.infoValue}>{selectedTestCase.code_snapshot.branch || '-'}</span>
-                        </div>
-                        <div style={styles.infoRow}>
-                          <span style={styles.infoLabel}>Commit ID</span>
-                          <span style={styles.infoValueMono}>{selectedTestCase.code_snapshot.commit_short_id || '-'} ({selectedTestCase.code_snapshot.commit_id || '-'})</span>
-                        </div>
-                        <div style={styles.infoRow}>
-                          <span style={styles.infoLabel}>作者</span>
-                          <span style={styles.infoValue}>{selectedTestCase.code_snapshot.author || '-'}</span>
-                        </div>
-                        <div style={styles.infoRow}>
-                          <span style={styles.infoLabel}>提交时间</span>
-                          <span style={styles.infoValue}>{selectedTestCase.code_snapshot.commit_time ? new Date(selectedTestCase.code_snapshot.commit_time).toLocaleString('zh-CN') : '-'}</span>
-                        </div>
-                        <div style={styles.infoRowFull}>
-                          <span style={styles.infoLabel}>提交信息</span>
-                          <span style={styles.infoValueMono}>{selectedTestCase.code_snapshot.message || '-'}</span>
-                        </div>
+              {/* Tab content */}
+              <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px', minHeight: 0 }}>
+                {/* Code & Script */}
+                {tab === 'code' && (
+                  <div>
+                    <Section title="仓库">
+                      <div style={styles.grid2}>
+                        <Field label="地址" mono>{selected.repo_url || '-'}</Field>
+                        <Field label="分支" mono>{selected.repo_branch || '-'}</Field>
+                        <Field label="脚本路径" mono>{selected.script_path || '-'}</Field>
+                        <Field label="脚本名称">{selected.script_name || '-'}</Field>
+                        <Field label="脚本实体 ID" mono>{selected.script_entity_id || '-'}</Field>
+                        <Field label="执行命令" mono>{selected.entry_command || '-'}</Field>
                       </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* 脚本引用 */}
-              {selectedTestCase.script_ref && (
-                <div style={styles.section}>
-                  <div style={styles.sectionHeader} onClick={() => toggleSection('script')}>
-                    <span style={styles.sectionArrow}>{expandedSections.has('script') ? '▼' : '▶'}</span>
-                    <span style={styles.sectionTitle}>脚本引用</span>
+                    </Section>
+                    {selected.code_snapshot && <Section title="代码快照"><SnapshotBlock snapshot={selected.code_snapshot} /></Section>}
+                    {selected.script_ref && (
+                      <Section title="脚本引用">
+                        <div style={styles.grid2}>
+                          <Field label="实体 ID" mono>{selected.script_ref.entity_id || '-'}</Field>
+                          <Field label="模块">{selected.script_ref.module || '-'}</Field>
+                          <Field label="项目标签">{selected.script_ref.project_tag || '-'}</Field>
+                          <Field label="项目范围">{selected.script_ref.project_scope || '-'}</Field>
+                        </div>
+                      </Section>
+                    )}
                   </div>
-                  {expandedSections.has('script') && (
-                    <div style={styles.sectionContent}>
-                      <div style={styles.infoGrid}>
-                        <div style={styles.infoRow}>
-                          <span style={styles.infoLabel}>实体ID</span>
-                          <span style={styles.infoValueMono}>{selectedTestCase.script_ref.entity_id || '-'}</span>
-                        </div>
-                        <div style={styles.infoRow}>
-                          <span style={styles.infoLabel}>模块</span>
-                          <span style={styles.infoValue}>{selectedTestCase.script_ref.module || '-'}</span>
-                        </div>
-                        <div style={styles.infoRow}>
-                          <span style={styles.infoLabel}>项目标签</span>
-                          <span style={styles.infoValue}>{selectedTestCase.script_ref.project_tag || '-'}</span>
-                        </div>
-                        <div style={styles.infoRow}>
-                          <span style={styles.infoLabel}>项目范围</span>
-                          <span style={styles.infoValue}>{selectedTestCase.script_ref.project_scope || '-'}</span>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
+                )}
 
-              {/* 配置参数 */}
-              {selectedTestCase.param_spec && selectedTestCase.param_spec.length > 0 && (
-                <div style={styles.section}>
-                  <div style={styles.sectionHeader} onClick={() => toggleSection('params')}>
-                    <span style={styles.sectionArrow}>{expandedSections.has('params') ? '▼' : '▶'}</span>
-                    <span style={styles.sectionTitle}>配置参数</span>
-                    <span style={styles.sectionCount}>({selectedTestCase.param_spec.length}项)</span>
-                  </div>
-                  {expandedSections.has('params') && (
-                    <div style={styles.sectionContent}>
-                      <div style={styles.paramsList}>
-                        {selectedTestCase.param_spec.map((param, idx) => (
-                          <div key={idx} style={styles.paramCard}>
-                            <div style={styles.paramHeader}>
-                              <span style={styles.paramName}>{param.name}</span>
-                              <span style={styles.paramLabel}>{param.label || param.name}</span>
-                              <span style={styles.paramType}>{param.type}</span>
-                              {param.required && <span style={styles.requiredBadge}>必填</span>}
-                            </div>
-                            <div style={styles.paramBody}>
-                              <div style={styles.paramRow}>
-                                <span style={styles.infoLabel}>默认值</span>
-                                <span style={styles.infoValueMono}>{formatDefault(param.default)}</span>
+                {/* Params & Env */}
+                {tab === 'params' && (
+                  <div>
+                    {selected.param_spec?.length ? (
+                      <Section title={`配置参数 (${selected.param_spec.length})`}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                          {selected.param_spec.map((p, i) => (
+                            <div key={i} style={{ padding: '10px 12px', background: 'var(--bg-secondary)', borderRadius: 8, border: '1px solid var(--border-muted)' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
+                                <span style={{ fontSize: 13, fontWeight: 600, fontFamily: 'monospace', color: 'var(--accent-purple)' }}>{p.name}</span>
+                                {p.label && <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{p.label}</span>}
+                                <span style={{ fontSize: 10, fontFamily: 'monospace', color: 'var(--accent-cyan)', padding: '2px 6px', borderRadius: 4, background: 'rgba(57,208,214,0.15)' }}>{p.type}</span>
+                                {p.required && <span style={{ fontSize: 10, color: 'var(--accent-red)', fontWeight: 600, padding: '2px 6px', borderRadius: 4, background: 'rgba(219,68,68,0.15)' }}>必填</span>}
                               </div>
-                              {param.description && (
-                                <div style={styles.paramRow}>
-                                  <span style={styles.infoLabel}>描述</span>
-                                  <span style={styles.infoValue}>{param.description}</span>
-                                </div>
-                              )}
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                                <div><span style={styles.miniLabel}>默认值</span><span style={{ fontSize: 12, fontFamily: 'monospace', color: 'var(--text-primary)' }}>{p.default !== undefined ? String(p.default) : '-'}</span></div>
+                                {p.description && <div style={{ gridColumn: '1/-1' }}><span style={styles.miniLabel}>描述</span><span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{p.description}</span></div>}
+                              </div>
                             </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* 运行环境 */}
-              {selectedTestCase.runtime_env && Object.keys(selectedTestCase.runtime_env).length > 0 && (
-                <div style={styles.section}>
-                  <div style={styles.sectionHeader} onClick={() => toggleSection('env')}>
-                    <span style={styles.sectionArrow}>{expandedSections.has('env') ? '▼' : '▶'}</span>
-                    <span style={styles.sectionTitle}>运行环境</span>
-                    <span style={styles.sectionCount}>({Object.keys(selectedTestCase.runtime_env).length}项)</span>
+                          ))}
+                        </div>
+                      </Section>
+                    ) : null}
+                    {selected.runtime_env && Object.keys(selected.runtime_env).length > 0 && (
+                      <Section title={`运行环境 (${Object.keys(selected.runtime_env).length})`}>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 8 }}>
+                          {Object.entries(selected.runtime_env).map(([k, v]) => (
+                            <div key={k} style={{ padding: '8px 10px', background: 'var(--bg-secondary)', borderRadius: 6, border: '1px solid var(--border-muted)' }}>
+                              <span style={{ display: 'block', fontSize: 11, fontFamily: 'monospace', color: 'var(--accent-purple)', fontWeight: 500, marginBottom: 2 }}>{k}</span>
+                              <span style={{ fontSize: 12, fontFamily: 'monospace', color: 'var(--text-primary)', wordBreak: 'break-all' }}>{String(v)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </Section>
+                    )}
+                    {(!selected.param_spec?.length && (!selected.runtime_env || Object.keys(selected.runtime_env).length === 0)) && (
+                      <p style={styles.emptyHint}>暂无配置参数与运行环境</p>
+                    )}
                   </div>
-                  {expandedSections.has('env') && (
-                    <div style={styles.sectionContent}>
-                      <div style={styles.envGrid}>
-                        {Object.entries(selectedTestCase.runtime_env).map(([key, value]) => (
-                          <div key={key} style={styles.envItem}>
-                            <span style={styles.envKey}>{key}</span>
-                            <span style={styles.envValue}>{String(value)}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
+                )}
 
-              {/* 元数据 */}
-              <div style={styles.section}>
-                <div style={styles.sectionHeader} onClick={() => toggleSection('meta')}>
-                  <span style={styles.sectionArrow}>{expandedSections.has('meta') ? '▼' : '▶'}</span>
-                  <span style={styles.sectionTitle}>元数据</span>
-                </div>
-                {expandedSections.has('meta') && (
-                  <div style={styles.sectionContent}>
-                    <div style={styles.infoGrid}>
-                      <div style={styles.infoRow}>
-                        <span style={styles.infoLabel}>标签</span>
-                        <div style={styles.tagList}>
-                          {selectedTestCase.tags && selectedTestCase.tags.length > 0 ? (
-                            selectedTestCase.tags.map((tag, i) => (
-                              <span key={i} style={styles.tag}>{tag}</span>
-                            ))
-                          ) : (
-                            <span style={styles.infoValue}>-</span>
-                          )}
+                {/* Relations */}
+                {tab === 'relations' && (
+                  <div>
+                    <Section title="关联链路">
+                      <div style={styles.relationChain}>
+                        {/* Auto case */}
+                        <div style={styles.relationNode}>
+                          <span style={styles.relationIcon}>⚡</span>
+                          <div>
+                            <span style={styles.relationLabel}>自动化用例</span>
+                            <span style={styles.relationValue}>{selected.auto_case_id}</span>
+                          </div>
+                        </div>
+
+                        <span style={styles.relationArrow}>→</span>
+
+                        {/* Manual case */}
+                        <div style={{
+                          ...styles.relationNode,
+                          ...(selected.dml_manual_case_id ? {} : { opacity: 0.4 }),
+                        }}>
+                          <span style={styles.relationIcon}>📋</span>
+                          <div>
+                            <span style={styles.relationLabel}>手工用例</span>
+                            {selected.dml_manual_case_id ? (
+                              <span style={styles.relationValue}>{selected.dml_manual_case_id}</span>
+                            ) : (
+                              <span style={{ fontSize: 12, color: 'var(--text-tertiary)', fontStyle: 'italic' }}>未关联</span>
+                            )}
+                          </div>
+                        </div>
+
+                        <span style={styles.relationArrow}>→</span>
+
+                        {/* Requirement */}
+                        <div style={{
+                          ...styles.relationNode,
+                          opacity: selected.dml_manual_case_id ? 0.65 : 0.3,
+                        }}>
+                          <span style={styles.relationIcon}>📐</span>
+                          <div>
+                            <span style={styles.relationLabel}>关联需求</span>
+                            <span style={{ fontSize: 12, color: 'var(--text-tertiary)', fontStyle: 'italic' }}>
+                              {selected.dml_manual_case_id ? '通过手工用例关联' : '待关联手工用例'}
+                            </span>
+                          </div>
                         </div>
                       </div>
-                      <div style={styles.infoRow}>
-                        <span style={styles.infoLabel}>维护人</span>
-                        <span style={styles.infoValue}>{selectedTestCase.maintainer_id || '-'}</span>
-                      </div>
-                      <div style={styles.infoRow}>
-                        <span style={styles.infoLabel}>审核人</span>
-                        <span style={styles.infoValue}>{selectedTestCase.reviewer_id || '-'}</span>
-                      </div>
-                      <div style={styles.infoRowFull}>
-                        <span style={styles.infoLabel}>描述</span>
-                        <span style={styles.infoValue}>{selectedTestCase.description || '-'}</span>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
+                    </Section>
 
-              {/* 时间戳 */}
-              <div style={styles.section}>
-                <div style={styles.sectionHeader} onClick={() => toggleSection('time')}>
-                  <span style={styles.sectionArrow}>{expandedSections.has('time') ? '▼' : '▶'}</span>
-                  <span style={styles.sectionTitle}>时间戳</span>
-                </div>
-                {expandedSections.has('time') && (
-                  <div style={styles.sectionContent}>
-                    <div style={styles.infoGrid}>
-                      <div style={styles.infoRow}>
-                        <span style={styles.infoLabel}>创建时间</span>
-                        <span style={styles.infoValueMono}>{new Date(selectedTestCase.created_at).toLocaleString('zh-CN')}</span>
+                    {selected.dml_manual_case_id && (
+                      <Section title="快速操作">
+                        <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: 0 }}>
+                          手工用例 <strong style={{ fontFamily: 'monospace', color: 'var(--accent-cyan)' }}>{selected.dml_manual_case_id}</strong> 已关联到此自动化用例。
+                          可前往手工用例详情页查看完整的需求关联。
+                        </p>
+                      </Section>
+                    )}
+                  </div>
+                )}
+
+                {/* Meta */}
+                {tab === 'meta' && (
+                  <div>
+                    {selected.description && <Section title="描述"><div style={styles.descBox}>{selected.description}</div></Section>}
+                    <Section title="属性">
+                      <div style={styles.grid2}>
+                        <Field label="维护人">{selected.maintainer_id || '-'}</Field>
+                        <Field label="审核人">{selected.reviewer_id || '-'}</Field>
+                        <Field label="手工用例 ID" mono>{selected.dml_manual_case_id || '-'}</Field>
                       </div>
-                      <div style={styles.infoRow}>
-                        <span style={styles.infoLabel}>更新时间</span>
-                        <span style={styles.infoValueMono}>{new Date(selectedTestCase.updated_at).toLocaleString('zh-CN')}</span>
+                    </Section>
+                    <Section title="时间">
+                      <div style={styles.grid2}>
+                        <Field label="创建时间" mono>{new Date(selected.created_at).toLocaleString('zh-CN')}</Field>
+                        <Field label="更新时间" mono>{new Date(selected.updated_at).toLocaleString('zh-CN')}</Field>
                       </div>
-                    </div>
+                    </Section>
+                    {selected.tags?.length ? (
+                      <Section title="标签">
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                          {selected.tags.map((t, i) => (
+                            <span key={i} style={{ fontSize: 11, padding: '3px 10px', borderRadius: 12, background: 'rgba(88,166,255,0.15)', color: '#58a6ff' }}>{t}</span>
+                          ))}
+                        </div>
+                      </Section>
+                    ) : null}
                   </div>
                 )}
               </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Create form modal */}
+      {showCreateForm && <CreateAutomationTestCaseForm onClose={() => setShowCreateForm(false)} onSuccess={fetchAll} />}
+
+      {/* Dispatch modal */}
+      {showDispatchModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg-elevated)', borderRadius: 12, width: 400, maxWidth: '90vw', boxShadow: '0 20px 60px rgba(0,0,0,0.4)', border: '1px solid var(--border-default)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', borderBottom: '1px solid var(--border-subtle)' }}>
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: 'var(--text-primary)' }}>下发任务</h3>
+              <button style={{ fontSize: 22, color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer' }} onClick={() => setShowDispatchModal(false)}>×</button>
+            </div>
+            <div style={{ padding: 20 }}>
+              <p style={{ margin: '0 0 12', fontSize: 14, color: 'var(--text-secondary)' }}>将 <strong>{selectedIds.size}</strong> 个用例下发到执行队列</p>
+              {dispatchError && <div style={{ padding: '10px 14px', background: 'var(--status-error-bg)', borderRadius: 6, fontSize: 13, color: 'var(--status-error)', marginBottom: 8 }}>⚠ {dispatchError}</div>}
+              {dispatchSuccess && <div style={{ padding: '10px 14px', background: 'var(--status-success-bg)', borderRadius: 6, fontSize: 13, color: 'var(--status-success)' }}>✓ {dispatchSuccess}</div>}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, padding: '14px 20px', borderTop: '1px solid var(--border-subtle)' }}>
+              <button className="btn btn--secondary" onClick={() => setShowDispatchModal(false)} disabled={dispatching}>取消</button>
+              <button className="btn btn--primary" onClick={handleDispatch} disabled={dispatching || Boolean(dispatchSuccess)}>{dispatching ? '下发中...' : '确认下发'}</button>
             </div>
           </div>
         </div>
@@ -620,553 +456,55 @@ const TestCaseList: React.FC = () => {
   );
 };
 
+// ── Sub-components ──
+
+const Section: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
+  <div style={{ marginBottom: 20 }}>
+    <span style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 10 }}>{title}</span>
+    {children}
+  </div>
+);
+
+const Field: React.FC<{ label: string; mono?: boolean; children: React.ReactNode }> = ({ label, mono, children }) => (
+  <div>
+    <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.4px', display: 'block', marginBottom: 2 }}>{label}</span>
+    <span style={{ fontSize: 13, color: 'var(--text-primary)', fontFamily: mono ? 'monospace' : undefined, wordBreak: 'break-word' }}>{children}</span>
+  </div>
+);
+
+const SnapshotBlock: React.FC<{ snapshot: NonNullable<AutomationTestCaseResponse['code_snapshot']> }> = ({ snapshot }) => (
+  <>
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+      {[{ label: '分支', value: snapshot.branch }, { label: 'Commit', value: (snapshot.commit_short_id || snapshot.commit_id || '-').slice(0, 12), mono: true },
+        { label: '作者', value: snapshot.author }, { label: '提交时间', value: snapshot.commit_time ? new Date(snapshot.commit_time).toLocaleString('zh-CN') : '-' },
+      ].map((s, i) => (
+        <div key={i} style={{ padding: '8px 12px', background: 'var(--bg-secondary)', borderRadius: 8, border: '1px solid var(--border-muted)' }}>
+          <span style={{ display: 'block', fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 2 }}>{s.label}</span>
+          <span style={{ fontSize: 12, color: 'var(--text-primary)', fontFamily: s.mono ? 'monospace' : undefined }}>{s.value}</span>
+        </div>
+      ))}
+    </div>
+    {snapshot.message && (
+      <div style={{ padding: '8px 12px', background: 'var(--bg-secondary)', borderRadius: 8, border: '1px solid var(--border-muted)' }}>
+        <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.4px', display: 'block', marginBottom: 4 }}>提交信息</span>
+        <pre style={{ margin: 0, fontSize: 12, color: 'var(--text-secondary)', whiteSpace: 'pre-wrap', fontFamily: 'monospace', lineHeight: 1.5 }}>{snapshot.message}</pre>
+      </div>
+    )}
+  </>
+);
+
 const styles = {
-  container: {
-    padding: '32px',
-    maxWidth: '1400px',
-    margin: '0 auto',
-    animation: 'fadeIn 0.4s ease',
-  } as const,
-  header: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '28px',
-  } as const,
-  headerLeft: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '14px',
-  } as const,
-  title: {
-    fontSize: '28px',
-    fontWeight: 700,
-    color: 'var(--text-primary)',
-    letterSpacing: '-0.5px',
-    margin: 0,
-  } as const,
-  badge: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    minWidth: '28px',
-    height: '28px',
-    padding: '0 10px',
-    fontSize: '13px',
-    fontWeight: 600,
-    fontFamily: "'JetBrains Mono', monospace",
-    color: 'var(--accent-purple)',
-    backgroundColor: 'rgba(163, 113, 247, 0.15)',
-    borderRadius: '14px',
-  } as const,
-  headerActions: {
-    display: 'flex',
-    gap: '10px',
-  } as const,
-  actionBtn: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '6px',
-    padding: '10px 16px',
-    fontSize: '13px',
-    fontWeight: 500,
-    color: 'var(--text-secondary)',
-    backgroundColor: 'var(--bg-secondary)',
-    border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-md)',
-    cursor: 'pointer',
-    transition: 'all var(--transition-fast)',
-  } as const,
-  createBtn: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '6px',
-    padding: '10px 16px',
-    fontSize: '13px',
-    fontWeight: 500,
-    color: 'var(--bg-primary)',
-    backgroundColor: 'var(--accent-purple)',
-    border: 'none',
-    borderRadius: 'var(--radius-md)',
-    cursor: 'pointer',
-    transition: 'all var(--transition-fast)',
-  } as const,
-  btnIcon: {
-    fontSize: '14px',
-  } as const,
-  errorBanner: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
-    padding: '14px 18px',
-    backgroundColor: 'var(--status-error-bg)',
-    border: '1px solid var(--status-error)',
-    borderRadius: 'var(--radius-md)',
-    color: 'var(--accent-red)',
-    fontSize: '14px',
-    marginBottom: '20px',
-  } as const,
-  tableWrapper: {
-    backgroundColor: 'var(--bg-secondary)',
-    borderRadius: 'var(--radius-lg)',
-    border: '1px solid var(--border-default)',
-    overflow: 'hidden',
-  } as const,
-  table: {
-    width: '100%',
-    borderCollapse: 'collapse',
-  } as const,
-  tableHeader: {
-    backgroundColor: 'var(--bg-tertiary)',
-  } as const,
-  th: {
-    padding: '14px 16px',
-    fontSize: '12px',
-    fontWeight: 600,
-    color: 'var(--text-secondary)',
-    textAlign: 'left' as const,
-    textTransform: 'uppercase' as const,
-    letterSpacing: '0.5px',
-    borderBottom: '1px solid var(--border-default)',
-  } as const,
-  tr: {
-    borderBottom: '1px solid var(--border-muted)',
-    transition: 'background-color var(--transition-fast)',
-    animation: 'slideUp 0.3s ease forwards',
-    opacity: 0,
-  } as const,
-  td: {
-    padding: '14px 16px',
-    fontSize: '14px',
-    color: 'var(--text-primary)',
-  } as const,
-  caseId: {
-    fontFamily: "'JetBrains Mono', monospace",
-    fontSize: '13px',
-    fontWeight: 500,
-    color: 'var(--accent-purple)',
-  } as const,
-  caseTitle: {
-    fontWeight: 500,
-  } as const,
-  frameworkBadge: {
-    fontFamily: "'JetBrains Mono', monospace",
-    fontSize: '11px',
-    color: 'var(--accent-cyan)',
-    backgroundColor: 'rgba(57, 208, 214, 0.15)',
-    padding: '3px 8px',
-    borderRadius: '4px',
-  } as const,
-  typeBadge: {
-    fontSize: '12px',
-    color: 'var(--accent-orange)',
-    backgroundColor: 'rgba(219, 109, 40, 0.15)',
-    padding: '3px 8px',
-    borderRadius: '4px',
-  } as const,
-  statusBadge: {
-    display: 'inline-flex',
-    padding: '4px 10px',
-    fontSize: '11px',
-    fontWeight: 600,
-    borderRadius: '12px',
-    textTransform: 'uppercase' as const,
-    letterSpacing: '0.5px',
-  } as const,
-  versionBadge: {
-    fontFamily: "'JetBrains Mono', monospace",
-    fontSize: '12px',
-    color: 'var(--text-secondary)',
-    backgroundColor: 'var(--bg-tertiary)',
-    padding: '2px 8px',
-    borderRadius: '4px',
-  } as const,
-  tagList: {
-    display: 'flex',
-    gap: '4px',
-    flexWrap: 'wrap' as const,
-  } as const,
-  tag: {
-    fontSize: '11px',
-    color: 'var(--accent-blue)',
-    backgroundColor: 'rgba(88, 166, 255, 0.15)',
-    padding: '2px 8px',
-    borderRadius: '10px',
-  } as const,
-  moreTag: {
-    fontSize: '11px',
-    color: 'var(--text-muted)',
-    padding: '2px 6px',
-  } as const,
-  ownerBadge: {
-    fontSize: '12px',
-    color: 'var(--text-secondary)',
-  } as const,
-  timeText: {
-    fontSize: '12px',
-    color: 'var(--text-muted)',
-    fontFamily: "'JetBrains Mono', monospace",
-  } as const,
-  loadingState: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '16px',
-    padding: '60px',
-    color: 'var(--text-secondary)',
-  } as const,
-  spinner: {
-    width: '32px',
-    height: '32px',
-    border: '3px solid var(--border-default)',
-    borderTopColor: 'var(--accent-purple)',
-    borderRadius: '50%',
-    animation: 'spin 0.8s linear infinite',
-  } as const,
-  emptyState: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '12px',
-    padding: '60px',
-    color: 'var(--text-muted)',
-  } as const,
-  emptyIcon: {
-    fontSize: '48px',
-    opacity: 0.3,
-  } as const,
-  checkbox: {
-    width: '16px',
-    height: '16px',
-    cursor: 'pointer',
-    accentColor: 'var(--accent-purple)',
-  } as const,
-  dispatchBtn: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '6px',
-    padding: '10px 16px',
-    fontSize: '13px',
-    fontWeight: 500,
-    color: '#fff',
-    backgroundColor: 'var(--accent-green)',
-    border: 'none',
-    borderRadius: 'var(--radius-md)',
-    cursor: 'pointer',
-    transition: 'all var(--transition-fast)',
-  } as const,
-  modalOverlay: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1000,
-  } as const,
-  modalContent: {
-    backgroundColor: 'var(--bg-elevated)',
-    borderRadius: 'var(--radius-lg)',
-    padding: '24px',
-    minWidth: '400px',
-    maxWidth: '500px',
-    boxShadow: 'var(--shadow-lg)',
-    border: '1px solid var(--border-default)',
-  } as const,
-  modalTitle: {
-    fontSize: '20px',
-    fontWeight: 600,
-    color: 'var(--text-primary)',
-    marginBottom: '8px',
-  } as const,
-  modalDesc: {
-    fontSize: '14px',
-    color: 'var(--text-secondary)',
-    marginBottom: '20px',
-  } as const,
-  formGroup: {
-    marginBottom: '16px',
-  } as const,
-  label: {
-    display: 'block',
-    fontSize: '13px',
-    fontWeight: 500,
-    color: 'var(--text-secondary)',
-    marginBottom: '8px',
-  } as const,
-  select: {
-    width: '100%',
-    padding: '10px 12px',
-    fontSize: '14px',
-    color: 'var(--text-primary)',
-    backgroundColor: 'var(--bg-secondary)',
-    border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-md)',
-    cursor: 'pointer',
-    outline: 'none',
-  } as const,
-  successBanner: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
-    padding: '14px 18px',
-    backgroundColor: 'var(--status-success-bg)',
-    border: '1px solid var(--status-success)',
-    borderRadius: 'var(--radius-md)',
-    color: 'var(--accent-green)',
-    fontSize: '14px',
-    marginBottom: '16px',
-  } as const,
-  modalActions: {
-    display: 'flex',
-    justifyContent: 'flex-end',
-    gap: '12px',
-    marginTop: '20px',
-  } as const,
-  cancelBtn: {
-    padding: '10px 20px',
-    fontSize: '14px',
-    fontWeight: 500,
-    color: 'var(--text-secondary)',
-    backgroundColor: 'var(--bg-secondary)',
-    border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-md)',
-    cursor: 'pointer',
-    transition: 'all var(--transition-fast)',
-  } as const,
-  confirmBtn: {
-    padding: '10px 20px',
-    fontSize: '14px',
-    fontWeight: 500,
-    color: '#fff',
-    backgroundColor: 'var(--accent-purple)',
-    border: 'none',
-    borderRadius: 'var(--radius-md)',
-    cursor: 'pointer',
-    transition: 'all var(--transition-fast)',
-  } as const,
-  // Detail Modal Styles
-  detailModalOverlay: {
-    position: 'fixed' as const,
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    backdropFilter: 'blur(4px)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 2000,
-    animation: 'fadeIn 0.2s ease',
-  } as const,
-  detailModalContent: {
-    backgroundColor: 'var(--bg-elevated)',
-    borderRadius: '12px',
-    width: '90%',
-    maxWidth: '900px',
-    maxHeight: '90vh',
-    display: 'flex',
-    flexDirection: 'column' as const,
-    boxShadow: '0 20px 60px rgba(0, 0, 0, 0.4)',
-    border: '1px solid var(--border-default)',
-    animation: 'slideUp 0.3s ease',
-  } as const,
-  detailModalHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: '20px 24px',
-    borderBottom: '1px solid var(--border-default)',
-    backgroundColor: 'var(--bg-tertiary)',
-    borderRadius: '12px 12px 0 0',
-  } as const,
-  detailModalTitle: {
-    fontSize: '18px',
-    fontWeight: 600,
-    color: 'var(--text-primary)',
-    margin: 0,
-  } as const,
-  closeBtn: {
-    width: '32px',
-    height: '32px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: '24px',
-    color: 'var(--text-muted)',
-    backgroundColor: 'transparent',
-    border: 'none',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    transition: 'all var(--transition-fast)',
-  } as const,
-  detailModalBody: {
-    padding: '16px 24px',
-    overflowY: 'auto' as const,
-    flex: 1,
-  } as const,
-  section: {
-    marginBottom: '12px',
-    border: '1px solid var(--border-muted)',
-    borderRadius: '8px',
-    overflow: 'hidden',
-  } as const,
-  sectionHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    padding: '12px 16px',
-    backgroundColor: 'var(--bg-secondary)',
-    cursor: 'pointer',
-    transition: 'background-color var(--transition-fast)',
-    userSelect: 'none' as const,
-  } as const,
-  sectionArrow: {
-    fontSize: '10px',
-    color: 'var(--text-muted)',
-    width: '12px',
-  } as const,
-  sectionTitle: {
-    fontSize: '13px',
-    fontWeight: 600,
-    color: 'var(--text-primary)',
-    textTransform: 'uppercase' as const,
-    letterSpacing: '0.5px',
-  } as const,
-  sectionCount: {
-    fontSize: '12px',
-    color: 'var(--text-muted)',
-    fontWeight: 400,
-  } as const,
-  sectionContent: {
-    padding: '16px',
-    backgroundColor: 'var(--bg-primary)',
-  } as const,
-  infoGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(2, 1fr)',
-    gap: '12px',
-  } as const,
-  infoRow: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: '4px',
-  } as const,
-  infoRowFull: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: '4px',
-    gridColumn: '1 / -1',
-  } as const,
-  infoLabel: {
-    fontSize: '11px',
-    fontWeight: 500,
-    color: 'var(--text-muted)',
-    textTransform: 'uppercase' as const,
-    letterSpacing: '0.5px',
-  } as const,
-  infoValue: {
-    fontSize: '13px',
-    color: 'var(--text-primary)',
-    wordBreak: 'break-word' as const,
-  } as const,
-  infoValueLarge: {
-    fontSize: '14px',
-    fontWeight: 500,
-    color: 'var(--text-primary)',
-    wordBreak: 'break-word' as const,
-  } as const,
-  infoValueMono: {
-    fontSize: '12px',
-    fontFamily: "'JetBrains Mono', monospace",
-    color: 'var(--text-primary)',
-    wordBreak: 'break-all' as const,
-  } as const,
-  paramsList: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: '10px',
-  } as const,
-  paramCard: {
-    padding: '12px',
-    backgroundColor: 'var(--bg-secondary)',
-    borderRadius: '6px',
-    border: '1px solid var(--border-muted)',
-  } as const,
-  paramHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    marginBottom: '8px',
-    flexWrap: 'wrap' as const,
-  } as const,
-  paramName: {
-    fontSize: '13px',
-    fontWeight: 600,
-    fontFamily: "'JetBrains Mono', monospace",
-    color: 'var(--accent-purple)',
-  } as const,
-  paramLabel: {
-    fontSize: '12px',
-    color: 'var(--text-secondary)',
-  } as const,
-  paramType: {
-    fontSize: '10px',
-    fontFamily: "'JetBrains Mono', monospace",
-    color: 'var(--accent-cyan)',
-    backgroundColor: 'rgba(57, 208, 214, 0.15)',
-    padding: '2px 6px',
-    borderRadius: '4px',
-  } as const,
-  requiredBadge: {
-    fontSize: '10px',
-    color: 'var(--accent-red)',
-    backgroundColor: 'rgba(219, 68, 68, 0.15)',
-    padding: '2px 6px',
-    borderRadius: '4px',
-  } as const,
-  paramBody: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(2, 1fr)',
-    gap: '8px',
-  } as const,
-  paramRow: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: '2px',
-  } as const,
-  envGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
-    gap: '8px',
-  } as const,
-  envItem: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: '2px',
-    padding: '8px 12px',
-    backgroundColor: 'var(--bg-secondary)',
-    borderRadius: '6px',
-    border: '1px solid var(--border-muted)',
-  } as const,
-  envKey: {
-    fontSize: '11px',
-    fontFamily: "'JetBrains Mono', monospace",
-    color: 'var(--accent-purple)',
-    fontWeight: 500,
-  } as const,
-  envValue: {
-    fontSize: '12px',
-    fontFamily: "'JetBrains Mono', monospace",
-    color: 'var(--text-primary)',
-    wordBreak: 'break-all' as const,
-  } as const,
+  grid2: { display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' } as const,
+  miniLabel: { display: 'block', fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase' as const, letterSpacing: '0.4px' } as const,
+  emptyHint: { fontSize: 13, color: 'var(--text-muted)', textAlign: 'center' as const, padding: '32px 16px', margin: 0 } as const,
+  descBox: { fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.6, padding: 12, background: 'var(--bg-secondary)', borderRadius: 8, border: '1px solid var(--border-muted)' } as const,
+  // Relations
+  relationChain: { display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' as const } as const,
+  relationNode: { display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: 'var(--bg-secondary)', borderRadius: 10, border: '1px solid var(--border-muted)', minWidth: 140 } as const,
+  relationIcon: { fontSize: 20 } as const,
+  relationLabel: { display: 'block', fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase' as const, letterSpacing: '0.4px' } as const,
+  relationValue: { fontSize: 13, fontWeight: 500, fontFamily: 'monospace', color: 'var(--text-primary)' } as const,
+  relationArrow: { fontSize: 18, color: 'var(--text-tertiary)' } as const,
 };
 
 export default TestCaseList;

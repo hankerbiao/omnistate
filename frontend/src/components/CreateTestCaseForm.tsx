@@ -385,7 +385,7 @@ const CreateTestCaseForm: React.FC<CreateTestCaseFormProps> = ({
                                 style={{
                                   ...styles.priorityPill,
                                   ...(formData.priority === p ? styles.priorityPillActive : {}),
-                                  borderColor: PRIORITY_COLORS[p],
+                                  border: `1px solid ${PRIORITY_COLORS[p]}`,
                                 }}
                                 onClick={() => setFormData(prev => ({ ...prev, priority: p }))}
                               >
@@ -895,7 +895,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   activeTab: {
     color: 'var(--accent-primary)',
-    borderBottomColor: 'var(--accent-primary)',
+    borderBottom: '2px solid var(--accent-primary)',
     outline: 'none',
   },
   tabBadge: {
@@ -958,7 +958,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 500,
   },
   changeLogHighlight: {
-    borderColor: 'var(--status-warning)',
+    border: '1px solid var(--status-warning)',
     backgroundColor: 'var(--status-warning-bg)',
   },
   quickCreateCard: {

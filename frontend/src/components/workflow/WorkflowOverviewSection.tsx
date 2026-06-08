@@ -79,7 +79,7 @@ const WorkflowOverviewSection: React.FC<WorkflowOverviewSectionProps> = ({ onNav
             type="button"
             style={{
               ...styles.chip,
-              borderColor: style.color,
+              border: `1px solid ${style.color}`,
               opacity: count === 0 ? 0.45 : 1,
             }}
             onClick={() => onNavigate?.({ page, status: opt.value })}

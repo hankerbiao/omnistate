@@ -799,7 +799,7 @@ function ExecutiveHero({ metrics }: { metrics: DemoExecutiveMetrics }) {
         <p style={heroSummary}>{metrics.healthSummary}</p>
         <div style={heroHighlights}>
           {metrics.highlights.map((h) => (
-            <div key={h.title} style={{ ...heroHighlight, borderLeftColor: h.type === 'success' ? COLORS.green : h.type === 'warning' ? COLORS.amber : COLORS.blue }}>
+            <div key={h.title} style={{ ...heroHighlight, borderLeft: `3px solid ${h.type === 'success' ? COLORS.green : h.type === 'warning' ? COLORS.amber : COLORS.blue}` }}>
               <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>{h.title}</div>
               <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.5 }}>{h.detail}</div>
             </div>
@@ -807,7 +807,7 @@ function ExecutiveHero({ metrics }: { metrics: DemoExecutiveMetrics }) {
         </div>
       </div>
       <div style={heroScore}>
-        <div style={{ ...scoreRing, borderColor: scoreColor, color: scoreColor }}>
+        <div style={{ ...scoreRing, border: `4px solid ${scoreColor}`, color: scoreColor }}>
           <span style={{ fontSize: 36, fontWeight: 800, lineHeight: 1 }}>{metrics.healthScore}</span>
           <span style={{ fontSize: 11, opacity: 0.85 }}>健康分</span>
         </div>

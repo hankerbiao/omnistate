@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { api } from '../services/api';
-import type { UserResponse, RoleResponse } from '../types';
+import type { UserResponse, RoleResponse, NavigationPageResponse, UserNavigationResponse } from '../types';
 import PageToolbar, { StatPill } from './ui/PageToolbar';
 
 type EditableUserField = 'username' | 'email';
@@ -44,6 +44,11 @@ const UserManagement: React.FC = () => {
   const [passwordValue, setPasswordValue] = useState('');
   const [resetting, setResetting] = useState(false);
   const [togglingStatus, setTogglingStatus] = useState(false);
+  const [navPages, setNavPages] = useState<NavigationPageResponse[]>([]);
+  const [userNav, setUserNav] = useState<UserNavigationResponse | null>(null);
+  const [selectedNavViews, setSelectedNavViews] = useState<Set<string>>(new Set());
+  const [navLoading, setNavLoading] = useState(false);
+  const [navSaving, setNavSaving] = useState(false);
 
   const fetchUsers = useCallback(async () => {
     setLoading(true);
@@ -80,10 +85,46 @@ const UserManagement: React.FC = () => {
     }
   }, []);
 
+  const fetchNavPages = useCallback(async () => {
+    try {
+      const response = await api.listNavigationPages({ include_inactive: false });
+      const pages = (response.data || []).slice().sort((a, b) => a.order - b.order || a.view.localeCompare(b.view));
+      setNavPages(pages);
+    } catch (err) {
+      console.error('Fetch navigation pages error:', err);
+    }
+  }, []);
+
+  const fetchUserNavigation = useCallback(async (userId: string) => {
+    setNavLoading(true);
+    try {
+      const response = await api.getUserNavigation(userId);
+      const data = response.data;
+      setUserNav(data || null);
+      setSelectedNavViews(new Set(data?.allowed_nav_views || []));
+    } catch (err) {
+      console.error('Fetch user navigation error:', err);
+      setUserNav(null);
+      setSelectedNavViews(new Set());
+    } finally {
+      setNavLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     fetchUsers();
     fetchRoles();
-  }, [fetchUsers, fetchRoles]);
+    fetchNavPages();
+  }, [fetchUsers, fetchRoles, fetchNavPages]);
+
+  useEffect(() => {
+    if (selectedUser) {
+      fetchUserNavigation(selectedUser.user_id);
+    } else {
+      setUserNav(null);
+      setSelectedNavViews(new Set());
+    }
+  }, [selectedUser?.user_id, fetchUserNavigation]);
 
   const handleSelectUser = (user: UserResponse) => {
     setSelectedUser(user);
@@ -147,6 +188,7 @@ const UserManagement: React.FC = () => {
         role_ids: Array.from(selectedRoleIds),
       });
       await fetchUsers();
+      await fetchUserNavigation(selectedUser.user_id);
     } catch (err) {
       setError(getErrorMessage(err, '保存角色失败'));
       console.error('Update user roles error:', err);
@@ -275,6 +317,67 @@ const UserManagement: React.FC = () => {
     }
   };
 
+  const handleToggleNavView = (view: string) => {
+    setError(null);
+    setSelectedNavViews(prev => {
+      const next = new Set(prev);
+      if (next.has(view)) {
+        next.delete(view);
+      } else {
+        next.add(view);
+      }
+      return next;
+    });
+  };
+
+  const handleSaveNavigation = async () => {
+    if (!selectedUser) return;
+    if (selectedNavViews.size === 0) {
+      setError('至少保留一个可访问导航');
+      return;
+    }
+
+    setNavSaving(true);
+    setError(null);
+    try {
+      const response = await api.updateUserNavigation(selectedUser.user_id, {
+        allowed_nav_views: Array.from(selectedNavViews),
+      });
+      setUserNav(response.data || null);
+      setSelectedNavViews(new Set(response.data?.allowed_nav_views || []));
+    } catch (err) {
+      setError(getErrorMessage(err, '保存导航权限失败'));
+      console.error('Update user navigation error:', err);
+    } finally {
+      setNavSaving(false);
+    }
+  };
+
+  const handleResetNavigationToRole = async () => {
+    if (!selectedUser || !userNav) return;
+
+    setNavSaving(true);
+    setError(null);
+    try {
+      const response = await api.updateUserNavigation(selectedUser.user_id, {
+        allowed_nav_views: [],
+      });
+      setUserNav(response.data || null);
+      setSelectedNavViews(new Set(response.data?.allowed_nav_views || []));
+    } catch (err) {
+      setError(getErrorMessage(err, '恢复角色默认导航失败'));
+      console.error('Reset user navigation error:', err);
+    } finally {
+      setNavSaving(false);
+    }
+  };
+
+  const handleApplyRoleDerivedNavigation = () => {
+    if (!userNav) return;
+    setSelectedNavViews(new Set(userNav.role_derived_nav_views));
+    setError(null);
+  };
+
   const getStatusStyle = (status: string) => {
     if (status === 'ACTIVE') {
       return {
@@ -297,8 +400,30 @@ const UserManagement: React.FC = () => {
 
   const activeCount = users.filter(u => u.status === 'ACTIVE').length;
 
+  const isSelectedUserAdmin = useMemo(
+    () => selectedUser?.role_ids.includes('ADMIN') ?? false,
+    [selectedUser?.role_ids],
+  );
+
+  const navViewsDirty = useMemo(() => {
+    if (!userNav) return false;
+    const current = Array.from(selectedNavViews).sort();
+    const effective = [...userNav.allowed_nav_views].sort();
+    return current.join(',') !== effective.join(',');
+  }, [selectedNavViews, userNav]);
+
+  const getNavPageLabel = (view: string) => {
+    const page = navPages.find(item => item.view === view);
+    return page?.label || view;
+  };
+
+  const getNavPagePermission = (view: string) => {
+    const page = navPages.find(item => item.view === view);
+    return page?.permission || '—';
+  };
+
   return (
-    <div className="split-workspace">
+    <div className={`split-workspace${selectedUser ? ' split-workspace--has-selection' : ''}`}>
       <aside className="split-workspace__list">
         <div className="split-panel-toolbar">
           <PageToolbar
@@ -421,6 +546,13 @@ const UserManagement: React.FC = () => {
       <main className="split-workspace__main">
         {selectedUser ? (
           <div className="surface-card split-detail-scroll data-panel" style={{ margin: 'var(--space-5)', height: 'calc(100% - 40px)' }}>
+            <button
+              type="button"
+              className="split-workspace__back"
+              onClick={() => setSelectedUser(null)}
+            >
+              ← 返回列表
+            </button>
             <div className="data-panel-header">
               <h3 className="data-panel-title">用户详情 - {selectedUser.username}</h3>
             </div>
@@ -568,6 +700,122 @@ const UserManagement: React.FC = () => {
               >
                 {saving ? '保存中...' : '保存角色'}
               </button>
+            </div>
+
+            <div style={styles.detailSection}>
+              <label style={styles.label}>可访问导航</label>
+              <p style={styles.navHint}>
+                {isSelectedUserAdmin
+                  ? '管理员角色自动拥有全部导航，无需单独配置。'
+                  : userNav?.has_nav_override
+                    ? '当前使用用户级自定义导航（覆盖角色默认）。修改角色后请点击「同步角色导航」或「恢复角色默认」。'
+                    : '当前导航由角色权限自动推导；勾选后保存可设置用户级覆盖。'}
+              </p>
+
+              {navLoading ? (
+                <div style={styles.navLoading}>加载导航权限...</div>
+              ) : (
+                <>
+                  <div style={styles.navMetaRow}>
+                    <span style={styles.navMetaBadge}>
+                      生效 {userNav?.allowed_nav_views.length ?? 0} 项
+                    </span>
+                    <span style={styles.navMetaBadge}>
+                      角色推导 {userNav?.role_derived_nav_views.length ?? 0} 项
+                    </span>
+                    {userNav?.has_nav_override && (
+                      <span style={{ ...styles.navMetaBadge, ...styles.navMetaBadgeOverride }}>
+                        已自定义
+                      </span>
+                    )}
+                  </div>
+
+                  <div style={styles.navList}>
+                    {navPages.map(page => {
+                      const roleDerived = userNav?.role_derived_nav_views.includes(page.view) ?? false;
+                      const isSelected = selectedNavViews.has(page.view);
+                      return (
+                        <div
+                          key={page.view}
+                          style={{
+                            ...styles.navItem,
+                            ...(isSelected ? styles.navItemSelected : {}),
+                            ...(isSelectedUserAdmin ? styles.navItemDisabled : {}),
+                          }}
+                          onClick={() => !isSelectedUserAdmin && handleToggleNavView(page.view)}
+                          className="nav-item"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            disabled={isSelectedUserAdmin}
+                            onClick={e => e.stopPropagation()}
+                            onChange={() => handleToggleNavView(page.view)}
+                            style={styles.checkbox}
+                          />
+                          <div style={styles.navItemContent}>
+                            <span style={styles.navItemLabel}>{page.label}</span>
+                            <span style={styles.navItemMeta}>
+                              {page.view}
+                              {page.permission ? ` · ${page.permission}` : ''}
+                              {roleDerived ? ' · 角色可访问' : ''}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {!isSelectedUserAdmin && (
+                    <div style={styles.navActionRow}>
+                      <button
+                        type="button"
+                        style={{
+                          ...styles.navSecondaryBtn,
+                          ...(navSaving ? styles.saveRolesBtnDisabled : {}),
+                        }}
+                        onClick={handleApplyRoleDerivedNavigation}
+                        disabled={navSaving || !userNav}
+                      >
+                        同步角色导航
+                      </button>
+                      <button
+                        type="button"
+                        style={{
+                          ...styles.navSecondaryBtn,
+                          ...(navSaving ? styles.saveRolesBtnDisabled : {}),
+                        }}
+                        onClick={handleResetNavigationToRole}
+                        disabled={navSaving || !userNav?.has_nav_override}
+                      >
+                        恢复角色默认
+                      </button>
+                      <button
+                        type="button"
+                        style={{
+                          ...styles.saveRolesBtn,
+                          ...((navSaving || !navViewsDirty) ? styles.saveRolesBtnDisabled : {}),
+                        }}
+                        onClick={handleSaveNavigation}
+                        disabled={navSaving || !navViewsDirty}
+                      >
+                        {navSaving ? '保存中...' : '保存导航'}
+                      </button>
+                    </div>
+                  )}
+
+                  {selectedNavViews.size > 0 && (
+                    <div style={styles.navSummary}>
+                      <span style={styles.navSummaryLabel}>已选导航：</span>
+                      {Array.from(selectedNavViews).map(view => (
+                        <span key={view} style={styles.navSummaryTag} title={getNavPagePermission(view)}>
+                          {getNavPageLabel(view)}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
             </div>
 
             <div style={styles.detailSection}>
@@ -787,6 +1035,10 @@ const UserManagement: React.FC = () => {
           background-color: var(--bg-tertiary);
           border-color: var(--accent-cyan);
         }
+        .nav-item:hover:not([style*="opacity"]) {
+          background-color: var(--bg-tertiary);
+          border-color: var(--accent-cyan);
+        }
       `}</style>
     </div>
   );
@@ -932,7 +1184,7 @@ const styles = {
     transition: 'all var(--transition-fast)',
   },
   userItemSelected: {
-    borderColor: 'var(--accent-cyan)',
+    border: '1px solid var(--accent-cyan)',
     backgroundColor: 'var(--bg-tertiary)',
   },
   userItemHeader: {
@@ -1092,7 +1344,7 @@ const styles = {
     transition: 'all var(--transition-fast)',
   },
   roleItemSelected: {
-    borderColor: 'var(--accent-green)',
+    border: '1px solid var(--accent-green)',
     backgroundColor: 'rgba(72, 199, 142, 0.08)',
   },
   roleName: {
@@ -1118,6 +1370,108 @@ const styles = {
   saveRolesBtnDisabled: {
     opacity: 0.5,
     cursor: 'not-allowed',
+  },
+  navHint: {
+    fontSize: '13px',
+    color: 'var(--text-tertiary)',
+    margin: '0 0 12px',
+    lineHeight: 1.5,
+  },
+  navLoading: {
+    fontSize: '13px',
+    color: 'var(--text-secondary)',
+    padding: '12px 0',
+  },
+  navMetaRow: {
+    display: 'flex',
+    flexWrap: 'wrap' as const,
+    gap: '8px',
+    marginBottom: '12px',
+  },
+  navMetaBadge: {
+    fontSize: '11px',
+    padding: '4px 10px',
+    borderRadius: '999px',
+    backgroundColor: 'var(--bg-tertiary)',
+    color: 'var(--text-secondary)',
+  },
+  navMetaBadgeOverride: {
+    backgroundColor: 'var(--status-info-bg)',
+    color: 'var(--status-info)',
+  },
+  navList: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: '8px',
+    marginBottom: '16px',
+  },
+  navItem: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: '10px',
+    padding: '12px 14px',
+    backgroundColor: 'var(--bg-secondary)',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+    cursor: 'pointer',
+    transition: 'all var(--transition-fast)',
+  },
+  navItemSelected: {
+    border: '1px solid var(--accent-green)',
+    backgroundColor: 'rgba(72, 199, 142, 0.08)',
+  },
+  navItemDisabled: {
+    opacity: 0.65,
+    cursor: 'not-allowed',
+  },
+  navItemContent: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: '4px',
+    minWidth: 0,
+  },
+  navItemLabel: {
+    fontSize: '14px',
+    fontWeight: 500,
+    color: 'var(--text-primary)',
+  },
+  navItemMeta: {
+    fontSize: '11px',
+    color: 'var(--text-muted)',
+    fontFamily: "'JetBrains Mono', monospace",
+  },
+  navActionRow: {
+    display: 'flex',
+    flexWrap: 'wrap' as const,
+    gap: '10px',
+    marginBottom: '12px',
+  },
+  navSecondaryBtn: {
+    padding: '10px 18px',
+    fontSize: '13px',
+    fontWeight: 500,
+    color: 'var(--text-secondary)',
+    backgroundColor: 'transparent',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
+    cursor: 'pointer',
+  },
+  navSummary: {
+    display: 'flex',
+    flexWrap: 'wrap' as const,
+    alignItems: 'center',
+    gap: '6px',
+  },
+  navSummaryLabel: {
+    fontSize: '12px',
+    color: 'var(--text-secondary)',
+  },
+  navSummaryTag: {
+    fontSize: '11px',
+    padding: '3px 8px',
+    borderRadius: '4px',
+    backgroundColor: 'var(--bg-tertiary)',
+    color: 'var(--text-secondary)',
   },
   emptyDetail: {
     display: 'flex',
@@ -1220,7 +1574,7 @@ const styles = {
     color: 'var(--text-primary)',
   },
   modalRoleItemSelected: {
-    borderColor: 'var(--accent-green)',
+    border: '1px solid var(--accent-green)',
     backgroundColor: 'rgba(72, 199, 142, 0.08)',
   },
   modalFooter: {

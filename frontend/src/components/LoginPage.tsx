@@ -318,7 +318,7 @@ const styles = {
   },
   checkboxCustomChecked: {
     backgroundColor: 'var(--accent-cyan)',
-    borderColor: 'var(--accent-cyan)',
+    border: '2px solid var(--accent-cyan)',
   },
   checkmark: {
     color: 'var(--bg-primary)',

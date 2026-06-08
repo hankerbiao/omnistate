@@ -985,8 +985,8 @@ const S: Record<string, React.CSSProperties> = {
     color: 'var(--text-secondary)',
     cursor: 'pointer',
   },
-  actionWarn: { color: 'var(--status-warning)', borderColor: 'color-mix(in srgb, var(--status-warning) 40%, var(--border-default))' },
-  actionDanger: { color: 'var(--status-error)', borderColor: 'color-mix(in srgb, var(--status-error) 40%, var(--border-default))' },
+  actionWarn: { color: 'var(--status-warning)', border: '1px solid color-mix(in srgb, var(--status-warning) 40%, var(--border-default))' },
+  actionDanger: { color: 'var(--status-error)', border: '1px solid color-mix(in srgb, var(--status-error) 40%, var(--border-default))' },
   statusPill: {
     display: 'inline-flex',
     padding: '2px 8px',

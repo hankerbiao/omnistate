@@ -1,13 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useWorkflow } from '../../hooks/useWorkflow';
-import {
-  getStateLabel,
-  getWorkflowStateStyle,
-  type WorkflowTypeCode,
-} from '../../constants/workflowLabels';
+import { type WorkflowTypeCode } from '../../constants/workflowLabels';
 import WorkflowStateStepper from './WorkflowStateStepper';
 import WorkflowLogsPanel from './WorkflowLogsPanel';
 import WorkflowActionToolbar from './WorkflowActionToolbar';
+import WorkflowCurrentStateBadge from './WorkflowCurrentStateBadge';
 
 export interface WorkflowPanelProps {
   workflowItemId?: string | null;
@@ -87,7 +84,7 @@ const WorkflowPanel: React.FC<WorkflowPanelProps> = ({
     );
   }
 
-  const stateStyle = getWorkflowStateStyle(wf.currentState);
+  const stateBadgeVariant = compact ? 'compact' : 'prominent';
 
   return (
     <div style={compact ? styles.compactRoot : styles.root}>
@@ -96,9 +93,11 @@ const WorkflowPanel: React.FC<WorkflowPanelProps> = ({
           <div style={styles.topBarLeft}>
             {entityLabel && <span style={styles.entityLabel}>{entityLabel}</span>}
             {wf.currentState && (
-              <span className="status-badge" style={stateStyle}>
-                {getStateLabel(wf.currentState, typeCode)}
-              </span>
+              <WorkflowCurrentStateBadge
+                state={wf.currentState}
+                typeCode={typeCode}
+                variant={stateBadgeVariant}
+              />
             )}
           </div>
           <WorkflowActionToolbar
@@ -117,7 +116,11 @@ const WorkflowPanel: React.FC<WorkflowPanelProps> = ({
       )}
 
       {showStepper && (
-        <WorkflowStateStepper currentState={wf.currentState} typeCode={typeCode} />
+        <WorkflowStateStepper
+          currentState={wf.currentState}
+          typeCode={typeCode}
+          compact={compact}
+        />
       )}
 
       {showMetaGrid && (
@@ -125,10 +128,17 @@ const WorkflowPanel: React.FC<WorkflowPanelProps> = ({
           <MetaItem label="工作流 ID" value={workflowItemId} mono />
           <MetaItem
             label="当前状态"
+            highlight
             value={
-              <span className="status-badge" style={stateStyle}>
-                {getStateLabel(wf.currentState, typeCode)}
-              </span>
+              wf.currentState ? (
+                <WorkflowCurrentStateBadge
+                  state={wf.currentState}
+                  typeCode={typeCode}
+                  variant={stateBadgeVariant}
+                />
+              ) : (
+                '-'
+              )
             }
           />
           <MetaItem label="创建人" value={creatorName || wf.creator || '-'} />
@@ -162,13 +172,17 @@ const WorkflowPanel: React.FC<WorkflowPanelProps> = ({
   );
 };
 
-const MetaItem: React.FC<{ label: string; value: React.ReactNode; mono?: boolean }> = ({
+const MetaItem: React.FC<{ label: string; value: React.ReactNode; mono?: boolean; highlight?: boolean }> = ({
   label,
   value,
   mono,
+  highlight,
 }) => (
-  <div style={styles.metaItem}>
-    <span style={styles.metaLabel}>{label}</span>
+  <div
+    className={highlight ? 'workflow-meta-item--current' : undefined}
+    style={styles.metaItem}
+  >
+    <span style={highlight ? styles.metaLabelHighlight : styles.metaLabel}>{label}</span>
     <span style={mono ? { ...styles.metaValue, fontFamily: 'monospace', fontSize: '11px' } : styles.metaValue}>
       {value}
     </span>
@@ -229,6 +243,13 @@ const styles: Record<string, React.CSSProperties> = {
     color: 'var(--text-tertiary)',
     textTransform: 'uppercase',
     letterSpacing: '0.3px',
+  },
+  metaLabelHighlight: {
+    fontSize: '11px',
+    color: 'var(--accent-primary)',
+    fontWeight: 700,
+    textTransform: 'uppercase',
+    letterSpacing: '0.4px',
   },
   metaValue: {
     fontSize: '13px',

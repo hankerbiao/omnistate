@@ -7,6 +7,7 @@ import CreateTestCaseForm from './CreateTestCaseForm';
 import CatalogTreeSidebar from './catalog/CatalogTreeSidebar';
 import { catalogStyles } from './catalog/catalogStyles';
 import PageToolbar, { StatPill } from './ui/PageToolbar';
+import PageHero from './ui/PageHero';
 import { PRIORITY_FILTER_OPTIONS } from '../constants/testCaseLabels';
 import { TEST_CASE_STATUS_FILTER_OPTIONS, getStateLabel, getWorkflowStateStyle } from '../constants/workflowLabels';
 import { SWITCHABLE_USERS } from '../config/users';
@@ -66,6 +67,7 @@ const ManualTestCaseList: React.FC<ManualTestCaseListProps> = ({ initialStatusFi
   const [labs, setLabs] = useState<CatalogLab[]>([]);
   const [selectedLabId, setSelectedLabId] = useState('');
   const [catalogPrefix, setCatalogPrefix] = useState<string[]>([]);
+  const [showSecondaryColumns, setShowSecondaryColumns] = useState(false);
 
   const selectedLabName = useMemo(
     () => labs.find(l => l.lab_id === selectedLabId)?.name || '',
@@ -200,6 +202,12 @@ const ManualTestCaseList: React.FC<ManualTestCaseListProps> = ({ initialStatusFi
 
   return (
     <div style={styles.layout}>
+      <PageHero
+        badge="Manual Case Library"
+        description="创建、编辑和管理手工测试用例，维护步骤和预期结果。"
+        accent="#6366f1"
+        gradient={["#eef2ff", "#e0e7ff", "#f5f3ff"]}
+      />
       <CatalogTreeSidebar
         labs={labs}
         selectedLabId={selectedLabId}
@@ -260,6 +268,14 @@ const ManualTestCaseList: React.FC<ManualTestCaseListProps> = ({ initialStatusFi
               aria-expanded={showFilters}
             >
               筛选 {showFilters ? '▴' : '▾'}
+            </button>
+            <button
+              type="button"
+              className={`btn btn--secondary btn--sm${showSecondaryColumns ? ' btn--active' : ''}`}
+              onClick={() => setShowSecondaryColumns(v => !v)}
+              aria-pressed={showSecondaryColumns}
+            >
+              {showSecondaryColumns ? '精简列' : '更多列'}
             </button>
             <button
               type="button"
@@ -387,19 +403,28 @@ const ManualTestCaseList: React.FC<ManualTestCaseListProps> = ({ initialStatusFi
                 <tr style={styles.tableHeader}>
                   <th style={{ ...styles.th, width: '120px' }}>用例ID</th>
                   <th style={styles.th}>用例标题</th>
-                  <th style={{ ...styles.th, width: '200px' }}>目录</th>
-                  <th style={{ ...styles.th, width: '100px' }}>关联需求</th>
+                  {showSecondaryColumns && (
+                    <th style={{ ...styles.th, width: '200px' }}>目录</th>
+                  )}
+                  {showSecondaryColumns && (
+                    <th style={{ ...styles.th, width: '100px' }}>关联需求</th>
+                  )}
                   <th style={{ ...styles.th, width: '100px' }}>状态</th>
                   <th style={{ ...styles.th, width: '70px' }}>优先级</th>
                   <th style={{ ...styles.th, width: '100px' }}>负责人</th>
-                  <th style={{ ...styles.th, width: '100px' }}>审核人</th>
-                  <th style={{ ...styles.th, width: '60px' }}>版本</th>
-                  <th style={{ ...styles.th, width: '140px' }}>创建时间</th>
+                  {showSecondaryColumns && (
+                    <th style={{ ...styles.th, width: '100px' }}>审核人</th>
+                  )}
+                  {showSecondaryColumns && (
+                    <th style={{ ...styles.th, width: '60px' }}>版本</th>
+                  )}
+                  <th style={{ ...styles.th, width: '140px' }}>更新时间</th>
                 </tr>
               </thead>
               <tbody>
                 {testCases.map((testCase, index) => {
                   const statusStyle = getWorkflowStateStyle(testCase.status);
+                  const updatedAt = testCase.updated_at || testCase.created_at;
                   return (
                     <tr
                       key={testCase.id}
@@ -416,14 +441,18 @@ const ManualTestCaseList: React.FC<ManualTestCaseListProps> = ({ initialStatusFi
                       <td style={styles.td}>
                         <span style={styles.caseTitle}>{testCase.title}</span>
                       </td>
-                      <td style={styles.td}>
-                        <span style={styles.catalogText}>
-                          {testCase.catalog_breadcrumb || testCase.catalog_path?.join(' / ') || '-'}
-                        </span>
-                      </td>
-                      <td style={styles.td}>
-                        <span style={styles.refReqId}>{testCase.ref_req_id || '-'}</span>
-                      </td>
+                      {showSecondaryColumns && (
+                        <td style={styles.td}>
+                          <span style={styles.catalogText}>
+                            {testCase.catalog_breadcrumb || testCase.catalog_path?.join(' / ') || '-'}
+                          </span>
+                        </td>
+                      )}
+                      {showSecondaryColumns && (
+                        <td style={styles.td}>
+                          <span style={styles.refReqId}>{testCase.ref_req_id || '-'}</span>
+                        </td>
+                      )}
                       <td style={styles.td}>
                         <span
                           style={{
@@ -443,17 +472,21 @@ const ManualTestCaseList: React.FC<ManualTestCaseListProps> = ({ initialStatusFi
                           {resolveUserName(userNameMap, testCase.owner_id)}
                         </span>
                       </td>
-                      <td style={styles.td}>
-                        <span style={styles.reviewerBadge} title={testCase.reviewer_id || undefined}>
-                          {resolveUserName(userNameMap, testCase.reviewer_id)}
-                        </span>
-                      </td>
-                      <td style={styles.td}>
-                        <span style={styles.versionBadge}>v{testCase.version}</span>
-                      </td>
+                      {showSecondaryColumns && (
+                        <td style={styles.td}>
+                          <span style={styles.reviewerBadge} title={testCase.reviewer_id || undefined}>
+                            {resolveUserName(userNameMap, testCase.reviewer_id)}
+                          </span>
+                        </td>
+                      )}
+                      {showSecondaryColumns && (
+                        <td style={styles.td}>
+                          <span style={styles.versionBadge}>v{testCase.version}</span>
+                        </td>
+                      )}
                       <td style={styles.td}>
                         <span style={styles.timeText}>
-                          {new Date(testCase.created_at).toLocaleString('zh-CN', {
+                          {new Date(updatedAt).toLocaleString('zh-CN', {
                             year: 'numeric',
                             month: '2-digit',
                             day: '2-digit',

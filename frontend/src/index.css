@@ -327,6 +327,55 @@ input, select, textarea {
   background-color: var(--surface-tertiary);
 }
 
+/* Workflow current-state emphasis */
+@keyframes workflow-current-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-primary) 28%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent-primary) 12%, transparent);
+  }
+}
+
+@keyframes workflow-badge-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 18%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 8%, transparent);
+  }
+}
+
+.status-badge--current {
+  animation: workflow-badge-glow 2.5s ease-in-out infinite;
+}
+
+.workflow-stepper-dot--current {
+  animation: workflow-current-pulse 2.5s ease-in-out infinite;
+}
+
+.workflow-stepper-step--current {
+  padding: 6px 8px 4px;
+  margin: -6px -8px 0;
+  border-radius: var(--radius-md);
+  background-color: color-mix(in srgb, var(--accent-primary) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-primary) 22%, transparent);
+}
+
+.workflow-stepper-step--current-compact {
+  padding: 4px 6px 2px;
+  margin: -4px -6px 0;
+}
+
+.workflow-meta-item--current {
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  background-color: color-mix(in srgb, var(--accent-primary) 6%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-primary) 18%, transparent);
+}
+
 /* Empty state */
 .empty-state {
   display: flex;
@@ -730,6 +779,12 @@ input, select, textarea {
   letter-spacing: 0.08em;
 }
 
+.sidebar__section + .sidebar__section {
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-subtle);
+}
+
 .sidebar__item {
   position: relative;
   display: flex;
@@ -1122,6 +1177,64 @@ input, select, textarea {
   flex: 1;
   overflow: auto;
   padding: var(--space-5);
+}
+
+.split-workspace__back {
+  display: none;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: var(--surface-tertiary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: color var(--transition-fast), background-color var(--transition-fast);
+}
+
+.split-workspace__back:hover {
+  color: var(--text-primary);
+  background: var(--surface-hover);
+}
+
+@media (max-width: 1024px) {
+  .split-workspace {
+    position: relative;
+  }
+
+  .split-workspace__list {
+    width: 100%;
+    max-width: none;
+    min-width: 0;
+    border-right: none;
+  }
+
+  .split-workspace__main {
+    position: absolute;
+    inset: 0;
+    z-index: 10;
+    background: var(--surface-secondary);
+    transform: translateX(100%);
+    transition: transform var(--transition-base);
+    pointer-events: none;
+  }
+
+  .split-workspace--has-selection .split-workspace__main {
+    transform: translateX(0);
+    pointer-events: auto;
+  }
+
+  .split-workspace--has-selection .split-workspace__list {
+    visibility: hidden;
+    pointer-events: none;
+  }
+
+  .split-workspace__back {
+    display: inline-flex;
+  }
 }
 
 /* Segmented control (e.g. date range) */

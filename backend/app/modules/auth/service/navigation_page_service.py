@@ -34,6 +34,14 @@ from app.shared.service import BaseService
 
 DEFAULT_NAVIGATION_PAGES: List[Dict[str, Any]] = [
     {
+        "view": "dashboard",
+        "label": "数据统计",
+        "permission": "nav:dashboard:view",
+        "description": "允许访问数据统计仪表盘页面",
+        "order": 5,
+        "is_active": True,
+    },
+    {
         "view": "req_list",
         "label": "测试需求",
         "permission": "nav:req_list:view",

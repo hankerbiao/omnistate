@@ -114,35 +114,43 @@ class NavigationAccessService(AuthServiceSupport):
         permissions = await get_permissions_by_role_ids(role_ids) if role_ids else []
         nav_pages = await self._navigation_service.list_active_pages()
         all_nav_views = self._nav_views_in_order(nav_pages)
+        has_nav_override = bool(user.allowed_nav_views)
 
         if is_admin_role(role_ids):
             # 管理员可访问所有视图
+            role_derived_nav_views = list(all_nav_views)
             allowed_nav_views = list(all_nav_views)
             if "all" not in permissions:
                 permissions = ["all", *permissions]
         else:
+            # 根据角色权限推导可访问视图
+            role_derived_nav_views = self._derive_nav_views_from_permissions(
+                permissions, nav_pages, all_nav_views
+            )
+            if not role_derived_nav_views:
+                role_derived_nav_views = self._sanitize_nav_views(
+                    self._DEFAULT_NAV_VIEWS, all_nav_views
+                )
+
             # 普通用户：优先使用个人视图配置
             user_override = self._sanitize_nav_views(user.allowed_nav_views or [], all_nav_views)
             if user_override:
                 allowed_nav_views = user_override
             else:
-                # 根据角色权限推导可访问视图
-                allowed_nav_views = self._derive_nav_views_from_permissions(
-                    permissions, nav_pages, all_nav_views
-                )
-                # 如果没有可用视图，回退到默认视图
-                if not allowed_nav_views:
-                    allowed_nav_views = self._sanitize_nav_views(
-                        self._DEFAULT_NAV_VIEWS, all_nav_views
-                    )
+                allowed_nav_views = list(role_derived_nav_views)
 
         # 确保强制视图存在
         allowed_nav_views = self._ensure_mandatory_nav_views(allowed_nav_views, all_nav_views)
+        role_derived_nav_views = self._ensure_mandatory_nav_views(
+            role_derived_nav_views, all_nav_views
+        )
         return {
             "user_id": user_id,
             "role_ids": role_ids,
             "permissions": permissions,
             "allowed_nav_views": allowed_nav_views,
+            "role_derived_nav_views": role_derived_nav_views,
+            "has_nav_override": has_nav_override,
         }
 
     async def update_user_navigation(self, user_id: str, allowed_nav_views: List[str]) -> Dict[str, Any]:
@@ -173,7 +181,10 @@ class NavigationAccessService(AuthServiceSupport):
             # 管理员获得所有视图权限
             normalized_views = list(all_nav_views)
         elif not normalized_views:
-            raise ValueError("allowed_nav_views must contain at least one valid view")
+            # 空列表表示清除用户级覆盖，回退到角色推导
+            user.allowed_nav_views = []
+            await user.save()
+            return await self.get_user_navigation(user_id)
 
         normalized_views = self._ensure_mandatory_nav_views(normalized_views, all_nav_views)
 

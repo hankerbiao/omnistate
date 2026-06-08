@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { api } from '../services/api';
 import type { PermissionResponse } from '../types';
 import PageToolbar, { StatPill } from './ui/PageToolbar';
+import PageHero from './ui/PageHero';
 
 type ViewMode = 'table' | 'grouped';
 
@@ -280,6 +281,12 @@ const PermissionManagement: React.FC = () => {
 
   return (
     <div className="page-content">
+      <PageHero
+        badge="Permission Matrix"
+        description="管理系统权限项，按分类组织以实现精细化授权。"
+        accent="#0891b2"
+        gradient={["#ecfeff", "#cffafe", "#f0fdfa"]}
+      />
       <PageToolbar
         meta={(
           <>

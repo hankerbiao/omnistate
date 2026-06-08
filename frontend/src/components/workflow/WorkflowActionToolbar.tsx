@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useWorkflow, type UseWorkflowResult } from '../../hooks/useWorkflow';
 import {
   getStateLabel,
-  getWorkflowStateStyle,
   getActionButtonStyle,
   WORKFLOW_ACTION_LABELS,
   type WorkflowTypeCode,
@@ -10,6 +9,7 @@ import {
 import type { WorkflowTransition } from '../../types';
 import { SWITCHABLE_USERS } from '../../config/users';
 import WorkflowTransitionModal from './WorkflowTransitionModal';
+import WorkflowCurrentStateBadge from './WorkflowCurrentStateBadge';
 
 export interface WorkflowActionToolbarProps {
   workflowItemId?: string | null;
@@ -226,7 +226,7 @@ const WorkflowActionToolbar: React.FC<WorkflowActionToolbarProps> = ({
 
   if (!workflowItemId) return null;
 
-  const stateStyle = getWorkflowStateStyle(wf.currentState);
+  const stateBadgeVariant = compact ? 'compact' : 'prominent';
   const inlineRefresh = showRefresh && !overflowMenu;
   const inlineReassign = showReassign && !overflowMenu;
 
@@ -241,9 +241,12 @@ const WorkflowActionToolbar: React.FC<WorkflowActionToolbarProps> = ({
 
       <div style={styles.toolbar} onClick={(e) => e.stopPropagation()}>
         {showStateBadge && wf.currentState && (
-          <span className="status-badge" style={{ ...stateStyle, flexShrink: 0 }}>
-            {getStateLabel(wf.currentState, typeCode)}
-          </span>
+          <WorkflowCurrentStateBadge
+            state={wf.currentState}
+            typeCode={typeCode}
+            variant={stateBadgeVariant}
+            style={{ flexShrink: 0 }}
+          />
         )}
 
         <div style={styles.actions}>
@@ -265,7 +268,7 @@ const WorkflowActionToolbar: React.FC<WorkflowActionToolbarProps> = ({
                     ...styles.actionBtn,
                     backgroundColor: btnStyle.bg,
                     color: btnStyle.color,
-                    borderColor: btnStyle.border,
+                    border: `1px solid ${btnStyle.border}`,
                     padding: compact ? '4px 10px' : '6px 12px',
                     fontSize: compact ? 12 : 13,
                   }}
@@ -429,7 +432,7 @@ const overflowStyles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
   },
   chipActive: {
-    borderColor: 'var(--accent-primary)',
+    border: '1px solid var(--accent-primary)',
     backgroundColor: 'var(--surface-hover)',
     color: 'var(--accent-primary)',
   },
@@ -526,7 +529,7 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
   },
   chipActive: {
-    borderColor: 'var(--accent-primary)',
+    border: '1px solid var(--accent-primary)',
     backgroundColor: 'var(--surface-hover)',
     color: 'var(--accent-primary)',
   },

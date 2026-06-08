@@ -287,339 +287,153 @@ const RoleManagement: React.FC = () => {
   const systemRoleCount = roles.filter(r => r.is_system).length;
 
   return (
-    <div className="page-content">
-      <PageToolbar
-        meta={(
-          <>
-            <StatPill label="角色" value={roles.length} />
-            <StatPill label="系统" value={systemRoleCount} tone="info" />
-            <StatPill label="显示" value={filteredRoles.length} />
-            {selectedIds.size > 0 && (
-              <StatPill label="已选" value={selectedIds.size} tone="warning" />
+    <>
+    <div className={`split-workspace${selectedRole ? ' split-workspace--has-selection' : ''}`}>
+      <aside className="split-workspace__list">
+        <div className="split-panel-toolbar">
+          <PageToolbar
+            meta={(
+              <>
+                <StatPill label="角色" value={roles.length} />
+                <StatPill label="系统" value={systemRoleCount} tone="info" />
+                <StatPill label="显示" value={filteredRoles.length} />
+                {selectedIds.size > 0 && (
+                  <StatPill label="已选" value={selectedIds.size} tone="warning" />
+                )}
+              </>
             )}
-          </>
-        )}
-        actions={(
-          <>
-            <input
-              className="form-input"
-              style={{ width: 220, fontSize: 13 }}
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              placeholder="搜索名称、ID、描述…"
-              aria-label="搜索角色"
-            />
-            <select
-              className="form-input form-select"
-              style={{ width: 130 }}
-              value={roleFilter}
-              onChange={e => setRoleFilter(e.target.value as RoleFilter)}
-              aria-label="角色类型"
-            >
-              <option value="all">全部</option>
-              <option value="system">系统角色</option>
-              <option value="custom">自定义</option>
-            </select>
-            {selectedIds.size > 0 && (
-              <button
-                type="button"
-                className="btn btn--danger btn--sm"
-                onClick={() => setBatchDeleteConfirm(true)}
-              >
-                删除 ({selectedIds.size})
-              </button>
-            )}
-            <button type="button" className="btn btn--primary btn--sm" onClick={() => setCreateModalOpen(true)}>
-              + 新建角色
-            </button>
-          </>
-        )}
-      />
-
-      {error && !selectedRole && (
-        <div className="error-banner" style={styles.errorBanner}>
-          <span>⚠</span> {error}
-          <button style={styles.errorClose} onClick={() => setError(null)}>×</button>
-        </div>
-      )}
-
-      {/* Role Table */}
-      {loading && roles.length === 0 ? (
-        <div className="loading-overlay">
-          <div className="loading-spinner" />
-        </div>
-      ) : filteredRoles.length === 0 ? (
-        <div className="empty-state">
-          <div className="empty-state__icon">👥</div>
-          <p className="empty-state__text">
-            {searchQuery || roleFilter !== 'all' ? '没有匹配的角色' : '暂无角色数据'}
-          </p>
-        </div>
-      ) : (
-        <div className="surface-card" style={{ overflow: 'hidden' }}>
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th style={styles.colCheck}>
-                  <input
-                    type="checkbox"
-                    checked={selectableRoles.length > 0 && selectedIds.size === selectableRoles.length}
-                    onChange={toggleSelectAll}
-                    disabled={selectableRoles.length === 0}
-                    style={styles.checkbox}
-                  />
-                </th>
-                <th>角色名称</th>
-                <th>角色 ID</th>
-                <th>描述</th>
-                <th style={styles.colCount}>权限数</th>
-                <th style={styles.colType}>类型</th>
-                <th style={styles.colActions}>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredRoles.map(role => (
-                <tr
-                  key={role.role_id}
-                  className={selectedRole?.role_id === role.role_id ? 'selected' : ''}
-                  onClick={() => openRoleDrawer(role)}
-                  style={{ cursor: 'pointer' }}
+            actions={(
+              <>
+                <input
+                  className="form-input"
+                  style={{ width: 220, fontSize: 13 }}
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  placeholder="搜索名称、ID、描述…"
+                  aria-label="搜索角色"
+                />
+                <select
+                  className="form-input form-select"
+                  style={{ width: 130 }}
+                  value={roleFilter}
+                  onChange={e => setRoleFilter(e.target.value as RoleFilter)}
+                  aria-label="角色类型"
                 >
-                  <td onClick={e => e.stopPropagation()}>
+                  <option value="all">全部</option>
+                  <option value="system">系统角色</option>
+                  <option value="custom">自定义</option>
+                </select>
+                {selectedIds.size > 0 && (
+                  <button
+                    type="button"
+                    className="btn btn--danger btn--sm"
+                    onClick={() => setBatchDeleteConfirm(true)}
+                  >
+                    删除 ({selectedIds.size})
+                  </button>
+                )}
+                <button type="button" className="btn btn--primary btn--sm" onClick={() => setCreateModalOpen(true)}>
+                  + 新建角色
+                </button>
+              </>
+            )}
+          />
+        </div>
+
+        {error && !selectedRole && (
+          <div className="error-banner" style={{ ...styles.errorBanner, margin: '0 var(--space-4) var(--space-3)' }}>
+            <span>⚠</span> {error}
+            <button style={styles.errorClose} onClick={() => setError(null)}>×</button>
+          </div>
+        )}
+
+        {loading && roles.length === 0 ? (
+          <div className="loading-overlay">
+            <div className="loading-spinner" />
+          </div>
+        ) : filteredRoles.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-state__icon">👥</div>
+            <p className="empty-state__text">
+              {searchQuery || roleFilter !== 'all' ? '没有匹配的角色' : '暂无角色数据'}
+            </p>
+          </div>
+        ) : (
+          <div className="split-list-scroll" style={{ padding: 0 }}>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th style={styles.colCheck}>
                     <input
                       type="checkbox"
-                      checked={selectedIds.has(role.role_id)}
-                      onChange={() => !role.is_system && toggleSelect(role.role_id)}
-                      disabled={role.is_system}
+                      checked={selectableRoles.length > 0 && selectedIds.size === selectableRoles.length}
+                      onChange={toggleSelectAll}
+                      disabled={selectableRoles.length === 0}
                       style={styles.checkbox}
                     />
-                  </td>
-                  <td>
-                    <span style={styles.roleNameCell}>{role.name}</span>
-                  </td>
-                  <td>
-                    <span className="mono" style={styles.roleIdCell}>{role.role_id}</span>
-                  </td>
-                  <td>
-                    <span style={styles.descCell}>
-                      {role.description || '—'}
-                    </span>
-                  </td>
-                  <td>
-                    <span style={styles.permCountBadge}>
-                      {role.permission_ids?.length || 0}
-                    </span>
-                  </td>
-                  <td>
-                    {role.is_system ? (
-                      <span className="status-badge status-badge--info">系统</span>
-                    ) : (
-                      <span className="status-badge status-badge--neutral">自定义</span>
-                    )}
-                  </td>
-                  <td onClick={e => e.stopPropagation()}>
-                    <div style={styles.rowActions}>
-                      <button
-                        className="btn btn--ghost btn--sm"
-                        onClick={() => openRoleDrawer(role)}
-                      >
-                        配置
-                      </button>
-                      {!role.is_system && (
-                        <button
-                          className="btn btn--ghost btn--sm"
-                          style={{ color: 'var(--status-error)' }}
-                          onClick={() => setDeleteConfirm(role.role_id)}
-                        >
-                          删除
-                        </button>
-                      )}
-                    </div>
-                  </td>
+                  </th>
+                  <th>角色名称</th>
+                  <th style={styles.colCount}>权限数</th>
+                  <th style={styles.colType}>类型</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+              </thead>
+              <tbody>
+                {filteredRoles.map(role => (
+                  <tr
+                    key={role.role_id}
+                    className={selectedRole?.role_id === role.role_id ? 'selected' : ''}
+                    onClick={() => openRoleDrawer(role)}
+                    style={{ cursor: 'pointer' }}
+                  >
+                    <td onClick={e => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(role.role_id)}
+                        onChange={() => !role.is_system && toggleSelect(role.role_id)}
+                        disabled={role.is_system}
+                        style={styles.checkbox}
+                      />
+                    </td>
+                    <td>
+                      <span style={styles.roleNameCell}>{role.name}</span>
+                      <span className="mono" style={styles.roleIdCell}>{role.role_id}</span>
+                    </td>
+                    <td>
+                      <span style={styles.permCountBadge}>
+                        {role.permission_ids?.length || 0}
+                      </span>
+                    </td>
+                    <td>
+                      {role.is_system ? (
+                        <span className="status-badge status-badge--info">系统</span>
+                      ) : (
+                        <span className="status-badge status-badge--neutral">自定义</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </aside>
 
-      {/* Role Configuration Modal */}
-      {selectedRole && (
-        <div className="modal-overlay" onClick={closeRoleDrawer}>
-          <div
-            className="modal"
-            style={styles.roleModal}
-            onClick={e => e.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-            aria-label={`配置角色 ${selectedRole.name}`}
-          >
-            {/* Header */}
-            <div className="modal__header" style={styles.modalHeader}>
+      <main className="split-workspace__main">
+        {selectedRole ? (
+          <div className="split-detail-scroll" style={styles.detailPanel}>
+            <button
+              type="button"
+              className="split-workspace__back"
+              onClick={closeRoleDrawer}
+            >
+              ← 返回列表
+            </button>
+
+            <div style={styles.detailHeader}>
               <div>
-                <h3 className="modal__title">{selectedRole.name}</h3>
+                <h3 style={styles.detailTitle}>{selectedRole.name}</h3>
                 <span className="mono" style={styles.modalSubtitle}>{selectedRole.role_id}</span>
               </div>
-              <button className="modal__close" onClick={closeRoleDrawer} aria-label="关闭">×</button>
-            </div>
-
-            {/* Body */}
-            <div style={styles.modalBody}>
-              {error && (
-                <div className="error-banner" style={{ marginBottom: 16 }}>
-                  <span>⚠</span> {error}
-                  <button style={styles.errorClose} onClick={() => setError(null)}>×</button>
-                </div>
-              )}
-
-              <div style={styles.twoCol}>
-                {/* Left: Basic Info */}
-                <section style={styles.basicInfoSection}>
-                  <h4 style={styles.sectionTitle}>基本信息</h4>
-                  <div style={styles.formGroup}>
-                    <label style={styles.label}>角色名称</label>
-                    <input
-                      className="form-input"
-                      value={editName}
-                      onChange={e => setEditName(e.target.value)}
-                      placeholder="输入角色名称"
-                      disabled={selectedRole.is_system}
-                    />
-                  </div>
-                  <div style={styles.formGroup}>
-                    <label style={styles.label}>角色描述</label>
-                    <textarea
-                      className="form-input"
-                      style={styles.textarea}
-                      value={editDesc}
-                      onChange={e => setEditDesc(e.target.value)}
-                      placeholder="输入角色描述（可选）"
-                      rows={3}
-                      disabled={selectedRole.is_system}
-                    />
-                  </div>
-                  {!selectedRole.is_system && (
-                    <button
-                      className="btn btn--primary btn--sm"
-                      onClick={handleSaveBasicInfo}
-                      disabled={saving || !editName.trim() || !hasBasicInfoChanges}
-                    >
-                      {saving ? '保存中...' : '保存基本信息'}
-                    </button>
-                  )}
-                  {selectedRole.is_system && (
-                    <p style={styles.systemHint}>
-                      系统角色不可修改名称与描述，权限配置可调整
-                    </p>
-                  )}
-                </section>
-
-                {/* Right: Permissions */}
-                <section style={styles.permSection}>
-                  <div style={styles.permToolbar}>
-                    <div style={styles.sectionHeader}>
-                      <h4 style={styles.sectionTitle}>
-                        权限配置
-                        <span style={styles.permSelectedBadge}>
-                          已选 {selectedPermissionIds.size} / {permissions.length}
-                        </span>
-                      </h4>
-                      <button
-                        className="btn btn--primary btn--sm"
-                        onClick={handleSavePermissions}
-                        disabled={saving || !hasPermissionChanges}
-                      >
-                        {saving ? '保存中...' : '保存权限'}
-                      </button>
-                    </div>
-
-                    <input
-                      className="form-input"
-                      value={permissionSearch}
-                      onChange={e => setPermissionSearch(e.target.value)}
-                      placeholder="搜索权限名称或代码..."
-                    />
-
-                    {selectedPermissions.length > 0 && (
-                      <div style={styles.permSelectedSummary}>
-                        {selectedPermissions.map(perm => (
-                            <span key={getPermissionKey(perm)} style={styles.permChip}>
-                              {perm.name}
-                            </span>
-                          ))}
-                      </div>
-                    )}
-                  </div>
-
-                  <div style={styles.permScrollArea}>
-                    {permissionGroups.length === 0 ? (
-                      <p style={styles.noResults}>没有匹配的权限</p>
-                    ) : (
-                      <div style={styles.permGroupList}>
-                        {permissionGroups.map(([groupName, groupPerms]) => {
-                          const selectedInGroup = groupPerms.filter(p =>
-                            selectedPermissionIds.has(getPermissionKey(p)),
-                          ).length;
-                          const allSelected = selectedInGroup === groupPerms.length;
-                          const someSelected = selectedInGroup > 0 && !allSelected;
-
-                          return (
-                            <div key={groupName} style={styles.permGroup}>
-                              <div style={styles.permGroupHeader}>
-                                <label style={styles.permGroupLabel}>
-                                  <input
-                                    type="checkbox"
-                                    checked={allSelected}
-                                    ref={el => {
-                                      if (el) el.indeterminate = someSelected;
-                                    }}
-                                    onChange={() => handleToggleGroup(groupPerms, !allSelected)}
-                                    style={styles.checkbox}
-                                  />
-                                  <span style={styles.permGroupName}>{groupName}</span>
-                                  <span style={styles.permGroupCount}>
-                                    {selectedInGroup}/{groupPerms.length}
-                                  </span>
-                                </label>
-                              </div>
-                              <div style={styles.permTileGrid}>
-                                {groupPerms.map(perm => {
-                                  const permKey = getPermissionKey(perm);
-                                  const checked = selectedPermissionIds.has(permKey);
-                                  return (
-                                    <label
-                                      key={permKey}
-                                      style={{
-                                        ...styles.permTile,
-                                        ...(checked ? styles.permTileSelected : {}),
-                                      }}
-                                      className="perm-tile"
-                                      title={perm.description || perm.code}
-                                    >
-                                      <input
-                                        type="checkbox"
-                                        checked={checked}
-                                        onChange={() => handleTogglePermission(permKey)}
-                                        style={styles.checkbox}
-                                      />
-                                      <span style={styles.permTileName}>{perm.name}</span>
-                                      <span className="mono" style={styles.permTileCode}>{perm.code}</span>
-                                    </label>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                </section>
-              </div>
-            </div>
-
-            {/* Footer */}
-            <div className="modal__footer">
               {!selectedRole.is_system && (
                 <button
                   className="btn btn--danger btn--sm"
@@ -628,14 +442,166 @@ const RoleManagement: React.FC = () => {
                   删除角色
                 </button>
               )}
-              <div style={{ flex: 1 }} />
-              <button className="btn btn--secondary" onClick={closeRoleDrawer}>
-                关闭
-              </button>
+            </div>
+
+            {error && (
+              <div className="error-banner" style={{ marginBottom: 16 }}>
+                <span>⚠</span> {error}
+                <button style={styles.errorClose} onClick={() => setError(null)}>×</button>
+              </div>
+            )}
+
+            <div style={styles.twoCol}>
+              <section style={styles.basicInfoSection}>
+                <h4 style={styles.sectionTitle}>基本信息</h4>
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>角色名称</label>
+                  <input
+                    className="form-input"
+                    value={editName}
+                    onChange={e => setEditName(e.target.value)}
+                    placeholder="输入角色名称"
+                    disabled={selectedRole.is_system}
+                  />
+                </div>
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>角色描述</label>
+                  <textarea
+                    className="form-input"
+                    style={styles.textarea}
+                    value={editDesc}
+                    onChange={e => setEditDesc(e.target.value)}
+                    placeholder="输入角色描述（可选）"
+                    rows={3}
+                    disabled={selectedRole.is_system}
+                  />
+                </div>
+                {!selectedRole.is_system && (
+                  <button
+                    className="btn btn--primary btn--sm"
+                    onClick={handleSaveBasicInfo}
+                    disabled={saving || !editName.trim() || !hasBasicInfoChanges}
+                  >
+                    {saving ? '保存中...' : '保存基本信息'}
+                  </button>
+                )}
+                {selectedRole.is_system && (
+                  <p style={styles.systemHint}>
+                    系统角色不可修改名称与描述，权限配置可调整
+                  </p>
+                )}
+              </section>
+
+              <section style={styles.permSection}>
+                <div style={styles.permToolbar}>
+                  <div style={styles.sectionHeader}>
+                    <h4 style={styles.sectionTitle}>
+                      权限配置
+                      <span style={styles.permSelectedBadge}>
+                        已选 {selectedPermissionIds.size} / {permissions.length}
+                      </span>
+                    </h4>
+                    <button
+                      className="btn btn--primary btn--sm"
+                      onClick={handleSavePermissions}
+                      disabled={saving || !hasPermissionChanges}
+                    >
+                      {saving ? '保存中...' : '保存权限'}
+                    </button>
+                  </div>
+
+                  <input
+                    className="form-input"
+                    value={permissionSearch}
+                    onChange={e => setPermissionSearch(e.target.value)}
+                    placeholder="搜索权限名称或代码..."
+                  />
+
+                  {selectedPermissions.length > 0 && (
+                    <div style={styles.permSelectedSummary}>
+                      {selectedPermissions.map(perm => (
+                        <span key={getPermissionKey(perm)} style={styles.permChip}>
+                          {perm.name}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div style={styles.permScrollArea}>
+                  {permissionGroups.length === 0 ? (
+                    <p style={styles.noResults}>没有匹配的权限</p>
+                  ) : (
+                    <div style={styles.permGroupList}>
+                      {permissionGroups.map(([groupName, groupPerms]) => {
+                        const selectedInGroup = groupPerms.filter(p =>
+                          selectedPermissionIds.has(getPermissionKey(p)),
+                        ).length;
+                        const allSelected = selectedInGroup === groupPerms.length;
+                        const someSelected = selectedInGroup > 0 && !allSelected;
+
+                        return (
+                          <div key={groupName} style={styles.permGroup}>
+                            <div style={styles.permGroupHeader}>
+                              <label style={styles.permGroupLabel}>
+                                <input
+                                  type="checkbox"
+                                  checked={allSelected}
+                                  ref={el => {
+                                    if (el) el.indeterminate = someSelected;
+                                  }}
+                                  onChange={() => handleToggleGroup(groupPerms, !allSelected)}
+                                  style={styles.checkbox}
+                                />
+                                <span style={styles.permGroupName}>{groupName}</span>
+                                <span style={styles.permGroupCount}>
+                                  {selectedInGroup}/{groupPerms.length}
+                                </span>
+                              </label>
+                            </div>
+                            <div style={styles.permTileGrid}>
+                              {groupPerms.map(perm => {
+                                const permKey = getPermissionKey(perm);
+                                const checked = selectedPermissionIds.has(permKey);
+                                return (
+                                  <label
+                                    key={permKey}
+                                    style={{
+                                      ...styles.permTile,
+                                      ...(checked ? styles.permTileSelected : {}),
+                                    }}
+                                    className="perm-tile"
+                                    title={perm.description || perm.code}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={checked}
+                                      onChange={() => handleTogglePermission(permKey)}
+                                      style={styles.checkbox}
+                                    />
+                                    <span style={styles.permTileName}>{perm.name}</span>
+                                    <span className="mono" style={styles.permTileCode}>{perm.code}</span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </section>
             </div>
           </div>
-        </div>
-      )}
+        ) : (
+          <div className="empty-state" style={{ height: '100%' }}>
+            <div className="empty-state__icon">👈</div>
+            <p className="empty-state__text">从左侧选择角色进行配置</p>
+          </div>
+        )}
+      </main>
+    </div>
 
       {/* Create Role Modal */}
       {createModalOpen && (
@@ -753,7 +719,7 @@ const RoleManagement: React.FC = () => {
           border-color: var(--accent-primary);
         }
       `}</style>
-    </div>
+    </>
   );
 };
 
@@ -785,8 +751,31 @@ const styles: Record<string, React.CSSProperties> = {
     color: 'var(--text-primary)',
   },
   roleIdCell: {
-    fontSize: '12px',
-    color: 'var(--accent-primary)',
+    display: 'block',
+    fontSize: '11px',
+    color: 'var(--text-tertiary)',
+    marginTop: '2px',
+  },
+  detailPanel: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    height: '100%',
+    minHeight: 0,
+  },
+  detailHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 'var(--space-4)',
+    marginBottom: 'var(--space-4)',
+    paddingBottom: 'var(--space-4)',
+    borderBottom: '1px solid var(--border-subtle)',
+  },
+  detailTitle: {
+    margin: 0,
+    fontSize: '18px',
+    fontWeight: 600,
+    color: 'var(--text-primary)',
   },
   descCell: {
     fontSize: '13px',
@@ -846,9 +835,6 @@ const styles: Record<string, React.CSSProperties> = {
     flex: 1,
     minHeight: 0,
     overflow: 'hidden',
-  },
-  section: {
-    marginBottom: 0,
   },
   basicInfoSection: {
     marginBottom: 0,
@@ -994,7 +980,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   permTileSelected: {
     backgroundColor: 'rgba(22, 163, 74, 0.08)',
-    borderColor: 'var(--accent-primary)',
+    border: '1px solid var(--accent-primary)',
   },
   permTileName: {
     fontSize: '12px',

@@ -1,3 +1,53 @@
+// ═══════════════════════════════════════════════════════════════════════
+//  通用基类（Shared Base Interfaces）
+// ═══════════════════════════════════════════════════════════════════════
+
+/** 基础用例字段，用于 Create/Response 类型继承 */
+export interface BaseTestCaseFields {
+  title: string;
+  priority?: string;
+  tags?: string[];
+  test_category?: string;
+  is_destructive?: boolean;
+  pre_condition?: string;
+  post_condition?: string;
+  is_need_auto?: boolean;
+  is_automated?: boolean;
+  automation_type?: string;
+  script_entity_id?: string;
+  automation_case_ref?: AutomationCaseRef;
+  risk_level?: string;
+  failure_analysis?: string;
+  confidentiality?: string;
+  visibility_scope?: string;
+  attachments?: Record<string, unknown>[];
+  custom_fields?: Record<string, unknown>;
+  deprecation_reason?: string;
+  approval_history?: Record<string, unknown>[];
+  steps?: TestCaseStep[];
+  cleanup_steps?: TestCaseStep[];
+}
+
+/** 通用分页查询参数 */
+export interface PaginationParams {
+  limit?: number;
+  offset?: number;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  API 通用（General Api）
+// ═══════════════════════════════════════════════════════════════════════
+
+export interface ApiResponse<T = unknown> {
+  code: number;
+  message: string;
+  data: T;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  用户/认证相关（Auth & User）
+// ═══════════════════════════════════════════════════════════════════════
+
 export interface LoginRequest {
   user_id: string;
   password: string;
@@ -20,17 +70,309 @@ export interface LoginResponse {
   };
 }
 
-export interface ApiResponse<T = unknown> {
-  code: number;
-  message: string;
-  data: T;
-}
-
 export interface User {
   id: string;
   username: string;
   email?: string;
 }
+
+export interface UserResponse {
+  id: string;
+  user_id: string;
+  username: string;
+  email?: string;
+  role_ids: string[];
+  status: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateUserRequest {
+  user_id: string;
+  username: string;
+  password: string;
+  email?: string;
+  role_ids?: string[];
+  status?: string;
+}
+
+export interface UpdateUserRequest {
+  username?: string;
+  email?: string;
+  status?: string;
+}
+
+export interface UpdateUserRolesRequest {
+  role_ids: string[];
+}
+
+export interface UpdateUserPasswordRequest {
+  new_password: string;
+}
+
+export interface ListUsersParams extends PaginationParams {
+  status?: string;
+  role_id?: string;
+  search?: string;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  权限/角色相关（Role & Permission）
+// ═══════════════════════════════════════════════════════════════════════
+
+export interface PermissionResponse {
+  id: string;
+  /** 业务权限 ID，与角色 permission_ids 一致 */
+  perm_id: string;
+  /** @deprecated 使用 perm_id */
+  permission_id?: string;
+  name: string;
+  code: string;
+  description?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RoleResponse {
+  id: string;
+  role_id: string;
+  name: string;
+  description?: string;
+  permission_ids?: string[];
+  is_system?: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateRoleRequest {
+  name: string;
+  description?: string;
+  permission_ids?: string[];
+}
+
+export interface UpdateRoleRequest {
+  name?: string;
+  description?: string;
+}
+
+export interface UpdateRolePermissionsRequest {
+  permission_ids: string[];
+}
+
+export interface CurrentUserPermissionsResponse {
+  user_id: string;
+  permissions: string[];
+  roles: {
+    role_id: string;
+    role_name: string;
+  }[];
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  导航相关（Navigation）
+// ═══════════════════════════════════════════════════════════════════════
+
+export interface NavigationPageResponse {
+  id?: string;
+  view: string;
+  label: string;
+  permission?: string | null;
+  description?: string | null;
+  order: number;
+  is_active: boolean;
+}
+
+export interface UserNavigationResponse {
+  user_id: string;
+  role_ids: string[];
+  permissions: string[];
+  allowed_nav_views: string[];
+  role_derived_nav_views: string[];
+  has_nav_override: boolean;
+}
+
+export interface UpdateUserNavigationRequest {
+  allowed_nav_views: string[];
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  工作流相关（Workflow）
+// ═══════════════════════════════════════════════════════════════════════
+
+export interface WorkItem {
+  item_id: string;
+  type_code: string;
+  title: string;
+  content: string;
+  parent_item_id?: string;
+  current_state: string;
+  current_owner_id?: string;
+  creator_id: string;
+  created_at: string;
+  updated_at: string;
+  req_id?: string;
+}
+
+export interface WorkflowTransition {
+  action: string;
+  to_state: string;
+  target_owner_strategy: string;
+  required_fields: string[];
+}
+
+export interface WorkflowTransitionsResponse {
+  item_id: string;
+  current_state: string;
+  available_transitions: WorkflowTransition[];
+  creator?: string;
+  current_owner?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface WorkflowTransitionRequest {
+  action: string;
+  form_data?: Record<string, unknown>;
+}
+
+export interface WorkflowTransitionResponse {
+  work_item_id: string;
+  from_state: string;
+  to_state: string;
+  action: string;
+  new_owner_id?: string;
+}
+
+export interface WorkflowTransitionLog {
+  id: string;
+  work_item_id: string;
+  from_state: string;
+  to_state: string;
+  action: string;
+  operator_id: string;
+  payload: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  TestCase 相关
+// ═══════════════════════════════════════════════════════════════════════
+
+export interface TestCaseStep {
+  step_id: string;
+  name: string;
+  action: string;
+  expected: string;
+}
+
+export interface AutomationCaseRef {
+  auto_case_id: string;
+  version?: string;
+}
+
+export interface CreateTestCaseRequest extends BaseTestCaseFields {
+  case_id?: string;
+  ref_req_id?: string;
+  lab_id: string;
+  catalog_path: string[];
+  version?: number;
+  is_active?: boolean;
+  change_log?: string;
+  owner_id?: string;
+  reviewer_id?: string;
+  auto_dev_id?: string;
+  estimated_duration_sec?: number;
+  required_env?: Record<string, unknown>;
+}
+
+export type UpdateTestCaseRequest = Partial<Omit<CreateTestCaseRequest, 'case_id'>>;
+
+export interface TestCaseResponse extends BaseTestCaseFields {
+  id: string;
+  case_id: string;
+  ref_req_id?: string | null;
+  lab_id: string;
+  lab_name?: string | null;
+  catalog_path: string[];
+  catalog_path_key?: string;
+  catalog_breadcrumb?: string | null;
+  version: number;
+  is_active: boolean;
+  change_log?: string;
+  status: string;
+  workflow_item_id?: string;
+  owner_id?: string;
+  reviewer_id?: string;
+  auto_dev_id?: string;
+  estimated_duration_sec?: number;
+  required_env: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TestCaseFieldChange {
+  field: string;
+  old_value: unknown;
+  new_value: unknown;
+  change_type: 'added' | 'removed' | 'modified';
+}
+
+export interface TestCaseChangeLog {
+  id: string;
+  case_id: string;
+  revision_no: number;
+  action: string;
+  operator_id: string;
+  operator_name?: string | null;
+  changes: TestCaseFieldChange[];
+  remark?: string | null;
+  created_at: string;
+}
+
+export interface TestCaseChangeLogListResponse {
+  items: TestCaseChangeLog[];
+  total: number;
+}
+
+export interface ListTestCasesParams extends PaginationParams {
+  ref_req_id?: string;
+  status?: string;
+  owner_id?: string;
+  reviewer_id?: string;
+  priority?: string;
+  is_active?: boolean;
+  lab_id?: string;
+  catalog_prefix?: string;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  TestCase 评论（Comment）
+// ═══════════════════════════════════════════════════════════════════════
+
+export interface TestCaseComment {
+  _id: string;
+  comment_id: string;
+  case_id: string;
+  content: string;
+  author_id: string;
+  author_name?: string | null;
+  created_at: string;
+  updated_at?: string | null;
+}
+
+export interface CommentListResponse {
+  items: TestCaseComment[];
+  total: number;
+}
+
+export interface CreateCommentRequest {
+  content: string;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Requirement 相关
+// ═══════════════════════════════════════════════════════════════════════
 
 export interface RequirementKeyParameter {
   name: string;
@@ -96,84 +438,18 @@ export interface RequirementResponse {
   current_owner_name?: string;
 }
 
-export interface ListRequirementsParams {
+export interface ListRequirementsParams extends PaginationParams {
   status?: string;
   category?: string;
   source?: string;
   tpm_owner_id?: string;
   manual_dev_id?: string;
   auto_dev_id?: string;
-  limit?: number;
-  offset?: number;
 }
 
-export interface WorkflowTransition {
-  action: string;
-  to_state: string;
-  target_owner_strategy: string;
-  required_fields: string[];
-}
-
-export interface WorkflowTransitionsResponse {
-  item_id: string;
-  current_state: string;
-  available_transitions: WorkflowTransition[];
-  creator?: string;
-  current_owner?: string;
-  created_at?: string;
-  updated_at?: string;
-}
-
-export interface WorkflowTransitionRequest {
-  action: string;
-  form_data?: Record<string, unknown>;
-}
-
-export interface WorkflowTransitionResponse {
-  work_item_id: string;
-  from_state: string;
-  to_state: string;
-  action: string;
-  new_owner_id?: string;
-}
-
-export interface WorkflowTransitionLog {
-  id: string;
-  work_item_id: string;
-  from_state: string;
-  to_state: string;
-  action: string;
-  operator_id: string;
-  payload: Record<string, unknown>;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface WorkItem {
-  item_id: string;
-  type_code: string;
-  title: string;
-  content: string;
-  parent_item_id?: string;
-  current_state: string;
-  current_owner_id?: string;
-  creator_id: string;
-  created_at: string;
-  updated_at: string;
-  req_id?: string;
-}
-
-export interface TestCaseStep {
-  step_id: string;
-  name: string;
-  action: string;
-  expected: string;
-}
-
-export interface AutomationCaseRef {
-  auto_case_id: string;
-  version?: string;
-}
+// ═══════════════════════════════════════════════════════════════════════
+//  Catalog / Lab 相关
+// ═══════════════════════════════════════════════════════════════════════
 
 export interface CatalogLab {
   lab_id: string;
@@ -212,126 +488,9 @@ export interface CatalogTreeResponse {
   tree: CatalogTreeNode;
 }
 
-export interface CreateTestCaseRequest {
-  case_id?: string;
-  ref_req_id?: string;
-  lab_id: string;
-  catalog_path: string[];
-  title: string;
-  version?: number;
-  is_active?: boolean;
-  change_log?: string;
-  owner_id?: string;
-  reviewer_id?: string;
-  auto_dev_id?: string;
-  priority?: string;
-  estimated_duration_sec?: number;
-  required_env?: Record<string, unknown>;
-  tags?: string[];
-  test_category?: string;
-  is_destructive?: boolean;
-  pre_condition?: string;
-  post_condition?: string;
-  is_need_auto?: boolean;
-  is_automated?: boolean;
-  automation_type?: string;
-  script_entity_id?: string;
-  automation_case_ref?: AutomationCaseRef;
-  risk_level?: string;
-  failure_analysis?: string;
-  confidentiality?: string;
-  visibility_scope?: string;
-  attachments?: Record<string, unknown>[];
-  custom_fields?: Record<string, unknown>;
-  deprecation_reason?: string;
-  approval_history?: Record<string, unknown>[];
-  steps?: TestCaseStep[];
-  cleanup_steps?: TestCaseStep[];
-}
-
-export type UpdateTestCaseRequest = Partial<Omit<CreateTestCaseRequest, 'case_id'>>;
-
-export interface TestCaseResponse {
-  id: string;
-  case_id: string;
-  ref_req_id?: string | null;
-  lab_id: string;
-  lab_name?: string | null;
-  catalog_path: string[];
-  catalog_path_key?: string;
-  catalog_breadcrumb?: string | null;
-  title: string;
-  version: number;
-  is_active: boolean;
-  change_log?: string;
-  status: string;
-  workflow_item_id?: string;
-  owner_id?: string;
-  reviewer_id?: string;
-  auto_dev_id?: string;
-  priority?: string;
-  estimated_duration_sec?: number;
-  required_env: Record<string, unknown>;
-  tags: string[];
-  test_category?: string;
-  is_destructive: boolean;
-  pre_condition?: string;
-  post_condition?: string;
-  is_need_auto: boolean;
-  is_automated: boolean;
-  automation_type?: string;
-  script_entity_id?: string;
-  automation_case_ref?: AutomationCaseRef;
-  risk_level?: string;
-  failure_analysis?: string;
-  confidentiality?: string;
-  visibility_scope?: string;
-  attachments: Record<string, unknown>[];
-  custom_fields: Record<string, unknown>;
-  deprecation_reason?: string;
-  approval_history: Record<string, unknown>[];
-  steps?: TestCaseStep[];
-  cleanup_steps?: TestCaseStep[];
-  created_at: string;
-  updated_at: string;
-}
-
-export interface TestCaseFieldChange {
-  field: string;
-  old_value: unknown;
-  new_value: unknown;
-  change_type: 'added' | 'removed' | 'modified';
-}
-
-export interface TestCaseChangeLog {
-  id: string;
-  case_id: string;
-  revision_no: number;
-  action: string;
-  operator_id: string;
-  operator_name?: string | null;
-  changes: TestCaseFieldChange[];
-  remark?: string | null;
-  created_at: string;
-}
-
-export interface TestCaseChangeLogListResponse {
-  items: TestCaseChangeLog[];
-  total: number;
-}
-
-export interface ListTestCasesParams {
-  ref_req_id?: string;
-  status?: string;
-  owner_id?: string;
-  reviewer_id?: string;
-  priority?: string;
-  is_active?: boolean;
-  lab_id?: string;
-  catalog_prefix?: string;
-  limit?: number;
-  offset?: number;
-}
+// ═══════════════════════════════════════════════════════════════════════
+//  下发（Dispatch）相关
+// ═══════════════════════════════════════════════════════════════════════
 
 export interface DispatchCaseItem {
   auto_case_id: string;
@@ -411,33 +570,9 @@ export interface DispatchTaskResponse {
   created_at: string;
 }
 
-export interface ExecutionAgent {
-  agent_id: string;
-  hostname: string;
-  ip: string;
-  port?: number;
-  base_url?: string;
-  region: string;
-  status: string;
-  registered_at: string;
-  last_heartbeat_at: string;
-  heartbeat_ttl_seconds: number;
-  lease_expires_at: string;
-  is_online: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface ListAgentsParams {
-  region?: string;
-  status?: string;
-  online_only?: boolean;
-}
-
-export interface AgentCleanupOfflineResponse {
-  deleted_count: number;
-  deleted_agent_ids: string[];
-}
+// ═══════════════════════════════════════════════════════════════════════
+//  自动化用例（Automation TestCase）相关
+// ═══════════════════════════════════════════════════════════════════════
 
 export interface CreateAutomationTestCaseRequest {
   auto_case_id?: string;
@@ -500,14 +635,48 @@ export interface AutomationTestCaseResponse {
   updated_at: string;
 }
 
-export interface ListAutomationTestCasesParams {
+export interface ListAutomationTestCasesParams extends PaginationParams {
   framework?: string;
   automation_type?: string;
   status?: string;
   maintainer_id?: string;
-  limit?: number;
-  offset?: number;
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+//  执行代理（Agent）相关
+// ═══════════════════════════════════════════════════════════════════════
+
+export interface ExecutionAgent {
+  agent_id: string;
+  hostname: string;
+  ip: string;
+  port?: number;
+  base_url?: string;
+  region: string;
+  status: string;
+  registered_at: string;
+  last_heartbeat_at: string;
+  heartbeat_ttl_seconds: number;
+  lease_expires_at: string;
+  is_online: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ListAgentsParams {
+  region?: string;
+  status?: string;
+  online_only?: boolean;
+}
+
+export interface AgentCleanupOfflineResponse {
+  deleted_count: number;
+  deleted_agent_ids: string[];
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  执行任务（Execution Task）相关
+// ═══════════════════════════════════════════════════════════════════════
 
 export interface ExecutionTask {
   task_id: string;
@@ -637,7 +806,7 @@ export interface ExecutionTaskCaseSummary {
   result_data?: ExecutionCaseResultData;
 }
 
-export interface ListTasksParams {
+export interface ListTasksParams extends PaginationParams {
   schedule_type?: string;
   schedule_status?: string;
   dispatch_status?: string;
@@ -647,9 +816,38 @@ export interface ListTasksParams {
   agent_id?: string;
   date_from?: string;
   date_to?: string;
-  limit?: number;
-  offset?: number;
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+//  执行配置（Execution Config）
+// ═══════════════════════════════════════════════════════════════════════
+
+export type StepFailurePolicy =
+  | 'CONTINUE'           // 继续后续步骤
+  | 'STOP_WAIT'          // 停止等待
+  | 'STOP_NOTIFY'        // 停止+通知
+  | 'STOP_WAIT_MANUAL'   // 停止+等待人工继续
+  | 'RETRY_UNTIL_SUCCESS' // 重复运行直到成功
+  | 'RETRY_N_TIMES_CONTINUE'; // 重复运行N次后继续
+
+export type CaseFailurePolicy =
+  | 'CONTINUE'           // 继续后续case
+  | 'STOP'               // 停止
+  | 'STOP_NOTIFY'        // 停止+通知
+  | 'STOP_WAIT_MANUAL'   // 停止+等待人工继续
+  | 'RETRY_UNTIL_SUCCESS' // 重复运行直到成功
+  | 'RETRY_N_TIMES_CONTINUE'; // 重复运行N次后继续
+
+export interface ExecutionConfig {
+  step_on_failure: StepFailurePolicy;
+  step_retry_count?: number;  // 当使用 RETRY_N_TIMES_CONTINUE 时有效
+  case_on_failure: CaseFailurePolicy;
+  case_retry_count?: number;  // 当使用 RETRY_N_TIMES_CONTINUE 时有效
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Terminal 相关
+// ═══════════════════════════════════════════════════════════════════════
 
 export interface TerminalSessionMessage {
   type: 'session';
@@ -673,118 +871,85 @@ export interface TerminalExitMessage {
   code: number;
 }
 
-// Role and Permission types
-export interface PermissionResponse {
+// ═══════════════════════════════════════════════════════════════════════
+//  血缘图谱（Lineage Graph）
+// ═══════════════════════════════════════════════════════════════════════
+
+export interface LineageNode {
   id: string;
-  /** 业务权限 ID，与角色 permission_ids 一致 */
-  perm_id: string;
-  /** @deprecated 使用 perm_id */
-  permission_id?: string;
-  name: string;
-  code: string;
-  description?: string;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface RoleResponse {
-  id: string;
-  role_id: string;
-  name: string;
-  description?: string;
-  permission_ids?: string[];
-  is_system?: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface CreateRoleRequest {
-  name: string;
-  description?: string;
-  permission_ids?: string[];
-}
-
-export interface UpdateRoleRequest {
-  name?: string;
-  description?: string;
-}
-
-export interface UpdateRolePermissionsRequest {
-  permission_ids: string[];
-}
-
-export interface CurrentUserPermissionsResponse {
-  user_id: string;
-  permissions: string[];
-  roles: {
-    role_id: string;
-    role_name: string;
-  }[];
-}
-
-// User types
-export interface UserResponse {
-  id: string;
-  user_id: string;
-  username: string;
-  email?: string;
-  role_ids: string[];
-  status: string;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface CreateUserRequest {
-  user_id: string;
-  username: string;
-  password: string;
-  email?: string;
-  role_ids?: string[];
+  type: 'requirement' | 'test_case' | 'automation_case' | 'task' | 'case_result' | 'agent';
+  label: string;
   status?: string;
+  subtitle?: string;
+  meta: Record<string, unknown>;
 }
 
-export interface UpdateUserRequest {
-  username?: string;
-  email?: string;
-  status?: string;
+export interface LineageEdge {
+  source: string;
+  target: string;
+  label: string;
 }
 
-export interface UpdateUserRolesRequest {
-  role_ids: string[];
+export interface LineageGraphResponse {
+  nodes: LineageNode[];
+  edges: LineageEdge[];
+  root_id: string;
+  root_type: string;
 }
 
-export interface UpdateUserPasswordRequest {
-  new_password: string;
+// ═══════════════════════════════════════════════════════════════════════
+//  失效分析（Failure Analysis）
+// ═══════════════════════════════════════════════════════════════════════
+
+export type FailurePattern =
+  | 'TIMEOUT' | 'ASSERTION_ERROR' | 'ENV_SETUP' | 'DEPENDENCY'
+  | 'CONFIG_ERROR' | 'NETWORK_ERROR' | 'HARDWARE_ERROR'
+  | 'MEMORY_ERROR' | 'SCRIPT_ERROR' | 'UNKNOWN';
+
+export interface FailurePatternSummary {
+  pattern: FailurePattern;
+  count: number;
+  percentage: number;
 }
 
-export interface ListUsersParams {
-  status?: string;
-  role_id?: string;
-  search?: string;
-  limit?: number;
-  offset?: number;
+export interface FailureByAgent {
+  agent_id: string;
+  hostname: string;
+  failure_count: number;
+  pattern_breakdown: Record<FailurePattern, number>;
 }
 
-// Execution failure handling policies
-export type StepFailurePolicy =
-  | 'CONTINUE'           // 继续后续步骤
-  | 'STOP_WAIT'          // 停止等待
-  | 'STOP_NOTIFY'        // 停止+通知
-  | 'STOP_WAIT_MANUAL'   // 停止+等待人工继续
-  | 'RETRY_UNTIL_SUCCESS' // 重复运行直到成功
-  | 'RETRY_N_TIMES_CONTINUE'; // 重复运行N次后继续
+export interface FailureDailyTrend {
+  date: string;
+  failure_count: number;
+  patterns: Record<FailurePattern, number>;
+}
 
-export type CaseFailurePolicy =
-  | 'CONTINUE'           // 继续后续case
-  | 'STOP'               // 停止
-  | 'STOP_NOTIFY'        // 停止+通知
-  | 'STOP_WAIT_MANUAL'   // 停止+等待人工继续
-  | 'RETRY_UNTIL_SUCCESS' // 重复运行直到成功
-  | 'RETRY_N_TIMES_CONTINUE'; // 重复运行N次后继续
+export interface FlakyTestCase {
+  auto_case_id: string;
+  case_id: string;
+  name: string;
+  total_runs: number;
+  flaky_ratio: number;
+  recent_results: Array<Record<string, unknown>>;
+}
 
-export interface ExecutionConfig {
-  step_on_failure: StepFailurePolicy;
-  step_retry_count?: number;  // 当使用 RETRY_N_TIMES_CONTINUE 时有效
-  case_on_failure: CaseFailurePolicy;
-  case_retry_count?: number;  // 当使用 RETRY_N_TIMES_CONTINUE 时有效
+export interface HighFrequencyFailure {
+  auto_case_id: string;
+  case_id: string;
+  name: string;
+  failure_count: number;
+  dominant_pattern: FailurePattern;
+  latest_failure_at?: string;
+  avg_duration_sec?: number;
+}
+
+export interface FailureAnalysisDashboard {
+  time_range: string;
+  total_failures: number;
+  pattern_distribution: FailurePatternSummary[];
+  by_agent: FailureByAgent[];
+  daily_trend: FailureDailyTrend[];
+  flaky_tests: FlakyTestCase[];
+  high_frequency_failures: HighFrequencyFailure[];
 }

@@ -505,7 +505,7 @@ const styles: Record<string, React.CSSProperties> = {
     flex: 1,
   },
   inputInvalid: {
-    borderColor: 'var(--status-error)',
+    border: '1px solid var(--status-error)',
   },
   removeBtn: {
     flexShrink: 0,

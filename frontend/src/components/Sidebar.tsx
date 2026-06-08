@@ -1,12 +1,16 @@
-import type { PageType, NavItem } from '../types/app'
+import type { PageType, NavItem, NavSection } from '../types/app'
 
 interface SidebarProps {
   currentPage: PageType
   onNavigate: (page: PageType) => void
   visibleItems: NavItem[]
+  sections: NavSection[]
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, visibleItems }) => {
+const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, visibleItems, sections }) => {
+  const visibleKeys = new Set(visibleItems.map(item => item.key))
+  const itemByKey = new Map(visibleItems.map(item => [item.key, item]))
+
   return (
     <aside className="sidebar">
       <div className="sidebar__brand">
@@ -18,20 +22,32 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, visibleItems
       </div>
 
       <nav className="sidebar__nav" aria-label="主导航">
-        <span className="sidebar__section-label">工作区</span>
-        {visibleItems.map(item => {
-          const active = currentPage === item.key
+        {sections.map(section => {
+          const sectionItems = section.keys
+            .filter(key => visibleKeys.has(key))
+            .map(key => itemByKey.get(key)!)
+
+          if (sectionItems.length === 0) return null
+
           return (
-            <button
-              key={item.key}
-              type="button"
-              className={`sidebar__item${active ? ' sidebar__item--active' : ''}`}
-              onClick={() => onNavigate(item.key)}
-              aria-current={active ? 'page' : undefined}
-            >
-              <span className="sidebar__icon" aria-hidden>{item.icon}</span>
-              <span>{item.label}</span>
-            </button>
+            <div key={section.label} className="sidebar__section">
+              <span className="sidebar__section-label">{section.label}</span>
+              {sectionItems.map(item => {
+                const active = currentPage === item.key
+                return (
+                  <button
+                    key={item.key}
+                    type="button"
+                    className={`sidebar__item${active ? ' sidebar__item--active' : ''}`}
+                    onClick={() => onNavigate(item.key)}
+                    aria-current={active ? 'page' : undefined}
+                  >
+                    <span className="sidebar__icon" aria-hidden>{item.icon}</span>
+                    <span>{item.label}</span>
+                  </button>
+                )
+              })}
+            </div>
           )
         })}
       </nav>
