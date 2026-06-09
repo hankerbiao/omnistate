@@ -14,13 +14,14 @@ export const navItems: NavItem[] = [
   { key: 'roleGroup', label: '用户组管理', icon: '⊡', permission: 'roles:read' },
   { key: 'permissions', label: '权限管理', icon: '◈', permission: 'permissions:read' },
   { key: 'catalogLabs', label: 'Lab 管理', icon: '⊟', permission: 'catalog:labs:manage' },
+  { key: 'systemConfig', label: '系统配置', icon: '⚙', permission: 'system:config' },
 ]
 
 export const navSections: NavSection[] = [
   { label: '概览', keys: ['myTasks'] },
   { label: '测试资产', keys: ['requirements', 'testCases', 'collections'] },
   { label: '执行', keys: ['agents', 'tasks', 'testPlanStudioDemo'] },
-  { label: '系统', keys: ['dashboard', 'users', 'roles', 'roleGroup', 'permissions', 'catalogLabs'] },
+  { label: '系统', keys: ['dashboard', 'users', 'roles', 'roleGroup', 'permissions', 'catalogLabs', 'systemConfig'] },
 ]
 
 export function getVisibleNavItems(userPermissions: string[]): NavItem[] {

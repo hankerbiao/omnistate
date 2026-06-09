@@ -1,8 +1,9 @@
+import { useAuth } from '../providers/AuthProvider'
+import { useNavigation } from '../providers/NavigationProvider'
 import Sidebar from './Sidebar'
 import Topbar from './Topbar'
-import type { PageType, NavItem, NavSection } from '../types/app'
 
-const PAGE_TITLES: Record<PageType, { title: string; description?: string }> = {
+const PAGE_TITLES: Record<string, { title: string; description?: string }> = {
   requirements: { title: '测试用例编写需求', description: '管理和跟踪测试用例编写需求' },
   myTasks: { title: '我的任务', description: '待处理的工作项' },
   manualTestCases: { title: '测试用例', description: '查看和管理手工测试用例' },
@@ -22,51 +23,34 @@ const PAGE_TITLES: Record<PageType, { title: string; description?: string }> = {
   search: { title: '全局搜索', description: '跨模块搜索' },
 }
 
-interface SwitchableUser {
-  userId: string
-  password: string
-  label: string
-  role: string
-}
-
 interface AppShellProps {
   children: React.ReactNode
-  currentPage: PageType
-  onNavigate: (page: PageType) => void
-  visibleNavItems: NavItem[]
-  navSections: NavSection[]
-  onLogout: () => void
-  currentUser?: string
-  currentUserId?: string
-  currentUserRole?: string
-  onUserClick?: () => void
-  onSwitchUser?: (userId: string, password: string) => Promise<void>
-  switchableUsers?: SwitchableUser[]
-  onSearchNavigate?: (page: string) => void
 }
 
-const AppShell: React.FC<AppShellProps> = ({
-  children,
-  currentPage,
-  onNavigate,
-  visibleNavItems,
-  navSections,
-  onLogout,
-  currentUser,
-  currentUserId,
-  currentUserRole,
-  onUserClick,
-  onSwitchUser,
-  switchableUsers,
-  onSearchNavigate,
-}) => {
+const AppShell: React.FC<AppShellProps> = ({ children }) => {
+  const {
+    currentUsername,
+    currentUserId,
+    currentUserRole,
+    handleLogout,
+    handleSwitchUser,
+    switchableUsers,
+  } = useAuth()
+
+  const {
+    currentPage,
+    navigate,
+    visibleNavItems,
+    navSections,
+  } = useNavigation()
+
   const pageInfo = PAGE_TITLES[currentPage] || { title: 'TestHub' }
 
   return (
     <div style={styles.shell}>
       <Sidebar
         currentPage={currentPage}
-        onNavigate={onNavigate}
+        onNavigate={navigate}
         visibleItems={visibleNavItems}
         sections={navSections}
       />
@@ -74,14 +58,14 @@ const AppShell: React.FC<AppShellProps> = ({
         <Topbar
           title={pageInfo.title}
           description={pageInfo.description}
-          onLogout={onLogout}
-          currentUser={currentUser}
+          onLogout={handleLogout}
+          currentUser={currentUsername}
           currentUserId={currentUserId}
           currentUserRole={currentUserRole}
-          onUserClick={onUserClick}
-          onSwitchUser={onSwitchUser}
+          onUserClick={() => navigate('profile')}
+          onSwitchUser={handleSwitchUser}
           switchableUsers={switchableUsers}
-          onSearchNavigate={onSearchNavigate}
+          onSearchNavigate={navigate as (page: string) => void}
         />
         <main style={styles.workspace}>
           {children}
@@ -96,18 +80,18 @@ const styles = {
     display: 'flex',
     height: '100vh',
     overflow: 'hidden',
-  },
+  } as const,
   main: {
     flex: 1,
     display: 'flex',
     flexDirection: 'column' as const,
     overflow: 'hidden',
-  },
+  } as const,
   workspace: {
     flex: 1,
     overflow: 'auto',
     backgroundColor: 'var(--surface-secondary)',
-  },
+  } as const,
 }
 
 export default AppShell

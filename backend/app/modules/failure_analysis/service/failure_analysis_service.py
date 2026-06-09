@@ -6,9 +6,6 @@
 from datetime import datetime, timedelta, timezone
 from typing import Counter, Dict, List, Optional
 
-from beanie.odm.operators.find.comparison import GTE, In
-from beanie.odm.operators.update.general import Set
-
 from app.modules.execution.repository.models.execution import (
     ExecutionAgentDoc,
     ExecutionTaskCaseDoc,

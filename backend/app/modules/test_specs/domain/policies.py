@@ -98,12 +98,10 @@ def can_delete_requirement(actor: Any, requirement: Any, work_item: Any = None) 
 
 def can_update_test_case(actor: Any, test_case: Any, work_item: Any = None) -> bool:
     """
-    测试用例可编辑策略（只认工作流）：
-    - 当前处理人（current_owner_id）允许（评审态除外）；
-    - DRAFT 状态下创建人（creator_id）允许；
-    - PENDING_REVIEW 禁止编辑步骤/正文；ADMIN 不直通。
+    测试用例可编辑策略：
+    放开工作流限制，API 层权限（test_cases:write）通过即可编辑。
     """
-    return _can_edit_via_work_item(actor, work_item)
+    return True
 
 
 def can_delete_test_case(actor: Any, test_case: Any, work_item: Any = None) -> bool:

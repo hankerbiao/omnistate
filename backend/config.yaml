@@ -8,13 +8,10 @@
 # 应用基础配置
 # =============================================================================
 app:
-  debug: false
   host: "0.0.0.0"
   port: 8000
   cors_origins:
     - "*"
-  # 开发模式免认证配置（生产环境务必设为 false）
-  dev_bypass_auth: false  # 设为 true 时跳过 JWT 验证，方便前端调试
   dev_user_id: "dev_admin"  # 免认证时使用的默认用户 ID（需在数据库中存在）
 
 # =============================================================================
@@ -99,7 +96,6 @@ minio:
 jwt:
   secret_key: "fa5922eb48724ba4a4ff3ea16872f0c1aeb294b2c2322fb942fc7148c23fe5dc"
   algorithm: "HS256"
-  expire_minutes: 480
   issuer: "tcm-backend"
   audience: "tcm-frontend"
 
@@ -108,8 +104,6 @@ jwt:
 # =============================================================================
 execution:
   scheduler_interval_sec: 60
-  default_repo_url: "http://10.17.55.151:6600/litaiqing/disk_case.git"
-  default_branch: "master"
 
   # Kafka Worker 配置
   kafka_worker_agent_id: "execution-kafka-worker"
@@ -120,7 +114,6 @@ execution:
 # TMMS 外部系统配置
 # =============================================================================
 tmms:
-  api_base_url: "http://tmms.internal/api/v1"
   api_timeout_sec: 30
   api_token: ""
 
@@ -137,7 +130,6 @@ terminal:
 # 日志配置
 # =============================================================================
 logging:
-  console_level: "DEBUG"
   log_dir: "logs"
   retention:
     info_days: 7

@@ -225,6 +225,7 @@ export interface WorkItem {
   created_at: string;
   updated_at: string;
   req_id?: string;
+  case_id?: string;
 }
 
 export interface WorkflowTransition {
@@ -1060,4 +1061,111 @@ export interface PlanItemInput {
 
 export interface AddPlanItemsRequest {
   items: PlanItemInput[];
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  系统配置（System Config）
+// ═══════════════════════════════════════════════════════════════════════
+
+export interface SystemConfig {
+  id: number;
+  config_key: string;
+  config_value: string;
+  config_type: 'string' | 'integer' | 'float' | 'boolean' | 'json';
+  category: 'ai' | 'system' | 'general';
+  description: string;
+  is_encrypted: boolean;
+  is_active: boolean;
+  needs_restart: boolean;
+  created_at: string;
+  updated_at: string;
+  updated_by?: string;
+}
+
+export interface AIConfig {
+  base_url: string;
+  model: string;
+  api_key: string;
+  temperature: number;
+  max_tokens: number;
+  timeout: number;
+  enabled: boolean;
+}
+
+export interface TestConnectionRequest {
+  base_url: string;
+  model: string;
+  api_key?: string;
+}
+
+export interface TestConnectionResponse {
+  success: boolean;
+  model?: string;
+  response_time_ms?: number;
+  error?: string;
+}
+
+export interface BatchUpdateConfigRequest {
+  items: Array<{
+    config_key: string;
+    config_value: string;
+  }>;
+  remark?: string;
+}
+
+export interface ConfigHistory {
+  id: number;
+  config_key: string;
+  old_value: string;
+  new_value: string;
+  changed_by: string;
+  changed_at: string;
+  remark?: string;
+}
+
+export interface SystemConfigListResponse {
+  items: SystemConfig[];
+  total: number;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  AI 分析相关（AIAnalysis）
+// ═══════════════════════════════════════════════════════════════════════
+
+export interface AnalysisIssue {
+  case_id: string;
+  field: string;
+  severity: 'critical' | 'warning' | 'info';
+  message: string;
+}
+
+export interface DuplicatePair {
+  case_id1: string;
+  case_id2: string;
+  similarity: number;
+  reason: string;
+}
+
+export interface QualityAnalysis {
+  score: number;
+  issues: AnalysisIssue[];
+}
+
+export interface RedundancyAnalysis {
+  score: number;
+  duplicates: DuplicatePair[];
+}
+
+export interface CoverageAnalysis {
+  score: number;
+  gaps: string[];
+}
+
+export interface CollectionAnalysisResult {
+  collection_id: string;
+  overall_score: number;
+  quality: QualityAnalysis;
+  redundancy: RedundancyAnalysis;
+  coverage: CoverageAnalysis;
+  recommendations: string[];
 }

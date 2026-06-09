@@ -1,8 +1,10 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../services/api';
-import type { UserResponse, RoleResponse, NavigationPageResponse, UserNavigationResponse, PermissionResponse, UserEffectivePermissionsResponse } from '../types';
+import type { UserResponse, PermissionResponse } from '../types';
 import PageToolbar, { StatPill } from './ui/PageToolbar';
 import { getErrorMessage } from '../utils/errors';
+import { queryKeys } from '../providers/queryKeys';
 
 type EditableUserField = 'username' | 'email';
 
@@ -20,39 +22,27 @@ interface UserManagementProps {
 
 
 const UserManagement: React.FC<UserManagementProps> = ({ onNavigate }) => {
-  const [users, setUsers] = useState<UserResponse[]>([]);
-  const [roles, setRoles] = useState<RoleResponse[]>([]);
-  const [selectedUser, setSelectedUser] = useState<UserResponse | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [editingField, setEditingField] = useState<EditableUserField | null>(null);
   const [editValue, setEditValue] = useState('');
   const [selectedRoleIds, setSelectedRoleIds] = useState<Set<string>>(new Set());
-  const [saving, setSaving] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [newUser, setNewUser] = useState(emptyNewUser);
-  const [creating, setCreating] = useState(false);
   const [filterStatus, setFilterStatus] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
-  const [deleting, setDeleting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [batchDeleteConfirm, setBatchDeleteConfirm] = useState(false);
-  const [batchDeleting, setBatchDeleting] = useState(false);
   const [passwordModal, setPasswordModal] = useState(false);
   const [passwordValue, setPasswordValue] = useState('');
-  const [resetting, setResetting] = useState(false);
-  const [togglingStatus, setTogglingStatus] = useState(false);
-  const [navPages, setNavPages] = useState<NavigationPageResponse[]>([]);
-  const [userNav, setUserNav] = useState<UserNavigationResponse | null>(null);
   const [selectedNavViews, setSelectedNavViews] = useState<Set<string>>(new Set());
-  const [navLoading, setNavLoading] = useState(false);
-  const [navSaving, setNavSaving] = useState(false);
+  const [mutationError, setMutationError] = useState<string | null>(null);
 
-  const fetchUsers = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
+  const usersQuery = useQuery({
+    queryKey: [...queryKeys.users.all, filterStatus, searchQuery],
+    queryFn: async () => {
       const params: { status?: string; search?: string; limit?: number } = { limit: 200 };
       if (filterStatus) {
         params.status = filterStatus;
@@ -61,72 +51,228 @@ const UserManagement: React.FC<UserManagementProps> = ({ onNavigate }) => {
         params.search = searchQuery.trim();
       }
       const response = await api.listUsers(params);
-      const nextUsers = response.data || [];
-      setUsers(nextUsers);
-      setSelectedUser(current => {
-        if (!current) return null;
-        return nextUsers.find(user => user.user_id === current.user_id) || null;
-      });
-    } catch (err) {
-      setError(getErrorMessage(err, '获取用户列表失败'));
-      console.error('Fetch users error:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, [filterStatus, searchQuery]);
+      return response.data || [];
+    },
+  });
+  const users = useMemo(() => usersQuery.data ?? [], [usersQuery.data]);
+  const selectedUser = useMemo(() => {
+    if (!selectedUserId) return null;
+    return users.find(u => u.user_id === selectedUserId) || null;
+  }, [users, selectedUserId]);
+  const loading = usersQuery.isLoading;
 
-  const fetchRoles = useCallback(async () => {
-    try {
-      const response = await api.listRoles();
-      setRoles(response.data || []);
-    } catch (err) {
-      console.error('Fetch roles error:', err);
-    }
-  }, []);
+  const rolesQuery = useQuery({
+    queryKey: queryKeys.roles.all,
+    queryFn: async () => (await api.listRoles()).data || [],
+  });
+  const roles = rolesQuery.data ?? [];
 
-  const fetchNavPages = useCallback(async () => {
-    try {
+  const navPagesQuery = useQuery({
+    queryKey: ['navigationPages'],
+    queryFn: async () => {
       const response = await api.listNavigationPages({ include_inactive: false });
-      const pages = (response.data || []).slice().sort((a, b) => a.order - b.order || a.view.localeCompare(b.view));
-      setNavPages(pages);
-    } catch (err) {
-      console.error('Fetch navigation pages error:', err);
-    }
-  }, []);
+      return (response.data || []).slice().sort((a, b) => a.order - b.order || a.view.localeCompare(b.view));
+    },
+  });
+  const navPages = navPagesQuery.data ?? [];
 
-  const fetchUserNavigation = useCallback(async (userId: string) => {
-    setNavLoading(true);
-    try {
-      const response = await api.getUserNavigation(userId);
-      const data = response.data;
-      setUserNav(data || null);
+  const userNavQuery = useQuery({
+    queryKey: ['userNavigation', selectedUser?.user_id],
+    queryFn: async () => {
+      const response = await api.getUserNavigation(selectedUser!.user_id);
+      return response.data || null;
+    },
+    enabled: !!selectedUser,
+  });
+  const userNav = userNavQuery.data ?? null;
+  const navLoading = userNavQuery.isLoading;
+
+  // Combine fetch error and mutation error for display
+  const error = usersQuery.error
+    ? getErrorMessage(usersQuery.error, '获取用户列表失败')
+    : mutationError;
+
+  // Sync selectedNavViews when userNav data changes
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    if (selectedUser && userNav) {
+      setSelectedNavViews(new Set(userNav.allowed_nav_views || []));
+    } else if (!selectedUser) {
+      setSelectedNavViews(new Set());
+    }
+  }, [selectedUser, userNav]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  const fetchUsers = () => {
+    usersQuery.refetch();
+  };
+
+  const updateFieldMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedUser || !editingField) return;
+      const data = { [editingField]: editValue.trim() };
+      await api.updateUser(selectedUser.user_id, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.users.all });
+      setEditingField(null);
+      setEditValue('');
+      setMutationError(null);
+    },
+    onError: (err) => {
+      setMutationError(getErrorMessage(err, '保存失败'));
+    },
+  });
+
+  const updateRolesMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedUser) return;
+      await api.updateUserRoles(selectedUser.user_id, {
+        role_ids: Array.from(selectedRoleIds),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.users.all });
+      queryClient.invalidateQueries({ queryKey: ['userNavigation', selectedUser?.user_id] });
+      setMutationError(null);
+    },
+    onError: (err) => {
+      setMutationError(getErrorMessage(err, '保存角色失败'));
+    },
+  });
+
+  const createUserMutation = useMutation({
+    mutationFn: async () => {
+      await api.createUser({
+        user_id: newUser.user_id.trim(),
+        username: newUser.username.trim(),
+        password: newUser.password,
+        email: newUser.email.trim() || undefined,
+        role_ids: newUser.role_ids,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.users.all });
+      setCreateModalOpen(false);
+      setNewUser(emptyNewUser);
+      setMutationError(null);
+    },
+    onError: (err) => {
+      setMutationError(getErrorMessage(err, '创建用户失败'));
+    },
+  });
+
+  const deleteUserMutation = useMutation({
+    mutationFn: async () => {
+      if (!deleteConfirm) return;
+      await api.deleteUser(deleteConfirm);
+    },
+    onSuccess: () => {
+      setDeleteConfirm(null);
+      if (selectedUser && deleteConfirm === selectedUser.user_id) setSelectedUserId(null);
+      queryClient.invalidateQueries({ queryKey: queryKeys.users.all });
+      setMutationError(null);
+    },
+    onError: (err) => {
+      setMutationError(getErrorMessage(err, '删除用户失败'));
+    },
+  });
+
+  const batchDeleteMutation = useMutation({
+    mutationFn: async () => {
+      const deletePromises = Array.from(selectedIds).map(id => api.deleteUser(id));
+      await Promise.all(deletePromises);
+    },
+    onSuccess: () => {
+      setBatchDeleteConfirm(false);
+      setSelectedIds(new Set());
+      if (selectedUser && selectedIds.has(selectedUser.user_id)) {
+        setSelectedUserId(null);
+      }
+      queryClient.invalidateQueries({ queryKey: queryKeys.users.all });
+      setMutationError(null);
+    },
+    onError: (err) => {
+      setMutationError(getErrorMessage(err, '批量删除失败'));
+    },
+  });
+
+  const passwordResetMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedUser || !passwordValue.trim()) return;
+      await api.updateUserPassword(selectedUser.user_id, { new_password: passwordValue.trim() });
+    },
+    onSuccess: () => {
+      setPasswordModal(false);
+      setPasswordValue('');
+      setMutationError(null);
+    },
+    onError: (err) => {
+      setMutationError(getErrorMessage(err, '密码重置失败'));
+    },
+  });
+
+  const toggleStatusMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedUser) return;
+      const newStatus = selectedUser.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
+      await api.updateUser(selectedUser.user_id, { status: newStatus });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.users.all });
+      setMutationError(null);
+    },
+    onError: (err) => {
+      setMutationError(getErrorMessage(err, '状态切换失败'));
+    },
+  });
+
+  const saveNavMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedUser) throw new Error('No user selected');
+      const response = await api.updateUserNavigation(selectedUser.user_id, {
+        allowed_nav_views: Array.from(selectedNavViews),
+      });
+      return response.data || null;
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(['userNavigation', selectedUser?.user_id], data);
       setSelectedNavViews(new Set(data?.allowed_nav_views || []));
-    } catch (err) {
-      console.error('Fetch user navigation error:', err);
-      setUserNav(null);
-      setSelectedNavViews(new Set());
-    } finally {
-      setNavLoading(false);
-    }
-  }, []);
+      setMutationError(null);
+    },
+    onError: (err) => {
+      setMutationError(getErrorMessage(err, '保存导航权限失败'));
+    },
+  });
 
-  useEffect(() => {
-    fetchUsers();
-    fetchRoles();
-    fetchNavPages();
-  }, [fetchUsers, fetchRoles, fetchNavPages]);
+  const resetNavMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedUser) throw new Error('No user selected');
+      const response = await api.updateUserNavigation(selectedUser.user_id, {
+        allowed_nav_views: [],
+      });
+      return response.data || null;
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(['userNavigation', selectedUser?.user_id], data);
+      setSelectedNavViews(new Set(data?.allowed_nav_views || []));
+      setMutationError(null);
+    },
+    onError: (err) => {
+      setMutationError(getErrorMessage(err, '恢复角色默认导航失败'));
+    },
+  });
 
-  useEffect(() => {
-    if (selectedUser) {
-      fetchUserNavigation(selectedUser.user_id);
-    } else {
-      setUserNav(null);
-      setSelectedNavViews(new Set());
-    }
-  }, [selectedUser?.user_id, fetchUserNavigation]);
+  const saving = updateFieldMutation.isPending || updateRolesMutation.isPending;
+  const creating = createUserMutation.isPending;
+  const deleting = deleteUserMutation.isPending;
+  const batchDeleting = batchDeleteMutation.isPending;
+  const resetting = passwordResetMutation.isPending;
+  const togglingStatus = toggleStatusMutation.isPending;
+  const navSaving = saveNavMutation.isPending || resetNavMutation.isPending;
 
   const handleSelectUser = (user: UserResponse) => {
-    setSelectedUser(user);
+    setSelectedUserId(user.user_id);
     setSelectedRoleIds(new Set(user.role_ids));
     setEditingField(null);
   };
@@ -134,30 +280,17 @@ const UserManagement: React.FC<UserManagementProps> = ({ onNavigate }) => {
   const handleEditField = (field: EditableUserField, currentValue: string) => {
     setEditingField(field);
     setEditValue(currentValue || '');
-    setError(null);
+    setMutationError(null);
   };
 
-  const handleSaveField = async () => {
+  const handleSaveField = () => {
     if (!selectedUser || !editingField) return;
     const value = editValue.trim();
     if (editingField === 'username' && !value) {
-      setError('用户名不能为空');
+      setMutationError('用户名不能为空');
       return;
     }
-
-    setSaving(true);
-    try {
-      const data = { [editingField]: value };
-      await api.updateUser(selectedUser.user_id, data);
-      await fetchUsers();
-      setEditingField(null);
-      setEditValue('');
-    } catch (err) {
-      setError(getErrorMessage(err, '保存失败'));
-      console.error('Update user error:', err);
-    } finally {
-      setSaving(false);
-    }
+    updateFieldMutation.mutate();
   };
 
   const handleCancelEdit = () => {
@@ -166,7 +299,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ onNavigate }) => {
   };
 
   const handleToggleRole = (roleId: string) => {
-    setError(null);
+    setMutationError(null);
     setSelectedRoleIds(prev => {
       const next = new Set(prev);
       if (next.has(roleId)) {
@@ -178,65 +311,22 @@ const UserManagement: React.FC<UserManagementProps> = ({ onNavigate }) => {
     });
   };
 
-  const handleSaveRoles = async () => {
+  const handleSaveRoles = () => {
     if (!selectedUser) return;
-
-    setSaving(true);
-    try {
-      await api.updateUserRoles(selectedUser.user_id, {
-        role_ids: Array.from(selectedRoleIds),
-      });
-      await fetchUsers();
-      await fetchUserNavigation(selectedUser.user_id);
-    } catch (err) {
-      setError(getErrorMessage(err, '保存角色失败'));
-      console.error('Update user roles error:', err);
-    } finally {
-      setSaving(false);
-    }
+    updateRolesMutation.mutate();
   };
 
-  const handleCreateUser = async () => {
+  const handleCreateUser = () => {
     if (!newUser.user_id.trim() || !newUser.username.trim() || !newUser.password.trim()) {
-      setError('请填写必填字段');
+      setMutationError('请填写必填字段');
       return;
     }
-
-    setCreating(true);
-    try {
-      await api.createUser({
-        user_id: newUser.user_id.trim(),
-        username: newUser.username.trim(),
-        password: newUser.password,
-        email: newUser.email.trim() || undefined,
-        role_ids: newUser.role_ids,
-      });
-      await fetchUsers();
-      setCreateModalOpen(false);
-      setNewUser(emptyNewUser);
-    } catch (err) {
-      setError(getErrorMessage(err, '创建用户失败'));
-      console.error('Create user error:', err);
-    } finally {
-      setCreating(false);
-    }
+    createUserMutation.mutate();
   };
 
-  const handleDeleteUser = async () => {
+  const handleDeleteUser = () => {
     if (!deleteConfirm) return;
-    setDeleting(true);
-    setError(null);
-    try {
-      await api.deleteUser(deleteConfirm);
-      setDeleteConfirm(null);
-      if (selectedUser?.user_id === deleteConfirm) setSelectedUser(null);
-      await fetchUsers();
-    } catch (err) {
-      setError(getErrorMessage(err, '删除用户失败'));
-      console.error('Delete user error:', err);
-    } finally {
-      setDeleting(false);
-    }
+    deleteUserMutation.mutate();
   };
 
   const toggleSelect = (userId: string) => {
@@ -259,65 +349,27 @@ const UserManagement: React.FC<UserManagementProps> = ({ onNavigate }) => {
     }
   };
 
-  const handleBatchDelete = async () => {
+  const handleBatchDelete = () => {
     if (selectedIds.size === 0) return;
-    setBatchDeleting(true);
-    setError(null);
-    try {
-      const deletePromises = Array.from(selectedIds).map(id => api.deleteUser(id));
-      await Promise.all(deletePromises);
-      setBatchDeleteConfirm(false);
-      setSelectedIds(new Set());
-      if (selectedUser && selectedIds.has(selectedUser.user_id)) {
-        setSelectedUser(null);
-      }
-      await fetchUsers();
-    } catch (err) {
-      setError(getErrorMessage(err, '批量删除失败'));
-      console.error('Batch delete error:', err);
-    } finally {
-      setBatchDeleting(false);
-    }
+    batchDeleteMutation.mutate();
   };
 
-  const handlePasswordReset = async () => {
+  const handlePasswordReset = () => {
     if (!selectedUser || !passwordValue.trim()) return;
     if (passwordValue.trim().length < 6) {
-      setError('密码长度至少6位');
+      setMutationError('密码长度至少6位');
       return;
     }
-    setResetting(true);
-    setError(null);
-    try {
-      await api.updateUserPassword(selectedUser.user_id, { new_password: passwordValue.trim() });
-      setPasswordModal(false);
-      setPasswordValue('');
-    } catch (err) {
-      setError(getErrorMessage(err, '密码重置失败'));
-      console.error('Password reset error:', err);
-    } finally {
-      setResetting(false);
-    }
+    passwordResetMutation.mutate();
   };
 
-  const handleToggleStatus = async () => {
+  const handleToggleStatus = () => {
     if (!selectedUser) return;
-    const newStatus = selectedUser.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
-    setTogglingStatus(true);
-    setError(null);
-    try {
-      await api.updateUser(selectedUser.user_id, { status: newStatus });
-      await fetchUsers();
-    } catch (err) {
-      setError(getErrorMessage(err, '状态切换失败'));
-      console.error('Toggle status error:', err);
-    } finally {
-      setTogglingStatus(false);
-    }
+    toggleStatusMutation.mutate();
   };
 
   const handleToggleNavView = (view: string) => {
-    setError(null);
+    setMutationError(null);
     setSelectedNavViews(prev => {
       const next = new Set(prev);
       if (next.has(view)) {
@@ -329,52 +381,24 @@ const UserManagement: React.FC<UserManagementProps> = ({ onNavigate }) => {
     });
   };
 
-  const handleSaveNavigation = async () => {
+  const handleSaveNavigation = () => {
     if (!selectedUser) return;
     if (selectedNavViews.size === 0) {
-      setError('至少保留一个可访问导航');
+      setMutationError('至少保留一个可访问导航');
       return;
     }
-
-    setNavSaving(true);
-    setError(null);
-    try {
-      const response = await api.updateUserNavigation(selectedUser.user_id, {
-        allowed_nav_views: Array.from(selectedNavViews),
-      });
-      setUserNav(response.data || null);
-      setSelectedNavViews(new Set(response.data?.allowed_nav_views || []));
-    } catch (err) {
-      setError(getErrorMessage(err, '保存导航权限失败'));
-      console.error('Update user navigation error:', err);
-    } finally {
-      setNavSaving(false);
-    }
+    saveNavMutation.mutate();
   };
 
-  const handleResetNavigationToRole = async () => {
+  const handleResetNavigationToRole = () => {
     if (!selectedUser || !userNav) return;
-
-    setNavSaving(true);
-    setError(null);
-    try {
-      const response = await api.updateUserNavigation(selectedUser.user_id, {
-        allowed_nav_views: [],
-      });
-      setUserNav(response.data || null);
-      setSelectedNavViews(new Set(response.data?.allowed_nav_views || []));
-    } catch (err) {
-      setError(getErrorMessage(err, '恢复角色默认导航失败'));
-      console.error('Reset user navigation error:', err);
-    } finally {
-      setNavSaving(false);
-    }
+    resetNavMutation.mutate();
   };
 
   const handleApplyRoleDerivedNavigation = () => {
     if (!userNav) return;
     setSelectedNavViews(new Set(userNav.role_derived_nav_views));
-    setError(null);
+    setMutationError(null);
   };
 
   const getStatusStyle = (status: string) => {
@@ -559,7 +583,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ onNavigate }) => {
             <button
               type="button"
               className="split-workspace__back"
-              onClick={() => setSelectedUser(null)}
+              onClick={() => setSelectedUserId(null)}
             >
               ← 返回列表
             </button>
@@ -570,7 +594,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ onNavigate }) => {
             {error && (
               <div className="error-banner" style={{ marginBottom: '16px' }}>
                 <span>⚠</span> {error}
-                <button style={styles.errorClose} onClick={() => setError(null)}>×</button>
+                <button style={styles.errorClose} onClick={() => setMutationError(null)}>×</button>
               </div>
             )}
 
@@ -847,7 +871,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ onNavigate }) => {
               <ExtraPermissionsSection
                 userId={selectedUser.user_id}
                 currentRoleIds={selectedUser.role_ids}
-                onError={setError}
+                onError={setMutationError}
               />
             </div>
 
@@ -1084,43 +1108,48 @@ interface ExtraPermissionsSectionProps {
   onError: (msg: string | null) => void;
 }
 
-const ExtraPermissionsSection: React.FC<ExtraPermissionsSectionProps> = ({ userId, currentRoleIds: _currentRoleIds, onError }) => {
-  const [allPerms, setAllPerms] = useState<PermissionResponse[]>([]);
+const ExtraPermissionsSection: React.FC<ExtraPermissionsSectionProps> = ({ userId, onError }) => {
+  const queryClient = useQueryClient();
   const [extraIds, setExtraIds] = useState<Set<string>>(new Set());
-  const [effectivePerms, setEffectivePerms] = useState<UserEffectivePermissionsResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [permRes, effRes] = await Promise.all([
-        api.listPermissions(),
-        api.getUserEffectivePermissions(userId),
-      ]);
-      setAllPerms(permRes.data || []);
-      setEffectivePerms(effRes.data || null);
-      setExtraIds(new Set(effRes.data?.extra_permission_ids || []));
-    } catch {
-      // silent
-    } finally {
-      setLoading(false);
+  const permsQuery = useQuery({
+    queryKey: queryKeys.permissions.all,
+    queryFn: async () => (await api.listPermissions()).data || [],
+  });
+
+  const effPermsQuery = useQuery({
+    queryKey: ['effectivePermissions', userId],
+    queryFn: async () => (await api.getUserEffectivePermissions(userId)).data || null,
+  });
+
+  const allPerms = useMemo(() => permsQuery.data ?? [], [permsQuery.data]);
+  const effectivePerms = effPermsQuery.data ?? null;
+  const loading = permsQuery.isLoading || effPermsQuery.isLoading;
+
+  // Sync extraIds when effective permissions data loads
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    if (effPermsQuery.data) {
+      setExtraIds(new Set(effPermsQuery.data.extra_permission_ids || []));
     }
-  }, [userId]);
+  }, [effPermsQuery.data]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
-  useEffect(() => { fetchData(); }, [fetchData]);
-
-  const handleSave = async () => {
-    setSaving(true);
-    try {
+  const saveMutation = useMutation({
+    mutationFn: async () => {
       await api.updateUserExtraPermissions(userId, { extra_permission_ids: Array.from(extraIds) });
-      await fetchData();
-    } catch (err) {
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['effectivePermissions', userId] });
+    },
+    onError: (err) => {
       onError(getErrorMessage(err, '保存额外权限失败'));
-    } finally {
-      setSaving(false);
-    }
-  };
+    },
+  });
+
+  const saving = saveMutation.isPending;
+
+  const handleSave = () => saveMutation.mutate();
 
   const groupedPerms = useMemo(() => {
     const groups = new Map<string, PermissionResponse[]>();

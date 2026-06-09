@@ -3,7 +3,7 @@
 """
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.modules.system_config.schemas import (
     SystemConfigListResponse,
@@ -33,6 +33,7 @@ def _doc_to_response(doc) -> SystemConfigResponse:
         description=doc.description,
         is_encrypted=doc.is_encrypted,
         is_active=doc.is_active,
+        needs_restart=ConfigService.get_needs_restart(doc.config_key),
         created_at=doc.created_at,
         updated_at=doc.updated_at,
         updated_by=doc.updated_by,
@@ -97,7 +98,7 @@ async def get_config(config_key: str) -> APIResponse[SystemConfigResponse]:
 async def update_config(
     config_key: str,
     data: SystemConfigUpdate,
-    current_user: dict = get_current_user,
+    current_user=Depends(get_current_user),
 ) -> APIResponse[SystemConfigResponse]:
     """更新配置"""
     # 验证配置值
@@ -118,7 +119,7 @@ async def update_config(
 @router.put("/batch", response_model=APIResponse[BatchUpdateResponse])
 async def batch_update_configs(
     data: BatchUpdateRequest,
-    current_user: dict = get_current_user,
+    current_user=Depends(get_current_user),
 ) -> APIResponse[BatchUpdateResponse]:
     """批量更新配置"""
     items = [{"config_key": item.config_key, "config_value": item.config_value} for item in data.items]

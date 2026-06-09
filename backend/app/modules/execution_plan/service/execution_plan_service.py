@@ -24,6 +24,7 @@ from app.modules.execution_plan.schemas.execution_plan import (
 )
 from app.modules.test_specs.repository.models import AutomationTestCaseDoc, TestCaseDoc
 from app.shared.service import BaseService, SequenceIdService
+from app.shared.core.logger import log as logger
 
 _TASK_STATUS_MAP = {
     "QUEUED": "running",
@@ -179,7 +180,14 @@ class ExecutionPlanService(BaseService):
             ExecutionPlanItemDoc.archived_at == None,  # noqa: E711
             ExecutionPlanItemDoc.is_deleted == False,  # noqa: E712
         ).sort("-updated_at").to_list()
-        return [await self._item_to_response(doc) for doc in docs]
+        results: List[Dict[str, Any]] = []
+        for doc in docs:
+            try:
+                results.append(await self._item_to_response(doc))
+            except Exception as exc:
+                logger.warning(f"跳过异常计划条目 {doc.item_id}: {exc}")
+                continue
+        return results
 
     async def list_archived_items(self, assignee_id: str) -> List[Dict[str, Any]]:
         docs = await ExecutionPlanItemDoc.find(

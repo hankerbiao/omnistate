@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTheme } from 'next-themes'
 import GlobalSearch from './GlobalSearch'
 
 interface SwitchableUser {
@@ -33,6 +34,7 @@ const Topbar: React.FC<TopbarProps> = ({
   onSearchNavigate,
 }) => {
   const [switching, setSwitching] = useState(false)
+  const { resolvedTheme, setTheme } = useTheme()
 
   const isUserActive = (user: SwitchableUser) =>
     currentUserId === user.userId ||
@@ -58,6 +60,15 @@ const Topbar: React.FC<TopbarProps> = ({
 
       <div className="topbar__actions">
         {onSearchNavigate && <GlobalSearch onNavigate={onSearchNavigate} />}
+
+        <button
+          type="button"
+          className="btn btn--ghost btn--sm"
+          onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
+          title={resolvedTheme === 'dark' ? '切换到明亮模式' : '切换到暗黑模式'}
+        >
+          {resolvedTheme === 'dark' ? '☀️' : '🌙'}
+        </button>
 
         {switchableUsers && switchableUsers.length > 0 && (
           <div className="topbar__user-switcher" role="group" aria-label="切换用户">

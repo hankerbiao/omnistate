@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../services/api';
 import type { RoleResponse, PermissionResponse, UserResponse } from '../types';
 import PageToolbar, { StatPill } from './ui/PageToolbar';
@@ -12,6 +13,7 @@ import {
 } from './ui/SplitDetailPanel';
 import { rlmStyles as styles } from './RoleManagement.styles';
 import { getErrorMessage } from '../utils/errors';
+import { queryKeys } from '../providers/queryKeys';
 
 const getPermissionKey = (perm: PermissionResponse) =>
   perm.perm_id || perm.permission_id || perm.id;
@@ -33,69 +35,70 @@ interface RoleManagementProps {
 }
 
 const RoleManagement: React.FC<RoleManagementProps> = ({ onNavigate }) => {
-  const [roles, setRoles] = useState<RoleResponse[]>([]);
-  const [permissions, setPermissions] = useState<PermissionResponse[]>([]);
+  const queryClient = useQueryClient();
+
   const [selectedRole, setSelectedRole] = useState<RoleResponse | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [editDesc, setEditDesc] = useState('');
   const [selectedPermissionIds, setSelectedPermissionIds] = useState<Set<string>>(new Set());
-  const [saving, setSaving] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [newRoleName, setNewRoleName] = useState('');
   const [newRoleDesc, setNewRoleDesc] = useState('');
-  const [creating, setCreating] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
-  const [deleting, setDeleting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [batchDeleteConfirm, setBatchDeleteConfirm] = useState(false);
-  const [batchDeleting, setBatchDeleting] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState<RoleFilter>('all');
   const [permissionSearch, setPermissionSearch] = useState('');
   const [roleUsers, setRoleUsers] = useState<UserResponse[]>([]);
   const [roleUsersLoading, setRoleUsersLoading] = useState(false);
 
+  const [mutationError, setMutationError] = useState<string | null>(null);
+
   const initialSelectedRef = useRef(false);
+  const selectedRoleRef = useRef(selectedRole);
 
-  const fetchRoles = useCallback(async (roleIdToRefresh?: string, syncDrawer = false) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await api.listRoles();
-      setRoles(response.data || []);
-      const targetId = roleIdToRefresh ?? (syncDrawer ? selectedRole?.role_id : undefined);
-      if (targetId) {
-        const updated = response.data?.find(r => r.role_id === targetId);
-        if (updated) {
-          setSelectedRole(updated);
-          setSelectedPermissionIds(new Set(updated.permission_ids || []));
-          setEditName(updated.name);
-          setEditDesc(updated.description || '');
-        }
-      }
-    } catch (err) {
-      setError('获取角色列表失败');
-      console.error('Fetch roles error:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, [selectedRole?.role_id]);
-
-  const fetchPermissions = useCallback(async () => {
-    try {
-      const response = await api.listPermissions();
-      setPermissions(response.data || []);
-    } catch (err) {
-      console.error('Fetch permissions error:', err);
-    }
-  }, []);
-
+  // 同步 ref，避免 useEffect 依赖 selectedRole
   useEffect(() => {
-    fetchRoles();
-    fetchPermissions();
-  }, [fetchRoles, fetchPermissions]);
+    selectedRoleRef.current = selectedRole;
+  }, [selectedRole]);
+
+  // ── Data fetching ────────────────────────────────────────────────
+  const {
+    data: roles = [],
+    isLoading,
+    error: fetchError,
+  } = useQuery({
+    queryKey: queryKeys.roles.all,
+    queryFn: async () => {
+      const response = await api.listRoles();
+      return (response.data || []) as RoleResponse[];
+    },
+  });
+
+  const {
+    data: permissions = [],
+  } = useQuery({
+    queryKey: queryKeys.permissions.all,
+    queryFn: async () => {
+      const response = await api.listPermissions();
+      return (response.data || []) as PermissionResponse[];
+    },
+  });
+
+  // 数据加载完成后同步选中项
+  useEffect(() => {
+    const current = selectedRoleRef.current;
+    if (current && roles.length > 0) {
+      const updated = roles.find(r => r.role_id === current.role_id);
+      if (updated) {
+        setSelectedRole(updated);
+        setSelectedPermissionIds(new Set(updated.permission_ids || []));
+        setEditName(updated.name);
+        setEditDesc(updated.description || '');
+      }
+    }
+  }, [roles]);
 
   // 默认选中第一项
   useEffect(() => {
@@ -104,6 +107,20 @@ const RoleManagement: React.FC<RoleManagementProps> = ({ onNavigate }) => {
       openRoleDrawer(roles[0]);
     }
   }, [roles, selectedRole]);
+
+  const openRoleDrawer = (role: RoleResponse) => {
+    setSelectedRole(role);
+    setSelectedPermissionIds(new Set(role.permission_ids || []));
+    setEditName(role.name);
+    setEditDesc(role.description || '');
+    setPermissionSearch('');
+    setMutationError(null);
+  };
+
+  const closeRoleDrawer = () => {
+    setSelectedRole(null);
+    setPermissionSearch('');
+  };
 
   const fetchRoleUsers = useCallback(async (roleId: string) => {
     setRoleUsersLoading(true);
@@ -124,6 +141,98 @@ const RoleManagement: React.FC<RoleManagementProps> = ({ onNavigate }) => {
       setRoleUsers([]);
     }
   }, [selectedRole, fetchRoleUsers]);
+
+  // ── Mutations ────────────────────────────────────────────────────
+
+  const saveBasicInfoMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedRole || !editName.trim()) throw new Error('无变更');
+      await api.updateRole(selectedRole.role_id, {
+        name: editName.trim(),
+        description: editDesc.trim() || undefined,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.roles.all });
+      setMutationError(null);
+    },
+    onError: (err) => {
+      setMutationError(getErrorMessage(err, '保存角色信息失败'));
+    },
+  });
+
+  const savePermissionsMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedRole) throw new Error('无选中项');
+      await api.updateRolePermissions(selectedRole.role_id, {
+        permission_ids: Array.from(selectedPermissionIds),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.roles.all });
+      setMutationError(null);
+    },
+    onError: (err) => {
+      setMutationError(getErrorMessage(err, '保存角色权限失败'));
+    },
+  });
+
+  const createMutation = useMutation({
+    mutationFn: async () => {
+      if (!newRoleName.trim()) throw new Error('角色名称不能为空');
+      await api.createRole({
+        name: newRoleName.trim(),
+        description: newRoleDesc.trim() || undefined,
+      });
+    },
+    onSuccess: () => {
+      setCreateModalOpen(false);
+      setNewRoleName('');
+      setNewRoleDesc('');
+      setMutationError(null);
+      queryClient.invalidateQueries({ queryKey: queryKeys.roles.all });
+    },
+    onError: (err) => {
+      setMutationError(getErrorMessage(err, '创建角色失败'));
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (roleId: string) => {
+      await api.deleteRole(roleId);
+    },
+    onSuccess: (_data, roleId) => {
+      setDeleteConfirm(null);
+      if (selectedRoleRef.current?.role_id === roleId) {
+        closeRoleDrawer();
+      }
+      setMutationError(null);
+      queryClient.invalidateQueries({ queryKey: queryKeys.roles.all });
+    },
+    onError: (err) => {
+      setMutationError(getErrorMessage(err, '删除角色失败'));
+    },
+  });
+
+  const batchDeleteMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      await Promise.all(ids.map(id => api.deleteRole(id)));
+    },
+    onSuccess: (_data, ids) => {
+      setBatchDeleteConfirm(false);
+      if (selectedRoleRef.current && ids.includes(selectedRoleRef.current.role_id)) {
+        closeRoleDrawer();
+      }
+      setSelectedIds(new Set());
+      setMutationError(null);
+      queryClient.invalidateQueries({ queryKey: queryKeys.roles.all });
+    },
+    onError: (err) => {
+      setMutationError(getErrorMessage(err, '批量删除失败'));
+    },
+  });
+
+  // ── Computed values ──────────────────────────────────────────────
 
   const filteredRoles = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -159,38 +268,6 @@ const RoleManagement: React.FC<RoleManagementProps> = ({ onNavigate }) => {
     [filteredRoles],
   );
 
-  const openRoleDrawer = (role: RoleResponse) => {
-    setSelectedRole(role);
-    setSelectedPermissionIds(new Set(role.permission_ids || []));
-    setEditName(role.name);
-    setEditDesc(role.description || '');
-    setPermissionSearch('');
-    setError(null);
-  };
-
-  const closeRoleDrawer = () => {
-    setSelectedRole(null);
-    setPermissionSearch('');
-  };
-
-  const handleSaveBasicInfo = async () => {
-    if (!selectedRole || !editName.trim()) return;
-    setSaving(true);
-    setError(null);
-    try {
-      await api.updateRole(selectedRole.role_id, {
-        name: editName.trim(),
-        description: editDesc.trim() || undefined,
-      });
-      await fetchRoles(selectedRole.role_id);
-    } catch (err) {
-      setError('保存角色信息失败');
-      console.error('Update role error:', err);
-    } finally {
-      setSaving(false);
-    }
-  };
-
   const handleTogglePermission = (permissionId: string) => {
     setSelectedPermissionIds(prev => {
       const next = new Set(prev);
@@ -212,61 +289,6 @@ const RoleManagement: React.FC<RoleManagementProps> = ({ onNavigate }) => {
     });
   };
 
-  const handleSavePermissions = async () => {
-    if (!selectedRole) return;
-    setSaving(true);
-    setError(null);
-    try {
-      await api.updateRolePermissions(selectedRole.role_id, {
-        permission_ids: Array.from(selectedPermissionIds),
-      });
-      await fetchRoles(selectedRole.role_id);
-    } catch (err) {
-      setError('保存角色权限失败');
-      console.error('Update role permissions error:', err);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleCreateRole = async () => {
-    if (!newRoleName.trim()) return;
-    setCreating(true);
-    setError(null);
-    try {
-      await api.createRole({
-        name: newRoleName.trim(),
-        description: newRoleDesc.trim() || undefined,
-      });
-      await fetchRoles();
-      setCreateModalOpen(false);
-      setNewRoleName('');
-      setNewRoleDesc('');
-    } catch (err) {
-      setError(getErrorMessage(err, '创建角色失败'));
-      console.error('Create role error:', err);
-    } finally {
-      setCreating(false);
-    }
-  };
-
-  const handleDeleteRole = async () => {
-    if (!deleteConfirm) return;
-    setDeleting(true);
-    setError(null);
-    try {
-      await api.deleteRole(deleteConfirm);
-      setDeleteConfirm(null);
-      if (selectedRole?.role_id === deleteConfirm) closeRoleDrawer();
-      await fetchRoles();
-    } catch (err) {
-      setError(getErrorMessage(err, '删除角色失败'));
-      console.error('Delete role error:', err);
-    } finally {
-      setDeleting(false);
-    }
-  };
-
   const toggleSelect = (roleId: string) => {
     setSelectedIds(prev => {
       const next = new Set(prev);
@@ -281,24 +303,6 @@ const RoleManagement: React.FC<RoleManagementProps> = ({ onNavigate }) => {
       setSelectedIds(new Set());
     } else {
       setSelectedIds(new Set(selectableRoles.map(r => r.role_id)));
-    }
-  };
-
-  const handleBatchDelete = async () => {
-    if (selectedIds.size === 0) return;
-    setBatchDeleting(true);
-    setError(null);
-    try {
-      await Promise.all(Array.from(selectedIds).map(id => api.deleteRole(id)));
-      setBatchDeleteConfirm(false);
-      if (selectedRole && selectedIds.has(selectedRole.role_id)) closeRoleDrawer();
-      setSelectedIds(new Set());
-      await fetchRoles();
-    } catch (err) {
-      setError(getErrorMessage(err, '批量删除失败'));
-      console.error('Batch delete error:', err);
-    } finally {
-      setBatchDeleting(false);
     }
   };
 
@@ -321,6 +325,10 @@ const RoleManagement: React.FC<RoleManagementProps> = ({ onNavigate }) => {
   })();
 
   const systemRoleCount = roles.filter(r => r.is_system).length;
+
+  const saving = saveBasicInfoMutation.isPending || savePermissionsMutation.isPending;
+
+  const displayError = fetchError ? getErrorMessage(fetchError, '获取角色列表失败') : mutationError;
 
   return (
     <>
@@ -375,19 +383,19 @@ const RoleManagement: React.FC<RoleManagementProps> = ({ onNavigate }) => {
             <option value="system">系统角色</option>
             <option value="custom">自定义</option>
           </select>
-          <button type="button" className="btn btn--secondary btn--sm" onClick={() => fetchRoles()} disabled={loading}>
+          <button type="button" className="btn btn--secondary btn--sm" onClick={() => queryClient.invalidateQueries({ queryKey: queryKeys.roles.all })} disabled={isLoading}>
             刷新
           </button>
         </div>
 
-        {error && !selectedRole && (
+        {displayError && !selectedRole && (
           <div className="error-banner" style={{ ...styles.errorBanner, margin: '0 var(--space-4) var(--space-3)' }}>
-            <span>⚠</span> {error}
-            <button style={styles.errorClose} onClick={() => setError(null)}>×</button>
+            <span>⚠</span> {displayError}
+            <button style={styles.errorClose} onClick={() => setMutationError(null)}>×</button>
           </div>
         )}
 
-        {loading && roles.length === 0 ? (
+        {isLoading && roles.length === 0 ? (
           <div className="loading-overlay">
             <div className="loading-spinner" />
           </div>
@@ -486,10 +494,10 @@ const RoleManagement: React.FC<RoleManagementProps> = ({ onNavigate }) => {
               ) : undefined}
             />
 
-            {error && (
+            {displayError && (
               <div className="error-banner" style={{ margin: '0 var(--space-5) var(--space-3)' }}>
-                <span>⚠</span> {error}
-                <button style={styles.errorClose} onClick={() => setError(null)}>×</button>
+                <span>⚠</span> {displayError}
+                <button style={styles.errorClose} onClick={() => setMutationError(null)}>×</button>
               </div>
             )}
 
@@ -523,7 +531,7 @@ const RoleManagement: React.FC<RoleManagementProps> = ({ onNavigate }) => {
                       <>
                         <button
                           className="btn btn--primary btn--sm"
-                          onClick={handleSaveBasicInfo}
+                          onClick={() => saveBasicInfoMutation.mutate()}
                           disabled={saving || !editName.trim() || !hasBasicInfoChanges}
                         >
                           {saving ? '保存中...' : '保存'}
@@ -592,7 +600,7 @@ const RoleManagement: React.FC<RoleManagementProps> = ({ onNavigate }) => {
                     />
                     <button
                       className="btn btn--primary btn--sm"
-                      onClick={handleSavePermissions}
+                      onClick={() => savePermissionsMutation.mutate()}
                       disabled={saving || !hasPermissionChanges}
                       style={{ padding: '5px 14px', fontSize: 11 }}
                     >
@@ -679,9 +687,9 @@ const RoleManagement: React.FC<RoleManagementProps> = ({ onNavigate }) => {
               <button className="modal__close" onClick={() => setCreateModalOpen(false)}>×</button>
             </div>
             <div className="modal__body">
-              {error && (
+              {displayError && (
                 <div className="error-banner" style={{ marginBottom: 16 }}>
-                  <span>⚠</span> {error}
+                  <span>⚠</span> {displayError}
                 </div>
               )}
               <div style={styles.formGroup}>
@@ -712,10 +720,10 @@ const RoleManagement: React.FC<RoleManagementProps> = ({ onNavigate }) => {
               </button>
               <button
                 className="btn btn--primary"
-                onClick={handleCreateRole}
-                disabled={creating || !newRoleName.trim()}
+                onClick={() => createMutation.mutate()}
+                disabled={createMutation.isPending || !newRoleName.trim()}
               >
-                {creating ? '创建中...' : '创建'}
+                {createMutation.isPending ? '创建中...' : '创建'}
               </button>
             </div>
           </div>
@@ -741,10 +749,10 @@ const RoleManagement: React.FC<RoleManagementProps> = ({ onNavigate }) => {
               </button>
               <button
                 className="btn btn--danger"
-                onClick={handleDeleteRole}
-                disabled={deleting}
+                onClick={() => deleteMutation.mutate(deleteConfirm)}
+                disabled={deleteMutation.isPending}
               >
-                {deleting ? '删除中...' : '确认删除'}
+                {deleteMutation.isPending ? '删除中...' : '确认删除'}
               </button>
             </div>
           </div>
@@ -770,10 +778,10 @@ const RoleManagement: React.FC<RoleManagementProps> = ({ onNavigate }) => {
               </button>
               <button
                 className="btn btn--danger"
-                onClick={handleBatchDelete}
-                disabled={batchDeleting}
+                onClick={() => batchDeleteMutation.mutate(Array.from(selectedIds))}
+                disabled={batchDeleteMutation.isPending}
               >
-                {batchDeleting ? '删除中...' : `删除 ${selectedIds.size} 项`}
+                {batchDeleteMutation.isPending ? '删除中...' : `删除 ${selectedIds.size} 项`}
               </button>
             </div>
           </div>

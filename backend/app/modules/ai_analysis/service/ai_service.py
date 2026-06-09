@@ -1,0 +1,206 @@
+"""AI 分析服务 - 使用系统配置的LLM分析测试用例集"""
+import json
+import time
+from typing import Any, Optional
+
+from openai import OpenAI
+
+from app.modules.system_config.service.config_service import ConfigService
+from app.shared.core.logger import log
+
+# 系统角色提示词
+SYSTEM_PROMPT = """你是一个专业的测试用例分析专家。你的任务是分析测试用例集的质量、冗余度和覆盖率。
+
+请根据提供的测试用例数据，从以下三个维度进行分析，并以严格JSON格式返回结果：
+
+## 1. 质量分析 (quality)
+检查每个用例的以下方面：
+- 标题/描述是否清晰明确
+- 测试步骤是否完整（操作步骤 + 预期结果）
+- 前置条件/后置条件是否完整
+- 优先级是否合理
+
+## 2. 冗余检测 (redundancy)
+检查用例之间是否存在功能重复：
+- 相同或高度相似的测试场景
+- 可以合并的用例
+
+## 3. 覆盖率分析 (coverage)
+评估用例集对功能的覆盖程度：
+- 识别测试盲区（缺失的场景）
+- 建议补充的测试类型（边界值、异常场景等）
+
+## 返回格式
+你必须只返回一个JSON对象，不要包含额外说明或markdown：
+
+```json
+{
+  "overall_score": 85,
+  "quality": {
+    "score": 80,
+    "issues": [
+      {"case_id": "TC-001", "field": "description", "severity": "warning", "message": "描述过于简略"}
+    ]
+  },
+  "redundancy": {
+    "score": 90,
+    "duplicates": [
+      {"case_id1": "TC-001", "case_id2": "TC-005", "similarity": 0.85, "reason": "测试步骤高度相似"}
+    ]
+  },
+  "coverage": {
+    "score": 75,
+    "gaps": ["缺少边界值测试场景", "缺少异常输入测试"]
+  },
+  "recommendations": ["建议补充XX场景", "建议合并YY用例"]
+}
+```
+
+- overall_score: 0-100的综合评分
+- score: 每个维度的评分
+- severity: critical/warning/info
+- similarity: 0-1之间的相似度
+"""
+
+
+class AIService:
+    """AI分析服务"""
+
+    @staticmethod
+    async def _get_client() -> Optional[OpenAI]:
+        """根据系统配置创建LLM客户端"""
+        config = await ConfigService.get_ai_config()
+
+        if not config.get("enabled", True):
+            log.warning("AI分析功能未启用（ai.enabled = false）")
+            return None
+
+        return OpenAI(
+            base_url=config["base_url"],
+            api_key=config.get("api_key") or "ollama",
+            timeout=config.get("timeout", 60),
+        )
+
+    @staticmethod
+    def _build_prompt(cases_data: list[dict], analysis_types: list[str]) -> str:
+        """构建分析Prompt
+
+        Args:
+            cases_data: 用例数据列表，每项包含 id, title, description, steps, pre_condition, post_condition 等
+            analysis_types: 分析类型列表
+        """
+        types_desc = {
+            "quality": "- 质量分析：评估每个用例的描述完整性、步骤清晰度",
+            "redundancy": "- 冗余检测：检查用例之间的功能重复",
+            "coverage": "- 覆盖率分析：评估测试覆盖盲区",
+        }
+
+        enabled_types = [types_desc[t] for t in analysis_types if t in types_desc]
+        types_text = "\n".join(enabled_types) if enabled_types else "\n".join(types_desc.values())
+
+        # 格式化用例数据
+        cases_text = json.dumps(cases_data, ensure_ascii=False, indent=2)
+
+        prompt = f"""请分析以下测试用例集：
+
+需要分析的维度：
+{types_text}
+
+测试用例数据：
+{cases_text}
+
+请严格按照要求的JSON格式返回分析结果。"""
+
+        return prompt
+
+    @staticmethod
+    def _parse_response(content: str) -> dict[str, Any]:
+        """解析LLM返回的JSON"""
+
+        # 清理可能存在的 markdown 代码块标记
+        content = content.strip()
+        if content.startswith("```"):
+            # 移除开头的 ```json 或 ``` 
+            first_newline = content.find("\n")
+            if first_newline != -1:
+                content = content[first_newline + 1:]
+            # 移除结尾的 ```
+            if content.endswith("```"):
+                content = content[:-3].strip()
+            elif "```" in content:
+                content = content[: content.rfind("```")].strip()
+
+        return json.loads(content)
+
+    @staticmethod
+    async def analyze_collection(
+        collection_id: str,
+        cases_data: list[dict],
+        analysis_types: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """分析用例集
+
+        Args:
+            collection_id: 集合ID
+            cases_data: 用例数据列表
+            analysis_types: 分析类型，默认全部
+
+        Returns:
+            分析结果字典
+        """
+        if analysis_types is None:
+            analysis_types = ["quality", "redundancy", "coverage"]
+
+        client = await AIService._get_client()
+        if client is None:
+            return {
+                "collection_id": collection_id,
+                "overall_score": 0,
+                "quality": {"score": 0, "issues": []},
+                "redundancy": {"score": 100, "duplicates": []},
+                "coverage": {"score": 0, "gaps": []},
+                "recommendations": ["AI分析服务未配置或未启用，请先在系统配置中设置LLM参数"],
+            }
+
+        try:
+            config = await ConfigService.get_ai_config()
+            max_cases = await ConfigService.get_config("ai.max_cases", 20)
+            truncated = len(cases_data) > max_cases
+            limited_cases = cases_data[:max_cases]
+            if truncated:
+                log.warning(f"用例数({len(cases_data)})超过限制({max_cases})，仅分析前{max_cases}个")
+
+            prompt = AIService._build_prompt(limited_cases, analysis_types)
+
+            log.info(f"正在调用LLM分析用例集 {collection_id}，模型={config['model']}，用例数={len(limited_cases)}")
+
+            start_time = time.time()
+
+            response = client.chat.completions.create(
+                model=config["model"],
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=config.get("temperature", 0.3),
+                max_tokens=config.get("max_tokens", 4096),
+            )
+
+            elapsed = time.time() - start_time
+            content = response.choices[0].message.content
+            log.info(f"LLM分析完成，耗时={elapsed:.1f}s，token={response.usage.total_tokens if response.usage else 'N/A'}")
+
+            result = AIService._parse_response(content)
+            result["collection_id"] = collection_id
+            return result
+
+        except Exception as e:
+            log.error(f"AI分析失败: {e}")
+            return {
+                "collection_id": collection_id,
+                "overall_score": 0,
+                "quality": {"score": 0, "issues": [{"case_id": "", "field": "system", "severity": "error", "message": f"AI分析调用失败: {str(e)}"}]},
+                "redundancy": {"score": 100, "duplicates": []},
+                "coverage": {"score": 0, "gaps": []},
+                "recommendations": [f"AI分析失败: {str(e)}，请检查LLM配置"],
+            }

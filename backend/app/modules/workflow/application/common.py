@@ -9,6 +9,7 @@ from app.modules.workflow.repository.models import BusWorkItemDoc
 
 # 延迟导入避免循环依赖
 _test_requirement_doc = None
+_test_case_doc = None
 
 
 def _get_test_requirement_doc():
@@ -17,6 +18,14 @@ def _get_test_requirement_doc():
         from app.modules.test_specs.repository.models import TestRequirementDoc
         _test_requirement_doc = TestRequirementDoc
     return _test_requirement_doc
+
+
+def _get_test_case_doc():
+    global _test_case_doc
+    if _test_case_doc is None:
+        from app.modules.test_specs.repository.models import TestCaseDoc
+        _test_case_doc = TestCaseDoc
+    return _test_case_doc
 
 
 def base_item_query(
@@ -78,6 +87,18 @@ async def serialize_work_item(doc: BusWorkItemDoc) -> dict[str, Any]:
             except Exception:
                 # 忽略查询失败，不阻塞主流程
                 pass
+
+    # 对于 TEST_CASE 类型，填充 case_id
+    if doc.type_code == "TEST_CASE":
+        try:
+            TestCaseDoc = _get_test_case_doc()
+            test_case = await TestCaseDoc.find_one(
+                {"workflow_item_id": str(doc.id), "is_deleted": False}
+            )
+            if test_case:
+                data["case_id"] = test_case.case_id
+        except Exception:
+            pass
 
     return data
 

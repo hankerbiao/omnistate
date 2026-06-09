@@ -4,13 +4,27 @@
 提供配置的 CRUD、热加载、缓存和 AI 连接测试功能
 """
 import asyncio
+import json
 import time
 from datetime import datetime
 from typing import Any, Optional
 
+import yaml
+
 from app.modules.system_config.repository.models import SystemConfigDoc, SystemConfigHistoryDoc
 from app.modules.system_config.schemas import AIConfig
 from app.shared.core.logger import log
+
+
+# ── 辅助函数 ─────────────────────────────────────────────
+
+def _cfg(key: str, value: str, type: str, cat: str, desc: str, **kw) -> dict:
+    """构建配置项字典，减少 DEFAULT_CONFIGS 的重复代码"""
+    return {"config_key": key, "config_value": value, "config_type": type,
+            "category": cat, "description": desc, "needs_restart": False, **kw}
+
+
+YAML_SECTIONS = {"app", "mongodb", "rabbitmq", "kafka", "minio", "jwt", "execution", "tmms", "terminal", "logging"}
 
 
 class ConfigCache:
@@ -54,20 +68,75 @@ class ConfigService:
     """系统配置服务"""
 
     # 预置配置项
+    # needs_restart=True 表示修改后需要重启服务才能生效
     DEFAULT_CONFIGS = [
         # AI 配置
-        {"config_key": "ai.base_url", "config_value": "http://localhost:11434/v1", "config_type": "string", "category": "ai", "description": "LLM API基础URL"},
-        {"config_key": "ai.model", "config_value": "qwen2.5:latest", "config_type": "string", "category": "ai", "description": "LLM模型名称"},
-        {"config_key": "ai.api_key", "config_value": "", "config_type": "string", "category": "ai", "description": "API密钥（如需要）", "is_encrypted": True},
-        {"config_key": "ai.enabled", "config_value": "true", "config_type": "boolean", "category": "ai", "description": "是否启用AI分析"},
-        {"config_key": "ai.temperature", "config_value": "0.7", "config_type": "float", "category": "ai", "description": "生成温度参数"},
-        {"config_key": "ai.max_tokens", "config_value": "4096", "config_type": "integer", "category": "ai", "description": "最大生成token数"},
-        {"config_key": "ai.timeout", "config_value": "60", "config_type": "integer", "category": "ai", "description": "请求超时时间(秒)"},
+        _cfg("ai.base_url", "http://localhost:11434/v1", "string", "ai", "LLM API基础URL"),
+        _cfg("ai.model", "qwen2.5:latest", "string", "ai", "LLM模型名称"),
+        _cfg("ai.api_key", "", "string", "ai", "API密钥（如需要）", is_encrypted=True),
+        _cfg("ai.enabled", "true", "boolean", "ai", "是否启用AI分析"),
+        _cfg("ai.temperature", "0.7", "float", "ai", "生成温度参数"),
+        _cfg("ai.max_tokens", "2048", "integer", "ai", "最大生成token数"),
+        _cfg("ai.timeout", "60", "integer", "ai", "请求超时时间(秒)"),
+        _cfg("ai.max_cases", "100", "integer", "ai", "单次AI分析最大用例数"),
         # 系统配置
-        {"config_key": "system.site_name", "config_value": "DML测试平台", "config_type": "string", "category": "system", "description": "站点名称"},
-        {"config_key": "system.max_upload_size", "config_value": "10485760", "config_type": "integer", "category": "system", "description": "最大上传文件大小(字节)"},
-        {"config_key": "system.allowed_file_types", "config_value": ".pdf,.txt,.json", "config_type": "string", "category": "system", "description": "允许上传的文件类型"},
+        _cfg("system.site_name", "DML测试平台", "string", "system", "站点名称"),
+        _cfg("system.max_upload_size", "10485760", "integer", "system", "最大上传文件大小(字节)"),
+        _cfg("system.allowed_file_types", ".pdf,.txt,.json", "string", "system", "允许上传的文件类型"),
+        # config.yaml 可迁移的配置（保存后自动从 yaml 删除）
+        _cfg("app.debug", "false", "boolean", "system", "调试模式开关", needs_restart=True),
+        _cfg("app.dev_bypass_auth", "false", "boolean", "system", "开发免认证（跳过 JWT）", needs_restart=True),
+        _cfg("execution.default_repo_url", "", "string", "system", "默认仓库地址", needs_restart=True),
+        _cfg("execution.default_branch", "master", "string", "system", "默认分支", needs_restart=True),
+        _cfg("jwt.expire_minutes", "480", "integer", "system", "JWT Token 有效期（分钟）", needs_restart=True),
+        _cfg("logging.console_level", "DEBUG", "string", "system", "日志级别（DEBUG/INFO/WARNING/ERROR）", needs_restart=True),
+        _cfg("tmms.api_base_url", "", "string", "system", "TMMS 外部系统 API 地址", needs_restart=True),
     ]
+
+    @staticmethod
+    def get_needs_restart(config_key: str) -> bool:
+        """判断配置项是否需要重启才能生效"""
+        for c in ConfigService.DEFAULT_CONFIGS:
+            if c["config_key"] == config_key:
+                return c.get("needs_restart", False)
+        return False
+
+    @staticmethod
+    def _find_yaml_path(config_key: str) -> Optional[list[str]]:
+        """将 'execution.default_repo_url' 转为 yaml 路径 ['execution','default_repo_url']"""
+        parts = config_key.split(".")
+        return parts if parts[0] in YAML_SECTIONS else None
+
+    @staticmethod
+    def _remove_from_yaml(config_key: str) -> bool:
+        """从 config.yaml 中删除指定配置项（保存到数据库后同步清理）"""
+        yaml_path = ConfigService._find_yaml_path(config_key)
+        if not yaml_path:
+            return False
+
+        from app.shared.config.settings import get_config_path
+        config_path = get_config_path()
+        if not config_path.exists():
+            return False
+
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+
+            # 沿路径导航到父节点，删除叶子 key
+            obj = data
+            for part in yaml_path[:-1]:
+                obj = obj.get(part, {})
+            if yaml_path[-1] in obj:
+                del obj[yaml_path[-1]]
+                with open(config_path, "w", encoding="utf-8") as f:
+                    yaml.dump(data, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+                log.info(f"Removed {config_key} from {config_path}")
+                return True
+            return False
+        except Exception as e:
+            log.warning(f"Failed to remove {config_key} from config.yaml: {e}")
+            return False
 
     @staticmethod
     async def get_config(key: str, default: Any = None) -> Any:
@@ -78,8 +147,8 @@ class ConfigService:
             return cached
 
         # 查数据库
-        doc = await SystemConfigDoc.find_one(SystemConfigDoc.config_key == key, SystemConfigDoc.is_active is True)
-        if doc is None:
+        doc = await SystemConfigDoc.find_one(SystemConfigDoc.config_key == key)
+        if doc is None or not doc.is_active:
             return default
 
         # 转换类型
@@ -91,33 +160,25 @@ class ConfigService:
     async def set_config(key: str, value: Any, changed_by: Optional[str] = None, remark: Optional[str] = None) -> SystemConfigDoc:
         """设置配置值（自动记录历史）"""
         doc = await SystemConfigDoc.find_one(SystemConfigDoc.config_key == key)
-
-        # 记录历史
         if doc:
             await ConfigService._save_history(key, doc.config_value, str(value), changed_by, remark)
-
-        # 更新或创建配置
-        if doc:
             doc.config_value = str(value)
             doc.updated_at = datetime.utcnow()
             doc.updated_by = changed_by
-            await doc.save()
         else:
-            # 从默认配置中获取类型信息
-            default_item = next((c for c in ConfigService.DEFAULT_CONFIGS if c["config_key"] == key), {})
+            default = next((c for c in ConfigService.DEFAULT_CONFIGS if c["config_key"] == key), {})
             doc = SystemConfigDoc(
-                config_key=key,
-                config_value=str(value),
-                config_type=default_item.get("config_type", "string"),
-                category=default_item.get("category", "general"),
-                description=default_item.get("description"),
-                is_encrypted=default_item.get("is_encrypted", False),
+                config_key=key, config_value=str(value),
+                config_type=default.get("config_type", "string"),
+                category=default.get("category", "general"),
+                description=default.get("description"),
+                is_encrypted=default.get("is_encrypted", False),
                 updated_by=changed_by,
             )
-            await doc.insert()
 
-        # 清除缓存
+        await (doc.save() if doc.id else doc.insert())
         await ConfigCache.invalidate(key)
+        ConfigService._remove_from_yaml(key)
         return doc
 
     @staticmethod
@@ -141,40 +202,15 @@ class ConfigService:
     @staticmethod
     async def test_ai_connection(base_url: str, model: str, api_key: Optional[str] = None, timeout: int = 60) -> dict[str, Any]:
         """测试AI服务连接"""
-        start_time = time.time()
-
+        start = time.time()
         try:
             import openai
-
-            client = openai.OpenAI(
-                base_url=base_url,
-                api_key=api_key or "ollama",  # Ollama不需要真实key
-                timeout=timeout,
-            )
-
-            response = client.chat.completions.create(
-                model=model,
-                messages=[{"role": "user", "content": "Hi"}],
-                max_tokens=10,
-            )
-
-            actual_model = response.model
-            response_time_ms = int((time.time() - start_time) * 1000)
-
-            return {
-                "success": True,
-                "model": actual_model,
-                "response_time_ms": response_time_ms,
-            }
-
+            client = openai.OpenAI(base_url=base_url, api_key=api_key or "ollama", timeout=timeout)
+            response = client.chat.completions.create(model=model, messages=[{"role": "user", "content": "Hi"}], max_tokens=10)
+            return {"success": True, "model": response.model, "response_time_ms": int((time.time() - start) * 1000)}
         except Exception as e:
-            response_time_ms = int((time.time() - start_time) * 1000)
             log.error(f"AI connection test failed: {e}")
-            return {
-                "success": False,
-                "error": str(e),
-                "response_time_ms": response_time_ms,
-            }
+            return {"success": False, "error": str(e), "response_time_ms": int((time.time() - start) * 1000)}
 
     @staticmethod
     async def reload_config(key: Optional[str] = None) -> None:
@@ -278,17 +314,14 @@ class ConfigService:
     def _parse_value(value: str, config_type: str) -> Any:
         """根据类型解析配置值"""
         try:
-            if config_type == "integer":
-                return int(value)
-            elif config_type == "float":
-                return float(value)
-            elif config_type == "boolean":
-                return value.lower() in ("true", "1", "yes", "on")
-            elif config_type == "json":
-                import json
-                return json.loads(value)
-            else:
-                return value
+            parsers = {
+                "integer": int,
+                "float": float,
+                "boolean": lambda v: v.lower() in ("true", "1", "yes", "on"),
+                "json": json.loads,
+            }
+            parser = parsers.get(config_type)
+            return parser(value) if parser else value
         except (ValueError, json.JSONDecodeError):
             return value
 
@@ -320,8 +353,8 @@ class ConfigValidator:
         elif config_key == "ai.max_tokens":
             try:
                 val = int(config_value)
-                if val < 1 or val > 100000:
-                    return False, "Token数量必须在1-100000之间"
+                if val < 1:
+                    return False, "Token数量不能小于1"
             except ValueError:
                 return False, "必须是有效的整数"
 

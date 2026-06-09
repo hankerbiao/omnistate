@@ -25,6 +25,8 @@ export interface WorkflowActionToolbarProps {
   overflowMenu?: boolean;
   /** 共享 workflow 实例，避免重复请求 */
   workflow?: UseWorkflowResult;
+  /** 隐藏指定操作按钮，如 ['START_WRITE'] */
+  hideActions?: string[];
 }
 
 export interface WorkflowOverflowMenuProps {
@@ -192,6 +194,7 @@ const WorkflowActionToolbar: React.FC<WorkflowActionToolbarProps> = ({
   showStateBadge = false,
   overflowMenu = false,
   workflow: externalWorkflow,
+  hideActions = [],
 }) => {
   const internalWf = useWorkflow(externalWorkflow ? null : workflowItemId);
   const wf = externalWorkflow ?? internalWf;
@@ -257,7 +260,9 @@ const WorkflowActionToolbar: React.FC<WorkflowActionToolbarProps> = ({
               无可用操作
             </span>
           ) : (
-            wf.transitions.map((transition) => {
+            wf.transitions
+              .filter((t) => !hideActions.includes(t.action))
+              .map((transition) => {
               const btnStyle = getActionButtonStyle(transition.action);
               return (
                 <button

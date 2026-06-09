@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../services/api';
 import type { ExecutionAgent } from '../types';
+import { formatRelativeTime } from '../utils/date';
 import PageToolbar, { StatPill } from './ui/PageToolbar';
 
 interface AgentListProps {
@@ -187,7 +188,7 @@ const AgentList: React.FC<AgentListProps> = () => {
                 <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
                   心跳 ·{' '}
                   <time className="mono" style={{ color: 'var(--text-secondary)' }}>
-                    {new Date(agent.last_heartbeat_at).toLocaleString('zh-CN')}
+                    {formatRelativeTime(agent.last_heartbeat_at)}
                   </time>
                 </div>
                 <button

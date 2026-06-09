@@ -17,6 +17,7 @@ class SystemConfigBase(BaseModel):
     description: Optional[str] = Field(None, description="配置描述")
     is_encrypted: bool = Field(default=False, description="是否加密")
     is_active: bool = Field(default=True, description="是否激活")
+    needs_restart: bool = Field(default=False, description="修改后是否需要重启生效")
 
 
 class SystemConfigCreate(SystemConfigBase):
@@ -107,8 +108,8 @@ class ConfigHistoryResponse(BaseModel):
 class AIConfig(BaseModel):
     """AI配置完整结构"""
 
-    base_url: str
-    model: str
+    base_url: str = "http://localhost:11434/v1"
+    model: str = "qwen2.5:latest"
     api_key: str = ""
     enabled: bool = True
     temperature: float = 0.7

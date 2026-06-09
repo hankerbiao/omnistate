@@ -41,6 +41,11 @@ async def lifespan(app: FastAPI):
         await initialize_infrastructure()
         log.success("应用级基础设施初始化完成")
 
+        # 初始化系统默认配置（仅创建缺失项）
+        from app.modules.system_config.service import ConfigService
+        await ConfigService.init_default_configs()
+        log.success("系统默认配置初始化完成")
+
         yield
     finally:
         log.info("FastAPI 服务已关闭")

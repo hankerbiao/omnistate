@@ -1,10 +1,10 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../services/api';
 import type { PermissionResponse } from '../types';
 import PageToolbar, { StatPill } from './ui/PageToolbar';
 import { getErrorMessage } from '../utils/errors';
-
-type ViewMode = 'table' | 'grouped';
+import { queryKeys } from '../providers/queryKeys';
 
 const CATEGORY_LABELS: Record<string, string> = {
   users: '用户管理', roles: '角色管理', permissions: '权限管理',
@@ -14,7 +14,6 @@ const CATEGORY_LABELS: Record<string, string> = {
   duts: '被测设备', navigation: '导航配置', nav: '公共导航',
   terminal: '终端', other: '其他',
 };
-
 
 const getPermissionCategory = (code: string): string => {
   const [resource] = code.split(':');
@@ -32,58 +31,132 @@ const CATEGORY_COLORS: Record<string, string> = {
 };
 
 const PermissionManagement: React.FC = () => {
-  const [permissions, setPermissions] = useState<PermissionResponse[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
-  const [viewMode, setViewMode] = useState<ViewMode>('table');
 
   const [selectedPerm, setSelectedPerm] = useState<PermissionResponse | null>(null);
   const [editName, setEditName] = useState('');
   const [editDesc, setEditDesc] = useState('');
-  const [saving, setSaving] = useState(false);
 
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [newPermCode, setNewPermCode] = useState('');
   const [newPermName, setNewPermName] = useState('');
   const [newPermDesc, setNewPermDesc] = useState('');
-  const [creating, setCreating] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
-  const [deleting, setDeleting] = useState(false);
 
   const selectedPermRef = useRef(selectedPerm);
-  selectedPermRef.current = selectedPerm;
   const initialSelectedRef = useRef(false);
 
-  const fetchPermissions = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await api.listPermissions();
-      const data = response.data || [];
-      setPermissions(data);
-      const current = selectedPermRef.current;
-      if (current) {
-        const updated = data.find(p => (p.perm_id || p.permission_id || p.id) === (current.perm_id || current.permission_id || current.id));
-        if (updated) { setSelectedPerm(updated); setEditName(updated.name); setEditDesc(updated.description || ''); }
-      }
-    } catch (err) {
-      setError(getErrorMessage(err, '获取权限列表失败'));
-    } finally {
-      setLoading(false);
-    }
-  }, []); // 故意不依赖 selectedPerm，用 ref 避免循环渲染
+  // 同步 ref，避免 useEffect 依赖 selectedPerm
+  useEffect(() => {
+    selectedPermRef.current = selectedPerm;
+  }, [selectedPerm]);
 
-  useEffect(() => { fetchPermissions(); }, [fetchPermissions]);
+  // ── Data fetching ────────────────────────────────────────────────
+  const {
+    data: permissions = [],
+    isLoading,
+    error: fetchError,
+  } = useQuery({
+    queryKey: queryKeys.permissions.all,
+    queryFn: async () => {
+      const response = await api.listPermissions();
+      return (response.data || []) as PermissionResponse[];
+    },
+  });
+
+  const [mutationError, setMutationError] = useState<string | null>(null);
+
+  const openPerm = (perm: PermissionResponse) => {
+    setSelectedPerm(perm);
+    setEditName(perm.name);
+    setEditDesc(perm.description || '');
+    setMutationError(null);
+  };
+
+  const closePerm = () => { setSelectedPerm(null); };
+
+  // 数据加载完成后同步选中项
+  useEffect(() => {
+    const current = selectedPermRef.current;
+    if (current && permissions.length > 0) {
+      const updated = permissions.find(p =>
+        (p.perm_id || p.permission_id || p.id) === (current.perm_id || current.permission_id || current.id)
+      );
+      if (updated) {
+        setSelectedPerm(updated);
+        setEditName(updated.name);
+        setEditDesc(updated.description || '');
+      }
+    }
+  }, [permissions]);
 
   // 默认选中第一项
   useEffect(() => {
     if (!initialSelectedRef.current && permissions.length > 0 && !selectedPerm) {
       initialSelectedRef.current = true;
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       openPerm(permissions[0]);
     }
   }, [permissions, selectedPerm]);
+
+  // ── Mutations ────────────────────────────────────────────────────
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedPerm || !editName.trim()) throw new Error('无变更');
+      const id = selectedPerm.perm_id || selectedPerm.permission_id || selectedPerm.id;
+      await api.updatePermission(id, { name: editName.trim(), description: editDesc.trim() || undefined });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.permissions.all });
+      setMutationError(null);
+    },
+    onError: (err) => {
+      setMutationError(getErrorMessage(err, '保存失败'));
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedPerm) throw new Error('无选中项');
+      const id = selectedPerm.perm_id || selectedPerm.permission_id || selectedPerm.id;
+      await api.deletePermission(id);
+    },
+    onSuccess: () => {
+      closePerm();
+      setMutationError(null);
+      queryClient.invalidateQueries({ queryKey: queryKeys.permissions.all });
+    },
+    onError: (err) => {
+      setMutationError(getErrorMessage(err, '删除失败'));
+    },
+  });
+
+  const createMutation = useMutation({
+    mutationFn: async () => {
+      if (!newPermCode.trim() || !newPermName.trim()) throw new Error('权限代码和名称不能为空');
+      await api.createPermission({
+        perm_id: newPermCode.trim(),
+        code: newPermCode.trim(),
+        name: newPermName.trim(),
+        description: newPermDesc.trim() || undefined,
+      });
+    },
+    onSuccess: () => {
+      setCreateModalOpen(false);
+      setNewPermCode('');
+      setNewPermName('');
+      setNewPermDesc('');
+      setMutationError(null);
+      queryClient.invalidateQueries({ queryKey: queryKeys.permissions.all });
+    },
+    onError: (err) => {
+      setMutationError(getErrorMessage(err, '创建失败'));
+    },
+  });
 
   const categories = useMemo(() => {
     const set = new Set(permissions.map(p => getPermissionCategory(p.code)));
@@ -110,94 +183,14 @@ const PermissionManagement: React.FC = () => {
     }, {});
   }, [filteredPermissions]);
 
-  const openPerm = (perm: PermissionResponse) => {
-    setSelectedPerm(perm);
-    setEditName(perm.name);
-    setEditDesc(perm.description || '');
-    setError(null);
-  };
-
-  const closePerm = () => { setSelectedPerm(null); };
-
-  const handleSave = async () => {
-    if (!selectedPerm || !editName.trim()) return;
-    setSaving(true);
-    setError(null);
-    try {
-      const id = selectedPerm.perm_id || selectedPerm.permission_id || selectedPerm.id;
-      await api.updatePermission(id, { name: editName.trim(), description: editDesc.trim() || undefined });
-      await fetchPermissions();
-    } catch (err) {
-      setError(getErrorMessage(err, '保存失败'));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleDelete = async () => {
-    if (!selectedPerm) return;
-    setDeleting(true);
-    setError(null);
-    try {
-      const id = selectedPerm.perm_id || selectedPerm.permission_id || selectedPerm.id;
-      await api.deletePermission(id);
-      closePerm();
-      await fetchPermissions();
-    } catch (err) {
-      setError(getErrorMessage(err, '删除失败'));
-    } finally {
-      setDeleting(false);
-    }
-  };
-
-  const handleCreate = async () => {
-    if (!newPermCode.trim() || !newPermName.trim()) { setError('权限代码和名称不能为空'); return; }
-    setCreating(true);
-    setError(null);
-    try {
-      await api.createPermission({ perm_id: newPermCode.trim(), code: newPermCode.trim(), name: newPermName.trim(), description: newPermDesc.trim() || undefined });
-      await fetchPermissions();
-      setCreateModalOpen(false);
-      setNewPermCode(''); setNewPermName(''); setNewPermDesc('');
-    } catch (err) {
-      setError(getErrorMessage(err, '创建失败'));
-    } finally {
-      setCreating(false);
-    }
-  };
-
   const hasChanges = selectedPerm && (editName.trim() !== selectedPerm.name || editDesc.trim() !== (selectedPerm.description || ''));
+
+  const displayError = fetchError ? getErrorMessage(fetchError, '获取权限列表失败') : mutationError;
 
   const catColor = (code: string) => CATEGORY_COLORS[getPermissionCategory(code)] || '#6b7280';
 
   return (
     <>
-    {/* Hero */}
-    <div style={{
-      margin: '0 0 16px', borderRadius: 'var(--radius-xl)', padding: '16px 24px',
-      background: 'linear-gradient(135deg, #eef2ff 0%, #f5f3ff 45%, #ecfdf5 100%)',
-      border: '1px solid color-mix(in srgb, #10b981 18%, var(--border-subtle))',
-      position: 'relative', overflow: 'hidden',
-    }}>
-      <div style={{
-        position: 'absolute', top: -40, right: -20, width: 200, height: 200,
-        borderRadius: '50%', background: 'radial-gradient(circle, rgba(16,185,129,0.25) 0%, transparent 70%)',
-        pointerEvents: 'none',
-      }} />
-      <div style={{ position: 'relative', zIndex: 1 }}>
-        <div style={{
-          display: 'inline-flex', alignItems: 'center', gap: 6, padding: '3px 12px', marginBottom: 8,
-          fontSize: 12, fontWeight: 600, color: '#10b981',
-          background: 'rgba(16,185,129,0.12)', borderRadius: 999, border: '1px solid rgba(16,185,129,0.2)',
-        }}>
-          <span>🔑</span>
-          <span>Permission Management</span>
-        </div>
-        <p style={{ margin: 0, fontSize: 14, color: 'var(--text-secondary)', maxWidth: 560, lineHeight: 1.6 }}>
-          权限是系统功能的最小访问控制单元。在此管理权限项的创建、编辑与删除，为角色配置提供基础数据。
-        </p>
-      </div>
-    </div>
     <div className={`split-workspace${selectedPerm ? ' split-workspace--has-selection' : ''}`}>
       <aside className="split-workspace__list">
         <div className="split-panel-toolbar">
@@ -209,45 +202,21 @@ const PermissionManagement: React.FC = () => {
                 <option value="">全部分类</option>
                 {categories.map(c => <option key={c} value={c}>{getCategoryLabel(c)}</option>)}
               </select>
-              <div className="btn-group" style={{ display: 'flex', gap: 2, background: 'var(--surface-secondary)', borderRadius: 8, padding: 2 }}>
-                <button className={`btn btn--sm${viewMode === 'table' ? ' btn--active' : ''}`} onClick={() => setViewMode('table')} style={{ padding: '4px 10px', fontSize: 12 }}>📋 表格</button>
-                <button className={`btn btn--sm${viewMode === 'grouped' ? ' btn--active' : ''}`} onClick={() => setViewMode('grouped')} style={{ padding: '4px 10px', fontSize: 12 }}>📦 分组</button>
-              </div>
               <button className="btn btn--primary btn--sm" onClick={() => setCreateModalOpen(true)}>+ 新建权限</button>
             </>}
           />
         </div>
 
-        {error && !selectedPerm && <div className="error-banner" style={{ margin: '0 var(--space-4) var(--space-3)' }}><span>⚠</span> {error}<button style={styles.errorClose} onClick={() => setError(null)}>×</button></div>}
+        {displayError && !selectedPerm && <div className="error-banner" style={{ margin: '0 var(--space-4) var(--space-3)' }}><span>⚠</span> {displayError}<button style={styles.errorClose} onClick={() => setMutationError(null)}>×</button></div>}
 
         <div className="split-list-scroll" style={{ padding: 0 }}>
-          {loading && permissions.length === 0 ? (
+          {isLoading ? (
             <div className="loading-overlay"><div className="loading-spinner" /></div>
           ) : filteredPermissions.length === 0 ? (
             <div className="empty-state" style={{ padding: 40 }}>
               <div className="empty-state__icon">{searchQuery || categoryFilter ? '🔍' : '🔑'}</div>
               <p className="empty-state__text">{searchQuery || categoryFilter ? '没有匹配的权限项' : '暂无权限数据'}</p>
             </div>
-          ) : viewMode === 'table' ? (
-            <table className="data-table">
-              <thead><tr>
-                <th style={{ width: '28%' }}>权限代码</th>
-                <th style={{ width: '18%' }}>名称</th>
-                <th style={{ width: '14%' }}>分类</th>
-                <th>描述</th>
-              </tr></thead>
-              <tbody>
-                {filteredPermissions.map(perm => (
-                  <tr key={perm.id} className={selectedPerm && (selectedPerm.perm_id || selectedPerm.permission_id || selectedPerm.id) === (perm.perm_id || perm.permission_id || perm.id) ? 'selected' : ''}
-                    onClick={() => openPerm(perm)} style={{ cursor: 'pointer' }}>
-                    <td><code style={css.codeBadge}>{perm.code}</code></td>
-                    <td style={{ fontWeight: 500 }}>{perm.name}</td>
-                    <td><span style={{ ...css.catTag, borderColor: catColor(perm.code) + '40', color: catColor(perm.code) }}>{getCategoryLabel(getPermissionCategory(perm.code))}</span></td>
-                    <td style={{ color: 'var(--text-tertiary)', fontSize: 12 }}>{perm.description || '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
           ) : (
             <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 20 }}>
               {Object.entries(groupedPermissions).sort(([a],[b]) => getCategoryLabel(a).localeCompare(getCategoryLabel(b), 'zh-CN')).map(([category, items]) => (
@@ -303,12 +272,12 @@ const PermissionManagement: React.FC = () => {
                 style={{ fontSize: 12, padding: '6px 14px' }}>删除</button>
             </div>
 
-            {error && <div className="error-banner" style={{ margin: '12px 24px 0' }}><span>⚠</span> {error}<button style={styles.errorClose} onClick={() => setError(null)}>×</button></div>}
+            {displayError && <div className="error-banner" style={{ margin: '12px 24px 0' }}><span>⚠</span> {displayError}<button style={styles.errorClose} onClick={() => setMutationError(null)}>×</button></div>}
             {deleteConfirm && (
               <div style={{ margin: '12px 24px 0', padding: '12px 16px', background: 'var(--status-error-bg)', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'space-between' }}>
                 <span style={{ fontSize: 13 }}>确认删除权限 <strong>{selectedPerm.name}</strong>？</span>
                 <div style={{ display: 'flex', gap: 8 }}>
-                  <button className="btn btn--danger btn--sm" onClick={handleDelete} disabled={deleting} style={{ padding: '4px 12px', fontSize: 12 }}>{deleting ? '删除中...' : '确认删除'}</button>
+                  <button className="btn btn--danger btn--sm" onClick={() => deleteMutation.mutate()} disabled={deleteMutation.isPending} style={{ padding: '4px 12px', fontSize: 12 }}>{deleteMutation.isPending ? '删除中...' : '确认删除'}</button>
                   <button className="btn btn--secondary btn--sm" onClick={() => setDeleteConfirm(false)} style={{ padding: '4px 12px', fontSize: 12 }}>取消</button>
                 </div>
               </div>
@@ -331,9 +300,9 @@ const PermissionManagement: React.FC = () => {
                       style={{ width: '100%', padding: '7px 10px', fontSize: 13, resize: 'vertical', fontFamily: 'inherit' }} />
                   </div>
                   <div style={{ display: 'flex', gap: 8 }}>
-                    <button className="btn btn--primary btn--sm" onClick={handleSave}
-                      disabled={saving || !editName.trim() || !hasChanges}>
-                      {saving ? '保存中...' : '保存'}
+                    <button className="btn btn--primary btn--sm" onClick={() => saveMutation.mutate()}
+                      disabled={saveMutation.isPending || !editName.trim() || !hasChanges}>
+                      {saveMutation.isPending ? '保存中...' : '保存'}
                     </button>
                     {hasChanges && (
                       <button className="btn btn--secondary btn--sm"
@@ -410,8 +379,8 @@ const PermissionManagement: React.FC = () => {
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, padding: '14px 20px', borderTop: '1px solid var(--border-subtle)' }}>
             <button className="btn btn--secondary" onClick={() => setCreateModalOpen(false)}>取消</button>
-            <button className="btn btn--primary" onClick={handleCreate} disabled={creating || !newPermCode.trim() || !newPermName.trim()}>
-              {creating ? '创建中...' : '创建'}
+            <button className="btn btn--primary" onClick={() => createMutation.mutate()} disabled={createMutation.isPending || !newPermCode.trim() || !newPermName.trim()}>
+              {createMutation.isPending ? '创建中...' : '创建'}
             </button>
           </div>
         </div>
@@ -426,8 +395,6 @@ const styles = {
 };
 
 const css = {
-  codeBadge: { fontSize: 12, fontFamily: "'JetBrains Mono', monospace", color: 'var(--accent-purple)', background: 'rgba(163,113,247,0.1)', padding: '2px 6px', borderRadius: 4 } as const,
-  catTag: { fontSize: 11, padding: '1px 8px', borderRadius: 999, fontWeight: 500, border: '0.5px solid' } as const,
   label: { fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase' as const, letterSpacing: '0.4px', display: 'block', marginBottom: 4 } as const,
 };
 

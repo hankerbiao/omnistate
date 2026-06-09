@@ -1,4 +1,4 @@
-import type { LoginRequest, LoginResponse, ApiResponse, CreateRequirementRequest, RequirementResponse, ListRequirementsParams, CreateTestCaseRequest, UpdateTestCaseRequest, TestCaseResponse, TestCaseChangeLogListResponse, ListTestCasesParams, CatalogLab, CreateCatalogLabRequest, UpdateCatalogLabRequest, CatalogTreeResponse, DispatchTaskRequest, DispatchTaskResponse, ExecutionAgent, AgentCleanupOfflineResponse, ListAgentsParams, CreateAutomationTestCaseRequest, AutomationTestCaseResponse, ListAutomationTestCasesParams, ExecutionTask, ListTasksParams, TaskStatus, RerunTaskRequest, AttachmentInfo, WorkflowTransitionRequest, WorkflowTransitionResponse, WorkflowTransitionsResponse, WorkflowTransitionLog, RoleResponse, PermissionResponse, CreateRoleRequest, UpdateRoleRequest, UpdateRolePermissionsRequest, CurrentUserPermissionsResponse, UserResponse, CreateUserRequest, UpdateUserRequest, UpdateUserRolesRequest, UpdateUserPasswordRequest, ListUsersParams, NavigationPageResponse, UserNavigationResponse, UpdateUserNavigationRequest, WorkItem, LineageGraphResponse, CommentListResponse, CreateCommentRequest, TestCaseComment, PlanTaskItemResponse, SubmitManualResultRequest, PlanItemDispatchRequest, BatchDispatchPlanItemsRequest, CreatePlanRequest, AddPlanItemsRequest, UserEffectivePermissionsResponse, UpdateUserExtraPermissionsRequest } from '../types';
+import type { LoginRequest, LoginResponse, ApiResponse, CreateRequirementRequest, RequirementResponse, ListRequirementsParams, CreateTestCaseRequest, UpdateTestCaseRequest, TestCaseResponse, TestCaseChangeLogListResponse, ListTestCasesParams, CatalogLab, CreateCatalogLabRequest, UpdateCatalogLabRequest, CatalogTreeResponse, DispatchTaskRequest, DispatchTaskResponse, ExecutionAgent, AgentCleanupOfflineResponse, ListAgentsParams, CreateAutomationTestCaseRequest, AutomationTestCaseResponse, ListAutomationTestCasesParams, ExecutionTask, ListTasksParams, TaskStatus, RerunTaskRequest, AttachmentInfo, WorkflowTransitionRequest, WorkflowTransitionResponse, WorkflowTransitionsResponse, WorkflowTransitionLog, RoleResponse, PermissionResponse, CreateRoleRequest, UpdateRoleRequest, UpdateRolePermissionsRequest, CurrentUserPermissionsResponse, UserResponse, CreateUserRequest, UpdateUserRequest, UpdateUserRolesRequest, UpdateUserPasswordRequest, ListUsersParams, NavigationPageResponse, UserNavigationResponse, UpdateUserNavigationRequest, WorkItem, LineageGraphResponse, CommentListResponse, CreateCommentRequest, TestCaseComment, PlanTaskItemResponse, SubmitManualResultRequest, PlanItemDispatchRequest, BatchDispatchPlanItemsRequest, CreatePlanRequest, AddPlanItemsRequest, UserEffectivePermissionsResponse, UpdateUserExtraPermissionsRequest, SystemConfigListResponse, SystemConfig, BatchUpdateConfigRequest, TestConnectionRequest, TestConnectionResponse, ConfigHistory, CollectionAnalysisResult } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
 
@@ -845,6 +845,102 @@ class ApiClient {
     return this.request<Record<string, unknown>>(`/execution-plans/items/${encodeURIComponent(itemId)}/unarchive`, {
       method: 'PUT',
     });
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  //  系统配置相关 API
+  // ═══════════════════════════════════════════════════════════════════
+
+  /** 获取配置列表 */
+  async getSystemConfigs(params?: {
+    category?: string;
+    active_only?: boolean;
+    search?: string;
+  }): Promise<ApiResponse<SystemConfigListResponse>> {
+    const query = new URLSearchParams();
+    if (params?.category) query.set('category', params.category);
+    if (params?.active_only !== undefined) query.set('active_only', String(params.active_only));
+    if (params?.search) query.set('search', params.search);
+    const queryString = query.toString();
+    return this.request<SystemConfigListResponse>(
+      `/system-configs${queryString ? '?' + queryString : ''}`,
+      { method: 'GET' },
+    );
+  }
+
+  /** 获取单个配置 */
+  async getSystemConfig(configKey: string): Promise<ApiResponse<SystemConfig>> {
+    return this.request<SystemConfig>(`/system-configs/${encodeURIComponent(configKey)}`, {
+      method: 'GET',
+    });
+  }
+
+  /** 更新配置 */
+  async updateSystemConfig(configKey: string, data: { config_value: string; remark?: string }): Promise<ApiResponse<SystemConfig>> {
+    return this.request<SystemConfig>(`/system-configs/${encodeURIComponent(configKey)}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  /** 批量更新配置 */
+  async batchUpdateSystemConfigs(data: BatchUpdateConfigRequest): Promise<ApiResponse<{ updated_count: number }>> {
+    return this.request<{ updated_count: number }>('/system-configs/batch', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  /** 测试AI连接 */
+  async testAIConnection(data: TestConnectionRequest): Promise<ApiResponse<TestConnectionResponse>> {
+    return this.request<TestConnectionResponse>('/system-configs/ai/test-connection', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  /** 获取配置分类列表 */
+  async getSystemConfigCategories(): Promise<ApiResponse<string[]>> {
+    return this.request<string[]>('/system-configs/categories', {
+      method: 'GET',
+    });
+  }
+
+  /** 获取配置历史 */
+  async getSystemConfigHistory(configKey?: string): Promise<ApiResponse<ConfigHistory[]>> {
+    const query = configKey ? `?config_key=${encodeURIComponent(configKey)}` : '';
+    return this.request<ConfigHistory[]>(`/system-configs/history${query}`, {
+      method: 'GET',
+    });
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  //  AI 分析相关 API
+  // ═══════════════════════════════════════════════════════════════════
+
+  /** AI分析用例集 */
+  async analyzeCollection(
+    collectionId: string,
+    analysisTypes?: string[],
+  ): Promise<ApiResponse<CollectionAnalysisResult>> {
+    return this.request<CollectionAnalysisResult>(
+      `/ai-analyze/collections/${encodeURIComponent(collectionId)}`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          analysis_types: analysisTypes ?? ['quality', 'redundancy', 'coverage'],
+        }),
+      },
+    );
+  }
+
+  /** AI 润色文本 */
+  async aiPolish(text: string): Promise<string> {
+    const res = await this.request<{ polished: string }>(
+      `/ai/polish`,
+      { method: 'POST', body: JSON.stringify({ text }) },
+    );
+    return res.data.polished;
   }
 }
 

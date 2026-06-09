@@ -623,8 +623,7 @@ const TestCaseCollectionPage: React.FC<TestCaseCollectionPageProps> = ({ current
                         <AIAnalysisPanel
                           caseIds={selected.case_ids}
                           autoCaseIds={selected.auto_case_ids}
-                          manualMap={manualMap}
-                          autoMap={autoMap}
+                          collectionId={selected.collection_id}
                         />
                         <button type="button" className="btn btn--primary btn--sm" onClick={openAddModal}>添加用例</button>
                         <button type="button" className="btn btn--secondary btn--sm" onClick={openEdit}>编辑</button>

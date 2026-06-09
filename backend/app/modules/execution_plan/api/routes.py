@@ -27,6 +27,7 @@ from app.modules.execution_plan.schemas.execution_plan import (
 )
 from app.shared.api.schemas.base import APIResponse
 from app.shared.auth import get_current_user
+from app.shared.core.logger import log as logger
 
 router = APIRouter(prefix="/execution-plans", tags=["ExecutionPlan"])
 
@@ -71,6 +72,7 @@ async def list_my_plan_items(
         items = await service.list_my_items(uid)
         return APIResponse(data=items)
     except Exception as exc:
+        logger.error(f"获取计划任务列表失败 (uid={uid}): {exc}", exc_info=True)
         _handle_service_error(exc)
 
 

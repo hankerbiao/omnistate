@@ -1,5 +1,8 @@
-import React, { useCallback, useEffect, useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../services/api';
+import { queryKeys } from '../providers/queryKeys';
+import { getErrorMessage } from '../utils/errors';
 import type { WorkItem, TestCaseResponse, RequirementResponse } from '../types';
 import { WorkflowPanel, WorkflowActionToolbar } from './workflow';
 import {
@@ -13,6 +16,7 @@ import ResultBackfillModal from './ResultBackfillModal';
 import SingleDispatchModal from './SingleDispatchModal';
 import DispatchWorkflow from './DispatchWorkflow';
 import { transformApiItem, groupBadgeStyle, myTasksStyles, type PlanTask, type PlanTaskResult } from './myTasksTypes';
+import CreateTestCaseForm from './CreateTestCaseForm';
 
 
 interface MyTasksPageProps {
@@ -20,18 +24,12 @@ interface MyTasksPageProps {
 }
 
 const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
-  const [items, setItems] = useState<WorkItem[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [itemDetail, setItemDetail] = useState<RequirementResponse | TestCaseResponse | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [workflowRefreshSignal, setWorkflowRefreshSignal] = useState(0);
-
-  // Plan task state
-  const [planTasks, setPlanTasks] = useState<PlanTask[]>([]);
-  const [planTasksLoading, setPlanTasksLoading] = useState(false);
-  const [planTasksError, setPlanTasksError] = useState<string | null>(null);
+  const [mutationError, setMutationError] = useState<string | null>(null);
 
   // Modal state: which task is being edited for result backfill
   const [resultModalTask, setResultModalTask] = useState<PlanTask | null>(null);
@@ -43,6 +41,39 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
 
   // Batch dispatch modal state
   const [batchOpen, setBatchOpen] = useState(false);
+
+  // Edit test case modal state (for testcase_dev items in DEVELOPING state)
+  const [editingTestCase, setEditingTestCase] = useState<TestCaseResponse | null>(null);
+
+  // Requirement test cases (shown in expanded detail)
+  const [reqTestCases, setReqTestCases] = useState<TestCaseResponse[]>([]);
+  const [loadingReqTestCases, setLoadingReqTestCases] = useState(false);
+  const [showCreateReqTestCase, setShowCreateReqTestCase] = useState(false);
+  const [creatingReqTestCaseReqId, setCreatingReqTestCaseReqId] = useState<string | null>(null);
+
+  // ── React Query: Work items ──
+
+  const {
+    data: workItems = [],
+    isLoading: workItemsLoading,
+    error: workItemsError,
+  } = useQuery({
+    queryKey: queryKeys.workItems.my(userId),
+    queryFn: async () => (await api.listMyWorkItems(userId)).data || [],
+    enabled: !!userId,
+  });
+
+  // ── React Query: Plan items ──
+
+  const {
+    data: planTasks = [],
+    isLoading: planItemsLoading,
+    error: planItemsError,
+  } = useQuery({
+    queryKey: queryKeys.planItems.my(userId),
+    queryFn: async () => (await api.listMyPlanItems(userId)).data?.map(transformApiItem) || [],
+    enabled: !!userId,
+  });
 
   const autoTasksForDispatch = useMemo(
     () => planTasks.filter(t => t.type === 'auto' && t.status !== 'done'),
@@ -63,15 +94,15 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
 
   const categories = useMemo<TaskCategoryGroup[]>(() => {
     // (1) 审核相关 — 待审核状态的事项
-    const reviewItems = items.filter(
+    const reviewItems = workItems.filter(
       it => it.current_state === 'PENDING_REVIEW',
     );
     // (2) 测试需求管理 — REQUIREMENT 中非审核中的
-    const reqItems = items.filter(
+    const reqItems = workItems.filter(
       it => it.type_code === 'REQUIREMENT' && it.current_state !== 'PENDING_REVIEW',
     );
     // (3) 测试用例开发 — TEST_CASE 中非审核中的
-    const tcItems = items.filter(
+    const tcItems = workItems.filter(
       it => it.type_code === 'TEST_CASE' && it.current_state !== 'PENDING_REVIEW',
     );
 
@@ -102,61 +133,35 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
       });
     }
     return result;
-  }, [items, planTasks]);
-
-  // ── Data fetching ──
-
-  const fetchMyWorkflowItems = useCallback(async () => {
-    if (!userId) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await api.listMyWorkItems(userId);
-      setItems(response.data || []);
-    } catch (err) {
-      setError('获取工作流任务列表失败');
-    } finally {
-      setLoading(false);
-    }
-  }, [userId]);
-
-  const fetchPlanTasks = useCallback(async () => {
-    if (!userId) return;
-    setPlanTasksLoading(true);
-    setPlanTasksError(null);
-    try {
-      const response = await api.listMyPlanItems(userId);
-      setPlanTasks((response.data || []).map(transformApiItem));
-    } catch (err) {
-      setPlanTasksError('获取计划任务列表失败');
-    } finally {
-      setPlanTasksLoading(false);
-    }
-  }, [userId]);
-
-  useEffect(() => { fetchMyWorkflowItems(); }, [fetchMyWorkflowItems]);
-  useEffect(() => { fetchPlanTasks(); }, [fetchPlanTasks]);
+  }, [workItems, planTasks]);
 
   // ── Refresh all ──
 
   const handleRefreshAll = useCallback(() => {
-    void fetchMyWorkflowItems();
-    void fetchPlanTasks();
-  }, [fetchMyWorkflowItems, fetchPlanTasks]);
+    queryClient.invalidateQueries({ queryKey: queryKeys.workItems.my(userId) });
+    queryClient.invalidateQueries({ queryKey: queryKeys.planItems.my(userId) });
+  }, [queryClient, userId]);
 
   // ── Workflow item handlers ──
 
   const loadItemDetail = async (item: WorkItem) => {
     setLoadingDetail(true);
     setItemDetail(null);
+    setReqTestCases([]);
     try {
       if (item.type_code === 'REQUIREMENT' && item.req_id) {
         const res = await api.getRequirement(item.req_id);
         setItemDetail(res.data);
+        // 同时加载该需求下的测试用例
+        setLoadingReqTestCases(true);
+        try {
+          const tcRes = await api.listTestCases({ ref_req_id: item.req_id, limit: 50 });
+          setReqTestCases(tcRes.data || []);
+        } catch { /* ignore */ }
+        setLoadingReqTestCases(false);
       } else if (item.type_code === 'TEST_CASE') {
-        const caseId = (item as WorkItem & { case_id?: string }).case_id;
-        if (caseId) {
-          const res = await api.getTestCase(caseId);
+        if (item.case_id) {
+          const res = await api.getTestCase(item.case_id);
           setItemDetail(res.data);
         }
       }
@@ -166,39 +171,55 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
   const handleToggleExpand = async (itemId: string) => {
     if (expandedId === itemId) { setExpandedId(null); setItemDetail(null); return; }
     setExpandedId(itemId);
-    const item = items.find(i => i.item_id === itemId);
+    const item = workItems.find(i => i.item_id === itemId);
     if (item) await loadItemDetail(item);
   };
 
   const handleTaskWorkflowSuccess = async () => {
-    await fetchMyWorkflowItems();
+    await queryClient.invalidateQueries({ queryKey: queryKeys.workItems.my(userId) });
     setWorkflowRefreshSignal(n => n + 1);
   };
 
   const getTypeCode = (type: string): WorkflowTypeCode =>
     type === 'TEST_CASE' ? 'TEST_CASE' : 'REQUIREMENT';
 
-  // ── Plan task handlers ──
+  // ── React Query: Update plan task status with archive mutation ──
 
-  /** 乐观更新本地状态 + 同步后端 */
-  const updatePlanTaskStatus = useCallback(async (taskId: string, status: PlanTask['status']) => {
-    // 乐观更新
-    setPlanTasks(prev => prev.map(t => t.id === taskId ? { ...t, status } : t));
-    // 同步后端
-    try {
-      const task = planTasks.find(t => t.id === taskId);
+  const archiveMutation = useMutation({
+    mutationFn: async ({ taskId, status }: { taskId: string; status: PlanTask['status'] }) => {
+      const currentTasks = queryClient.getQueryData<PlanTask[]>(queryKeys.planItems.my(userId)) || [];
+      const task = currentTasks.find(t => t.id === taskId);
       if (task) {
         await api.updatePlanItem(task.planId, taskId, { status });
+        if (status === 'done' || status === 'fail') {
+          await api.archiveItem(taskId);
+        }
       }
-    } catch {
-      // 失败时回滚
-      setPlanTasks(prev => prev.map(t =>
-        t.id === taskId && t.status === status
-          ? { ...t, status: planTasks.find(pt => pt.id === taskId)?.status || 'pending' }
-          : t,
-      ));
-    }
-  }, [planTasks]);
+    },
+    onMutate: async ({ taskId, status }) => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.planItems.my(userId) });
+      const previousPlanTasks = queryClient.getQueryData<PlanTask[]>(queryKeys.planItems.my(userId));
+      queryClient.setQueryData<PlanTask[]>(queryKeys.planItems.my(userId), old =>
+        status === 'done' || status === 'fail'
+          ? old?.filter(t => t.id !== taskId)
+          : old?.map(t => t.id === taskId ? { ...t, status } : t)
+      );
+      return { previousPlanTasks };
+    },
+    onError: (err, variables, context) => {
+      if (context?.previousPlanTasks) {
+        queryClient.setQueryData(queryKeys.planItems.my(userId), context.previousPlanTasks);
+      }
+      setMutationError(getErrorMessage(err, '更新失败'));
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.planItems.my(userId) });
+    },
+  });
+
+  const updatePlanTaskStatusWithArchive = useCallback((taskId: string, status: PlanTask['status']) => {
+    archiveMutation.mutate({ taskId, status });
+  }, [archiveMutation]);
 
   const handleOpenResultModal = useCallback((task: PlanTask) => {
     setResultModalTask(task);
@@ -208,8 +229,10 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
     setResultModalTask(null);
   }, []);
 
-  const handleSubmitResult = useCallback(async (taskId: string, result: PlanTaskResult) => {
-    try {
+  // ── React Query: Submit result mutation ──
+
+  const submitResultMutation = useMutation({
+    mutationFn: async ({ taskId, result }: { taskId: string; result: PlanTaskResult }) => {
       await api.submitPlanItemResult(taskId, {
         passed: result.passed ?? true,
         notes: result.notes ?? '',
@@ -225,12 +248,19 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
           ? new Date(result.executedAt).toISOString()
           : new Date().toISOString(),
       });
-      // 成功后刷新列表
-      await fetchPlanTasks();
-    } catch (err) {
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.planItems.my(userId) });
+    },
+    onError: (err) => {
       console.error('提交结果失败:', err);
-    }
-  }, [fetchPlanTasks]);
+      setMutationError(getErrorMessage(err, '提交结果失败'));
+    },
+  });
+
+  const handleSubmitResult = useCallback((taskId: string, result: PlanTaskResult) => {
+    submitResultMutation.mutate({ taskId, result });
+  }, [submitResultMutation]);
 
   const handleOpenDispatchModal = useCallback((task: PlanTask) => {
     setDispatchModal({
@@ -245,15 +275,15 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
     setDispatchModal({ open: false, itemId: '', caseId: '', caseTitle: '' });
   }, []);
 
-  const handleDispatchSuccess = useCallback(async () => {
+  const handleDispatchSuccess = useCallback(() => {
     const { itemId } = dispatchModal;
-    // 更新本地状态为 running
-    setPlanTasks(prev => prev.map(t =>
-      t.id === itemId ? { ...t, status: 'running' } : t,
-    ));
+    // 乐观更新本地状态为 running
+    queryClient.setQueryData<PlanTask[]>(queryKeys.planItems.my(userId), old =>
+      old?.map(t => t.id === itemId ? { ...t, status: 'running' } : t)
+    );
     // 刷新列表
-    await fetchPlanTasks();
-  }, [dispatchModal, fetchPlanTasks]);
+    queryClient.invalidateQueries({ queryKey: queryKeys.planItems.my(userId) });
+  }, [queryClient, userId, dispatchModal]);
 
   const handleOpenBatchDispatch = useCallback(() => {
     setBatchOpen(true);
@@ -263,61 +293,68 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
     setBatchOpen(false);
   }, []);
 
-  const handleBatchSubmit = useCallback(async (caseIds: string[]) => {
-    // 找到对应的 item_ids
-    const itemIds = planTasks
-      .filter(t => caseIds.includes(t.caseId))
-      .map(t => t.id);
-
-    if (itemIds.length === 0) return;
-
-    // 乐观更新
-    setPlanTasks(prev => prev.map(t =>
-      caseIds.includes(t.caseId) ? { ...t, status: 'running' } : t,
-    ));
-
-    try {
-      await api.batchDispatchPlanItems({ item_ids: itemIds });
-      await fetchPlanTasks();
-    } catch (err) {
-      console.error('批量下发失败:', err);
-      await fetchPlanTasks(); // 回滚用刷新
+  const handleEditTestCase = useCallback(async (item: WorkItem) => {
+    if (!item.case_id) {
+      setMutationError('该工作项未关联测试用例，无法编辑');
+      return;
     }
-  }, [planTasks, fetchPlanTasks]);
+    try {
+      const res = await api.getTestCase(item.case_id);
+      setEditingTestCase(res.data);
+    } catch {
+      setMutationError('获取测试用例详情失败');
+    }
+  }, []);
+
+  // ── React Query: Batch dispatch mutation ──
+
+  const batchDispatchMutation = useMutation({
+    mutationFn: async (caseIds: string[]) => {
+      const currentTasks = queryClient.getQueryData<PlanTask[]>(queryKeys.planItems.my(userId)) || [];
+      const itemIds = currentTasks
+        .filter(t => caseIds.includes(t.caseId))
+        .map(t => t.id);
+
+      if (itemIds.length === 0) return;
+
+      await api.batchDispatchPlanItems({ item_ids: itemIds });
+    },
+    onMutate: async (caseIds) => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.planItems.my(userId) });
+      const previousPlanTasks = queryClient.getQueryData<PlanTask[]>(queryKeys.planItems.my(userId));
+      // 乐观更新
+      queryClient.setQueryData<PlanTask[]>(queryKeys.planItems.my(userId), old =>
+        old?.map(t => caseIds.includes(t.caseId) ? { ...t, status: 'running' } : t)
+      );
+      return { previousPlanTasks };
+    },
+    onError: (err, caseIds, context) => {
+      if (context?.previousPlanTasks) {
+        queryClient.setQueryData(queryKeys.planItems.my(userId), context.previousPlanTasks);
+      }
+      setMutationError(getErrorMessage(err, '批量下发失败'));
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.planItems.my(userId) });
+    },
+  });
+
+  const handleBatchSubmit = useCallback((caseIds: string[]) => {
+    batchDispatchMutation.mutate(caseIds);
+  }, [batchDispatchMutation]);
 
   // ── Pending count for stats ──
   const pendingCount = useMemo(() => {
-    const workflowPending = items.filter(
+    const workflowPending = workItems.filter(
       item => item.current_state && !['RELEASED', 'DONE', 'CLOSED', 'ARCHIVED'].includes(item.current_state),
     ).length;
     const planPending = planTasks.filter(t => t.status !== 'done').length;
     return workflowPending + planPending;
-  }, [items, planTasks]);
+  }, [workItems, planTasks]);
 
-  // ════════════════════════════════════════════════════════════
-  //  自动归档
-  // ════════════════════════════════════════════════════════════
-
-  const updatePlanTaskStatusWithArchive = useCallback(async (taskId: string, status: PlanTask['status']) => {
-    setPlanTasks(prev => prev.map(t => t.id === taskId ? { ...t, status } : t));
-    try {
-      const task = planTasks.find(t => t.id === taskId);
-      if (task) {
-        await api.updatePlanItem(task.planId, taskId, { status });
-        // 如果是 done/fail，自动归档到收纳箱
-        if (status === 'done' || status === 'fail') {
-          await api.archiveItem(taskId);
-          setPlanTasks(prev => prev.filter(t => t.id !== taskId));
-        }
-      }
-    } catch {
-      setPlanTasks(prev => prev.map(t =>
-        t.id === taskId && t.status === status
-          ? { ...t, status: planTasks.find(pt => pt.id === taskId)?.status || 'pending' }
-          : t,
-      ));
-    }
-  }, [planTasks]);
+  // ── Error display ──
+  const displayWorkItemsError = workItemsError ? '获取工作流任务列表失败' : null;
+  const displayPlanItemsError = planItemsError ? '获取计划任务列表失败' : null;
 
   return (
     <div className="page-content">
@@ -329,7 +366,7 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
           </>
         )}
         actions={(
-          <button type="button" className="btn btn--secondary btn--sm" onClick={handleRefreshAll} disabled={loading || planTasksLoading}>
+          <button type="button" className="btn btn--secondary btn--sm" onClick={handleRefreshAll} disabled={workItemsLoading || planItemsLoading}>
             刷新
           </button>
         )}
@@ -340,21 +377,27 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
         计划任务可直接回填测试结果。
       </div>
 
-      {error && (
+      {displayWorkItemsError && (
         <div className="error-banner" style={{ marginBottom: 16, justifyContent: 'space-between' }}>
-          {error} <button type="button" className="btn btn--ghost btn--sm" onClick={() => setError(null)}>×</button>
+          {displayWorkItemsError}
         </div>
       )}
 
-      {planTasksError && (
+      {displayPlanItemsError && (
         <div className="error-banner" style={{ marginBottom: 16, justifyContent: 'space-between' }}>
-          {planTasksError} <button type="button" className="btn btn--ghost btn--sm" onClick={() => setPlanTasksError(null)}>×</button>
+          {displayPlanItemsError}
         </div>
       )}
 
-      {loading && planTasksLoading ? (
+      {mutationError && (
+        <div className="error-banner" style={{ marginBottom: 16, justifyContent: 'space-between' }}>
+          {mutationError} <button type="button" className="btn btn--ghost btn--sm" onClick={() => setMutationError(null)}>×</button>
+        </div>
+      )}
+
+      {workItemsLoading && planItemsLoading ? (
         <div className="loading-overlay"><div className="loading-spinner" /></div>
-      ) : items.length === 0 && planTasks.length === 0 ? (
+      ) : workItems.length === 0 && planTasks.length === 0 ? (
         <div className="empty-state">
           <div className="empty-state__icon">✅</div>
           <p className="empty-state__text">暂无待处理的任务</p>
@@ -418,12 +461,39 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
                           month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
                         })}
                       </span>
+                      {item.type_code === 'TEST_CASE' && (item.current_state === 'ASSIGNED' || item.current_state === 'DEVELOPING') && (
+                        <button
+                          type="button"
+                          className="btn btn--primary btn--sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void handleEditTestCase(item);
+                          }}
+                          style={{ fontSize: 10, padding: '2px 8px', flexShrink: 0 }}
+                        >
+                          编辑
+                        </button>
+                      )}
+                      {item.type_code === 'REQUIREMENT' && item.current_state === 'DEVELOPING' && (
+                        <button
+                          type="button"
+                          className="btn btn--primary btn--sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void handleToggleExpand(item.item_id);
+                          }}
+                          style={{ fontSize: 10, padding: '2px 8px', flexShrink: 0 }}
+                        >
+                          编写
+                        </button>
+                      )}
                       <WorkflowActionToolbar
                         workflowItemId={item.item_id}
                         typeCode={typeCode}
                         defaultPriority={itemDetail && 'priority' in itemDetail ? String(itemDetail.priority || '') : ''}
                         onTransitionSuccess={handleTaskWorkflowSuccess}
                         compact
+                        hideActions={item.type_code === 'TEST_CASE' ? ['START_WRITE'] : undefined}
                       />
                     </div>
                     {isExpanded && (
@@ -440,6 +510,53 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
                             {item.content && <p style={myTasksStyles.contentPreview}>{item.content}</p>}
                             {itemDetail && 'description' in itemDetail && itemDetail.description && (
                               <p style={myTasksStyles.contentPreview}>{itemDetail.description}</p>
+                            )}
+
+                            {/* ── 需求关联的测试用例 ── */}
+                            {item.type_code === 'REQUIREMENT' && (
+                              <div style={{ marginTop: 8 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                                  <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>
+                                    测试用例 ({reqTestCases.length})
+                                  </span>
+                                  <button
+                                    type="button"
+                                    className="btn btn--primary btn--sm"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (item.req_id) {
+                                        setCreatingReqTestCaseReqId(item.req_id);
+                                        setShowCreateReqTestCase(true);
+                                      }
+                                    }}
+                                    style={{ fontSize: 10, padding: '2px 8px' }}
+                                  >
+                                    + 创建用例
+                                  </button>
+                                </div>
+                                {loadingReqTestCases ? (
+                                  <div style={myTasksStyles.loadingSmall}>
+                                    <div className="loading-spinner" style={{ width: 16, height: 16 }} />
+                                  </div>
+                                ) : reqTestCases.length > 0 ? (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                                    {reqTestCases.map(tc => (
+                                      <div key={tc.case_id} style={{
+                                        fontSize: 12, color: 'var(--text-secondary)',
+                                        padding: '3px 8px', backgroundColor: 'var(--surface-tertiary)',
+                                        borderRadius: 4,
+                                      }}>
+                                        <span style={{ fontFamily: 'monospace', marginRight: 6, color: 'var(--text-tertiary)' }}>{tc.case_id}</span>
+                                        {tc.title}
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <p style={{ fontSize: 12, color: 'var(--text-tertiary)', fontStyle: 'italic' }}>
+                                    暂无测试用例
+                                  </p>
+                                )}
+                              </div>
                             )}
                           </>
                         )}
@@ -493,6 +610,47 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
           handleBatchSubmit(caseIds);
         }}
       />
+
+      {/* ════════════════════════════════════════════════════════ */}
+      {/*  Edit Test Case Modal (编写中的测试用例)               */}
+      {/* ════════════════════════════════════════════════════════ */}
+      {editingTestCase && (
+        <CreateTestCaseForm
+          editTestCase={editingTestCase}
+          onClose={() => setEditingTestCase(null)}
+          onSuccess={() => {
+            setEditingTestCase(null);
+            handleTaskWorkflowSuccess();
+          }}
+          lockRequirementId
+        />
+      )}
+
+      {/* ════════════════════════════════════════════════════════ */}
+      {/*  Create Test Case from Requirement Modal               */}
+      {/* ════════════════════════════════════════════════════════ */}
+      {showCreateReqTestCase && creatingReqTestCaseReqId && (
+        <CreateTestCaseForm
+          onClose={() => { setShowCreateReqTestCase(false); setCreatingReqTestCaseReqId(null); }}
+          onSuccess={() => {
+            setShowCreateReqTestCase(false);
+            setCreatingReqTestCaseReqId(null);
+            handleTaskWorkflowSuccess();
+            // 重新加载测试用例列表
+            if (creatingReqTestCaseReqId) {
+              setLoadingReqTestCases(true);
+              api.listTestCases({ ref_req_id: creatingReqTestCaseReqId, limit: 50 })
+                .then(res => setReqTestCases(res.data || []))
+                .catch(() => {})
+                .finally(() => setLoadingReqTestCases(false));
+            }
+          }}
+          defaultRequirementId={creatingReqTestCaseReqId}
+          lockRequirementId
+          defaultLabId=""
+          defaultCatalogPrefix={[]}
+        />
+      )}
     </div>
   );
 };

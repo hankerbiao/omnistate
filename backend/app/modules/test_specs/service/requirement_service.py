@@ -107,16 +107,12 @@ class RequirementService(BaseService):
         """
         payload = deepcopy(data)
 
-        # 强制生成新的 req_id，不接受前端提供的任何值
-        # 这是为了保证唯一性和避免冲突
-        payload["req_id"] = await self._generate_req_id()
-        logger.info(f"后端生成需求编号: req_id={payload['req_id']}")
-
-        # 解析并填充人员姓名
+        # 解析并填充人员姓名（一次解析，重试时不必重复查库）
         user_ids_to_resolve = []
         for uid_key in ("tpm_owner_id", "manual_dev_id", "auto_dev_id"):
-            if payload.get(uid_key):
-                user_ids_to_resolve.append(payload[uid_key])
+            uid = payload.get(uid_key)
+            if uid:
+                user_ids_to_resolve.append(uid)
         if user_ids_to_resolve:
             name_map = await self._resolve_user_names(user_ids_to_resolve)
             payload["tpm_owner_name"] = name_map.get(payload.get("tpm_owner_id", ""))
@@ -127,8 +123,30 @@ class RequirementService(BaseService):
         if client is None:
             raise RuntimeError("MongoDB客户端未初始化，无法创建需求")
 
-        # 仅使用事务模式，确保workflow与requirement原子写入
-        return await self._create_requirement_with_transaction(client, payload)
+        # 重试循环：如果 req_id 冲突（计数器重置、数据迁移等原因导致），
+        # 重新生成 req_id 重试，最多 10 次
+        max_retries = 10
+        DUPLICATE_MSG = "req_id already exists"
+
+        for attempt in range(max_retries):
+            # 强制生成新的 req_id，不接受前端提供的任何值
+            payload["req_id"] = await self._generate_req_id()
+            logger.info(
+                "后端生成需求编号: req_id=%s (attempt=%d/%d)",
+                payload["req_id"], attempt + 1, max_retries,
+            )
+
+            try:
+                return await self._create_requirement_with_transaction(client, payload)
+            except ValueError as e:
+                if str(e) != DUPLICATE_MSG:
+                    raise  # 非重复冲突，直接抛出
+                logger.warning(
+                    "req_id=%s 冲突，重试 (attempt=%d/%d): %s",
+                    payload["req_id"], attempt + 1, max_retries, e,
+                )
+
+        raise ValueError(DUPLICATE_MSG)
 
     async def get_requirement(self, req_id: str) -> Dict[str, Any]:
         """按 req_id 查询单条需求（仅返回未逻辑删除数据）。"""
