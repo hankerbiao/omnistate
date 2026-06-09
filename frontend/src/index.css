@@ -93,6 +93,10 @@
   --space-xl: var(--space-8);
   --space-2xl: var(--space-12);
   --shadow-sm: var(--shadow-xs);
+  
+  /* === OVERLAY === */
+  --overlay-bg: rgba(0, 0, 0, 0.5);
+  --overlay-bg-light: rgba(0, 0, 0, 0.35);
 }
 
 * {
@@ -660,7 +664,7 @@ input, select, textarea {
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background-color: rgba(0, 0, 0, 0.5);
+  background-color: var(--overlay-bg);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2420,7 +2424,7 @@ input, select, textarea {
   position: fixed;
   inset: 0;
   z-index: 900;
-  background: rgba(0, 0, 0, 0.35);
+  background: var(--overlay-bg-light);
   animation: fadeIn 200ms ease;
 }
 .drawer {
