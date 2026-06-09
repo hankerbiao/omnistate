@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import GlobalSearch from './GlobalSearch'
 
 interface SwitchableUser {
@@ -26,32 +26,24 @@ const Topbar: React.FC<TopbarProps> = ({
   description,
   onLogout,
   currentUser,
+  currentUserId,
   onUserClick,
   onSwitchUser,
   switchableUsers,
   onSearchNavigate,
 }) => {
-  const [menuOpen, setMenuOpen] = useState(false)
   const [switching, setSwitching] = useState(false)
-  const menuRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    if (!menuOpen) return
-    const handleClick = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setMenuOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClick)
-    return () => document.removeEventListener('mousedown', handleClick)
-  }, [menuOpen])
+  const isUserActive = (user: SwitchableUser) =>
+    currentUserId === user.userId ||
+    currentUser === user.userId ||
+    currentUser === user.label
 
   const handleSwitch = async (userId: string, password: string) => {
     if (!onSwitchUser) return
     setSwitching(true)
     try {
       await onSwitchUser(userId, password)
-      setMenuOpen(false)
     } finally {
       setSwitching(false)
     }
@@ -59,117 +51,52 @@ const Topbar: React.FC<TopbarProps> = ({
 
   return (
     <header className="topbar">
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, minWidth: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, minWidth: 0, flex: '1 1 auto' }}>
         <h1 className="topbar__title">{title}</h1>
         {description && <span className="topbar__desc">{description}</span>}
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: '0 0 auto' }}>
+      <div className="topbar__actions">
         {onSearchNavigate && <GlobalSearch onNavigate={onSearchNavigate} />}
 
-        <div ref={menuRef} style={{ position: 'relative' }}>
+        {switchableUsers && switchableUsers.length > 0 && (
+          <div className="topbar__user-switcher" role="group" aria-label="切换用户">
+            {switchableUsers.map(user => {
+              const isActive = isUserActive(user)
+              return (
+                <button
+                  key={user.userId}
+                  type="button"
+                  className={`topbar__user-chip${isActive ? ' topbar__user-chip--active' : ''}`}
+                  disabled={switching || isActive}
+                  aria-current={isActive ? 'true' : undefined}
+                  title={`${user.label}（${user.role}）`}
+                  onClick={() => handleSwitch(user.userId, user.password)}
+                >
+                  <span className="topbar__avatar">{user.label.charAt(0)}</span>
+                  <span className="topbar__user-chip-label">{user.label}</span>
+                  {isActive && <span className="topbar__user-chip-check" aria-hidden="true">✓</span>}
+                </button>
+              )
+            })}
+          </div>
+        )}
+
+        <div className="topbar__account-actions">
           <button
             type="button"
-            className="topbar__user-trigger"
-            onClick={() => setMenuOpen(o => !o)}
-            aria-expanded={menuOpen}
-            aria-haspopup="menu"
+            className="btn btn--ghost btn--sm"
+            onClick={() => onUserClick?.()}
           >
-            <span
-              style={{
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                width: 26, height: 26, borderRadius: 6, fontSize: 12,
-                fontWeight: 600, color: '#fff', background: 'var(--accent-primary)',
-                flexShrink: 0,
-              }}
-            >
-              {(currentUser || 'U').charAt(0).toUpperCase()}
-            </span>
-            <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-secondary)' }}>
-              {currentUser || '用户'}
-            </span>
-            <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>▾</span>
+            个人信息
           </button>
-
-          {menuOpen && (
-            <div
-              role="menu"
-              style={{
-                position: 'absolute',
-                top: 'calc(100% + 8px)',
-                right: 0,
-                width: 240,
-                backgroundColor: 'var(--surface-primary)',
-                border: '1px solid var(--border-default)',
-                borderRadius: 'var(--radius-xl)',
-                boxShadow: 'var(--shadow-lg)',
-                zIndex: 1000,
-                overflow: 'hidden',
-                animation: 'scaleIn 0.15s ease',
-              }}
-            >
-              <div style={{ padding: '10px 14px 6px', fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                切换用户
-              </div>
-
-              {switchableUsers?.map(user => {
-                const isActive = currentUser === user.userId || currentUser === user.label
-                return (
-                  <button
-                    key={user.userId}
-                    type="button"
-                    role="menuitem"
-                    disabled={switching || isActive}
-                    onClick={() => handleSwitch(user.userId, user.password)}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      width: '100%',
-                      padding: '8px 14px',
-                      textAlign: 'left',
-                      background: isActive ? 'var(--surface-secondary)' : 'transparent',
-                      opacity: switching ? 0.6 : 1,
-                      cursor: switching || isActive ? 'default' : 'pointer',
-                    }}
-                  >
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <span
-                        style={{
-                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                          width: 26, height: 26, borderRadius: 6, fontSize: 11,
-                          fontWeight: 600, color: '#fff', background: 'var(--accent-primary)',
-                          flexShrink: 0,
-                        }}
-                      >
-                        {user.label.charAt(0)}
-                      </span>
-                      <span>
-                        <div style={{ fontSize: 13, fontWeight: 500 }}>{user.label}</div>
-                        <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{user.role}</div>
-                      </span>
-                    </span>
-                    {isActive && <span style={{ color: 'var(--status-success)', fontWeight: 700 }}>✓</span>}
-                  </button>
-                )
-              })}
-
-              <div style={{ height: 1, background: 'var(--border-subtle)', margin: '4px 0' }} />
-
-              <button type="button" role="menuitem" className="btn btn--ghost" style={{ width: '100%', justifyContent: 'flex-start', borderRadius: 0 }} onClick={() => { onUserClick?.(); setMenuOpen(false) }}>
-                个人信息
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                className="btn btn--ghost"
-                style={{ width: '100%', justifyContent: 'flex-start', borderRadius: 0, color: 'var(--status-error)' }}
-                onClick={onLogout}
-              >
-                退出登录
-              </button>
-            </div>
-          )}
+          <button
+            type="button"
+            className="btn btn--ghost btn--sm topbar__logout-btn"
+            onClick={onLogout}
+          >
+            退出
+          </button>
         </div>
       </div>
     </header>

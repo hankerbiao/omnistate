@@ -113,9 +113,9 @@ async def delete_collection(
     service: CollectionServiceDep,
     current_user=Depends(get_current_user),
 ):
-    """删除用例集合（逻辑删除）。"""
+    """删除用例集合（逻辑删除）。仅 Admin 或创建者可删除。"""
     try:
-        await service.delete(collection_id)
+        await service.delete(collection_id, current_user)
         return APIResponse(data={"deleted": collection_id})
     except CollectionNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))

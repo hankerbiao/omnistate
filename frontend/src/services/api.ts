@@ -1,4 +1,4 @@
-import type { LoginRequest, LoginResponse, ApiResponse, CreateRequirementRequest, RequirementResponse, ListRequirementsParams, CreateTestCaseRequest, UpdateTestCaseRequest, TestCaseResponse, TestCaseChangeLogListResponse, ListTestCasesParams, CatalogLab, CreateCatalogLabRequest, UpdateCatalogLabRequest, CatalogTreeResponse, DispatchTaskRequest, DispatchTaskResponse, ExecutionAgent, AgentCleanupOfflineResponse, ListAgentsParams, CreateAutomationTestCaseRequest, AutomationTestCaseResponse, ListAutomationTestCasesParams, ExecutionTask, ListTasksParams, TaskStatus, RerunTaskRequest, AttachmentInfo, WorkflowTransitionRequest, WorkflowTransitionResponse, WorkflowTransitionsResponse, WorkflowTransitionLog, RoleResponse, PermissionResponse, CreateRoleRequest, UpdateRoleRequest, UpdateRolePermissionsRequest, CurrentUserPermissionsResponse, UserResponse, CreateUserRequest, UpdateUserRequest, UpdateUserRolesRequest, UpdateUserPasswordRequest, ListUsersParams, NavigationPageResponse, UserNavigationResponse, UpdateUserNavigationRequest, WorkItem, LineageGraphResponse, CommentListResponse, CreateCommentRequest, TestCaseComment, PlanTaskItemResponse, SubmitManualResultRequest, PlanItemDispatchRequest, BatchDispatchPlanItemsRequest, CreatePlanRequest, AddPlanItemsRequest } from '../types';
+import type { LoginRequest, LoginResponse, ApiResponse, CreateRequirementRequest, RequirementResponse, ListRequirementsParams, CreateTestCaseRequest, UpdateTestCaseRequest, TestCaseResponse, TestCaseChangeLogListResponse, ListTestCasesParams, CatalogLab, CreateCatalogLabRequest, UpdateCatalogLabRequest, CatalogTreeResponse, DispatchTaskRequest, DispatchTaskResponse, ExecutionAgent, AgentCleanupOfflineResponse, ListAgentsParams, CreateAutomationTestCaseRequest, AutomationTestCaseResponse, ListAutomationTestCasesParams, ExecutionTask, ListTasksParams, TaskStatus, RerunTaskRequest, AttachmentInfo, WorkflowTransitionRequest, WorkflowTransitionResponse, WorkflowTransitionsResponse, WorkflowTransitionLog, RoleResponse, PermissionResponse, CreateRoleRequest, UpdateRoleRequest, UpdateRolePermissionsRequest, CurrentUserPermissionsResponse, UserResponse, CreateUserRequest, UpdateUserRequest, UpdateUserRolesRequest, UpdateUserPasswordRequest, ListUsersParams, NavigationPageResponse, UserNavigationResponse, UpdateUserNavigationRequest, WorkItem, LineageGraphResponse, CommentListResponse, CreateCommentRequest, TestCaseComment, PlanTaskItemResponse, SubmitManualResultRequest, PlanItemDispatchRequest, BatchDispatchPlanItemsRequest, CreatePlanRequest, AddPlanItemsRequest, UserEffectivePermissionsResponse, UpdateUserExtraPermissionsRequest } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
 
@@ -374,6 +374,12 @@ class ApiClient {
     });
   }
 
+  async deleteAutomationTestCase(autoCaseId: string): Promise<ApiResponse<{ deleted: boolean }>> {
+    return this.request<{ deleted: boolean }>(`/automation-test-cases/${autoCaseId}`, {
+      method: 'DELETE',
+    });
+  }
+
   async listTasks(params: ListTasksParams = {}): Promise<ApiResponse<ExecutionTask[]>> {
     const queryParams = new URLSearchParams();
 
@@ -536,6 +542,19 @@ class ApiClient {
   async deleteUser(userId: string): Promise<void> {
     await this.request<void>(`/auth/users/${userId}`, {
       method: 'DELETE',
+    });
+  }
+
+  async getUserEffectivePermissions(userId: string): Promise<ApiResponse<UserEffectivePermissionsResponse>> {
+    return this.request<UserEffectivePermissionsResponse>(`/auth/users/${userId}/permissions`, {
+      method: 'GET',
+    });
+  }
+
+  async updateUserExtraPermissions(userId: string, data: UpdateUserExtraPermissionsRequest): Promise<ApiResponse<UserResponse>> {
+    return this.request<UserResponse>(`/auth/users/${userId}/permissions/extra`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
     });
   }
 
@@ -799,6 +818,32 @@ class ApiClient {
   async deletePlanItem(planId: string, itemId: string): Promise<ApiResponse<Record<string, unknown>>> {
     return this.request<Record<string, unknown>>(`/execution-plans/plans/${encodeURIComponent(planId)}/items/${encodeURIComponent(itemId)}`, {
       method: 'DELETE',
+    });
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  //  收纳箱 API
+  // ══════════════════════════════════════════════════════════════
+
+  /** 获取已归档的计划任务列表（收纳箱） */
+  async listArchivedItems(assigneeId: string): Promise<ApiResponse<PlanTaskItemResponse[]>> {
+    return this.request<PlanTaskItemResponse[]>(
+      `/execution-plans/items/archived?assignee_id=${encodeURIComponent(assigneeId)}`,
+      { method: 'GET' },
+    );
+  }
+
+  /** 归档计划条目（收纳） */
+  async archiveItem(itemId: string): Promise<ApiResponse<Record<string, unknown>>> {
+    return this.request<Record<string, unknown>>(`/execution-plans/items/${encodeURIComponent(itemId)}/archive`, {
+      method: 'PUT',
+    });
+  }
+
+  /** 取消归档计划条目 */
+  async unarchiveItem(itemId: string): Promise<ApiResponse<Record<string, unknown>>> {
+    return this.request<Record<string, unknown>>(`/execution-plans/items/${encodeURIComponent(itemId)}/unarchive`, {
+      method: 'PUT',
     });
   }
 }

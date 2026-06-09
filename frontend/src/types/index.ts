@@ -82,6 +82,7 @@ export interface UserResponse {
   username: string;
   email?: string;
   role_ids: string[];
+  extra_permission_ids?: string[];
   status: string;
   created_at: string;
   updated_at: string;
@@ -104,6 +105,19 @@ export interface UpdateUserRequest {
 
 export interface UpdateUserRolesRequest {
   role_ids: string[];
+}
+
+export interface UpdateUserExtraPermissionsRequest {
+  extra_permission_ids: string[];
+}
+
+export interface UserEffectivePermissionsResponse {
+  user_id: string;
+  role_ids: string[];
+  extra_permission_ids: string[];
+  role_permissions: string[];
+  extra_permissions: string[];
+  permissions: string[];
 }
 
 export interface UpdateUserPasswordRequest {
@@ -901,7 +915,7 @@ export interface SearchResponse {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-//  用例集合（TestCaseCollection）
+//  预制用例集（TestCaseCollection）
 // ═══════════════════════════════════════════════════════════════════════
 
 export interface CollectionListItem {

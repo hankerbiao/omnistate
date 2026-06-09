@@ -1,7 +1,9 @@
 """用例集合核心服务。"""
 import re
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
+
+from fastapi import HTTPException
 
 from app.modules.test_case_collection.repository.models import TestCaseCollectionDoc
 from app.modules.test_case_collection.schemas import (
@@ -15,6 +17,7 @@ from app.modules.test_case_collection.schemas import (
 from app.modules.test_case_collection.service.exceptions import (
     CollectionNotFoundError,
 )
+from app.shared.auth.jwt_auth import is_admin_role
 from app.shared.service import SequenceIdService
 
 
@@ -71,13 +74,22 @@ class TestCaseCollectionService:
         doc = await TestCaseCollectionDoc.find_one({"collection_id": collection_id})
         return CollectionResponse.from_doc(doc) if doc else await self.get(collection_id)
 
-    async def delete(self, collection_id: str) -> None:
-        """逻辑删除集合。"""
+    async def delete(self, collection_id: str, current_user: Dict[str, Any]) -> None:
+        """逻辑删除集合。仅 Admin 或创建者可删除。"""
         doc = await TestCaseCollectionDoc.find_one(
             {"collection_id": collection_id, "is_active": True}
         )
         if not doc:
             raise CollectionNotFoundError(f"集合 {collection_id} 不存在")
+
+        user_id = current_user.get("user_id", "")
+        role_ids = current_user.get("role_ids", [])
+        if not is_admin_role(role_ids) and doc.created_by != user_id:
+            raise HTTPException(
+                status_code=403,
+                detail="仅 Admin 或创建者可删除此集合",
+            )
+
         await doc.update({"$set": {"is_active": False, "updated_at": datetime.utcnow()}})
 
     async def add_cases(self, collection_id: str, request: AddCasesRequest) -> CollectionResponse:

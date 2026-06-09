@@ -12,24 +12,18 @@ import CreateTestCaseForm from '../CreateTestCaseForm';
 import TestCaseDetailModal from '../TestCaseDetailModal';
 import PageHero from '../ui/PageHero';
 import CatalogTreeSidebar from '../catalog/CatalogTreeSidebar';
-
-type UnifiedCard = {
-  type: 'auto' | 'manual';
-  id: string;
-  caseId: string;
-  title: string;
-  status: string;
-  priority?: string;
-  framework?: string;
-  automationType?: string;
-  version: string | number;
-  updatedAt: string;
-  labName?: string;
-  catalogPath?: string[];
-  tags?: string[];
-  autoData?: AutomationTestCaseResponse;
-  manualData?: TestCaseResponse;
-};
+import {
+  buildLabMap,
+  buildUnifiedCaseList,
+  getCaseStatusLabel,
+  getCaseTypeLabel,
+  matchesCatalogPrefix,
+  collectAllTags,
+  PICKER_TYPE_FILTERS,
+  type UnifiedCaseItem,
+  type TypeFilter,
+} from './testCaseBoardTypes';
+import { toggleInSet } from '../../utils/setHelpers';
 
 const STATUS_COLORS: Record<string, string> = {
   ACTIVE: '#22c55e', INACTIVE: '#6b7280', DRAFT: '#9ca3af',
@@ -37,11 +31,6 @@ const STATUS_COLORS: Record<string, string> = {
   PENDING_REVIEW: '#f59e0b', IN_REVIEW: '#3b82f6', REJECTED: '#ef4444',
 };
 
-const STATUS_LABELS: Record<string, string> = {
-  ACTIVE: '活跃', INACTIVE: '停用', DRAFT: '草稿',
-  DEPRECATED: '废弃', DONE: '已完成',
-  PENDING_REVIEW: '待评审', IN_REVIEW: '评审中', REJECTED: '已驳回',
-};
 
 const IconSearch = () => (
   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -71,14 +60,19 @@ export default function TestCaseBoardPage() {
   const [showCatalog, setShowCatalog] = useState(true);
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [typeFilter, setTypeFilter] = useState<'all' | 'auto' | 'manual'>('all');
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [tagFilter, setTagFilter] = useState<string[]>([]);
 
-  const [selectedCase, setSelectedCase] = useState<UnifiedCard | null>(null);
+  const [selectedCase, setSelectedCase] = useState<UnifiedCaseItem | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showCreateAuto, setShowCreateAuto] = useState(false);
   const [showCreateManual, setShowCreateManual] = useState(false);
+  const [editingManualCase, setEditingManualCase] = useState<TestCaseResponse | null>(null);
+
+  // ── Delete confirmation ──
+  const [deleteTarget, setDeleteTarget] = useState<UnifiedCaseItem | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -98,46 +92,18 @@ export default function TestCaseBoardPage() {
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
-  const labMap = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const lab of labs) m.set(lab.lab_id, lab.name);
-    return m;
-  }, [labs]);
+  const labMap = useMemo(() => buildLabMap(labs), [labs]);
 
-  const cards = useMemo((): UnifiedCard[] => {
-    const items: UnifiedCard[] = [];
-    for (const mc of manualCases) {
-      items.push({
-        type: 'manual', id: mc.id, caseId: mc.case_id,
-        title: mc.title, status: mc.status, priority: mc.priority,
-        version: mc.version, updatedAt: mc.updated_at, manualData: mc,
-        labName: mc.lab_id ? labMap.get(mc.lab_id) || mc.lab_name || undefined : undefined,
-        catalogPath: mc.catalog_path?.length ? mc.catalog_path : undefined,
-        tags: mc.tags?.length ? mc.tags : undefined,
-      });
-    }
-    for (const ac of autoCases) {
-      items.push({
-        type: 'auto', id: ac.id, caseId: ac.auto_case_id,
-        title: ac.name, status: ac.status, framework: ac.framework,
-        automationType: ac.automation_type, version: ac.version,
-        updatedAt: ac.updated_at, autoData: ac,
-        tags: ac.tags?.length ? ac.tags : undefined,
-      });
-    }
-    return items.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-  }, [autoCases, manualCases, labMap]);
+  const cards = useMemo(
+    () => buildUnifiedCaseList(manualCases, autoCases, labMap),
+    [manualCases, autoCases, labMap],
+  );
 
   const filtered = useMemo(() => {
     return cards.filter(c => {
       if (typeFilter !== 'all' && c.type !== typeFilter) return false;
       if (statusFilter !== 'all' && c.status !== statusFilter) return false;
-      if (selectedPrefix.length > 0) {
-        if (!c.catalogPath || c.catalogPath.length < selectedPrefix.length) return false;
-        for (let i = 0; i < selectedPrefix.length; i++) {
-          if (c.catalogPath[i] !== selectedPrefix[i]) return false;
-        }
-      }
+      if (!matchesCatalogPrefix(c.catalogPath, selectedPrefix)) return false;
       if (tagFilter.length > 0) {
         if (!c.tags || !tagFilter.some(t => c.tags!.includes(t))) return false;
       }
@@ -155,23 +121,33 @@ export default function TestCaseBoardPage() {
   }, [cards]);
 
   // ── 所有 Tag 去重排序 ──
-  const allTags = useMemo(() => {
-    const set = new Set<string>();
-    cards.forEach(c => c.tags?.forEach(t => set.add(t)));
-    return Array.from(set).sort();
-  }, [cards]);
+  const allTags = useMemo(() => collectAllTags(cards), [cards]);
 
   const toggleTag = (tag: string) => {
     setTagFilter(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]);
   };
 
   const toggleSelect = (id: string) => {
-    setSelectedIds(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
+    setSelectedIds(prev => toggleInSet(prev, id));
   };
+
+  const handleDelete = useCallback(async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      if (deleteTarget.type === 'manual') {
+        await api.deleteTestCase(deleteTarget.id);
+      } else {
+        await api.deleteAutomationTestCase(deleteTarget.id);
+      }
+      setDeleteTarget(null);
+      await fetchAll();
+    } catch (err) {
+      console.error('删除用例失败:', err);
+      alert('删除失败: ' + (err instanceof Error ? err.message : '未知错误'));
+    }
+    setDeleting(false);
+  }, [deleteTarget, fetchAll]);
 
   const stats = useMemo(() => ({
     total: cards.length, auto: autoCases.length, manual: manualCases.length,
@@ -244,14 +220,14 @@ export default function TestCaseBoardPage() {
             </div>
 
             <div style={{ display: 'flex', background: '#f3f4f6', borderRadius: 8, padding: 2 }}>
-              {(['all', 'manual', 'auto'] as const).map(key => (
+              {PICKER_TYPE_FILTERS.map(({ key, label }) => (
                 <button key={key} onClick={() => setTypeFilter(key)} style={{
                   padding: '5px 12px', borderRadius: 6, border: 'none',
                   fontSize: 12, fontWeight: 500, cursor: 'pointer',
                   background: typeFilter === key ? '#fff' : 'transparent',
                   color: typeFilter === key ? '#111827' : '#6b7280',
                   boxShadow: typeFilter === key ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
-                }}>{key === 'all' ? '全部' : key === 'manual' ? '手工' : '自动化'}</button>
+                }}>{label}</button>
               ))}
             </div>
 
@@ -260,7 +236,7 @@ export default function TestCaseBoardPage() {
                 fontSize: 12, color: '#374151', background: '#fff', cursor: 'pointer' }}>
               <option value="all">全部状态</option>
               {statusOptions.map(s => (
-                <option key={s} value={s}>{STATUS_LABELS[s] || s}</option>
+                <option key={s} value={s}>{getCaseStatusLabel(s)}</option>
               ))}
             </select>
 
@@ -343,11 +319,11 @@ export default function TestCaseBoardPage() {
                           background: card.type === 'auto' ? '#06b6d418' : '#6366f118',
                           color: card.type === 'auto' ? '#06b6d4' : '#6366f1',
                           border: `1px solid ${card.type === 'auto' ? '#06b6d430' : '#6366f130'}`,
-                        }}>{card.type === 'auto' ? '自动' : '手工'}</span>
+                        }}>{getCaseTypeLabel(card.type)}</span>
                         <span style={{ fontFamily: 'JetBrains Mono, monospace', color: '#9ca3af' }}>{card.caseId}</span>
                         <div style={{ flex: 1 }} />
                         <span style={{ padding: '1px 6px', borderRadius: 6, fontSize: 10, background: `${sc}15`, color: sc, fontWeight: 500 }}>
-                          {STATUS_LABELS[card.status] || card.status}
+                          {getCaseStatusLabel(card.status)}
                         </span>
                         {card.framework && <span style={{ color: '#9ca3af' }}>{card.framework}</span>}
                         {card.catalogPath && (
@@ -368,6 +344,20 @@ export default function TestCaseBoardPage() {
                           ))}
                         </div>
                       )}
+                      {/* Delete button */}
+                      <div style={{ position: 'absolute', bottom: 8, right: 8, zIndex: 1 }}
+                        onClick={e => { e.stopPropagation(); setDeleteTarget(card); }}>
+                        <button title="删除此用例" style={{
+                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                          width: 24, height: 24, borderRadius: 6, border: 'none',
+                          background: 'transparent', color: '#d1d5db', cursor: 'pointer',
+                          fontSize: 14, lineHeight: 1, padding: 0,
+                          transition: 'color 0.12s, background 0.12s',
+                        }}
+                          onMouseEnter={e => { e.currentTarget.style.background = '#fee2e2'; e.currentTarget.style.color = '#ef4444'; }}
+                          onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#d1d5db'; }}
+                        >🗑</button>
+                      </div>
                     </div>
                   );
                 })}
@@ -380,14 +370,21 @@ export default function TestCaseBoardPage() {
       {/* Detail modal */}
       {selectedCase && (
         selectedCase.type === 'manual' && selectedCase.manualData ? (
-          <TestCaseDetailModal testCase={selectedCase.manualData} onClose={() => setSelectedCase(null)} />
+          <TestCaseDetailModal
+            testCase={selectedCase.manualData}
+            onClose={() => setSelectedCase(null)}
+            onEdit={() => {
+              setEditingManualCase(selectedCase.manualData!);
+              setSelectedCase(null);
+            }}
+          />
         ) : (
           <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.3)', zIndex: 1000, display: 'flex', justifyContent: 'center', alignItems: 'center' }}
             onClick={() => setSelectedCase(null)}>
             <div style={{ background: '#fff', borderRadius: 12, padding: 40, textAlign: 'center', maxWidth: 420 }} onClick={e => e.stopPropagation()}>
               <h3 style={{ marginTop: 0 }}>{selectedCase.title}</h3>
               <p style={{ color: '#6b7280', fontSize: 14 }}>ID: {selectedCase.caseId}</p>
-              <p style={{ color: '#6b7280', fontSize: 13 }}>状态: {STATUS_LABELS[selectedCase.status] || selectedCase.status}</p>
+              <p style={{ color: '#6b7280', fontSize: 13 }}>状态: {getCaseStatusLabel(selectedCase.status)}</p>
               <button onClick={() => setSelectedCase(null)} style={{ marginTop: 16, padding: '8px 24px', borderRadius: 8, border: 'none', background: '#2563eb', color: '#fff', cursor: 'pointer', fontSize: 13 }}>关闭</button>
             </div>
           </div>
@@ -399,6 +396,57 @@ export default function TestCaseBoardPage() {
       )}
       {showCreateManual && (
         <CreateTestCaseForm onClose={() => setShowCreateManual(false)} onSuccess={() => { setShowCreateManual(false); fetchAll(); }} />
+      )}
+      {editingManualCase && (
+        <CreateTestCaseForm
+          editTestCase={editingManualCase}
+          onClose={() => setEditingManualCase(null)}
+          onSuccess={() => { setEditingManualCase(null); fetchAll(); }}
+        />
+      )}
+
+      {/* ── Delete confirmation modal ── */}
+      {deleteTarget && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 3000,
+          display: 'flex', justifyContent: 'center', alignItems: 'center',
+          backdropFilter: 'blur(2px)',
+        }} onClick={() => !deleting && setDeleteTarget(null)}>
+          <div style={{
+            background: '#fff', borderRadius: 14, padding: '28px 32px',
+            textAlign: 'center', maxWidth: 400, width: '90%',
+            boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+          }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize: 36, marginBottom: 12 }}>⚠️</div>
+            <h3 style={{ margin: '0 0 8px', fontSize: 17, fontWeight: 600, color: '#111827' }}>确认删除</h3>
+            <p style={{ margin: '0 0 4px', fontSize: 14, color: '#6b7280' }}>
+              确定要删除以下测试用例吗？
+            </p>
+            <p style={{ margin: '0 0 16px', fontSize: 13, color: '#374151', fontWeight: 500 }}>
+              [{deleteTarget.type === 'auto' ? '自动化' : '手工'}] {deleteTarget.title}
+              <br />
+              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: '#9ca3af' }}>{deleteTarget.caseId}</span>
+            </p>
+            <p style={{ margin: '0 0 20px', fontSize: 12, color: '#ef4444', fontWeight: 500 }}>
+              此操作不可撤销，关联数据将被一并删除。
+            </p>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+              <button onClick={() => setDeleteTarget(null)} disabled={deleting} style={{
+                padding: '8px 24px', borderRadius: 8, border: '1px solid #d1d5db',
+                background: '#fff', color: '#374151', cursor: 'pointer',
+                fontSize: 13, fontWeight: 500, opacity: deleting ? 0.6 : 1,
+              }}>取消</button>
+              <button onClick={handleDelete} disabled={deleting} style={{
+                padding: '8px 24px', borderRadius: 8, border: 'none',
+                background: deleting ? '#fca5a5' : '#ef4444', color: '#fff',
+                cursor: 'pointer', fontSize: 13, fontWeight: 600,
+                display: 'flex', alignItems: 'center', gap: 6,
+              }}>
+                {deleting ? '删除中...' : '确认删除'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

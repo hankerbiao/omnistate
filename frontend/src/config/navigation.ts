@@ -3,14 +3,15 @@ import type { NavItem, NavSection, PageType } from '../types/app'
 export const navItems: NavItem[] = [
   { key: 'dashboard', label: '数据统计', icon: '◫', permission: 'nav:dashboard:view' },
   { key: 'myTasks', label: '我的任务', icon: '☰' },
-  { key: 'requirements', label: '测试需求', icon: '▣' },
+  { key: 'requirements', label: '测试用例编写需求', icon: '▣' },
   { key: 'testCases', label: '用例看板', icon: '⚡' },
-  { key: 'collections', label: '用例集合', icon: '📁' },
+  { key: 'collections', label: '预制用例集', icon: '📁' },
   { key: 'agents', label: '执行代理', icon: '◉' },
   { key: 'tasks', label: '执行任务', icon: '▶' },
-  { key: 'testPlanStudio', label: '执行计划', icon: '🎯' },
+  { key: 'testPlanStudioDemo', label: '执行计划(demo)', icon: '▤' },
   { key: 'users', label: '用户管理', icon: '⊕', permission: 'users:read' },
   { key: 'roles', label: '角色管理', icon: '⊞', permission: 'roles:read' },
+  { key: 'roleGroup', label: '用户组管理', icon: '⊡', permission: 'roles:read' },
   { key: 'permissions', label: '权限管理', icon: '◈', permission: 'permissions:read' },
   { key: 'catalogLabs', label: 'Lab 管理', icon: '⊟', permission: 'catalog:labs:manage' },
 ]
@@ -18,8 +19,8 @@ export const navItems: NavItem[] = [
 export const navSections: NavSection[] = [
   { label: '概览', keys: ['myTasks'] },
   { label: '测试资产', keys: ['requirements', 'testCases', 'collections'] },
-  { label: '执行', keys: ['agents', 'tasks', 'testPlanStudio'] },
-  { label: '系统', keys: ['dashboard', 'users', 'roles', 'permissions', 'catalogLabs'] },
+  { label: '执行', keys: ['agents', 'tasks', 'testPlanStudioDemo'] },
+  { label: '系统', keys: ['dashboard', 'users', 'roles', 'roleGroup', 'permissions', 'catalogLabs'] },
 ]
 
 export function getVisibleNavItems(userPermissions: string[]): NavItem[] {

@@ -368,3 +368,63 @@ async def delete_plan_item(
         return APIResponse(data={"plan_id": plan_id, "item_id": item_id, "deleted": True})
     except Exception as exc:
         _handle_service_error(exc)
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  收纳箱（Archive Box）
+# ═══════════════════════════════════════════════════════════════════════
+
+@router.get(
+    "/items/archived",
+    response_model=APIResponse[List[Dict[str, Any]]],
+    summary="获取已归档的计划任务列表（收纳箱）",
+)
+async def list_archived_items(
+    service: ExecutionPlanServiceDep,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    assignee_id: Optional[str] = Query(None, description="执行人 user_id，不传则默认当前用户"),
+):
+    """返回当前用户已归档的计划条目列表。"""
+    uid = assignee_id or _get_user_id(current_user)
+    try:
+        items = await service.list_archived_items(uid)
+        return APIResponse(data=items)
+    except Exception as exc:
+        _handle_service_error(exc)
+
+
+@router.put(
+    "/items/{item_id}/archive",
+    response_model=APIResponse[Dict[str, Any]],
+    summary="归档计划条目（收纳）",
+)
+async def archive_item(
+    item_id: str,
+    service: ExecutionPlanServiceDep,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """将计划条目标记为已归档（放入收纳箱）。"""
+    actor_id = _get_user_id(current_user)
+    try:
+        await service.archive_item(item_id=item_id, actor_id=actor_id)
+        return APIResponse(data={"item_id": item_id, "archived": True})
+    except Exception as exc:
+        _handle_service_error(exc)
+
+
+@router.put(
+    "/items/{item_id}/unarchive",
+    response_model=APIResponse[Dict[str, Any]],
+    summary="取消归档计划条目",
+)
+async def unarchive_item(
+    item_id: str,
+    service: ExecutionPlanServiceDep,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """将计划条目从收纳箱移回待处理。"""
+    try:
+        await service.unarchive_item(item_id=item_id)
+        return APIResponse(data={"item_id": item_id, "archived": False})
+    except Exception as exc:
+        _handle_service_error(exc)

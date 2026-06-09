@@ -1,43 +1,170 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { api } from '../services/api';
-import type { CollectionListItem, CollectionResponse } from '../types';
+import type {
+  CollectionListItem,
+  CollectionResponse,
+  AutomationTestCaseResponse,
+  TestCaseResponse,
+} from '../types';
 import PageToolbar, { StatPill } from './ui/PageToolbar';
-import PageHero from './ui/PageHero';
+import CaseLibraryPicker, { useCaseLibrary, useDualCaseSelection } from './CaseLibraryPicker';
+import {
+  getCaseDisplayTitle,
+  getCaseTypeLabel,
+  getCaseStatusLabel,
+  PICKER_TYPE_FILTERS,
+  type TypeFilter,
+} from './TestCaseBoard/testCaseBoardTypes';
+import {
+  DetailHeader,
+  DetailStatGrid,
+  DetailSection,
+  DetailEmpty,
+  DetailMetaRow,
+} from './ui/SplitDetailPanel';
 
-const TestCaseCollectionPage: React.FC = () => {
+interface TestCaseCollectionPageProps {
+  currentUserId: string;
+}
+
+function formatRelativeTime(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const days = Math.floor(diff / 86400000);
+  if (days < 1) return '今天';
+  if (days < 7) return `${days} 天前`;
+  if (days < 30) return `${Math.floor(days / 7)} 周前`;
+  return new Date(iso).toLocaleDateString('zh-CN');
+}
+
+function parseTagsInput(raw: string): string[] | undefined {
+  const tags = raw.split(/[,，]/).map(t => t.trim()).filter(Boolean);
+  return tags.length > 0 ? tags : undefined;
+}
+
+interface CollectionFormModalProps {
+  mode: 'create' | 'edit';
+  open: boolean;
+  name: string;
+  description: string;
+  tags: string;
+  submitting: boolean;
+  onClose: () => void;
+  onNameChange: (value: string) => void;
+  onDescriptionChange: (value: string) => void;
+  onTagsChange: (value: string) => void;
+  onSubmit: () => void;
+}
+
+function CollectionFormModal({
+  mode,
+  open,
+  name,
+  description,
+  tags,
+  submitting,
+  onClose,
+  onNameChange,
+  onDescriptionChange,
+  onTagsChange,
+  onSubmit,
+}: CollectionFormModalProps) {
+  if (!open) return null;
+  const title = mode === 'create' ? '新建预制用例集' : '编辑预制集合';
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()} style={{ width: 480 }}>
+        <div className="modal__header">
+          <h3 className="modal__title">{title}</h3>
+          <button type="button" className="modal__close" onClick={onClose}>×</button>
+        </div>
+        <div className="modal__body">
+          <div className="form-field">
+            <label className="form-field__label">集合名称 *</label>
+            <input className="form-input" value={name} onChange={e => onNameChange(e.target.value)} placeholder={mode === 'create' ? '例如: 回归基线集合' : undefined} autoFocus />
+          </div>
+          <div className="form-field">
+            <label className="form-field__label">描述</label>
+            <textarea className="form-input" value={description} onChange={e => onDescriptionChange(e.target.value)} placeholder="说明此预制集的用途" rows={3} />
+          </div>
+          <div className="form-field">
+            <label className="form-field__label">标签（逗号分隔）</label>
+            <input className="form-input" value={tags} onChange={e => onTagsChange(e.target.value)} placeholder="回归, 冒烟, P0" />
+          </div>
+        </div>
+        <div className="modal__footer">
+          <button type="button" className="btn btn--secondary" onClick={onClose}>取消</button>
+          <button type="button" className="btn btn--primary" onClick={onSubmit} disabled={submitting || !name.trim()}>
+            {submitting ? (mode === 'create' ? '创建中…' : '保存中…') : (mode === 'create' ? '创建' : '保存')}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface CollectionCaseRowProps {
+  caseId: string;
+  type: 'manual' | 'auto';
+  manualMap: Map<string, TestCaseResponse>;
+  autoMap: Map<string, AutomationTestCaseResponse>;
+  onRemove: () => void;
+}
+
+function CollectionCaseRow({ caseId, type, manualMap, autoMap, onRemove }: CollectionCaseRowProps) {
+  const title = getCaseDisplayTitle(type, caseId, manualMap, autoMap);
+  const status = type === 'manual' ? manualMap.get(caseId)?.status : autoMap.get(caseId)?.status;
+  return (
+    <tr className="collection-case-table__row">
+      <td><span className={`case-type-badge case-type-badge--${type}`}>{getCaseTypeLabel(type)}</span></td>
+      <td><code className="collection-case-table__id">{caseId}</code></td>
+      <td className="collection-case-table__title">{title}</td>
+      <td><span className="collection-case-table__status">{status ? getCaseStatusLabel(status) : '—'}</span></td>
+      <td className="collection-case-table__actions">
+        <button type="button" className="btn btn--ghost btn--sm collection-case-row__remove" onClick={onRemove}>移除</button>
+      </td>
+    </tr>
+  );
+}
+
+const TestCaseCollectionPage: React.FC<TestCaseCollectionPageProps> = ({ currentUserId }) => {
+  const { items: libraryItems, manualMap, autoMap, labs, loading: libraryLoading, refresh: refreshLibrary } = useCaseLibrary();
   const [collections, setCollections] = useState<CollectionListItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selected, setSelected] = useState<CollectionResponse | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
-
-  // Create modal
   const [createOpen, setCreateOpen] = useState(false);
   const [newName, setNewName] = useState('');
   const [newDesc, setNewDesc] = useState('');
   const [newTags, setNewTags] = useState('');
   const [creating, setCreating] = useState(false);
-
-  // Edit modal
   const [editOpen, setEditOpen] = useState(false);
   const [editName, setEditName] = useState('');
   const [editDesc, setEditDesc] = useState('');
   const [editTags, setEditTags] = useState('');
   const [editing, setEditing] = useState(false);
-
-  // Add cases modal
   const [addOpen, setAddOpen] = useState(false);
-  const [addCaseIds, setAddCaseIds] = useState('');
-  const [addAutoCaseIds, setAddAutoCaseIds] = useState('');
+  const addSelection = useDualCaseSelection();
   const [adding, setAdding] = useState(false);
+  const [caseSearch, setCaseSearch] = useState('');
+  const [caseTypeFilter, setCaseTypeFilter] = useState<TypeFilter>('all');
+  const selectedRef = useRef(selected);
+  selectedRef.current = selected;
+  const initialSelectedRef = useRef(false);
 
   const fetchCollections = useCallback(async (q?: string) => {
     setLoading(true);
     setError(null);
     try {
       const res = await api.listCollections(q || undefined);
-      setCollections(res.data || []);
+      const items = res.data || [];
+      setCollections(items);
+      const current = selectedRef.current;
+      if (current) {
+        const still = items.find(c => c.collection_id === current.collection_id);
+        if (!still) setSelected(null);
+      }
     } catch (err) {
       setError('获取集合列表失败');
       console.error(err);
@@ -50,20 +177,44 @@ const TestCaseCollectionPage: React.FC = () => {
 
   const fetchDetail = useCallback(async (id: string) => {
     setDetailLoading(true);
+    setCaseSearch('');
+    setCaseTypeFilter('all');
     try {
       const res = await api.getCollection(id);
       setSelected(res.data);
-    } catch { setSelected(null); }
-    finally { setDetailLoading(false); }
+    } catch {
+      setSelected(null);
+    } finally {
+      setDetailLoading(false);
+    }
   }, []);
 
-  // ── Search ──
   useEffect(() => {
     const timer = setTimeout(() => fetchCollections(searchQuery || undefined), 300);
     return () => clearTimeout(timer);
   }, [searchQuery, fetchCollections]);
 
-  // ── Create ──
+  useEffect(() => {
+    if (!initialSelectedRef.current && collections.length > 0 && !selected) {
+      initialSelectedRef.current = true;
+      fetchDetail(collections[0].collection_id);
+    }
+  }, [collections, selected, fetchDetail]);
+
+  const listStats = useMemo(() => ({
+    count: collections.length,
+    totalCases: collections.reduce((sum, c) => sum + c.case_count + c.auto_case_count, 0),
+  }), [collections]);
+
+  const openAddModal = () => {
+    addSelection.reset();
+    setAddOpen(true);
+    refreshLibrary();
+  };
+
+  const excludeManualIds = useMemo(() => new Set(selected?.case_ids || []), [selected?.case_ids]);
+  const excludeAutoIds = useMemo(() => new Set(selected?.auto_case_ids || []), [selected?.auto_case_ids]);
+
   const handleCreate = async () => {
     if (!newName.trim()) return;
     setCreating(true);
@@ -72,13 +223,13 @@ const TestCaseCollectionPage: React.FC = () => {
       await api.createCollection({
         name: newName.trim(),
         description: newDesc.trim() || undefined,
-        tags: newTags.trim() ? newTags.split(/[,，]/).map(t => t.trim()).filter(Boolean) : undefined,
+        tags: parseTagsInput(newTags),
       });
       setCreateOpen(false);
       setNewName('');
       setNewDesc('');
       setNewTags('');
-      fetchCollections();
+      await fetchCollections();
     } catch (err) {
       setError('创建集合失败');
       console.error(err);
@@ -87,7 +238,6 @@ const TestCaseCollectionPage: React.FC = () => {
     }
   };
 
-  // ── Edit ──
   const openEdit = () => {
     if (!selected) return;
     setEditName(selected.name);
@@ -104,11 +254,11 @@ const TestCaseCollectionPage: React.FC = () => {
       await api.updateCollection(selected.collection_id, {
         name: editName.trim(),
         description: editDesc.trim() || undefined,
-        tags: editTags.trim() ? editTags.split(/[,，]/).map(t => t.trim()).filter(Boolean) : [],
+        tags: parseTagsInput(editTags) ?? [],
       });
       setEditOpen(false);
-      fetchCollections();
-      fetchDetail(selected.collection_id);
+      await fetchCollections();
+      await fetchDetail(selected.collection_id);
     } catch (err) {
       setError('更新集合失败');
       console.error(err);
@@ -117,7 +267,6 @@ const TestCaseCollectionPage: React.FC = () => {
     }
   };
 
-  // ── Delete ──
   const handleDelete = async () => {
     if (!selected) return;
     if (!window.confirm(`确定删除集合「${selected.name}」吗？`)) return;
@@ -125,27 +274,27 @@ const TestCaseCollectionPage: React.FC = () => {
     try {
       await api.deleteCollection(selected.collection_id);
       setSelected(null);
-      fetchCollections();
+      await fetchCollections();
     } catch (err) {
       setError('删除集合失败');
       console.error(err);
     }
   };
 
-  // ── Add cases ──
   const handleAddCases = async () => {
     if (!selected) return;
+    if (addSelection.count === 0) return;
     setAdding(true);
     setError(null);
     try {
       await api.addCasesToCollection(selected.collection_id, {
-        case_ids: addCaseIds.trim() ? addCaseIds.split(/[,，]/).map(t => t.trim()).filter(Boolean) : [],
-        auto_case_ids: addAutoCaseIds.trim() ? addAutoCaseIds.split(/[,，]/).map(t => t.trim()).filter(Boolean) : [],
+        case_ids: Array.from(addSelection.selectedManualIds),
+        auto_case_ids: Array.from(addSelection.selectedAutoIds),
       });
       setAddOpen(false);
-      setAddCaseIds('');
-      setAddAutoCaseIds('');
-      fetchDetail(selected.collection_id);
+      addSelection.clear();
+      await fetchDetail(selected.collection_id);
+      await fetchCollections();
     } catch (err) {
       setError('添加用例失败');
       console.error(err);
@@ -154,286 +303,242 @@ const TestCaseCollectionPage: React.FC = () => {
     }
   };
 
-  // ── Remove single case ──
-  const handleRemoveCase = async (caseId: string) => {
+  const handleRemoveCase = async (type: 'manual' | 'auto', id: string) => {
     if (!selected) return;
     try {
-      await api.removeCasesFromCollection(selected.collection_id, { case_ids: [caseId] });
-      fetchDetail(selected.collection_id);
+      await api.removeCasesFromCollection(
+        selected.collection_id,
+        type === 'manual' ? { case_ids: [id] } : { auto_case_ids: [id] },
+      );
+      await fetchDetail(selected.collection_id);
+      await fetchCollections();
     } catch (err) {
       setError('移除用例失败');
       console.error(err);
     }
   };
 
-  const handleRemoveAutoCase = async (autoCaseId: string) => {
-    if (!selected) return;
-    try {
-      await api.removeCasesFromCollection(selected.collection_id, { auto_case_ids: [autoCaseId] });
-      fetchDetail(selected.collection_id);
-    } catch (err) {
-      setError('移除用例失败');
-      console.error(err);
-    }
-  };
-
-  const tagsArray = useMemo(() => {
-    if (!selected?.tags) return [];
-    return selected.tags;
+  const detailCaseRows = useMemo(() => {
+    if (!selected) return [] as { type: 'manual' | 'auto'; id: string }[];
+    const rows: { type: 'manual' | 'auto'; id: string }[] = [];
+    selected.case_ids.forEach(id => rows.push({ type: 'manual', id }));
+    selected.auto_case_ids.forEach(id => rows.push({ type: 'auto', id }));
+    return rows;
   }, [selected]);
 
+  const filteredDetailCases = useMemo(() => {
+    const q = caseSearch.trim().toLowerCase();
+    return detailCaseRows.filter(row => {
+      if (caseTypeFilter === 'manual' && row.type !== 'manual') return false;
+      if (caseTypeFilter === 'auto' && row.type !== 'auto') return false;
+      if (!q) return true;
+      const title = getCaseDisplayTitle(row.type, row.id, manualMap, autoMap).toLowerCase();
+      return row.id.toLowerCase().includes(q) || title.includes(q);
+    });
+  }, [detailCaseRows, caseSearch, caseTypeFilter, manualMap, autoMap]);
+
+  const manualCount = selected?.case_ids.length ?? 0;
+  const autoCount = selected?.auto_case_ids.length ?? 0;
+  const totalInCollection = manualCount + autoCount;
+  const canDelete = selected ? currentUserId === 'admin' || currentUserId === selected.created_by : false;
+  const closeDetail = () => setSelected(null);
+
   return (
-    <div className="page-content">
-      <PageHero
-        badge="test case collection"
-        description="创建和管理用例集合，用于在执行任务时快速批量选取测试用例。"
-        accent="#6366f1"
-        gradient={['#f0f0ff', '#e0e7ff', '#f0f0ff']}
-      />
-
-      <PageToolbar
-        meta={(
-          <>
-            <StatPill label="集合数" value={collections.length} />
-          </>
-        )}
-        actions={(
-          <>
-            <input
-              type="search"
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              placeholder="搜索集合名称、描述…"
-              className="form-input"
-              style={{ width: 200, fontSize: 13 }}
-              aria-label="搜索集合"
-            />
-            <button type="button" className="btn btn--primary btn--sm" onClick={() => setCreateOpen(true)}>
-              + 新建集合
-            </button>
-          </>
-        )}
-      />
-
+    <>
       {error && (
-        <div className="error-banner" style={{ marginBottom: 16, justifyContent: 'space-between' }}>
+        <div className="error-banner collection-page__error">
           <span>⚠ {error}</span>
           <button type="button" className="btn btn--ghost btn--sm" onClick={() => setError(null)}>×</button>
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: 16, minHeight: '60vh' }}>
-        {/* ── Left: list ── */}
-        <div style={{ width: 320, minWidth: 320 }}>
-          {loading ? (
-            <div className="loading-overlay"><div className="loading-spinner" /></div>
-          ) : collections.length === 0 ? (
-            <div className="empty-state" style={{ padding: '32px 16px' }}>
-              <div className="empty-state__icon">📁</div>
-              <p className="empty-state__text">{searchQuery ? '没有匹配的集合' : '暂无用例集合'}</p>
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {collections.map(c => (
-                <button
-                  key={c.collection_id}
-                  type="button"
-                  onClick={() => fetchDetail(c.collection_id)}
-                  style={{
-                    display: 'block', width: '100%', textAlign: 'left', padding: '10px 14px',
-                    borderRadius: 8, border: '1px solid var(--border-subtle)',
-                    background: selected?.collection_id === c.collection_id
-                      ? 'color-mix(in srgb, var(--accent-primary) 6%, transparent)'
-                      : 'var(--surface-primary)',
-                    cursor: 'pointer', transition: 'all 0.1s',
-                    borderColor: selected?.collection_id === c.collection_id ? 'var(--accent-primary)' : 'var(--border-subtle)',
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-primary)' }}>
-                      {c.collection_id} · {c.name}
-                    </span>
-                    <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'monospace' }}>
-                      {c.case_count + c.auto_case_count} 用例
-                    </span>
-                  </div>
-                  {c.description && (
-                    <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2, lineHeight: 1.4 }}>
-                      {c.description.slice(0, 60)}{c.description.length > 60 ? '…' : ''}
-                    </div>
-                  )}
-                  {c.tags.length > 0 && (
-                    <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
-                      {c.tags.slice(0, 3).map(t => (
-                        <span key={t} style={{ fontSize: 10, padding: '1px 6px', borderRadius: 999, backgroundColor: 'var(--surface-secondary)', color: 'var(--text-tertiary)' }}>{t}</span>
-                      ))}
-                    </div>
-                  )}
+      <div className={`collection-page split-workspace${selected ? ' split-workspace--has-selection' : ''}`}>
+        <aside className="split-workspace__list">
+          <div className="split-panel-toolbar">
+            <PageToolbar
+              meta={(
+                <>
+                  <StatPill label="集合数" value={listStats.count} />
+                  <StatPill label="总用例数" value={listStats.totalCases} tone="info" />
+                </>
+              )}
+              actions={(
+                <button type="button" className="btn btn--primary btn--sm" onClick={() => setCreateOpen(true)}>
+                  + 新建预制集合
                 </button>
-              ))}
-            </div>
-          )}
-        </div>
+              )}
+            />
+          </div>
+          <div className="filter-strip">
+            <input type="search" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="搜索集合名称、描述…" className="form-input" aria-label="搜索集合" />
+            <button type="button" className="btn btn--secondary btn--sm" onClick={() => fetchCollections(searchQuery || undefined)} disabled={loading}>刷新</button>
+          </div>
+          <div className="split-list-scroll collection-list-table-wrap">
+            {loading && collections.length === 0 ? (
+              <div className="loading-overlay"><div className="loading-spinner" /></div>
+            ) : collections.length === 0 ? (
+              <div className="empty-state"><div className="empty-state__icon">📁</div><p className="empty-state__text">{searchQuery ? '没有匹配的预制集合' : '暂无用例预制集'}</p></div>
+            ) : (
+              <table className="data-table collection-list-table">
+                <thead>
+                  <tr>
+                    <th>名称</th>
+                    <th className="collection-list-table__col-id">ID</th>
+                    <th className="collection-list-table__col-num">手工</th>
+                    <th className="collection-list-table__col-num">自动</th>
+                    <th className="collection-list-table__col-time">更新</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {collections.map(c => (
+                    <tr
+                      key={c.collection_id}
+                      className={selected?.collection_id === c.collection_id ? 'collection-list-table__row selected' : 'collection-list-table__row'}
+                      onClick={() => fetchDetail(c.collection_id)}
+                    >
+                      <td className="collection-list-table__name">{c.name}</td>
+                      <td><code className="collection-list-table__id">{c.collection_id}</code></td>
+                      <td className="collection-list-table__num">{c.case_count}</td>
+                      <td className="collection-list-table__num">{c.auto_case_count}</td>
+                      <td className="collection-list-table__time" title={new Date(c.updated_at).toLocaleString('zh-CN')}>{formatRelativeTime(c.updated_at)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </aside>
 
-        {/* ── Right: detail ── */}
-        <div style={{ flex: 1, minWidth: 0 }}>
-          {!selected ? (
-            <div className="empty-state" style={{ height: '100%' }}>
-              <div className="empty-state__icon">👈</div>
-              <p className="empty-state__text">从左侧选择一个用例集合</p>
+        <main className="split-workspace__main">
+          {selected ? (
+            <div className="split-detail-scroll">
+              <button type="button" className="split-workspace__back" onClick={closeDetail}>← 返回列表</button>
+              {detailLoading ? (
+                <div className="loading-overlay"><div className="loading-spinner" /></div>
+              ) : (
+                <>
+                  <DetailHeader
+                    id={selected.collection_id}
+                    title={selected.name}
+                    subtitle={selected.description || undefined}
+                    badges={(selected.tags || []).map(t => <span key={t} className="collection-tag">{t}</span>)}
+                    actions={(
+                      <>
+                        <button type="button" className="btn btn--primary btn--sm" onClick={openAddModal}>添加用例</button>
+                        <button type="button" className="btn btn--secondary btn--sm" onClick={openEdit}>编辑</button>
+                        {canDelete && <button type="button" className="btn btn--danger btn--sm" onClick={handleDelete}>删除</button>}
+                      </>
+                    )}
+                  />
+                  <div className="split-detail-content">
+                    <DetailStatGrid stats={[
+                      { label: '手工用例', value: manualCount },
+                      { label: '自动化用例', value: autoCount },
+                      { label: '合计', value: totalInCollection },
+                    ]} />
+                    <div className="split-detail-meta-block">
+                      <DetailMetaRow label="创建人" value={selected.created_by} />
+                      <DetailMetaRow label="更新时间" value={`${formatRelativeTime(selected.updated_at)}（${new Date(selected.updated_at).toLocaleString('zh-CN')}）`} />
+                    </div>
+                    <DetailSection title="集合用例" hint={totalInCollection > 0 ? `共 ${totalInCollection} 条` : undefined}>
+                      {totalInCollection > 0 && (
+                        <div className="collection-case-filters">
+                          <input type="search" className="form-input collection-case-filters__search" value={caseSearch} onChange={e => setCaseSearch(e.target.value)} placeholder="搜索 ID 或标题…" aria-label="搜索集合内用例" />
+                          <div className="collection-case-filters__tabs" role="tablist" aria-label="用例类型">
+                            {PICKER_TYPE_FILTERS.map(({ key, label }) => (
+                              <button
+                                key={key}
+                                type="button"
+                                role="tab"
+                                aria-selected={caseTypeFilter === key}
+                                className={caseTypeFilter === key ? 'collection-case-filters__tab collection-case-filters__tab--active' : 'collection-case-filters__tab'}
+                                onClick={() => setCaseTypeFilter(key)}
+                              >
+                                {label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {totalInCollection === 0 ? (
+                        <div className="collection-case-empty">
+                          <p className="collection-case-empty__text">此集合暂无用例</p>
+                          <button type="button" className="btn btn--primary btn--sm" onClick={openAddModal}>+ 添加用例</button>
+                        </div>
+                      ) : filteredDetailCases.length === 0 ? (
+                        <p className="split-detail-empty-text">没有匹配的用例</p>
+                      ) : (
+                        <div className="collection-case-table-wrap">
+                          <table className="data-table collection-case-table">
+                            <thead>
+                              <tr>
+                                <th style={{ width: 88 }}>类型</th>
+                                <th style={{ width: 120 }}>ID</th>
+                                <th>标题</th>
+                                <th style={{ width: 96 }}>状态</th>
+                                <th style={{ width: 72 }}>移除</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {filteredDetailCases.map(row => (
+                                <CollectionCaseRow key={`${row.type}-${row.id}`} caseId={row.id} type={row.type} manualMap={manualMap} autoMap={autoMap} onRemove={() => handleRemoveCase(row.type, row.id)} />
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </DetailSection>
+                  </div>
+                </>
+              )}
             </div>
-          ) : detailLoading ? (
-            <div className="loading-overlay"><div className="loading-spinner" /></div>
           ) : (
-            <div className="surface-card" style={{ padding: '20px 24px' }}>
-              {/* Header */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                    <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--accent-primary)', fontWeight: 500 }}>
-                      {selected.collection_id}
-                    </span>
-                    {tagsArray.map(t => (
-                      <span key={t} style={{ fontSize: 10, padding: '1px 8px', borderRadius: 999, backgroundColor: 'color-mix(in srgb, var(--accent-primary) 10%, transparent)', color: 'var(--accent-primary)' }}>{t}</span>
-                    ))}
-                  </div>
-                  <h3 style={{ margin: 0, fontSize: 18, fontWeight: 600, color: 'var(--text-primary)' }}>{selected.name}</h3>
-                  {selected.description && (
-                    <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5 }}>{selected.description}</p>
-                  )}
-                  <span style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4, display: 'block' }}>
-                    创建人: {selected.created_by} · 更新: {new Date(selected.updated_at).toLocaleString('zh-CN')}
-                  </span>
-                </div>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <button type="button" className="btn btn--secondary btn--sm" onClick={openEdit}>编辑</button>
-                  <button type="button" className="btn btn--secondary btn--sm" onClick={() => setAddOpen(true)}>+ 添加用例</button>
-                  <button type="button" className="btn btn--danger btn--sm" onClick={handleDelete}>删除</button>
-                </div>
-              </div>
-
-              {/* Cases list */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {selected.case_ids.length > 0 && (
-                  <div>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>手工测试用例 ({selected.case_ids.length})</div>
-                    {selected.case_ids.map(cid => (
-                      <div key={cid} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderBottom: '0.5px solid var(--border-subtle)', fontSize: 13 }}>
-                        <span style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--accent-cyan)', minWidth: 55 }}>{cid}</span>
-                        <span style={{ flex: 1, color: 'var(--text-primary)' }}>{cid}</span>
-                        <button type="button" className="btn btn--ghost btn--sm" onClick={() => handleRemoveCase(cid)} style={{ color: 'var(--status-error)', fontSize: 10, padding: '2px 6px' }}>移除</button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {selected.auto_case_ids.length > 0 && (
-                  <div>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>自动化测试用例 ({selected.auto_case_ids.length})</div>
-                    {selected.auto_case_ids.map(aid => (
-                      <div key={aid} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderBottom: '0.5px solid var(--border-subtle)', fontSize: 13 }}>
-                        <span style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--accent-purple)', minWidth: 55 }}>{aid}</span>
-                        <span style={{ flex: 1, color: 'var(--text-primary)' }}>{aid}</span>
-                        <button type="button" className="btn btn--ghost btn--sm" onClick={() => handleRemoveAutoCase(aid)} style={{ color: 'var(--status-error)', fontSize: 10, padding: '2px 6px' }}>移除</button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {selected.case_ids.length === 0 && selected.auto_case_ids.length === 0 && (
-                  <p style={{ fontSize: 13, color: 'var(--text-tertiary)', textAlign: 'center', padding: 24 }}>此集合暂无用例，点击「+ 添加用例」添加</p>
-                )}
-              </div>
-            </div>
+            <DetailEmpty icon="📁" text="从左侧选择一个预制集合查看详情" />
           )}
-        </div>
+        </main>
       </div>
 
-      {/* ── Create Modal ── */}
-      {createOpen && (
-        <div className="modal-overlay" onClick={() => setCreateOpen(false)}>
-          <div className="modal" onClick={e => e.stopPropagation()} style={{ width: 480 }}>
-            <div className="modal__header">
-              <h3 className="modal__title">新建用例集合</h3>
-              <button className="modal__close" onClick={() => setCreateOpen(false)}>×</button>
-            </div>
-            <div className="modal__body">
-              <div style={{ marginBottom: 14 }}>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>集合名称 *</label>
-                <input className="form-input" value={newName} onChange={e => setNewName(e.target.value)} placeholder="例如: 回归基线集合" autoFocus />
-              </div>
-              <div style={{ marginBottom: 14 }}>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>描述</label>
-                <textarea className="form-input" value={newDesc} onChange={e => setNewDesc(e.target.value)} placeholder="说明此集合的用途" rows={3} />
-              </div>
-              <div style={{ marginBottom: 14 }}>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>标签（逗号分隔）</label>
-                <input className="form-input" value={newTags} onChange={e => setNewTags(e.target.value)} placeholder="回归, 冒烟, P0" />
-              </div>
-            </div>
-            <div className="modal__footer">
-              <button className="btn btn--secondary" onClick={() => setCreateOpen(false)}>取消</button>
-              <button className="btn btn--primary" onClick={handleCreate} disabled={creating || !newName.trim()}>{creating ? '创建中…' : '创建'}</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <CollectionFormModal mode="create" open={createOpen} name={newName} description={newDesc} tags={newTags} submitting={creating} onClose={() => setCreateOpen(false)} onNameChange={setNewName} onDescriptionChange={setNewDesc} onTagsChange={setNewTags} onSubmit={handleCreate} />
+      <CollectionFormModal mode="edit" open={editOpen} name={editName} description={editDesc} tags={editTags} submitting={editing} onClose={() => setEditOpen(false)} onNameChange={setEditName} onDescriptionChange={setEditDesc} onTagsChange={setEditTags} onSubmit={handleEdit} />
 
-      {/* ── Edit Modal ── */}
-      {editOpen && (
-        <div className="modal-overlay" onClick={() => setEditOpen(false)}>
-          <div className="modal" onClick={e => e.stopPropagation()} style={{ width: 480 }}>
-            <div className="modal__header">
-              <h3 className="modal__title">编辑集合</h3>
-              <button className="modal__close" onClick={() => setEditOpen(false)}>×</button>
-            </div>
-            <div className="modal__body">
-              <div style={{ marginBottom: 14 }}>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>集合名称 *</label>
-                <input className="form-input" value={editName} onChange={e => setEditName(e.target.value)} autoFocus />
-              </div>
-              <div style={{ marginBottom: 14 }}>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>描述</label>
-                <textarea className="form-input" value={editDesc} onChange={e => setEditDesc(e.target.value)} rows={3} />
-              </div>
-              <div style={{ marginBottom: 14 }}>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>标签（逗号分隔）</label>
-                <input className="form-input" value={editTags} onChange={e => setEditTags(e.target.value)} />
-              </div>
-            </div>
-            <div className="modal__footer">
-              <button className="btn btn--secondary" onClick={() => setEditOpen(false)}>取消</button>
-              <button className="btn btn--primary" onClick={handleEdit} disabled={editing || !editName.trim()}>{editing ? '保存中…' : '保存'}</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Add Cases Modal ── */}
-      {addOpen && (
+      {addOpen && selected && (
         <div className="modal-overlay" onClick={() => setAddOpen(false)}>
-          <div className="modal" onClick={e => e.stopPropagation()} style={{ width: 480 }}>
+          <div className="modal modal--wide collection-add-modal" onClick={e => e.stopPropagation()}>
             <div className="modal__header">
-              <h3 className="modal__title">添加用例到集合</h3>
-              <button className="modal__close" onClick={() => setAddOpen(false)}>×</button>
+              <div>
+                <h3 className="modal__title">从用例库添加用例</h3>
+                <p className="collection-add-modal__subtitle">集合：{selected.name}</p>
+              </div>
+              <button type="button" className="modal__close" onClick={() => setAddOpen(false)}>×</button>
             </div>
-            <div className="modal__body">
-              <p style={{ fontSize: 12, color: 'var(--text-tertiary)', margin: '0 0 12px' }}>输入用例 ID，多个用逗号分隔。已有用例会自动去重。</p>
-              <div style={{ marginBottom: 14 }}>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>手工用例 ID</label>
-                <input className="form-input" value={addCaseIds} onChange={e => setAddCaseIds(e.target.value)} placeholder="TC-001, TC-002" />
-              </div>
-              <div style={{ marginBottom: 14 }}>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>自动化用例 ID</label>
-                <input className="form-input" value={addAutoCaseIds} onChange={e => setAddAutoCaseIds(e.target.value)} placeholder="AC-001, AC-002" />
-              </div>
+            <div className="modal__body collection-add-modal__body">
+              <p className="collection-add-modal__hint">从用例看板库中勾选要添加的用例。已在集合中的用例将自动排除。</p>
+              <CaseLibraryPicker
+                items={libraryItems}
+                labs={labs}
+                loading={libraryLoading}
+                selectedManualIds={addSelection.selectedManualIds}
+                selectedAutoIds={addSelection.selectedAutoIds}
+                onToggleManual={addSelection.toggleManual}
+                onToggleAuto={addSelection.toggleAuto}
+                excludeManualIds={excludeManualIds}
+                excludeAutoIds={excludeAutoIds}
+                onSelectFiltered={addSelection.mergeFiltered}
+                onClearSelection={addSelection.clear}
+                onRefresh={refreshLibrary}
+              />
             </div>
             <div className="modal__footer">
-              <button className="btn btn--secondary" onClick={() => setAddOpen(false)}>取消</button>
-              <button className="btn btn--primary" onClick={handleAddCases} disabled={adding}>{adding ? '添加中…' : '添加'}</button>
+              <span className="collection-add-modal__selection">{addSelection.count > 0 ? `已选 ${addSelection.count} 个用例` : '请勾选要添加的用例'}</span>
+              <button type="button" className="btn btn--secondary" onClick={() => setAddOpen(false)}>取消</button>
+              <button type="button" className="btn btn--primary" onClick={handleAddCases} disabled={adding || addSelection.count === 0}>
+                {adding ? '添加中…' : `添加${addSelection.count > 0 ? ` (${addSelection.count})` : ''}`}
+              </button>
             </div>
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 };
 

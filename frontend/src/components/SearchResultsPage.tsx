@@ -68,7 +68,7 @@ export default function SearchResultsPage({ initialQuery = '', onNavigate, onHig
     <div className="page-content">
       <PageHero
         badge="global search"
-        description="跨模块搜索测试需求、用例、执行任务、评论等内容。"
+        description="跨模块搜索测试用例编写需求、用例、执行任务、评论等内容。"
         accent="#6366f1"
         gradient={['#f0f0ff', '#e0e7ff', '#f0f0ff']}
       />

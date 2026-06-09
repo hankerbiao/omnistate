@@ -3,7 +3,7 @@ import Topbar from './Topbar'
 import type { PageType, NavItem, NavSection } from '../types/app'
 
 const PAGE_TITLES: Record<PageType, { title: string; description?: string }> = {
-  requirements: { title: '测试需求', description: '管理和跟踪测试需求' },
+  requirements: { title: '测试用例编写需求', description: '管理和跟踪测试用例编写需求' },
   myTasks: { title: '我的任务', description: '待处理的工作项' },
   manualTestCases: { title: '测试用例', description: '查看和管理手工测试用例' },
   testCases: { title: '用例看板', description: '概览、浏览和管理测试用例' },
@@ -11,13 +11,14 @@ const PAGE_TITLES: Record<PageType, { title: string; description?: string }> = {
   tasks: { title: '执行任务', description: '下发和管理测试任务' },
   users: { title: '用户管理', description: '管理系统用户和权限' },
   roles: { title: '角色管理', description: '配置角色和权限' },
+  roleGroup: { title: '用户组管理', description: '管理组成员与权限' },
   profile: { title: '个人信息', description: '查看个人信息和权限' },
   permissions: { title: '权限管理', description: '管理系统权限项' },
   dashboard: { title: '数据统计', description: '测试数据整体概览' },
   catalogLabs: { title: 'Lab 管理', description: '管理测试用例目录 Lab' },
-  testPlanStudio: { title: '执行计划', description: '测试计划与排期管理' },
+  testPlanStudioDemo: { title: '执行计划(demo)', description: '重构版执行计划页面' },
   lineageView: { title: '测试血缘', description: '从结果追溯完整测试链路' },
-  collections: { title: '用例集合', description: '管理测试用例集合' },
+  collections: { title: '预制用例集', description: '管理预制测试用例集' },
   search: { title: '全局搜索', description: '跨模块搜索' },
 }
 

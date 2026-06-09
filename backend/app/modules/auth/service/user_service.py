@@ -8,7 +8,7 @@ from app.modules.auth.repository.models import UserDoc
 from app.modules.auth.service.exceptions import UserNotFoundError
 from app.modules.auth.service.support import AuthServiceSupport
 from app.shared.auth import hash_password, verify_password
-from app.shared.auth.jwt_auth import get_permissions_by_role_ids
+from app.shared.auth.jwt_auth import get_permissions_by_ids, get_permissions_by_role_ids
 
 
 class UserService(AuthServiceSupport):
@@ -79,6 +79,14 @@ class UserService(AuthServiceSupport):
         await doc.save()
         return self._doc_to_dict(doc)
 
+    async def update_user_extra_permissions(self, user_id: str, extra_permission_ids: List[str]) -> Dict[str, Any]:
+        """更新用户的独立额外权限列表。"""
+        doc = await self._find_or_raise(UserDoc, UserDoc.user_id == user_id, UserNotFoundError)
+        await self._ensure_permissions_exist(extra_permission_ids)
+        doc.extra_permission_ids = extra_permission_ids
+        await doc.save()
+        return self._doc_to_dict(doc)
+
     async def _set_password(self, doc, new_password: str) -> None:
         salt, pwd_hash = hash_password(new_password)
         doc.password_salt = salt
@@ -120,7 +128,17 @@ class UserService(AuthServiceSupport):
         if not user:
             raise UserNotFoundError("user not found")
         role_ids = user.role_ids or []
-        if not role_ids:
-            return {"user_id": user_id, "role_ids": [], "permissions": []}
-        codes = await get_permissions_by_role_ids(role_ids)
-        return {"user_id": user_id, "role_ids": role_ids, "permissions": codes}
+        extra_ids = user.extra_permission_ids or []
+
+        role_codes = await get_permissions_by_role_ids(role_ids)
+        extra_codes = await get_permissions_by_ids(extra_ids)
+
+        all_codes = sorted(set(role_codes) | set(extra_codes))
+        return {
+            "user_id": user_id,
+            "role_ids": role_ids,
+            "extra_permission_ids": extra_ids,
+            "role_permissions": role_codes,
+            "extra_permissions": extra_codes,
+            "permissions": all_codes,
+        }

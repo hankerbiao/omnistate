@@ -123,6 +123,16 @@ DEFAULT_PERMISSIONS: list[tuple[str, str, str]] = [
         "创建、编辑、删除被测设备（DUT）及绑定关系。",
     ),
     (
+        "execution_plans:read",
+        "执行计划查看",
+        "查看测试执行计划、条目与我的任务。",
+    ),
+    (
+        "execution_plans:write",
+        "执行计划管理",
+        "创建、编辑执行计划、指派条目与手工结果回填。",
+    ),
+    (
         "execution_tasks:read",
         "执行任务查看",
         "查看测试执行任务列表、状态与执行结果。",
@@ -169,8 +179,8 @@ _READ = [
     "navigation:read",
 ]
 _WORKFLOW = ["work_items:write", "work_items:transition"]
-_EXEC_READ = ["execution_tasks:read", "execution_agents:read"]
-_EXEC_WRITE = ["execution_tasks:write", "execution_agents:write"]
+_EXEC_READ = ["execution_tasks:read", "execution_agents:read", "execution_plans:read"]
+_EXEC_WRITE = ["execution_tasks:write", "execution_agents:write", "execution_plans:write"]
 
 DEFAULT_ROLES = {
     "ADMIN": {
@@ -204,7 +214,7 @@ DEFAULT_ROLES = {
     },
     "TESTER": {
         "name": "TESTER", "description": "测试执行工程师", "is_system": True,
-        "permission_ids": [*_READ, "test_cases:write", *_WORKFLOW, "execution_tasks:read", "terminal:connect", "navigation:write"],
+        "permission_ids": [*_READ, "test_cases:write", *_WORKFLOW, "execution_tasks:read", "execution_plans:read", "execution_plans:write", "terminal:connect", "navigation:write"],
     },
     "AUTO_DEV": {
         "name": "AUTO_DEV", "description": "自动化测试开发工程师", "is_system": True,

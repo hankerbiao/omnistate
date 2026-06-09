@@ -14,6 +14,8 @@ from app.modules.auth.schemas import (
     UpdateUserPasswordRequest,
     UpdateUserRequest,
     UpdateUserRolesRequest,
+    UpdateUserExtraPermissionsRequest,
+    UserExtraPermissionsResponse,
     UserNavigationResponse,
     UserResponse,
     CreateUserRequest,
@@ -103,6 +105,41 @@ async def update_user_roles(
         return APIResponse(data=await service.update_user_roles(user_id, request.role_ids))
     except RoleNotFoundError:
         raise HTTPException(status_code=404, detail="role not found")
+    except UserNotFoundError:
+        raise HTTPException(status_code=404, detail="user not found")
+
+
+@router.get(
+    "/users/{user_id}/permissions",
+    response_model=APIResponse[UserExtraPermissionsResponse],
+    summary="获取用户生效权限详情（含来源标注）",
+)
+async def get_user_permissions_detail(
+    user_id: str,
+    service: UserServiceDep,
+    _=Depends(require_any_permission(["users:read", "users:write"])),
+):
+    try:
+        data = await service.get_effective_permissions(user_id)
+        return APIResponse(data=UserExtraPermissionsResponse(**data))
+    except UserNotFoundError:
+        raise HTTPException(status_code=404, detail="user not found")
+
+
+@router.put(
+    "/users/{user_id}/permissions/extra",
+    response_model=APIResponse[UserResponse],
+    summary="更新用户额外权限",
+)
+async def update_user_extra_permissions(
+    user_id: str,
+    request: UpdateUserExtraPermissionsRequest,
+    service: UserServiceDep,
+    _=Depends(require_permission("users:write")),
+):
+    try:
+        data = await service.update_user_extra_permissions(user_id, request.extra_permission_ids)
+        return APIResponse(data=data)
     except UserNotFoundError:
         raise HTTPException(status_code=404, detail="user not found")
 

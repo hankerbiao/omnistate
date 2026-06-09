@@ -10,7 +10,7 @@ interface EntityDetailModalProps {
 }
 
 const NODE_TYPE_LABELS: Record<string, string> = {
-  requirement: '测试需求',
+  requirement: '测试用例编写需求',
   test_case: '测试用例',
   automation_case: '自动化用例',
   task: '执行任务',

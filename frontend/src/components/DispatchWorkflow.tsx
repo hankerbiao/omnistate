@@ -308,7 +308,7 @@ const DispatchWorkflow: React.FC<DispatchWorkflowProps> = ({ open, autoTasks, on
                     type="search"
                     value={collectionQuery}
                     onChange={e => setCollectionQuery(e.target.value)}
-                    placeholder="从用例集合批量添加…"
+                    placeholder="从预置用例集批量添加…"
                     style={{
                       flex: 1, border: 'none', outline: 'none', fontSize: 12,
                       color: 'var(--text-primary)', backgroundColor: 'transparent',

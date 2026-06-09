@@ -25,6 +25,7 @@ class _FakeWorkflowGateway:
         creator_id: str,
         parent_item_id: str | None = None,
         session=None,
+        **kwargs,
     ) -> dict[str, str]:
         return {
             "id": f"{type_code.lower()}-wi-1",
@@ -112,6 +113,18 @@ class _FakeProjectionDoc:
         self.save_calls += 1
 
 
+class _FakeBusWorkItemDoc:
+    def __init__(self) -> None:
+        self.req_id = None
+
+    async def save(self, session=None) -> None:
+        return None
+
+    @classmethod
+    async def get(cls, item_id, session=None):
+        return cls()
+
+
 def test_create_requirement_does_not_persist_status_but_returns_workflow_status(monkeypatch) -> None:
     _FakeRequirementDoc.inserted_payloads = []
     service = _RequirementService(workflow_gateway=_FakeWorkflowGateway())
@@ -127,6 +140,10 @@ def test_create_requirement_does_not_persist_status_but_returns_workflow_status(
     monkeypatch.setattr(
         "app.modules.test_specs.service.requirement_service.RequirementService._enrich_requirement_status",
         lambda self, data: _async_value({**data, "status": "IN_REVIEW"}),
+    )
+    monkeypatch.setattr(
+        "app.modules.workflow.repository.models.BusWorkItemDoc",
+        _FakeBusWorkItemDoc,
     )
 
     result = asyncio.run(
@@ -165,6 +182,11 @@ def test_create_test_case_does_not_persist_status_but_returns_workflow_status(mo
         "app.modules.test_specs.service.test_case_service.TestCaseService._enrich_test_case_status",
         lambda self, data: _async_value({**data, "status": "IN_REVIEW"}),
     )
+    monkeypatch.setattr(
+        service._catalog_service,
+        "register_path",
+        lambda *args, **kwargs: _async_value(None),
+    )
 
     result = asyncio.run(
         service._create_test_case_with_transaction(
@@ -175,6 +197,8 @@ def test_create_test_case_does_not_persist_status_but_returns_workflow_status(mo
                 "title": "case",
                 "owner_id": "u-2",
                 "attachments": [],
+                "lab_id": "lab-1",
+                "catalog_path": "/lab-1/catalog",
             },
         )
     )

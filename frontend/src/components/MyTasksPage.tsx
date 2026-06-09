@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState, useMemo } from 'react';
 import { api } from '../services/api';
-import type { WorkItem, TestCaseResponse, RequirementResponse, PlanTaskItemResponse, PlanTaskResultPayload } from '../types';
+import type { WorkItem, TestCaseResponse, RequirementResponse } from '../types';
 import { WorkflowPanel, WorkflowActionToolbar } from './workflow';
 import {
   getStateLabel,
@@ -12,47 +12,11 @@ import PlanTaskTable from './PlanTaskTable';
 import ResultBackfillModal from './ResultBackfillModal';
 import SingleDispatchModal from './SingleDispatchModal';
 import DispatchWorkflow from './DispatchWorkflow';
-import type { PlanTask, PlanTaskResult } from './myTasksTypes';
-import { TYPE_LABELS, TYPE_COLORS, groupBadgeStyle, myTasksStyles } from './myTasksTypes';
+import { transformApiItem, groupBadgeStyle, myTasksStyles, type PlanTask, type PlanTaskResult } from './myTasksTypes';
+
 
 interface MyTasksPageProps {
   userId: string;
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-//  Transformer — 后端 PlanTaskItemResponse → 前端 PlanTask
-// ═══════════════════════════════════════════════════════════════════════
-
-function transformApiItem(item: PlanTaskItemResponse): PlanTask {
-  const resultPayload = item.result;
-  const result: PlanTaskResult | undefined = resultPayload
-    ? {
-        passed: resultPayload.passed,
-        notes: resultPayload.notes,
-        severity: resultPayload.severity,
-        executedAt: resultPayload.executed_at ?? '',
-        actual: resultPayload.actual,
-        expected: resultPayload.expected,
-        env: resultPayload.env,
-        testData: resultPayload.test_data,
-        bugId: resultPayload.bug_id,
-        actualDuration: resultPayload.actual_duration,
-        attachments: resultPayload.attachments,
-      }
-    : undefined;
-
-  return {
-    id: item.item_id,
-    planId: item.plan_id,
-    planTitle: item.plan_title,
-    caseId: item.case_id,
-    caseTitle: item.case_title,
-    type: item.ref_type === 'auto' ? 'auto' : 'manual',
-    component: item.component,
-    assignee: item.assignee_id ?? '',
-    status: item.status as PlanTask['status'],
-    result,
-  };
 }
 
 const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
@@ -80,28 +44,65 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
   // Batch dispatch modal state
   const [batchOpen, setBatchOpen] = useState(false);
 
-  // ── Derived data ──
-
-  const displayPlanTasks = useMemo(
-    () => planTasks, // API 已经按 assignee_id 过滤
+  const autoTasksForDispatch = useMemo(
+    () => planTasks.filter(t => t.type === 'auto' && t.status !== 'done'),
     [planTasks],
   );
 
-  const autoTasksForDispatch = useMemo(
-    () => displayPlanTasks.filter(t => t.type === 'auto' && t.status !== 'done'),
-    [displayPlanTasks],
-  );
+  // ── 按四种类型归类工作流事项 ──
 
-  const groupedItems = useMemo(() => {
-    return items.reduce<Record<string, WorkItem[]>>((acc, item) => {
-      const type = item.type_code;
-      if (!acc[type]) acc[type] = [];
-      acc[type].push(item);
-      return acc;
-    }, {});
-  }, [items]);
+  type TaskCategory = 'review' | 'requirement' | 'testcase_dev' | 'plan_task';
 
-  const typeOrder = ['PLAN_TASK', 'REQUIREMENT', 'TEST_CASE'];
+  interface TaskCategoryGroup {
+    key: TaskCategory;
+    label: string;
+    typeLabel: string;
+    color: string;
+    items: WorkItem[];
+  }
+
+  const categories = useMemo<TaskCategoryGroup[]>(() => {
+    // (1) 审核相关 — 待审核状态的事项
+    const reviewItems = items.filter(
+      it => it.current_state === 'PENDING_REVIEW',
+    );
+    // (2) 测试需求管理 — REQUIREMENT 中非审核中的
+    const reqItems = items.filter(
+      it => it.type_code === 'REQUIREMENT' && it.current_state !== 'PENDING_REVIEW',
+    );
+    // (3) 测试用例开发 — TEST_CASE 中非审核中的
+    const tcItems = items.filter(
+      it => it.type_code === 'TEST_CASE' && it.current_state !== 'PENDING_REVIEW',
+    );
+
+    const result: TaskCategoryGroup[] = [];
+
+    if (planTasks.length > 0) {
+      result.push({
+        key: 'plan_task', label: '测试任务执行', typeLabel: '执行', color: '#39d0d6',
+        items: [],
+      });
+    }
+    if (reviewItems.length > 0) {
+      result.push({
+        key: 'review', label: '审核相关', typeLabel: '审核', color: '#f0883e',
+        items: reviewItems,
+      });
+    }
+    if (reqItems.length > 0) {
+      result.push({
+        key: 'requirement', label: '测试用例编写需求管理', typeLabel: '需求', color: '#58a6ff',
+        items: reqItems,
+      });
+    }
+    if (tcItems.length > 0) {
+      result.push({
+        key: 'testcase_dev', label: '测试用例开发', typeLabel: '开发', color: '#a371f7',
+        items: tcItems,
+      });
+    }
+    return result;
+  }, [items, planTasks]);
 
   // ── Data fetching ──
 
@@ -264,7 +265,7 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
 
   const handleBatchSubmit = useCallback(async (caseIds: string[]) => {
     // 找到对应的 item_ids
-    const itemIds = displayPlanTasks
+    const itemIds = planTasks
       .filter(t => caseIds.includes(t.caseId))
       .map(t => t.id);
 
@@ -282,16 +283,41 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
       console.error('批量下发失败:', err);
       await fetchPlanTasks(); // 回滚用刷新
     }
-  }, [displayPlanTasks, fetchPlanTasks]);
+  }, [planTasks, fetchPlanTasks]);
 
   // ── Pending count for stats ──
   const pendingCount = useMemo(() => {
     const workflowPending = items.filter(
       item => item.current_state && !['RELEASED', 'DONE', 'CLOSED', 'ARCHIVED'].includes(item.current_state),
     ).length;
-    const planPending = displayPlanTasks.filter(t => t.status !== 'done').length;
+    const planPending = planTasks.filter(t => t.status !== 'done').length;
     return workflowPending + planPending;
-  }, [items, displayPlanTasks]);
+  }, [items, planTasks]);
+
+  // ════════════════════════════════════════════════════════════
+  //  自动归档
+  // ════════════════════════════════════════════════════════════
+
+  const updatePlanTaskStatusWithArchive = useCallback(async (taskId: string, status: PlanTask['status']) => {
+    setPlanTasks(prev => prev.map(t => t.id === taskId ? { ...t, status } : t));
+    try {
+      const task = planTasks.find(t => t.id === taskId);
+      if (task) {
+        await api.updatePlanItem(task.planId, taskId, { status });
+        // 如果是 done/fail，自动归档到收纳箱
+        if (status === 'done' || status === 'fail') {
+          await api.archiveItem(taskId);
+          setPlanTasks(prev => prev.filter(t => t.id !== taskId));
+        }
+      }
+    } catch {
+      setPlanTasks(prev => prev.map(t =>
+        t.id === taskId && t.status === status
+          ? { ...t, status: planTasks.find(pt => pt.id === taskId)?.status || 'pending' }
+          : t,
+      ));
+    }
+  }, [planTasks]);
 
   return (
     <div className="page-content">
@@ -328,7 +354,7 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
 
       {loading && planTasksLoading ? (
         <div className="loading-overlay"><div className="loading-spinner" /></div>
-      ) : items.length === 0 && displayPlanTasks.length === 0 ? (
+      ) : items.length === 0 && planTasks.length === 0 ? (
         <div className="empty-state">
           <div className="empty-state__icon">✅</div>
           <p className="empty-state__text">暂无待处理的任务</p>
@@ -336,126 +362,102 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
       ) : (
         <div style={myTasksStyles.list}>
           {/* ── Plan Tasks ── */}
-          {displayPlanTasks.length > 0 && (
+          {planTasks.length > 0 && (
             <PlanTaskTable
-              planTasks={displayPlanTasks}
+              planTasks={planTasks}
               isDemo={false}
               hasAutoCasesForDispatch={autoTasksForDispatch.length > 0}
-              onStatusUpdate={updatePlanTaskStatus}
+              onStatusUpdate={updatePlanTaskStatusWithArchive}
               onOpenResultModal={handleOpenResultModal}
               onOpenDispatchModal={handleOpenDispatchModal}
               onBatchDispatch={handleOpenBatchDispatch}
             />
           )}
 
-          {/* ── Workflow items ── */}
-          {typeOrder.filter(t => t !== 'PLAN_TASK').map(type => {
-            const typeItems = groupedItems[type];
-            if (!typeItems?.length) return null;
-            return (
-              <div key={type} style={myTasksStyles.group}>
-                <div style={myTasksStyles.groupHeader}>
-                  <span style={groupBadgeStyle(TYPE_COLORS[type] || { bg: '#f5f5f5', color: '#666' })}>
-                    {TYPE_LABELS[type] || type}
-                  </span>
-                  <span style={myTasksStyles.groupCount}>{typeItems.length} 项</span>
-                </div>
-                {typeItems.map(item => {
-                  const isExpanded = expandedId === item.item_id;
-                  const typeCode = getTypeCode(item.type_code);
-                  return (
-                    <div key={item.item_id}>
-                      {/* Compact row */}
-                      <div
-                        onClick={() => { void handleToggleExpand(item.item_id); }}
-                        style={{
-                          display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px',
-                          borderBottom: '0.5px solid var(--border-subtle)',
-                          cursor: 'pointer', fontSize: 13, transition: 'background 0.1s',
-                          background: isExpanded
-                            ? 'color-mix(in srgb, var(--accent-primary) 4%, transparent)'
-                            : undefined,
-                        }}
-                      >
-                        {/* Expand arrow */}
-                        <span style={{
-                          fontSize: 9, color: isExpanded ? 'var(--accent-primary)' : 'var(--text-tertiary)',
-                          transition: 'transform 0.15s',
-                          transform: isExpanded ? 'rotate(90deg)' : 'none',
-                          flexShrink: 0,
-                        }}>
-                          ▶
-                        </span>
-
-                        {/* Title */}
-                        <span style={{
-                          flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap', fontWeight: isExpanded ? 600 : 500,
-                        }}>
-                          {item.title}
-                        </span>
-
-                        {/* State badge */}
-                        <span className="status-badge" style={{
-                          ...getWorkflowStateStyle(item.current_state),
-                          fontSize: 10, padding: '2px 8px', flexShrink: 0,
-                        }}>
-                          {getStateLabel(item.current_state, typeCode)}
-                        </span>
-
-                        {/* Time */}
-                        <span style={{
-                          fontSize: 10, fontFamily: 'monospace', color: 'var(--text-tertiary)', flexShrink: 0,
-                        }}>
-                          {new Date(item.updated_at).toLocaleString('zh-CN', {
-                            month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
-                          })}
-                        </span>
-
-                        {/* Workflow actions */}
-                        <WorkflowActionToolbar
+          {/* ── Workflow items by category ── */}
+          {categories.map(cat => (
+            <div key={cat.key} style={myTasksStyles.group}>
+              <div style={myTasksStyles.groupHeader}>
+                <span style={groupBadgeStyle({ bg: `${cat.color}18`, color: cat.color })}>
+                  {cat.label}
+                </span>
+                <span style={myTasksStyles.groupCount}>{cat.items.length} 项</span>
+              </div>
+              {cat.items.map(item => {
+                const isExpanded = expandedId === item.item_id;
+                const typeCode = getTypeCode(item.type_code);
+                return (
+                  <div key={item.item_id}>
+                    <div onClick={() => { void handleToggleExpand(item.item_id); }}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px',
+                        borderBottom: '0.5px solid var(--border-subtle)',
+                        cursor: 'pointer', fontSize: 13, transition: 'background 0.1s',
+                        background: isExpanded
+                          ? 'color-mix(in srgb, var(--accent-primary) 4%, transparent)'
+                          : undefined,
+                      }}
+                    >
+                      <span style={{
+                        fontSize: 9, color: isExpanded ? 'var(--accent-primary)' : 'var(--text-tertiary)',
+                        transition: 'transform 0.15s', transform: isExpanded ? 'rotate(90deg)' : 'none',
+                        flexShrink: 0,
+                      }}>▶</span>
+                      <span style={{
+                        flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap', fontWeight: isExpanded ? 600 : 500,
+                      }}>{item.title}</span>
+                      <span className="status-badge" style={{
+                        ...getWorkflowStateStyle(item.current_state),
+                        fontSize: 10, padding: '2px 8px', flexShrink: 0,
+                      }}>{getStateLabel(item.current_state, typeCode)}</span>
+                      <span style={{
+                        fontSize: 10, fontFamily: 'monospace', color: 'var(--text-tertiary)', flexShrink: 0,
+                      }}>
+                        {new Date(item.updated_at).toLocaleString('zh-CN', {
+                          month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+                        })}
+                      </span>
+                      <WorkflowActionToolbar
+                        workflowItemId={item.item_id}
+                        typeCode={typeCode}
+                        defaultPriority={itemDetail && 'priority' in itemDetail ? String(itemDetail.priority || '') : ''}
+                        onTransitionSuccess={handleTaskWorkflowSuccess}
+                        compact
+                      />
+                    </div>
+                    {isExpanded && (
+                      <div style={{
+                        padding: '10px 12px 12px 28px', borderBottom: '0.5px solid var(--border-subtle)',
+                        background: 'var(--bg-primary)',
+                      }}>
+                        {loadingDetail ? (
+                          <div style={myTasksStyles.loadingSmall}>
+                            <div className="loading-spinner" style={{ width: 20, height: 20 }} />
+                          </div>
+                        ) : (
+                          <>
+                            {item.content && <p style={myTasksStyles.contentPreview}>{item.content}</p>}
+                            {itemDetail && 'description' in itemDetail && itemDetail.description && (
+                              <p style={myTasksStyles.contentPreview}>{itemDetail.description}</p>
+                            )}
+                          </>
+                        )}
+                        <WorkflowPanel
                           workflowItemId={item.item_id}
+                          entityLabel={item.title}
                           typeCode={typeCode}
                           defaultPriority={itemDetail && 'priority' in itemDetail ? String(itemDetail.priority || '') : ''}
                           onTransitionSuccess={handleTaskWorkflowSuccess}
-                          compact
+                          compact hideToolbar refreshSignal={workflowRefreshSignal}
                         />
                       </div>
-
-                      {/* Expanded section */}
-                      {isExpanded && (
-                        <div style={{
-                          padding: '10px 12px 12px 28px', borderBottom: '0.5px solid var(--border-subtle)',
-                          background: 'var(--bg-primary)',
-                        }}>
-                          {loadingDetail ? (
-                            <div style={myTasksStyles.loadingSmall}>
-                              <div className="loading-spinner" style={{ width: 20, height: 20 }} />
-                            </div>
-                          ) : (
-                            <>
-                              {item.content && <p style={myTasksStyles.contentPreview}>{item.content}</p>}
-                              {itemDetail && 'description' in itemDetail && itemDetail.description && (
-                                <p style={myTasksStyles.contentPreview}>{itemDetail.description}</p>
-                              )}
-                            </>
-                          )}
-                          <WorkflowPanel
-                            workflowItemId={item.item_id}
-                            entityLabel={item.title}
-                            typeCode={typeCode}
-                            defaultPriority={itemDetail && 'priority' in itemDetail ? String(itemDetail.priority || '') : ''}
-                            onTransitionSuccess={handleTaskWorkflowSuccess}
-                            compact hideToolbar refreshSignal={workflowRefreshSignal}
-                          />
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            );
-          })}
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ))}
         </div>
       )}
 

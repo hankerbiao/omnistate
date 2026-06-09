@@ -8,6 +8,11 @@ import pytest
 from app.modules.attachments.repository.models import AttachmentDoc
 from app.modules.attachments.service.attachment_service import AttachmentService
 from app.modules.execution.application.commands import DispatchExecutionTaskCommand
+from app.modules.execution.application.task_command_helpers import (
+    _extract_and_enrich_file_params,
+    build_dispatch_task_data,
+    initialize_command,
+)
 from app.modules.execution.schemas import DispatchTaskRequest, RerunTaskRequest
 
 
@@ -26,6 +31,7 @@ class _FakeAttachment:
     object_name = "attachments/file-1.json"
     size = 128
     content_type = "application/json"
+    sha256 = "abc123deadbeef"
     uploaded_at = datetime(2026, 4, 30, 8, 0, 0, tzinfo=timezone.utc)
 
 
@@ -69,6 +75,7 @@ def test_enrich_for_dispatch_reads_attachment_docs(monkeypatch) -> None:
             "object_name": "attachments/file-1.json",
             "size": 128,
             "content_type": "application/json",
+            "sha256": "abc123deadbeef",
             "uploaded_at": "2026-04-30T08:00:00+00:00",
         }
     ]
@@ -108,16 +115,16 @@ def test_dispatch_task_data_refreshes_file_param_urls(monkeypatch) -> None:
         }],
     )
 
-    payload = command.dispatch_task_data
+    initialize_command(command)
+    payload = build_dispatch_task_data(command)
+    data = payload["data"]
 
     # Task-level attachments should not exist
-    assert "attachments" not in payload
+    assert "attachments" not in data
 
-    # File param should have refreshed download_url in case parameters
-    firmware_param = payload["cases"][0]["parameters"]["firmware"]
-    assert firmware_param["type"] == "file"
-    assert firmware_param["file_id"] == "file-1"
-    assert firmware_param["download_url"] == "http://minio.local/attachments/file-1.json?expires=604800"
+    # File param is extracted to top-level files with a fresh presigned URL
+    assert data["cases"][0]["parameters"]["firmware"] == ""
+    assert data["files"]["firmware"]["url"] == "http://minio.local/attachments/file-1.json?expires=604800"
 
 
 def test_refresh_file_param_urls_graceful_minio_failure(monkeypatch) -> None:
@@ -136,7 +143,8 @@ def test_refresh_file_param_urls_graceful_minio_failure(monkeypatch) -> None:
         },
     }
 
-    result = DispatchExecutionTaskCommand._refresh_file_param_urls(params)
+    modified_params, files_dict = _extract_and_enrich_file_params(params)
 
-    # Should keep original URL when MinIO fails
-    assert result["firmware"]["download_url"] == "http://old-url/fw.bin"
+    # Should keep original params when MinIO client initialization fails
+    assert modified_params["firmware"]["download_url"] == "http://old-url/fw.bin"
+    assert files_dict == {}

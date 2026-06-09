@@ -2,12 +2,16 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { api } from '../services/api';
 import type { RoleResponse, PermissionResponse, UserResponse } from '../types';
 import PageToolbar, { StatPill } from './ui/PageToolbar';
+import {
+  DetailHeader,
+  DetailStatGrid,
+  DetailSection,
+  DetailTagList,
+  DetailEmpty,
+  DetailMetaRow,
+} from './ui/SplitDetailPanel';
 import { rlmStyles as styles } from './RoleManagement.styles';
-
-const getErrorMessage = (err: unknown, fallback: string) => {
-  if (err instanceof Error) return `${fallback}: ${err.message}`;
-  return fallback;
-};
+import { getErrorMessage } from '../utils/errors';
 
 const getPermissionKey = (perm: PermissionResponse) =>
   perm.perm_id || perm.permission_id || perm.id;
@@ -320,32 +324,6 @@ const RoleManagement: React.FC<RoleManagementProps> = ({ onNavigate }) => {
 
   return (
     <>
-    {/* Hero */}
-    <div style={{
-      margin: '0 0 16px', borderRadius: 'var(--radius-xl)', padding: '16px 24px',
-      background: 'linear-gradient(135deg, #eef2ff 0%, #f5f3ff 45%, #fce7f3 100%)',
-      border: '1px solid color-mix(in srgb, #8b5cf6 18%, var(--border-subtle))',
-      position: 'relative', overflow: 'hidden',
-    }}>
-      <div style={{
-        position: 'absolute', top: -40, right: -20, width: 200, height: 200,
-        borderRadius: '50%', background: 'radial-gradient(circle, rgba(139,92,246,0.25) 0%, transparent 70%)',
-        pointerEvents: 'none',
-      }} />
-      <div style={{ position: 'relative', zIndex: 1 }}>
-        <div style={{
-          display: 'inline-flex', alignItems: 'center', gap: 6, padding: '3px 12px', marginBottom: 8,
-          fontSize: 12, fontWeight: 600, color: '#8b5cf6',
-          background: 'rgba(139,92,246,0.12)', borderRadius: 999, border: '1px solid rgba(139,92,246,0.2)',
-        }}>
-          <span>👥</span>
-          <span>Role Management</span>
-        </div>
-        <p style={{ margin: 0, fontSize: 14, color: 'var(--text-secondary)', maxWidth: 560, lineHeight: 1.6 }}>
-          角色是权限的集合。在此管理角色定义、为角色分配权限，并查看各角色的关联用户。
-        </p>
-      </div>
-    </div>
     <div className={`split-workspace${selectedRole ? ' split-workspace--has-selection' : ''}`}>
       <aside className="split-workspace__list">
         <div className="split-panel-toolbar">
@@ -362,25 +340,6 @@ const RoleManagement: React.FC<RoleManagementProps> = ({ onNavigate }) => {
             )}
             actions={(
               <>
-                <input
-                  className="form-input"
-                  style={{ width: 220, fontSize: 13 }}
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  placeholder="搜索名称、ID、描述…"
-                  aria-label="搜索角色"
-                />
-                <select
-                  className="form-input form-select"
-                  style={{ width: 130 }}
-                  value={roleFilter}
-                  onChange={e => setRoleFilter(e.target.value as RoleFilter)}
-                  aria-label="角色类型"
-                >
-                  <option value="all">全部</option>
-                  <option value="system">系统角色</option>
-                  <option value="custom">自定义</option>
-                </select>
                 {selectedIds.size > 0 && (
                   <button
                     type="button"
@@ -396,6 +355,29 @@ const RoleManagement: React.FC<RoleManagementProps> = ({ onNavigate }) => {
               </>
             )}
           />
+        </div>
+
+        <div className="filter-strip">
+          <input
+            className="form-input"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            placeholder="搜索名称、ID、描述…"
+            aria-label="搜索角色"
+          />
+          <select
+            className="form-input form-select"
+            value={roleFilter}
+            onChange={e => setRoleFilter(e.target.value as RoleFilter)}
+            aria-label="角色类型"
+          >
+            <option value="all">全部</option>
+            <option value="system">系统角色</option>
+            <option value="custom">自定义</option>
+          </select>
+          <button type="button" className="btn btn--secondary btn--sm" onClick={() => fetchRoles()} disabled={loading}>
+            刷新
+          </button>
         </div>
 
         {error && !selectedRole && (
@@ -480,59 +462,40 @@ const RoleManagement: React.FC<RoleManagementProps> = ({ onNavigate }) => {
         {selectedRole ? (
           <div className="split-detail-scroll" style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
 
-            {/* ── Header ── */}
-            <div style={{
-              display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
-              padding: '20px 24px 16px', borderBottom: '0.5px solid var(--border-subtle)',
-            }}>
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                  <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--accent-primary)' }}>
-                    {selectedRole.role_id}
-                  </span>
-                  <span style={{
-                    fontSize: 10, padding: '0 8px', lineHeight: '18px', borderRadius: 999,
-                    backgroundColor: selectedRole.is_system ? 'var(--status-info-bg)' : 'var(--surface-secondary)',
-                    color: selectedRole.is_system ? 'var(--status-info)' : 'var(--text-secondary)',
-                    fontWeight: 500,
-                  }}>
-                    {selectedRole.is_system ? '系统' : '自定义'}
-                  </span>
-                </div>
-                <div style={{ fontSize: 20, fontWeight: 500, lineHeight: 1.3, color: 'var(--text-primary)' }}>
-                  {selectedRole.name}
-                </div>
-                <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 2 }}>
-                  {selectedRole.description || '暂无描述'}
-                </div>
-              </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                {!selectedRole.is_system && (
-                  <button
-                    className="btn btn--danger btn--sm"
-                    onClick={() => setDeleteConfirm(selectedRole.role_id)}
-                    style={{ fontSize: 12, padding: '6px 14px' }}
-                  >
-                    删除
-                  </button>
-                )}
-              </div>
-            </div>
+            <button type="button" className="split-workspace__back" onClick={closeRoleDrawer}>
+              ← 返回列表
+            </button>
 
-            {/* ── Error banner ── */}
+            <DetailHeader
+              id={selectedRole.role_id}
+              title={selectedRole.name}
+              subtitle={selectedRole.description || '暂无描述'}
+              badges={(
+                <span className={`status-badge ${selectedRole.is_system ? 'status-badge--info' : 'status-badge--neutral'}`}>
+                  {selectedRole.is_system ? '系统' : '自定义'}
+                </span>
+              )}
+              actions={!selectedRole.is_system ? (
+                <button
+                  type="button"
+                  className="btn btn--danger btn--sm"
+                  onClick={() => setDeleteConfirm(selectedRole.role_id)}
+                >
+                  删除
+                </button>
+              ) : undefined}
+            />
+
             {error && (
-              <div className="error-banner" style={{ margin: '12px 24px 0' }}>
+              <div className="error-banner" style={{ margin: '0 var(--space-5) var(--space-3)' }}>
                 <span>⚠</span> {error}
                 <button style={styles.errorClose} onClick={() => setError(null)}>×</button>
               </div>
             )}
 
-            {/* ── Content ── */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 24 }}>
-
-              {/* ── Form + Stats ── */}
-              <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div className="split-detail-content">
+              <div className="split-detail-form-grid">
+                <div className="split-detail-form-grid__fields">
                   <div>
                     <label style={{ ...styles.label, marginBottom: 4 }}>角色名称</label>
                     <input
@@ -541,7 +504,6 @@ const RoleManagement: React.FC<RoleManagementProps> = ({ onNavigate }) => {
                       onChange={e => setEditName(e.target.value)}
                       placeholder="输入角色名称"
                       disabled={selectedRole.is_system}
-                      style={{ width: '100%', padding: '7px 10px', fontSize: 13 }}
                     />
                   </div>
                   <div>
@@ -553,10 +515,10 @@ const RoleManagement: React.FC<RoleManagementProps> = ({ onNavigate }) => {
                       placeholder="输入角色描述（可选）"
                       rows={2}
                       disabled={selectedRole.is_system}
-                      style={{ width: '100%', padding: '7px 10px', fontSize: 13, resize: 'vertical', fontFamily: 'inherit' }}
+                      style={{ resize: 'vertical', fontFamily: 'inherit' }}
                     />
                   </div>
-                  <div style={{ display: 'flex', gap: 8 }}>
+                  <div className="split-detail-form-actions">
                     {!selectedRole.is_system ? (
                       <>
                         <button
@@ -582,45 +544,25 @@ const RoleManagement: React.FC<RoleManagementProps> = ({ onNavigate }) => {
                     )}
                   </div>
                 </div>
-
-                <div style={{ display: 'flex', gap: 12, flexShrink: 0 }}>
-                  <div style={{ background: 'var(--surface-secondary)', borderRadius: 'var(--radius-md)', padding: '12px 18px', textAlign: 'center', minWidth: 80 }}>
-                    <div style={{ fontSize: 20, fontWeight: 500, lineHeight: 1.2, color: 'var(--text-primary)' }}>{selectedPermissionIds.size}</div>
-                    <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>权限</div>
-                  </div>
-                  <div style={{ background: 'var(--surface-secondary)', borderRadius: 'var(--radius-md)', padding: '12px 18px', textAlign: 'center', minWidth: 80 }}>
-                    <div style={{ fontSize: 20, fontWeight: 500, lineHeight: 1.2, color: 'var(--text-primary)' }}>{roleUsers.length}</div>
-                    <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>用户</div>
-                  </div>
-                </div>
+                <DetailStatGrid stats={[
+                  { label: '权限', value: selectedPermissionIds.size },
+                  { label: '用户', value: roleUsers.length },
+                ]} />
               </div>
 
-              {/* ── 关联用户 ── */}
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                  <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-primary)' }}>关联用户</span>
-                </div>
-                {roleUsers.length > 0 ? (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                    {roleUsers.slice(0, 30).map(user => (
-                      <span key={user.user_id} style={{
-                        fontSize: 11, padding: '3px 10px', borderRadius: 999,
-                        backgroundColor: 'color-mix(in srgb, var(--accent-primary) 10%, transparent)',
-                        color: 'var(--accent-primary)', fontWeight: 500,
-                      }}>
-                        {user.username || user.user_id}
-                      </span>
-                    ))}
-                    {roleUsers.length > 30 && (
-                      <span style={{ fontSize: 11, color: 'var(--text-tertiary)', padding: '3px 0' }}>+{roleUsers.length - 30} 人</span>
-                    )}
-                  </div>
-                ) : (
-                  <p style={{ fontSize: 12, color: 'var(--text-tertiary)', margin: 0 }}>
-                    {roleUsersLoading ? '加载中...' : '暂无用户关联此角色'}
-                  </p>
-                )}
-              </div>
+              <DetailSection title="关联用户">
+                <DetailTagList
+                  items={roleUsers.map(user => ({ key: user.user_id, label: user.username || user.user_id }))}
+                  emptyText={roleUsersLoading ? '加载中...' : '暂无用户关联此角色'}
+                  loading={roleUsersLoading}
+                />
+              </DetailSection>
+
+              <DetailSection title="元数据">
+                <DetailMetaRow label="创建时间" value={new Date(selectedRole.created_at).toLocaleString('zh-CN')} />
+                <DetailMetaRow label="更新时间" value={new Date(selectedRole.updated_at).toLocaleString('zh-CN')} />
+                <DetailMetaRow label="角色 ID" value={selectedRole.role_id} />
+              </DetailSection>
 
               {/* ── 权限配置 ── */}
               <div>
@@ -723,10 +665,7 @@ const RoleManagement: React.FC<RoleManagementProps> = ({ onNavigate }) => {
             </div>
           </div>
         ) : (
-          <div className="empty-state" style={{ height: '100%' }}>
-            <div className="empty-state__icon">👈</div>
-            <p className="empty-state__text">从左侧选择角色进行配置</p>
-          </div>
+          <DetailEmpty icon="👈" text="从左侧选择角色进行配置" />
         )}
       </main>
     </div>

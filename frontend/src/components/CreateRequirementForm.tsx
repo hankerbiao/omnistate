@@ -69,7 +69,7 @@ const CreateRequirementForm: React.FC<CreateRequirementFormProps> = ({ onClose, 
       onSuccess(response.data);
       onClose();
     } catch (err) {
-      setError('创建测试需求失败');
+      setError('创建测试用例编写需求失败');
       console.error('Create requirement error:', err);
     } finally {
       setLoading(false);
@@ -153,7 +153,7 @@ const CreateRequirementForm: React.FC<CreateRequirementFormProps> = ({ onClose, 
     <div style={styles.modalOverlay}>
       <div style={styles.modalContent}>
         <div style={styles.modalHeader}>
-          <h2 style={styles.modalTitle}>创建测试需求</h2>
+          <h2 style={styles.modalTitle}>创建测试用例编写需求</h2>
           <button style={styles.closeButton} onClick={onClose}>×</button>
         </div>
 

@@ -8,6 +8,8 @@ from .rbac import (
     CreateUserRequest,
     UpdateUserRequest,
     UpdateUserRolesRequest,
+    UpdateUserExtraPermissionsRequest,
+    UserExtraPermissionsResponse,
     UpdateUserPasswordRequest,
     ChangePasswordRequest,
     LoginRequest,

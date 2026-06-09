@@ -12,7 +12,7 @@
 """
 from copy import deepcopy
 from typing import Dict, Any, Optional, List
-from datetime import datetime
+from datetime import date, datetime
 from pymongo import AsyncMongoClient
 from app.modules.test_specs.repository.models import TestRequirementDoc, TestCaseDoc
 from app.modules.test_specs.service._service_support import (
@@ -59,6 +59,16 @@ class RequirementService(BaseService):
 
     def __init__(self, workflow_gateway: WorkflowItemGateway) -> None:
         self._workflow_gateway = workflow_gateway
+
+    @staticmethod
+    def _doc_to_dict(doc) -> Dict[str, Any]:
+        data = doc.model_dump()
+        data["id"] = str(doc.id)
+        for field in ("planned_start_date", "planned_end_date"):
+            value = data.get(field)
+            if isinstance(value, date):
+                data[field] = value.isoformat()
+        return data
 
     async def _enrich_requirement_status(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """使用工作流状态补齐需求响应中的派生状态字段。"""

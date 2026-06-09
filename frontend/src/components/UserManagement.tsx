@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { api } from '../services/api';
-import type { UserResponse, RoleResponse, NavigationPageResponse, UserNavigationResponse } from '../types';
+import type { UserResponse, RoleResponse, NavigationPageResponse, UserNavigationResponse, PermissionResponse, UserEffectivePermissionsResponse } from '../types';
 import PageToolbar, { StatPill } from './ui/PageToolbar';
+import { getErrorMessage } from '../utils/errors';
 
 type EditableUserField = 'username' | 'email';
 
@@ -17,12 +18,6 @@ interface UserManagementProps {
   onNavigate?: (page: string) => void;
 }
 
-const getErrorMessage = (err: unknown, fallback: string) => {
-  if (err instanceof Error) {
-    return `${fallback}: ${err.message}`;
-  }
-  return fallback;
-};
 
 const UserManagement: React.FC<UserManagementProps> = ({ onNavigate }) => {
   const [users, setUsers] = useState<UserResponse[]>([]);
@@ -846,6 +841,16 @@ const UserManagement: React.FC<UserManagementProps> = ({ onNavigate }) => {
               )}
             </div>
 
+            {/* ── 生效权限与额外权限 ── */}
+            <div style={styles.detailSection}>
+              <label style={styles.label}>额外权限</label>
+              <ExtraPermissionsSection
+                userId={selectedUser.user_id}
+                currentRoleIds={selectedUser.role_ids}
+                onError={setError}
+              />
+            </div>
+
             <div style={styles.detailSection}>
               <label style={styles.label}>创建时间</label>
               <div style={styles.readonlyField}>
@@ -1068,6 +1073,201 @@ const UserManagement: React.FC<UserManagementProps> = ({ onNavigate }) => {
           border-color: var(--accent-cyan);
         }
       `}</style>
+    </div>
+  );
+};
+
+/** 用户额外权限与生效权限展示组件 */
+interface ExtraPermissionsSectionProps {
+  userId: string;
+  currentRoleIds: string[];
+  onError: (msg: string | null) => void;
+}
+
+const ExtraPermissionsSection: React.FC<ExtraPermissionsSectionProps> = ({ userId, currentRoleIds: _currentRoleIds, onError }) => {
+  const [allPerms, setAllPerms] = useState<PermissionResponse[]>([]);
+  const [extraIds, setExtraIds] = useState<Set<string>>(new Set());
+  const [effectivePerms, setEffectivePerms] = useState<UserEffectivePermissionsResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [permRes, effRes] = await Promise.all([
+        api.listPermissions(),
+        api.getUserEffectivePermissions(userId),
+      ]);
+      setAllPerms(permRes.data || []);
+      setEffectivePerms(effRes.data || null);
+      setExtraIds(new Set(effRes.data?.extra_permission_ids || []));
+    } catch {
+      // silent
+    } finally {
+      setLoading(false);
+    }
+  }, [userId]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await api.updateUserExtraPermissions(userId, { extra_permission_ids: Array.from(extraIds) });
+      await fetchData();
+    } catch (err) {
+      onError(getErrorMessage(err, '保存额外权限失败'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const groupedPerms = useMemo(() => {
+    const groups = new Map<string, PermissionResponse[]>();
+    for (const perm of allPerms) {
+      const group = perm.code.includes(':') ? perm.code.split(':')[0] : '其他';
+      if (!groups.has(group)) groups.set(group, []);
+      groups.get(group)!.push(perm);
+    }
+    return Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b));
+  }, [allPerms]);
+
+  // 角色权限的 perm_id 集合（用于判断预选）
+  const rolePermIdSet = useMemo(() => {
+    if (!effectivePerms) return new Set<string>();
+    // 通过 allPerms 反向查找 role_permissions 对应的 perm_id
+    const codeToId = new Map<string, string>();
+    for (const perm of allPerms) {
+      codeToId.set(perm.code, perm.perm_id);
+    }
+    const ids = new Set<string>();
+    for (const code of effectivePerms.role_permissions) {
+      const pid = codeToId.get(code);
+      if (pid) ids.add(pid);
+    }
+    return ids;
+  }, [effectivePerms, allPerms]);
+
+  const togglePerm = (permId: string) => {
+    // 如果该权限来自角色，不允许取消选中（角色权限不可通过 extra 移除）
+    if (rolePermIdSet.has(permId)) return;
+    setExtraIds(prev => {
+      const next = new Set(prev);
+      if (next.has(permId)) next.delete(permId);
+      else next.add(permId);
+      return next;
+    });
+  };
+
+  if (loading) {
+    return <div style={{ fontSize: 12, color: 'var(--text-tertiary)', padding: '8px 0' }}>加载权限信息...</div>;
+  }
+
+  return (
+    <div>
+      {/* 生效权限一览 */}
+      <div style={{ marginBottom: 12, fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.8 }}>
+        <div style={{ fontWeight: 500, marginBottom: 6, color: 'var(--text-primary)' }}>
+          生效权限（并集）
+          <span style={{ fontWeight: 400, color: 'var(--text-tertiary)', marginLeft: 6 }}>
+            {effectivePerms?.permissions.length || 0} 项
+          </span>
+        </div>
+        {effectivePerms && effectivePerms.role_permissions.length === 0 && effectivePerms.extra_permissions.length === 0 ? (
+          <div style={{ color: 'var(--text-tertiary)', padding: '8px 0' }}>暂无权限</div>
+        ) : (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+            {effectivePerms?.permissions.map(code => {
+              const fromRole = effectivePerms?.role_permissions.includes(code);
+              const fromExtra = effectivePerms?.extra_permissions.includes(code);
+              const bg = fromExtra && fromRole ? '#e0f2fe' : fromRole ? '#f0fdf4' : '#fef3c7';
+              const fg = fromExtra && fromRole ? '#0369a1' : fromRole ? '#166534' : '#92400e';
+              const label = fromRole && fromExtra ? '组+个人' : fromRole ? '来自组' : '个人';
+              return (
+                <span key={code} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: bg, color: fg, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                  {code}
+                  <span style={{ fontSize: 9, opacity: 0.7 }}>{label}</span>
+                </span>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* 统一权限总览：角色权限预选 + 个人额外可配置 */}
+      <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+          <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-primary)' }}>
+            权限总览
+            <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text-tertiary)', marginLeft: 6 }}>
+              角色权限已预选
+              {extraIds.size > 0 && ` · 额外 ${extraIds.size} 项`}
+            </span>
+          </span>
+          <button
+            type="button"
+            style={{
+              fontSize: 11, padding: '4px 14px', borderRadius: 6, border: 'none',
+              background: saving ? '#93c5fd' : '#2563eb', color: '#fff',
+              cursor: 'pointer', fontWeight: 500,
+            }}
+            onClick={handleSave}
+            disabled={saving}
+          >
+            {saving ? '保存中...' : '保存'}
+          </button>
+        </div>
+        {groupedPerms.length === 0 ? (
+          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', padding: '4px 0' }}>暂无权限数据</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 240, overflowY: 'auto' }}>
+            {groupedPerms.map(([groupName, perms]) => {
+              const groupAllFromRole = perms.every(p => rolePermIdSet.has(p.perm_id));
+              return (
+                <div key={groupName} style={{
+                  display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center',
+                  padding: '6px 8px', borderRadius: 6,
+                  background: 'var(--bg-secondary)',
+                }}>
+                  <span style={{ fontSize: 10, fontWeight: 600, color: groupAllFromRole ? 'var(--text-tertiary)' : 'var(--text-secondary)', minWidth: 48 }}>
+                    {groupName}
+                  </span>
+                  {perms.map(perm => {
+                    const isRolePerm = rolePermIdSet.has(perm.perm_id);
+                    const isExtra = extraIds.has(perm.perm_id);
+                    const checked = isRolePerm || isExtra;
+                    return (
+                      <label key={perm.perm_id} style={{
+                        fontSize: 11, padding: '2px 8px', borderRadius: 12, cursor: isRolePerm ? 'default' : 'pointer',
+                        border: checked ? '0.5px solid var(--accent-primary)' : '0.5px solid var(--border-subtle)',
+                        background: isRolePerm
+                          ? 'color-mix(in srgb, var(--accent-primary) 6%, transparent)'
+                          : isExtra
+                            ? 'color-mix(in srgb, #f59e0b 10%, transparent)'
+                            : 'transparent',
+                        color: isRolePerm ? 'var(--accent-primary)' : isExtra ? '#b45309' : 'var(--text-secondary)',
+                        fontWeight: checked ? 500 : 400,
+                        display: 'inline-flex', alignItems: 'center', gap: 3,
+                        opacity: isRolePerm && !isExtra ? 0.75 : 1,
+                        transition: 'all 0.1s',
+                      }}>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => togglePerm(perm.perm_id)}
+                          style={{ display: 'none' }}
+                        />
+                        {perm.name}
+                        {isRolePerm && <span style={{ fontSize: 9, opacity: 0.6 }}>🔒</span>}
+                      </label>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 };

@@ -56,6 +56,7 @@ class ExecutionPlanItemDoc(Document):
     order_no: int = Field(default=0, description="排序")
     execution_task_id: Optional[str] = Field(None, description="关联自动化任务 ID")
     result_id: Optional[str] = Field(None, description="关联手工结果 ID")
+    archived_at: Optional[datetime] = Field(None, description="归档时间，null=未归档")
     is_deleted: bool = Field(default=False)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

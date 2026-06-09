@@ -25,6 +25,8 @@ class UserDoc(Document):
     password_salt: str = Field(..., description="密码盐")
     # 一个用户可绑定多个角色
     role_ids: List[str] = Field(default_factory=list, description="角色 ID 列表")
+    # 用户级额外权限（与角色权限取并集），用于临时授权或系统角色例外
+    extra_permission_ids: List[str] = Field(default_factory=list, description="用户独立额外权限 ID 列表")
     # 用户级导航可见页面覆盖（为空时按角色/权限默认）
     allowed_nav_views: List[str] = Field(default_factory=list, description="用户允许访问的导航页面")
     status: str = Field(default="ACTIVE", description="用户状态")
@@ -101,6 +103,7 @@ class UserModel(BaseModel):
     username: str = Field(..., description="用户名")
     email: Optional[str] = Field(None, description="邮箱")
     role_ids: List[str] = Field(..., description="角色 ID 列表")
+    extra_permission_ids: List[str] = Field(default_factory=list, description="用户独立额外权限 ID 列表")
     allowed_nav_views: List[str] = Field(default_factory=list, description="用户允许访问的导航页面")
     status: str = Field(..., description="用户状态")
     created_at: datetime = Field(..., description="创建时间")

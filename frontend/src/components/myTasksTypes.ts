@@ -1,4 +1,5 @@
 import type React from 'react';
+import type { PlanTaskItemResponse } from '../types';
 
 // ═══════════════════════════════════════════════════════════════════════
 //  Type Definitions
@@ -29,6 +30,42 @@ export interface PlanTask {
   assignee: string;
   status: 'pending' | 'running' | 'done' | 'fail';
   result?: PlanTaskResult;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Transformer — 后端 PlanTaskItemResponse → 前端 PlanTask
+// ═══════════════════════════════════════════════════════════════════════
+
+export function transformApiItem(item: PlanTaskItemResponse): PlanTask {
+  const resultPayload = item.result;
+  const result: PlanTaskResult | undefined = resultPayload
+    ? {
+        passed: resultPayload.passed,
+        notes: resultPayload.notes,
+        severity: resultPayload.severity,
+        executedAt: resultPayload.executed_at ?? '',
+        actual: resultPayload.actual,
+        expected: resultPayload.expected,
+        env: resultPayload.env,
+        testData: resultPayload.test_data,
+        bugId: resultPayload.bug_id,
+        actualDuration: resultPayload.actual_duration,
+        attachments: resultPayload.attachments,
+      }
+    : undefined;
+
+  return {
+    id: item.item_id,
+    planId: item.plan_id,
+    planTitle: item.plan_title,
+    caseId: item.case_id,
+    caseTitle: item.case_title,
+    type: item.ref_type === 'auto' ? 'auto' : 'manual',
+    component: item.component,
+    assignee: item.assignee_id ?? '',
+    status: item.status as PlanTask['status'],
+    result,
+  };
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -68,22 +105,6 @@ export const STATUS_COLORS: Record<string, string> = {
   done: '#3fb950',
   fail: '#f85149',
 };
-
-// ═══════════════════════════════════════════════════════════════════════
-//  Mock Data
-// ═══════════════════════════════════════════════════════════════════════
-
-export const MOCK_PLAN_TASKS: PlanTask[] = [
-  { id: 'pt-1', planId: 'plan-1', planTitle: 'Sprint 1 · 固件基线验证', caseId: 'TC-002', caseTitle: '内存边界值校验', type: 'manual', component: '内存验证组', assignee: 'tester', status: 'pending' },
-  { id: 'pt-2', planId: 'plan-1', planTitle: 'Sprint 1 · 固件基线验证', caseId: 'TC-004', caseTitle: '固件异常断电恢复', type: 'manual', component: '固件验证组', assignee: 'tester', status: 'running' },
-  { id: 'pt-3', planId: 'plan-1', planTitle: 'Sprint 1 · 固件基线验证', caseId: 'TC-010', caseTitle: '安全权限验证', type: 'manual', component: '平台质量组', assignee: 'qa', status: 'pending' },
-  { id: 'pt-6', planId: 'plan-1', planTitle: 'Sprint 1 · 固件基线验证', caseId: 'TC-001', caseTitle: '内存读写压力测试', type: 'auto', component: '内存验证组', assignee: 'tester', status: 'pending' },
-  { id: 'pt-7', planId: 'plan-1', planTitle: 'Sprint 1 · 固件基线验证', caseId: 'TC-003', caseTitle: '固件版本升级测试', type: 'auto', component: '固件验证组', assignee: 'tester', status: 'running' },
-  { id: 'pt-4', planId: 'plan-2', planTitle: 'Sprint 2 · 性能基准测试', caseId: 'TC-007', caseTitle: '存储读写性能基准', type: 'manual', component: '存储验证组', assignee: 'dev', status: 'pending' },
-  { id: 'pt-8', planId: 'plan-2', planTitle: 'Sprint 2 · 性能基准测试', caseId: 'TC-005', caseTitle: 'CI/CD 管道集成测试', type: 'auto', component: '工具链组', assignee: 'tester', status: 'pending' },
-  { id: 'pt-5', planId: 'plan-2', planTitle: 'Sprint 2 · 性能基准测试', caseId: 'TC-009', caseTitle: '多用户并发访问测试', type: 'manual', component: '平台质量组', assignee: 'tester', status: 'done',
-    result: { passed: true, notes: '通过。并发用户数 500 时响应正常', severity: 'minor', actual: '500并发下响应时间 < 200ms，无超时', env: '固件 v2.3.1 / 64GB / SSD', testData: '500线程 × 4KB随机读写', bugId: 'BZ-12345', actualDuration: '28', executedAt: '2026-07-02 14:30' } },
-];
 
 // ═══════════════════════════════════════════════════════════════════════
 //  Shared Styles

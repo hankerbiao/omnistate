@@ -4,282 +4,133 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-A **dual-stack system** consisting of:
-1. **Backend**: Configuration-driven workflow/state machine service (Python + FastAPI + Beanie ODM + MongoDB)
-2. **Frontend**: Server Test Case Designer web application (React + TypeScript + Vite)
+DML V4 is a test-management platform with a FastAPI/MongoDB backend and a React/TypeScript frontend. The product connects test requirements, manual/automation test cases, execution plans, serial execution dispatch, result backfill, lineage/search, attachments, and JWT/RBAC-based access control.
 
-The backend manages business item lifecycles through JSON-configured state transitions. The frontend provides a UI for managing test requirements and test cases for server hardware validation (DDR5 memory testing, etc.).
-
-## Quick Start Commands
-
-```bash
-# Backend setup
-cd backend
-python init_mongodb.py              # Initialize MongoDB with workflow configs
-python scripts/init_rbac.py         # Initialize RBAC (roles/permissions)
-python scripts/create_user.py       # Create admin user
-python -m app.main                  # Start backend (port 8000)
-
-# Frontend setup (in another terminal)
-cd frontend
-npm install
-npm run dev                         # Start dev server (port 3000)
-```
-
-## Architecture
-
-### Tech Stack
-- **Backend**: FastAPI + Beanie ODM (MongoDB async) + Pydantic
-- **Frontend**: React 19 + TypeScript + Vite 6 + TailwindCSS 4
-- **Database**: MongoDB (async with Beanie ODM)
-- **Testing**: pytest (backend) + FastAPI TestClient
-- **Linting**: Flake8 (Python, max-line-length: 110)
-
-### Project Structure
-
-```
-/Users/libiao/Desktop/github/dmlv4/
-├── backend/                          # Python FastAPI backend
-│   ├── app/
-│   │   ├── modules/                  # Business modules (workflow, auth, test_specs)
-│   │   │   ├── workflow/             # Core workflow/state machine
-│   │   │   ├── auth/                 # RBAC (User, Role, Permission)
-│   │   │   └── test_specs/           # Test requirements & cases
-│   │   ├── shared/                   # Shared infrastructure
-│   │   │   ├── api/                  # Routes, errors, schemas
-│   │   │   ├── core/                 # Logger, Mongo client
-│   │   │   └── db/                   # Database config
-│   │   ├── configs/                  # JSON workflow configurations
-│   │   ├── main.py                   # FastAPI app entry
-│   │   └── init_mongodb.py           # MongoDB seed script
-│   ├── scripts/
-│   │   ├── init_rbac.py              # RBAC initialization
-│   │   └── create_user.py            # User creation helper
-│   └── tests/                        # pytest tests
-│       ├── unit/                     # Unit tests (service/domain)
-│       ├── integration/              # Integration tests (API)
-│       └── fakes/                    # Test fakes/mocks
-│
-├── frontend/                         # React TypeScript frontend
-│   ├── src/
-│   │   ├── App.tsx                   # Main component with all views
-│   │   ├── types.ts                  # TypeScript interfaces
-│   │   └── main.tsx                  # React entry point
-│   ├── package.json                  # Dependencies & scripts
-│   └── vite.config.ts                # Vite configuration
-│
-├── docs/                             # Architecture & API documentation
-│   ├── 项目架构规范.md                # Backend architecture spec
-│   ├── 后端接口说明.md               # API documentation
-│   └── 测试用例创建需求和测试用例字段设计.md
-│
-├── requirements.txt                  # Python dependencies
-├── .flake8                          # Python linting config
-└── CLAUDE.md                         # This file
-```
-
-### Backend Architecture (Layered Design)
-
-**Strong layering rules**: API → Service → Repository/Domain (no upward dependencies)
-
-#### Key Models (`app/modules/*/repository/models/`)
-
-**System Config Documents** (MongoDB collections):
-- `SysWorkTypeDoc` - Business item types (REQUIREMENT, TEST_CASE)
-- `SysWorkflowStateDoc` - Workflow states with `is_end` flag
-- `SysWorkflowConfigDoc` - Transition rules: `type_code` + `from_state` + `action` → `to_state`
-
-**Business Documents**:
-- `BusWorkItemDoc` - Stateful items with `current_state`, `current_owner_id`, `creator_id`
-- `BusFlowLogDoc` - Audit trail linking to work items
-
-**Module-Specific Documents**:
-- `TestRequirementDoc`, `TestCaseDoc` (test_specs module)
-- `UserDoc`, `RoleDoc`, `PermissionDoc` (auth module - RBAC)
-
-### Core Services
-
-**Workflow Service** (`modules/workflow/service/workflow_service.py`):
-- `create_item()` - Creates item in DRAFT state
-- `handle_transition()` - Validates and executes state transitions
-- `get_item_with_transitions()` - Returns item + available next actions
-- `list_items()` - Filters by type_code, state, owner_id, creator_id (OR logic)
-
-**Other Services** (per module):
-- `TestCaseService` (test_specs module)
-- `UserService`, `RoleService` (auth module)
-- `AssetService` (assets module)
-
-### Configuration-Driven Workflow Design
-
-Workflow rules defined in JSON configs (`app/configs/*.json`), then seeded to MongoDB:
-
-```json
-{
-  "work_types": [["REQUIREMENT", "需求"], ["TEST_CASE", "测试用例"]],
-  "workflow_configs": {
-    "REQUIREMENT": [
-      {
-        "from_state": "DRAFT",
-        "action": "SUBMIT",
-        "to_state": "PENDING_REVIEW",
-        "target_owner_strategy": "TO_SPECIFIC_USER",
-        "required_fields": ["priority", "target_owner_id"]
-      }
-    ]
-  }
-}
-```
-
-**Owner Strategy Options**:
-- `KEEP` - Maintain current owner
-- `TO_CREATOR` - Reassign to item creator
-- `TO_SPECIFIC_USER` - Use `target_owner_id` from form_data
-
-**To add new workflow type**:
-1. Create JSON config in `app/configs/new_type.json`
-2. Run `python init_mongodb.py` to seed MongoDB
-3. Frontend can now use the new type
-
-### Data Flow
-
-1. **Startup**: `main.py` lifespan handler initializes MongoDB + Beanie ODM with all document models
-2. **Seeding**: `init_mongodb.py` seeds workflow rules from JSON configs into MongoDB
-3. **Item Creation**: `AsyncWorkflowService.create_item()` → item in DRAFT state
-4. **State Transition**: `handle_transition()` validates rules → updates state/owner → logs to `BusFlowLogDoc`
-5. **Deletion**: All queries filter by `is_deleted == false` (soft delete pattern)
-
-### Frontend Architecture (Single-File Component)
-
-The React app uses a single-file architecture with view state management in `src/App.tsx`:
-
-**Views** (managed by `currentView` state):
-- `req_list` - Test requirement list
-- `req_form` - Create/edit requirement
-- `req_detail` - Requirement details
-- `case_form` - Create test case
-- `user_mgmt` - User management
-
-**AI Integration**: Local AI service at `http://172.17.167.43:8000/v1` with model `/models/coder/minimax/MiniMax-M2` for text polishing and test step generation
-
-### API Endpoints (`/api/v1`)
-
-**Workflow Module** (`/work-items`):
-- `GET /types` - List work types
-- `GET /states` - List workflow states
-- `POST` - Create item
-- `GET` - List items (filterable)
-- `GET /{id}` - Get details
-- `POST /{id}/transition` - Execute state transition
-- `POST /{id}/reassign` - Reassign owner
-- `GET /{id}/logs` - Get transition history
-- `GET /{id}/transitions` - Get available actions
-
-**Test Specs Module** (`/requirements`, `/test-cases`):
-- Full CRUD operations for test requirements and test cases
-
-**Auth Module** (`/auth/users`, `/auth/roles`, `/auth/permissions`):
-- RBAC management (users, roles, permissions, role assignments)
-
-**Common**:
-- `GET /health` - Health check
-
-See `docs/后端接口说明.md` for complete API documentation
-
-## Common Development Commands
+## Common Commands
 
 ### Backend
+
 ```bash
-# Install dependencies
+# Install Python dependencies from the repository root
 pip install -r requirements.txt
 
-# Initialize database
+# Start the FastAPI service
 cd backend
-python init_mongodb.py              # Seed workflow configs
-python scripts/init_rbac.py         # Initialize roles/permissions
-python scripts/create_user.py       # Create admin user
+python -m app.main                  # serves on 0.0.0.0:8000
 
-# Run development server
-python -m app.main                  # Port 8000
+# Initialize core data
+cd backend
+python app/init_mongodb.py          # sync workflow/config data and base app data
+python scripts/init_rbac.py         # initialize default roles/permissions
+python scripts/create_user.py --user-id admin001 --username "系统管理员" --password 'Admin@123' --roles ADMIN --email admin@example.com --upsert
 
 # Run tests
 cd backend
-pytest                              # All tests
-pytest tests/unit/workflow/         # Specific module
-pytest tests/integration/           # Integration tests
-pytest -v --cov=app                 # With coverage
+pytest                              # all backend tests
+pytest tests/unit/workflow/ -v      # a test directory
+pytest tests/integration/ -v        # integration tests
+pytest tests/unit/workflow/test_workflow_query_service.py -v
+pytest tests/unit/workflow/test_workflow_query_service.py::test_name -v
+pytest --cov=app                    # coverage
 
 # Lint
-flake8                              # Max line length: 110
+cd backend
+flake8
+flake8 app/modules/execution/
+flake8 --select=E,W,F
 ```
+
+Backend lint configuration is in `backend/.flake8` (`max-line-length = 110`, `max-complexity = 12`, plus the listed ignores/excludes).
 
 ### Frontend
+
 ```bash
 cd frontend
-npm install                         # Install dependencies
-npm run dev                         # Dev server (port 3000)
-npm run build                       # Production build
-npm run preview                     # Preview build
-npm run lint                        # Type check (tsc --noEmit)
-npm run clean                       # Clean dist
+npm install
+npm run dev                         # Vite dev server; default Vite port is 5173 unless overridden
+npm run build                       # tsc -b && vite build
+npm run lint                        # ESLint
+npm run preview
 ```
 
-## Testing Strategy
+There is no frontend test script in `frontend/package.json` at the time of writing.
 
-### Backend Testing
-- **Unit Tests** (`tests/unit/`): Service and domain logic with fake objects
-- **Integration Tests** (`tests/integration/`): API endpoint testing with FastAPI TestClient
-- **Test Patterns**: Uses fakes for MongoDB, pytest fixtures, async testing
-- **Fakes**: `tests/fakes/workflow.py` provides fake models for testing
+### Documentation Site
 
-### Running Specific Tests
 ```bash
-cd backend
-pytest tests/unit/workflow/test_workflow_service.py -v
-pytest tests/unit/auth/test_jwt_auth.py -v
-pytest tests/integration/test_api_workflow.py -v
+cd docs
+npm install
+npm run docs:dev
+npm run docs:build
+npm run docs:preview
 ```
 
-## Environment Configuration
+## Runtime Configuration
 
-### Backend (`app/shared/db/config.py`)
-```python
-MONGO_URI: str = "mongodb://10.17.154.252:27018"
-MONGO_DB_NAME: str = "workflow_db"
-CORS_ORIGINS: list[str] = ["*"]
-```
+- Backend configuration is loaded from `backend/config.yaml` through `app.shared.config.get_settings()`; `backend/config.yaml.example` shows local defaults.
+- Important backend sections include `app`, `mongodb`, `rabbitmq`, `kafka`, `minio`, `jwt`, `execution`, `tmms`, `terminal`, and `logging`.
+- `backend/app/shared/db/config.py` is a compatibility shim over the unified YAML settings.
+- Beanie index sync is skipped by default in startup when `SKIP_INDEX_SYNC=1`; run `python app/init_mongodb.py` or set `SKIP_INDEX_SYNC=0` when indexes must be synchronized.
+- Frontend API base URL comes from `VITE_API_BASE_URL`, defaulting in `src/services/api.ts` to `http://localhost:8000/api/v1`.
 
-Override with `.env` file (not tracked by git).
+## Backend Architecture
 
-### Frontend (`.env.local`)
-```
-APP_URL=http://localhost:3000
-GEMINI_API_KEY=your_key_here
-```
+### Application Startup and Routing
 
-## Development Guidelines
+- `backend/app/main.py` creates the FastAPI app, configures CORS, request/debug middleware, exception handlers, and includes the aggregate router.
+- The lifespan hook connects MongoDB, sets the shared Mongo client, initializes Beanie document models, validates workflow config consistency, initializes shared infrastructure, and shuts all of that down on exit.
+- `backend/app/shared/infrastructure/bootstrap.py` owns Beanie document model registration. If a module adds a Beanie `Document`, register it through that module's `DOCUMENT_MODELS` and include it in `get_document_models()`.
+- `backend/app/shared/api/main.py` is the central API router registration point. Business routes are mounted under `/api/v1`; health is mounted under `/health`.
+- API responses use the envelope from `app.shared.api.schemas.base.APIResponse`: `{"code": 0, "message": "ok", "data": ...}`.
 
-### Adding New Module
-1. Create `app/modules/<new_module>/` with: `api/`, `schemas/`, `service/`, `domain/`, `repository/models/`
-2. Add routes to `app/shared/api/main.py`
-3. Register document models in `app/main.py` lifespan handler
-4. Add tests in `tests/unit/<new_module>/`
+### Module Layout and Layering
 
-### Adding New Workflow Type
-1. Create `app/configs/<type>.json` with `work_types` and `workflow_configs`
-2. Run `python init_mongodb.py` to seed to MongoDB
-3. No code changes needed - frontend can immediately use new type
+Backend modules live under `backend/app/modules/<module>/`. Most modules follow this shape:
 
-### Code Standards
-- **Backend**: Follow layered architecture (API→Service→Repository), use domain exceptions, no MongoDB细节 in API layer
-- **Frontend**: Single-file component architecture with view state management
-- **Python**: Max line length 110, max complexity 12, follow FastAPI best practices
-- **Testing**: Unit tests for services/domains, integration tests for APIs
+- `api/`: FastAPI routers and dependency wiring
+- `schemas/`: Pydantic request/response models
+- `service/` or `application/`: orchestration and business use cases
+- `domain/`: business policies/exceptions where present
+- `repository/`: Beanie documents and persistence helpers
 
-## Documentation
+Keep route handlers thin: receive/validate inputs, apply auth dependencies, call service/application code, and return `APIResponse`. Business rules belong in service/application/domain layers, not directly in routes.
 
-- **Backend Architecture**: `docs/项目架构规范.md`
-- **API Documentation**: `docs/后端接口说明.md`
-- **Test Specs Design**: `docs/测试用例创建需求和测试用例字段设计.md`
-- **Backend README**: `backend/README.md`
-- **Frontend README**: `frontend/CLAUDE.md`
+### Core Backend Modules
+
+- `workflow`: configuration-driven state machine. It manages work types, workflow states/configs, `BusWorkItemDoc`, transitions, reassignment, and `BusFlowLogDoc` audit history. Workflow rules are sourced from `backend/app/configs/*.json` and validated at startup when initialized data exists.
+- `test_specs`: requirements, test cases, automation test cases, catalog/lab fields, comments, change logs, and status projection behavior. It is the main “what to test / how to test” domain.
+- `execution`: runtime execution orchestration. The platform dispatches one current case, receives progress/results from external agents, advances to the next case only after terminal case state, and keeps task/current-state plus historical execution data.
+- `execution_plan`: execution plans and plan items used by My Tasks, manual result backfill, single/batch automation dispatch, and plan CRUD (`/api/v1/execution-plans/...`).
+- `test_case_collection`: predefined test case collections used by the frontend collection page.
+- `auth`: login, JWT helpers, current-user dependencies, users, roles, permissions, and navigation authorization.
+- `attachments`: file/object-storage metadata and attachment API.
+- `search` and `lineage`: cross-module global search and graph/traceability views.
+- `terminal` and `failure_analysis`: terminal session and failure-analysis support modules; verify route registration before assuming they are exposed.
+
+### Data and Workflow Notes
+
+- MongoDB access is via Beanie models; many business documents use `is_deleted`, so query code should account for soft deletion.
+- Workflow config consistency checks ensure configured `type_code`, `from_state`, and `to_state` values exist. Empty workflow collections only emit a startup warning so blank environments can boot.
+- Auth helpers are exported from `app.shared.auth` (`get_current_user`, `require_permission`, `require_any_permission`, password/JWT helpers).
+
+## Frontend Architecture
+
+- The frontend is a React 19 + TypeScript + Vite single-page app.
+- `src/App.tsx` owns authentication state, current page state, current user/permission loading, user switching, and page rendering through a `PageType` switch.
+- `src/components/AppShell.tsx` composes the persistent `Sidebar` + `Topbar` layout and maps page keys to page titles/descriptions.
+- Navigation metadata is centralized in `src/config/navigation.ts`; `getVisibleNavItems()` filters items using permissions returned from the backend, and `resolveDefaultPage()` chooses the initial page after login.
+- Shared app/page types are in `src/types/app.ts`; API/domain types are in `src/types/index.ts`; test-plan-specific types are in `src/types/testPlan.ts`.
+- `src/services/api.ts` is the typed fetch client. It stores the JWT in `localStorage` under `jwt_token`, sends it as a Bearer token, unwraps backend error envelopes where possible, and exposes methods grouped by backend feature.
+- Major feature components are under `src/components/`; subfolders group larger feature areas such as `TestCaseBoard/`, `workflow/`, `lineage/`, `catalog/`, and shared `ui/` components.
+
+## Existing Documentation Worth Reading
+
+- Root `README.md`: current backend-oriented business overview and local setup notes.
+- `backend/README.md`: backend module responsibilities, startup flow, API prefixes, and execution-module caveats.
+- `backend/app/modules/workflow/README.md`: workflow/state-machine details.
+- `backend/app/modules/test_specs/README.md`: requirements and test case domain details.
+- `backend/app/modules/execution/README.md`: serial execution orchestration model.
+- `backend/app/modules/auth/README.md`: RBAC and auth behavior.
+- `docs/`: VitePress documentation source for broader architecture/API guides.
+
+No Cursor rules (`.cursor/rules/` or `.cursorrules`) or Copilot instructions (`.github/copilot-instructions.md`) were found during this initialization.

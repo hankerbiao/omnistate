@@ -169,12 +169,22 @@ async def get_current_user(
     return data
 
 
+async def get_permissions_by_ids(perm_ids: List[str]) -> List[str]:
+    """根据 perm_id 列表解析权限码并排序。"""
+    if not perm_ids:
+        return []
+    perms = await PermissionDoc.find({"perm_id": {"$in": list(set(perm_ids))}}).to_list()
+    return sorted({perm.code for perm in perms})
+
+
 async def get_user_permissions(user_id: str) -> List[str]:
-    """根据 user_id 解析权限码列表（Role → Permission）"""
+    """根据 user_id 解析权限码列表（角色权限 ∪ 用户额外权限）"""
     user = await UserDoc.find_one(UserDoc.user_id == user_id)
     if not user:
         return []
-    return await get_permissions_by_role_ids(user.role_ids or [])
+    role_codes = await get_permissions_by_role_ids(user.role_ids or [])
+    extra_codes = await get_permissions_by_ids(user.extra_permission_ids or [])
+    return sorted(set(role_codes) | set(extra_codes))
 
 
 async def get_permissions_by_role_ids(role_ids: List[str]) -> List[str]:

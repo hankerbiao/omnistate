@@ -126,7 +126,7 @@ const WorkflowOverviewSection: React.FC<WorkflowOverviewSectionProps> = ({ onNav
                 className="btn btn--primary btn--sm"
                 onClick={() => onNavigate({ page: 'requirements' })}
               >
-                测试需求
+                测试用例编写需求
               </button>
             </>
           )}

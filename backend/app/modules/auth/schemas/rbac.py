@@ -39,6 +39,23 @@ class UpdateUserRolesRequest(BaseModel):
     role_ids: List[str] = Field(default_factory=list, description="角色 ID 列表")
 
 
+class UpdateUserExtraPermissionsRequest(BaseModel):
+    """数据模型：更新用户额外权限请求体。"""
+
+    extra_permission_ids: List[str] = Field(default_factory=list, description="用户独立额外权限 ID 列表")
+
+
+class UserExtraPermissionsResponse(BaseModel):
+    """数据模型：用户生效权限响应体。"""
+
+    user_id: str = Field(..., description="用户 ID")
+    role_ids: List[str] = Field(..., description="角色 ID 列表")
+    extra_permission_ids: List[str] = Field(..., description="用户独立额外权限 ID 列表")
+    role_permissions: List[str] = Field(..., description="从角色继承的权限码")
+    extra_permissions: List[str] = Field(..., description="从个人额外设置的权限码")
+    permissions: List[str] = Field(..., description="并集后的全部权限码")
+
+
 class UpdateUserPasswordRequest(BaseModel):
     """数据模型：管理员或本人更新密码请求体。"""
 
@@ -67,6 +84,7 @@ class UserResponse(BaseModel):
     username: str = Field(..., description="用户名")
     email: Optional[str] = Field(default=None, description="邮箱地址")
     role_ids: List[str] = Field(..., description="角色 ID 列表")
+    extra_permission_ids: List[str] = Field(default_factory=list, description="用户独立额外权限 ID 列表")
     status: str = Field(..., description="用户状态")
     created_at: datetime = Field(..., description="创建时间")
     updated_at: datetime = Field(..., description="更新时间")
@@ -85,6 +103,7 @@ class MePermissionsResponse(BaseModel):
 
     user_id: str = Field(..., description="用户 ID")
     role_ids: List[str] = Field(..., description="角色 ID 列表")
+    extra_permission_ids: List[str] = Field(default_factory=list, description="用户独立额外权限 ID 列表")
     permissions: List[str] = Field(..., description="权限码列表")
 
 

@@ -30,26 +30,23 @@ def test_main_does_not_own_beanie_model_registration() -> None:
 
 
 def test_bootstrap_exports_document_models_in_startup_order() -> None:
+    from app.modules.attachments.repository.models import DOCUMENT_MODELS as ATTACHMENT_DOCUMENT_MODELS
+    from app.modules.auth.repository.models import DOCUMENT_MODELS as AUTH_DOCUMENT_MODELS
+    from app.modules.execution.repository.models import DOCUMENT_MODELS as EXECUTION_DOCUMENT_MODELS
+    from app.modules.execution_plan.repository.models import DOCUMENT_MODELS as EXECUTION_PLAN_DOCUMENT_MODELS
+    from app.modules.test_case_collection.repository.models import DOCUMENT_MODELS as COLLECTION_DOCUMENT_MODELS
+    from app.modules.test_specs.repository.models import DOCUMENT_MODELS as TEST_SPECS_DOCUMENT_MODELS
+    from app.modules.workflow.repository.models import DOCUMENT_MODELS as WORKFLOW_DOCUMENT_MODELS
     from app.shared.infrastructure.bootstrap import get_document_models
 
-    model_names = [model.__name__ for model in get_document_models()]
-
-    assert model_names == [
-        "SysWorkTypeDoc",
-        "SysWorkflowStateDoc",
-        "SysWorkflowConfigDoc",
-        "BusWorkItemDoc",
-        "BusFlowLogDoc",
-        "TestRequirementDoc",
-        "TestCaseDoc",
-        "AutomationTestCaseDoc",
-        "ExecutionAgentDoc",
-        "ExecutionEventDoc",
-        "ExecutionTaskDoc",
-        "ExecutionTaskCaseDoc",
-        "UserDoc",
-        "RoleDoc",
-        "PermissionDoc",
-        "NavigationPageDoc",
-        "AttachmentDoc",
+    expected = [
+        *WORKFLOW_DOCUMENT_MODELS,
+        *TEST_SPECS_DOCUMENT_MODELS,
+        *EXECUTION_DOCUMENT_MODELS,
+        *AUTH_DOCUMENT_MODELS,
+        *ATTACHMENT_DOCUMENT_MODELS,
+        *EXECUTION_PLAN_DOCUMENT_MODELS,
+        *COLLECTION_DOCUMENT_MODELS,
     ]
+
+    assert get_document_models() == expected

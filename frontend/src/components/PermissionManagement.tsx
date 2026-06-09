@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { api } from '../services/api';
 import type { PermissionResponse } from '../types';
 import PageToolbar, { StatPill } from './ui/PageToolbar';
+import { getErrorMessage } from '../utils/errors';
 
 type ViewMode = 'table' | 'grouped';
 
@@ -14,10 +15,6 @@ const CATEGORY_LABELS: Record<string, string> = {
   terminal: '终端', other: '其他',
 };
 
-const getErrorMessage = (err: unknown, fallback: string) => {
-  if (err instanceof Error) return `${fallback}: ${err.message}`;
-  return fallback;
-};
 
 const getPermissionCategory = (code: string): string => {
   const [resource] = code.split(':');

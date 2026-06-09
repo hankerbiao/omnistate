@@ -7,13 +7,14 @@ import { TestCaseBoardPage } from './components/TestCaseBoard'
 import AgentList from './components/AgentList'
 import TaskList from './components/TaskList'
 import RoleManagement from './components/RoleManagement'
+import RoleGroupManagement from './components/RoleGroupManagement'
 import UserManagement from './components/UserManagement'
 import ProfilePage from './components/ProfilePage'
 import MyTasksPage from './components/MyTasksPage'
 import PermissionManagement from './components/PermissionManagement'
 import DashboardPage from './components/DashboardPage'
 import CatalogLabsPage from './components/CatalogLabsPage'
-import TestExecutionPlan from './components/TestExecutionPlan'
+import TestExecutionPlanDemo from './components/TestExecutionPlanDemo'
 import LineageViewPage from './components/lineage/LineageViewPage'
 import SearchResultsPage from './components/SearchResultsPage'
 import TestCaseCollectionPage from './components/TestCaseCollectionPage'
@@ -190,19 +191,21 @@ function App() {
       case 'search':
         return <SearchResultsPage key={currentUserId} onNavigate={setCurrentPage as (page: string) => void} />
       case 'collections':
-        return <TestCaseCollectionPage key={currentUserId} />
+        return <TestCaseCollectionPage key={currentUserId} currentUserId={currentUserId} />
       case 'agents':
         return <AgentList key={currentUserId} onLogout={handleLogout} />
       case 'users':
         return <UserManagement key={currentUserId} onNavigate={setCurrentPage} />
       case 'roles':
         return <RoleManagement key={currentUserId} onNavigate={setCurrentPage} />
+      case 'roleGroup':
+        return <RoleGroupManagement key={currentUserId} onNavigate={setCurrentPage} />
       case 'permissions':
         return <PermissionManagement key={currentUserId} />
       case 'catalogLabs':
         return <CatalogLabsPage key={currentUserId} />
-      case 'testPlanStudio':
-        return <TestExecutionPlan key={currentUserId} />
+      case 'testPlanStudioDemo':
+        return <TestExecutionPlanDemo key={currentUserId} />
       case 'lineageView':
         return (
           <LineageViewPage

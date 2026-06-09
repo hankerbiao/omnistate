@@ -395,7 +395,7 @@ export default function DashboardPage({ onWorkflowNavigate }: DashboardPageProps
           </div>
 
           <div className="dashboard-metric-grid">
-            <MetricBox label="测试需求" value={`${activeData.requirements.length}`} sub={`已关联用例: ${reqsWithCases}`} />
+            <MetricBox label="测试用例编写需求" value={`${activeData.requirements.length}`} sub={`已关联用例: ${reqsWithCases}`} />
             <MetricBox label="激活用例" value={`${activeCases}`} sub={`总计: ${activeData.testCases.length}`} />
             <MetricBox
               label="自动化覆盖"
@@ -574,7 +574,7 @@ export default function DashboardPage({ onWorkflowNavigate }: DashboardPageProps
             <div className="chart-card">
               <h3 className="chart-card__title">需求用例关联</h3>
               {reqCoverage.length === 0 ? (
-                <EmptyHint text="暂无测试需求" />
+                <EmptyHint text="暂无测试用例编写需求" />
               ) : (
                 <div style={tableWrap}>
                   <table style={table}>
@@ -773,7 +773,7 @@ export default function DashboardPage({ onWorkflowNavigate }: DashboardPageProps
           <div className="chart-card">
             <h3 className="chart-card__title">数据摘要</h3>
             <div style={summaryGrid}>
-              <SummaryBox label="测试需求" value={`${activeData.requirements.length}`} />
+              <SummaryBox label="测试用例编写需求" value={`${activeData.requirements.length}`} />
               <SummaryBox label="测试用例" value={`${activeData.testCases.length}`} />
               <SummaryBox label="自动化用例" value={`${activeData.automationCases.length}`} />
               <SummaryBox label="执行任务" value={`${activeData.tasks.length}`} />

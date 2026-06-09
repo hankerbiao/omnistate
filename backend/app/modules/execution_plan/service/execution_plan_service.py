@@ -176,9 +176,30 @@ class ExecutionPlanService(BaseService):
     async def list_my_items(self, assignee_id: str) -> List[Dict[str, Any]]:
         docs = await ExecutionPlanItemDoc.find(
             ExecutionPlanItemDoc.assignee_id == assignee_id,
+            ExecutionPlanItemDoc.archived_at == None,  # noqa: E711
             ExecutionPlanItemDoc.is_deleted == False,  # noqa: E712
         ).sort("-updated_at").to_list()
         return [await self._item_to_response(doc) for doc in docs]
+
+    async def list_archived_items(self, assignee_id: str) -> List[Dict[str, Any]]:
+        docs = await ExecutionPlanItemDoc.find(
+            ExecutionPlanItemDoc.assignee_id == assignee_id,
+            ExecutionPlanItemDoc.archived_at != None,  # noqa: E711
+            ExecutionPlanItemDoc.is_deleted == False,  # noqa: E712
+        ).sort("-archived_at").to_list()
+        return [await self._item_to_response(doc) for doc in docs]
+
+    async def archive_item(self, item_id: str, actor_id: str) -> None:
+        item = await self._get_item_by_id_or_raise(item_id)
+        item.archived_at = datetime.now(timezone.utc)
+        await item.save()
+        await self._recalculate_plan_progress(item.plan_id)
+
+    async def unarchive_item(self, item_id: str) -> None:
+        item = await self._get_item_by_id_or_raise(item_id)
+        item.archived_at = None
+        await item.save()
+        await self._recalculate_plan_progress(item.plan_id)
 
     async def submit_result(
         self,
@@ -343,6 +364,7 @@ class ExecutionPlanService(BaseService):
             "order_no": item.order_no,
             "execution_task_id": item.execution_task_id,
             "result": result_payload,
+            "archived_at": item.archived_at.isoformat() if item.archived_at else None,
         }
 
     async def _sync_auto_item_status(self, item: ExecutionPlanItemDoc) -> None:

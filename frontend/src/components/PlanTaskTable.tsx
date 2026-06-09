@@ -33,7 +33,9 @@ const PlanTaskTable: React.FC<PlanTaskTableProps> = ({
   onBatchDispatch,
 }) => {
   const handleRowClick = useCallback((task: PlanTask) => {
-    onOpenResultModal(task);
+    if (task.type === 'manual') {
+      onOpenResultModal(task);
+    }
   }, [onOpenResultModal]);
 
   return (

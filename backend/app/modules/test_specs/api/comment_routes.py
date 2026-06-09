@@ -36,7 +36,7 @@ async def list_comments(
     offset: int = Query(0, ge=0),
 ):
     docs, total = await comment_service.list_comments(case_id, limit=limit, offset=offset)
-    items = [CommentResponse(**doc.model_dump(by_alias=True), _id=str(doc.id)) for doc in docs]
+    items = [CommentResponse(comment_id=str(doc.id), **doc.model_dump(exclude={'id'})) for doc in docs]
     return APIResponse(data=CommentListResponse(items=items, total=total))
 
 
@@ -60,7 +60,7 @@ async def create_comment(
         author_name=current_user.get("username"),
     )
     return APIResponse(
-        data=CommentResponse(**doc.model_dump(by_alias=True), _id=str(doc.id))
+        data=CommentResponse(comment_id=str(doc.id), **doc.model_dump(exclude={'id'}))
     )
 
 
@@ -85,7 +85,7 @@ async def update_comment(
     if doc is None:
         raise HTTPException(status_code=404, detail="comment not found or not owned by you")
     return APIResponse(
-        data=CommentResponse(**doc.model_dump(by_alias=True), _id=str(doc.id))
+        data=CommentResponse(comment_id=str(doc.id), **doc.model_dump(exclude={'id'}))
     )
 
 
