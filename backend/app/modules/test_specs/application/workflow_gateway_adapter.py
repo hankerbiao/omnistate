@@ -4,9 +4,9 @@ from pymongo.asynchronous.client_session import AsyncClientSession
 
 from app.modules.workflow.application import (
     WorkflowItemGateway,
-    WorkflowMutationService,
     WorkflowQueryService,
 )
+from app.modules.workflow.application.mutation_service import WorkflowMutationService
 
 
 class WorkflowServicesAdapter(WorkflowItemGateway):

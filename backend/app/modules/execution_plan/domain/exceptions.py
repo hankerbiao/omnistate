@@ -1,7 +1,9 @@
 """执行计划领域异常。"""
 
+from app.shared.domain.exceptions import AppError
 
-class ExecutionPlanError(Exception):
+
+class ExecutionPlanError(AppError):
     """执行计划基础异常。"""
 
 

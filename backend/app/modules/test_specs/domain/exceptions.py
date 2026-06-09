@@ -1,7 +1,9 @@
 """测试规格领域异常"""
 
+from app.shared.domain.exceptions import AppError
 
-class TestSpecsError(Exception):
+
+class TestSpecsError(AppError):
     """测试规格基础异常"""
     pass
 

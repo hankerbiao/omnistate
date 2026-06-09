@@ -2,7 +2,8 @@
 全局异常处理器
 
 统一收敛业务异常与 HTTP 异常，返回结构化的错误响应：
-- 业务类错误：WorkflowError 体系
+- 业务类错误：WorkflowError / TestSpecsError / ExecutionPlanError 体系
+- AppError 体系（NotFoundError / ConflictError / ValidationError / PermissionDenied）
 - HTTP 协议错误：StarletteHTTPException
 - 未预料异常：统一映射为 InternalServerError，隐藏内部细节
 
@@ -20,21 +21,26 @@ from app.modules.workflow.domain import (
     WorkflowError,
     WorkItemNotFoundError,
 )
+from app.modules.test_specs.domain.exceptions import (
+    TestSpecsError,
+    RequirementNotFoundError,
+    TestCaseNotFoundError,
+    LabConflictError,
+)
+from app.modules.execution_plan.domain.exceptions import (
+    ExecutionPlanError,
+    PlanNotFoundError,
+    ItemNotFoundError,
+    ResultNotFoundError,
+)
 from app.shared.api.schemas.base import APIResponse
 from app.shared.api.schemas.error import ErrorResponse
 from app.shared.context import get_operation_context, get_trace_context, reset_context
 from app.shared.core.logger import log
 
 
-async def workflow_exception_handler(request: Request, exc: WorkflowError):
-    """业务逻辑异常处理器"""
-    status_code = status.HTTP_400_BAD_REQUEST
-
-    if isinstance(exc, WorkItemNotFoundError):
-        status_code = status.HTTP_404_NOT_FOUND
-    elif isinstance(exc, PermissionDeniedError):
-        status_code = status.HTTP_403_FORBIDDEN
-
+async def _make_error_response(status_code: int, exc: Exception) -> JSONResponse:
+    """构造统一的错误响应 JSON。"""
     return JSONResponse(
         status_code=status_code,
         content=APIResponse(
@@ -42,10 +48,44 @@ async def workflow_exception_handler(request: Request, exc: WorkflowError):
             message=exc.__class__.__name__,
             data=ErrorResponse(
                 error=exc.__class__.__name__,
-                detail=str(exc)
-            )
-        ).model_dump()
+                detail=str(exc),
+            ),
+        ).model_dump(),
     )
+
+
+async def workflow_exception_handler(request: Request, exc: WorkflowError):
+    """Workflow 业务逻辑异常处理器"""
+    status_code = status.HTTP_400_BAD_REQUEST
+
+    if isinstance(exc, WorkItemNotFoundError):
+        status_code = status.HTTP_404_NOT_FOUND
+    elif isinstance(exc, PermissionDeniedError):
+        status_code = status.HTTP_403_FORBIDDEN
+
+    return await _make_error_response(status_code, exc)
+
+
+async def test_specs_exception_handler(request: Request, exc: TestSpecsError):
+    """TestSpecs 业务逻辑异常处理器"""
+    status_code = status.HTTP_400_BAD_REQUEST
+
+    if isinstance(exc, (RequirementNotFoundError, TestCaseNotFoundError)):
+        status_code = status.HTTP_404_NOT_FOUND
+    elif isinstance(exc, LabConflictError):
+        status_code = status.HTTP_409_CONFLICT
+
+    return await _make_error_response(status_code, exc)
+
+
+async def execution_plan_exception_handler(request: Request, exc: ExecutionPlanError):
+    """ExecutionPlan 业务逻辑异常处理器"""
+    status_code = status.HTTP_400_BAD_REQUEST
+
+    if isinstance(exc, (PlanNotFoundError, ItemNotFoundError, ResultNotFoundError)):
+        status_code = status.HTTP_404_NOT_FOUND
+
+    return await _make_error_response(status_code, exc)
 
 
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
@@ -94,5 +134,7 @@ def setup_exception_handlers(app: FastAPI) -> None:
     """配置全局异常处理器"""
 
     app.add_exception_handler(WorkflowError, workflow_exception_handler)
+    app.add_exception_handler(TestSpecsError, test_specs_exception_handler)
+    app.add_exception_handler(ExecutionPlanError, execution_plan_exception_handler)
     app.add_exception_handler(StarletteHTTPException, http_exception_handler)
     app.add_exception_handler(Exception, generic_exception_handler)

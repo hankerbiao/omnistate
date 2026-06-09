@@ -7,6 +7,7 @@ from typing import Any, Dict
 
 from app.modules.attachments.service.attachment_service import AttachmentService
 from app.modules.execution.application.case_resolver import ExecutionCaseResolver
+from app.modules.test_specs.application.case_metadata_query import TestCaseMetadataQuery
 from app.modules.execution.application.commands import DispatchExecutionTaskCommand
 from app.modules.execution.application.task_command_helpers import (
     build_rerun_command_from_payload,
@@ -31,7 +32,7 @@ class ExecutionTaskCommandService:
         attachment_service: AttachmentService | None = None,
     ) -> None:
         self._dispatch_service = dispatch_service or ExecutionDispatchService()
-        self._case_resolver = case_resolver or ExecutionCaseResolver()
+        self._case_resolver = case_resolver or ExecutionCaseResolver(TestCaseMetadataQuery())
         self._attachment_service = attachment_service or AttachmentService()
 
     @staticmethod

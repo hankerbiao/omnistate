@@ -6,6 +6,7 @@ import logging
 from typing import Any, Dict, List
 
 from app.modules.execution.application.case_resolver import AutoCaseDispatchBinding, ExecutionCaseResolver
+from app.modules.test_specs.application.case_metadata_query import TestCaseMetadataQuery
 from app.modules.execution.application.constants import CaseStatus, DispatchStatus
 from app.modules.execution.repository.models import ExecutionTaskCaseDoc, ExecutionTaskDoc
 from app.modules.test_specs.repository.models import TestCaseDoc
@@ -17,7 +18,7 @@ class ExecutionTaskCaseCoordinator:
     """处理 case 载入、解析与快照重建。"""
 
     def __init__(self, case_resolver: ExecutionCaseResolver | None = None) -> None:
-        self._case_resolver = case_resolver or ExecutionCaseResolver()
+        self._case_resolver = case_resolver or ExecutionCaseResolver(TestCaseMetadataQuery())
 
     @staticmethod
     async def load_case_docs(case_ids: List[str]) -> Dict[str, Any]:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from typing import Any, Protocol
 
 from pymongo.asynchronous.client_session import AsyncClientSession
@@ -36,3 +37,33 @@ class WorkflowItemGateway(Protocol):
     ) -> dict[str, Any]: ...
 
     async def get_work_item_by_id(self, item_id: str) -> dict[str, Any] | None: ...
+
+
+class WorkflowStatusQueryPort(ABC):
+    """工作流状态查询端口。
+
+    允许跨模块通过此端口读取工作流事项的状态信息，
+    而不直接依赖 workflow 的 persistence 模型。
+    """
+
+    @abstractmethod
+    async def get_workflow_details(
+        self, workflow_ids: list[str]
+    ) -> dict[str, dict[str, Any]]:
+        """批量查询工作流事项的状态信息。
+
+        Args:
+            workflow_ids: 工作流事项 ID 列表。
+
+        Returns:
+            {workflow_id: {status, creator, current_owner, ...}} 的映射。
+            不存在的 ID 不会出现在结果中。
+        """
+        ...
+
+    @abstractmethod
+    async def get_work_item_by_id(
+        self, item_id: str
+    ) -> dict[str, Any] | None:
+        """查询单个工作流事项。"""
+        ...

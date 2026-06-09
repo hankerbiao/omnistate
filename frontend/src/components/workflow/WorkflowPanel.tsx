@@ -45,7 +45,7 @@ const WorkflowPanel: React.FC<WorkflowPanelProps> = ({
   compact = false,
   showStepper = true,
   showReassign = true,
-  showLogs = true,
+  showLogs = false,
   hideToolbar = false,
   refreshSignal,
   showMetaGrid = true,

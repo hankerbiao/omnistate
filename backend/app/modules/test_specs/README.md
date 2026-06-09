@@ -11,8 +11,10 @@
 
 ## 目录结构
 - `api/`：HTTP 路由层（FastAPI）
+- `application/`：命令/查询服务（用例编排、跨模块端口）
+- `domain/`：业务规则、权限策略、领域异常
 - `schemas/`：API 请求/响应模型
-- `service/`：领域服务逻辑
+- `service/`：领域服务逻辑（沿用中，新用例请优先添加到 `application/`）
 - `repository/models/`：Beanie 文档模型与 Pydantic 模型
 
 ## 核心模型

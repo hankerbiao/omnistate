@@ -7,9 +7,9 @@ from fastapi import Depends
 from app.modules.workflow.application import (
     OperationContext,
     WorkflowCommandService,
-    WorkflowMutationService,
     WorkflowQueryService,
 )
+from app.modules.workflow.application.mutation_service import WorkflowMutationService
 
 
 def get_workflow_query_service() -> WorkflowQueryService:

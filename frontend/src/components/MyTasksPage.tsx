@@ -507,57 +507,117 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
                           </div>
                         ) : (
                           <>
-                            {item.content && <p style={myTasksStyles.contentPreview}>{item.content}</p>}
-                            {itemDetail && 'description' in itemDetail && itemDetail.description && (
-                              <p style={myTasksStyles.contentPreview}>{itemDetail.description}</p>
-                            )}
-
-                            {/* ── 需求关联的测试用例 ── */}
-                            {item.type_code === 'REQUIREMENT' && (
-                              <div style={{ marginTop: 8 }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                                  <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>
-                                    测试用例 ({reqTestCases.length})
-                                  </span>
-                                  <button
-                                    type="button"
-                                    className="btn btn--primary btn--sm"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      if (item.req_id) {
-                                        setCreatingReqTestCaseReqId(item.req_id);
-                                        setShowCreateReqTestCase(true);
-                                      }
-                                    }}
-                                    style={{ fontSize: 10, padding: '2px 8px' }}
-                                  >
-                                    + 创建用例
-                                  </button>
+                            {item.type_code === 'REQUIREMENT' && itemDetail && 'req_id' in itemDetail ? (
+                              /* ── 需求详情 ── 两栏布局 ── */
+                              <>
+                                {/* 顶部元信息行 */}
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
+                                  <div style={{ background: '#f8fafc', borderRadius: 8, padding: '10px 12px' }}>
+                                    <div style={{ fontSize: 10, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', marginBottom: 4 }}>优先级 & 状态</div>
+                                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                                      <span style={{
+                                        padding: '2px 8px', borderRadius: 4, fontSize: 12, fontWeight: 600,
+                                        backgroundColor: itemDetail.priority === 'P0' ? '#fef2f2' : itemDetail.priority === 'P1' ? '#fffbeb' : '#f1f5f9',
+                                        color: itemDetail.priority === 'P0' ? '#dc2626' : itemDetail.priority === 'P1' ? '#d97706' : '#64748b',
+                                      }}>{itemDetail.priority || 'P2'}</span>
+                                      <span style={{ ...getWorkflowStateStyle(item.current_state), padding: '2px 8px', borderRadius: 4, fontSize: 12 }}>
+                                        {getStateLabel(item.current_state, 'REQUIREMENT')}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <div style={{ background: '#f8fafc', borderRadius: 8, padding: '10px 12px' }}>
+                                    <div style={{ fontSize: 10, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', marginBottom: 4 }}>分类 & 来源</div>
+                                    <div style={{ display: 'flex', gap: 6 }}>
+                                      {itemDetail.category && <span style={{ padding: '2px 8px', fontSize: 12, borderRadius: 4, background: '#e2e8f0' }}>{itemDetail.category}</span>}
+                                      {itemDetail.source && <span style={{ padding: '2px 8px', fontSize: 12, borderRadius: 4, background: '#e2e8f0' }}>{itemDetail.source}</span>}
+                                    </div>
+                                  </div>
+                                  <div style={{ background: '#f8fafc', borderRadius: 8, padding: '10px 12px' }}>
+                                    <div style={{ fontSize: 10, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', marginBottom: 4 }}>计划时间</div>
+                                    <div style={{ fontSize: 12 }}>
+                                      {itemDetail.planned_start_date || itemDetail.planned_end_date
+                                        ? `${itemDetail.planned_start_date || '?'} ~ ${itemDetail.planned_end_date || '?'}`
+                                        : <span style={{ color: '#94a3b8' }}>未设置</span>}
+                                    </div>
+                                  </div>
                                 </div>
-                                {loadingReqTestCases ? (
-                                  <div style={myTasksStyles.loadingSmall}>
-                                    <div className="loading-spinner" style={{ width: 16, height: 16 }} />
-                                  </div>
-                                ) : reqTestCases.length > 0 ? (
-                                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                                    {reqTestCases.map(tc => (
-                                      <div key={tc.case_id} style={{
-                                        fontSize: 12, color: 'var(--text-secondary)',
-                                        padding: '3px 8px', backgroundColor: 'var(--surface-tertiary)',
-                                        borderRadius: 4,
-                                      }}>
-                                        <span style={{ fontFamily: 'monospace', marginRight: 6, color: 'var(--text-tertiary)' }}>{tc.case_id}</span>
-                                        {tc.title}
+
+                                {/* 中间两栏：人员 + 标签 | 描述 */}
+                                <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: 12, marginBottom: 12 }}>
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                    <div style={{ background: '#f8fafc', borderRadius: 8, padding: '10px 12px' }}>
+                                      <div style={{ fontSize: 10, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', marginBottom: 6 }}>人员</div>
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 12, color: '#475569' }}>
+                                        {itemDetail.tpm_owner_name && <span>👤 TPM: {itemDetail.tpm_owner_name}</span>}
+                                        {itemDetail.manual_dev_name && <span>✏️ 手动: {itemDetail.manual_dev_name}</span>}
+                                        {itemDetail.auto_dev_name && <span>🤖 自动: {itemDetail.auto_dev_name}</span>}
+                                        {itemDetail.creator_name && <span>📋 创建: {itemDetail.creator_name}</span>}
                                       </div>
-                                    ))}
+                                    </div>
+                                    {itemDetail.tags && itemDetail.tags.length > 0 && (
+                                      <div style={{ background: '#f8fafc', borderRadius: 8, padding: '10px 12px' }}>
+                                        <div style={{ fontSize: 10, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', marginBottom: 6 }}>标签</div>
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                                          {itemDetail.tags.map((tag: string) => (
+                                            <span key={tag} style={{ padding: '2px 8px', fontSize: 11, borderRadius: 999, background: '#eff6ff', color: '#3b82f6' }}>{tag}</span>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
                                   </div>
-                                ) : (
-                                  <p style={{ fontSize: 12, color: 'var(--text-tertiary)', fontStyle: 'italic' }}>
-                                    暂无测试用例
-                                  </p>
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                    {itemDetail.description && (
+                                      <div style={{ background: '#f8fafc', borderRadius: 8, padding: '10px 12px' }}>
+                                        <div style={{ fontSize: 10, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', marginBottom: 6 }}>需求描述</div>
+                                        <div style={{ whiteSpace: 'pre-wrap', fontSize: 12, color: '#475569', lineHeight: 1.6, maxHeight: 160, overflowY: 'auto' }}>{itemDetail.description}</div>
+                                      </div>
+                                    )}
+                                    {itemDetail.acceptance_criteria && (
+                                      <div style={{ background: '#f0fdf4', borderRadius: 8, padding: '10px 12px', border: '1px solid #bbf7d0' }}>
+                                        <div style={{ fontSize: 10, fontWeight: 600, color: '#16a34a', marginBottom: 6 }}>✅ 验收标准</div>
+                                        <div style={{ whiteSpace: 'pre-wrap', fontSize: 12, color: '#15803d', lineHeight: 1.6 }}>{itemDetail.acceptance_criteria}</div>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+
+                                {/* 底部：测试用例 */}
+                                <div style={{ background: '#f8fafc', borderRadius: 8, padding: '10px 12px' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                                    <span style={{ fontSize: 10, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase' }}>
+                                      关联测试用例 ({reqTestCases.length})
+                                    </span>
+                                    <button type="button" className="btn btn--primary btn--sm"
+                                      onClick={(e) => { e.stopPropagation(); if (item.req_id) { setCreatingReqTestCaseReqId(item.req_id); setShowCreateReqTestCase(true); } }}
+                                      style={{ fontSize: 10, padding: '2px 8px' }}
+                                    >+ 创建用例</button>
+                                  </div>
+                                  {loadingReqTestCases ? (
+                                    <div style={myTasksStyles.loadingSmall}><div className="loading-spinner" style={{ width: 16, height: 16 }} /></div>
+                                  ) : reqTestCases.length > 0 ? (
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
+                                      {reqTestCases.map(tc => (
+                                        <div key={tc.case_id} style={{ fontSize: 12, color: '#475569', padding: '6px 10px', background: '#fff', borderRadius: 6, border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: 8 }}>
+                                          <span style={{ fontFamily: 'monospace', fontSize: 11, color: '#94a3b8', whiteSpace: 'nowrap' }}>{tc.case_id}</span>
+                                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tc.title}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <p style={{ fontSize: 12, color: '#94a3b8', fontStyle: 'italic' }}>暂无测试用例</p>
+                                  )}
+                                </div>
+                              </>
+                            ) : (
+                              /* ── 其他类型（TEST_CASE）的预览 ── */
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                                {item.content && <p style={myTasksStyles.contentPreview}>{item.content}</p>}
+                                {itemDetail && 'description' in itemDetail && itemDetail.description && (
+                                  <p style={myTasksStyles.contentPreview}>{itemDetail.description}</p>
                                 )}
                               </div>
                             )}
+
                           </>
                         )}
                         <WorkflowPanel

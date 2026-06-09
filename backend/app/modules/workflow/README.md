@@ -25,11 +25,12 @@ python -m app.main            # 启动前会 validate_workflow_consistency
 
 ## 目录结构
 
-- `api/` — FastAPI 路由（`/api/v1/work-items`）
-- `application/` — `WorkflowCommandService`、`MutationService`、`QueryService`
-- `domain/` — `rules.py`、`policies.py`、异常
+- `api/` — FastAPI 路由（仅 HTTP 映射）
+- `application/` — 用例编排层：`WorkflowCommandService`（写侧公共 API）、`WorkflowQueryService`（读侧公共 API）、`WorkflowMutationService`（模块内部实现）
+- `domain/` — `rules.py`、`policies.py`、领域异常
 - `repository/models/` — Beanie 文档
-- `schemas/` — API 模型
+- `schemas/` — API 输入输出模型
+- `service/` — （历史遗留，极少使用）
 - `docs/workflow.md` — 模块内补充笔记
 
 ## 核心模型

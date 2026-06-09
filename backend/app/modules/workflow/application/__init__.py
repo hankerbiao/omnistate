@@ -13,7 +13,6 @@ from .workflow_command_service import WorkflowCommandService
 __all__ = [
     "CreateWorkItemCommand",
     "DeleteWorkItemCommand",
-    "WorkflowMutationService",
     "WorkflowQueryService",
     "ReassignWorkItemCommand",
     "TransitionWorkItemCommand",
