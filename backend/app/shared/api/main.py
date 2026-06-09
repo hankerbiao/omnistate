@@ -20,6 +20,7 @@ from app.modules.lineage.api import lineage_router
 from app.modules.search.api import search_router
 from app.modules.execution_plan.api import router as execution_plan_router
 from app.modules.test_case_collection.api import collection_router
+from app.modules.system_config.api import router as system_config_router
 from app.shared.api.routes import health_router
 
 api_router = APIRouter()
@@ -41,3 +42,4 @@ api_router.include_router(lineage_router, prefix="/api/v1", tags=["Lineage"])
 api_router.include_router(search_router, prefix="/api/v1", tags=["Search"])
 api_router.include_router(execution_plan_router, prefix="/api/v1", tags=["ExecutionPlans"])
 api_router.include_router(collection_router, prefix="/api/v1", tags=["TestCaseCollection"])
+api_router.include_router(system_config_router, prefix="/api/v1", tags=["SystemConfig"])

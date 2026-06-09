@@ -19,6 +19,9 @@ from app.modules.workflow.repository.models import (
 from app.modules.test_case_collection.repository.models import (
     DOCUMENT_MODELS as COLLECTION_DOCUMENT_MODELS,
 )
+from app.modules.system_config.repository.models import (
+    DOCUMENT_MODELS as SYSTEM_CONFIG_DOCUMENT_MODELS,
+)
 from app.shared.core.logger import log
 
 
@@ -32,6 +35,7 @@ def get_document_models() -> list[type[Any]]:
         *ATTACHMENT_DOCUMENT_MODELS,
         *EXECUTION_PLAN_DOCUMENT_MODELS,
         *COLLECTION_DOCUMENT_MODELS,
+        *SYSTEM_CONFIG_DOCUMENT_MODELS,
     ]
 
 
