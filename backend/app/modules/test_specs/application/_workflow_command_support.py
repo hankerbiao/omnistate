@@ -1,7 +1,7 @@
 from typing import Any, Awaitable, Callable
 
 from app.modules.workflow.application import DeleteWorkItemCommand, OperationContext, WorkflowCommandService
-from app.modules.workflow.domain.exceptions import PermissionDeniedError
+from app.modules.workflow.domain.exceptions import PermissionDeniedError, WorkItemNotFoundError
 
 
 def build_actor(context: OperationContext) -> dict[str, Any]:
@@ -74,11 +74,15 @@ async def delete_entity_or_work_item(
     workflow_item_id: str,
     delete_fn: Callable[[], Awaitable[None]],
 ) -> None:
-    """优先走 workflow 删除路径；无工作项时回退到业务文档删除。"""
+    """优先走 workflow 删除路径；无工作项或工作项已不存在时回退到业务文档删除。"""
     if workflow_item_id:
-        await workflow_command_service.delete_work_item(
-            context,
-            DeleteWorkItemCommand(work_item_id=workflow_item_id),
-        )
-        return
+        try:
+            await workflow_command_service.delete_work_item(
+                context,
+                DeleteWorkItemCommand(work_item_id=workflow_item_id),
+            )
+            return
+        except WorkItemNotFoundError:
+            # 工作项已不存在（被删除或创建不完整），回退到直接删除业务文档
+            pass
     await delete_fn()

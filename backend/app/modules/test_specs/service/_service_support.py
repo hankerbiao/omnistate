@@ -92,9 +92,16 @@ async def workflow_aware_soft_delete(
     workflow_error_message: str,
     extra_guard: Callable[[], Awaitable[None]] | None = None,
 ) -> None:
-    """Soft delete an entity only when it is no longer bound to workflow state."""
+    """Soft delete an entity only when it is no longer bound to workflow state.
+
+    如果 workflow_item_id 非空但对应的工作项已不存在（孤立引用），
+    视为可安全删除，跳过 workflow-aware 守卫。
+    """
     if workflow_item_id:
-        raise ValueError(workflow_error_message)
+        from app.modules.workflow.repository.models import BusWorkItemDoc
+        work_item = await BusWorkItemDoc.get(workflow_item_id)
+        if work_item is not None and not work_item.is_deleted:
+            raise ValueError(workflow_error_message)
     if extra_guard is not None:
         await extra_guard()
     doc.is_deleted = True
