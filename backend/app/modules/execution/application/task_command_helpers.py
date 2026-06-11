@@ -167,6 +167,23 @@ async def ensure_no_active_duplicate(dedup_key: str, excluded_task_id: str | Non
         )
 
 
+def _get_system_config_sync(key: str) -> str | None:
+    """同步读取系统配置值（用于非 async 上下文）。"""
+    try:
+        from pymongo import MongoClient
+        from app.shared.config import get_settings
+        settings = get_settings()
+        client = MongoClient(settings.MONGO_URI)
+        db = client[settings.MONGO_DB_NAME]
+        doc = db["sys_configs"].find_one({"config_key": key})
+        client.close()
+        if doc and doc.get("config_value"):
+            return str(doc["config_value"])
+    except Exception:
+        pass
+    return None
+
+
 def build_rerun_command_from_payload(
     source_task_doc: Any,
     request: RerunTaskRequest,
@@ -313,6 +330,9 @@ def _validate_case_collection_lengths(command: DispatchExecutionTaskCommand) -> 
 
 def _apply_defaults(command: DispatchExecutionTaskCommand) -> None:
     from app.shared.config import get_settings
+    from app.modules.system_config.service.config_service import ConfigService
+    import asyncio
+
     execution_cfg = get_settings().execution
     command.dispatch_channel = "RABBITMQ"
     if isinstance(command.repo_url, str) and not command.repo_url.strip():
@@ -320,7 +340,7 @@ def _apply_defaults(command: DispatchExecutionTaskCommand) -> None:
     if isinstance(command.branch, str) and not command.branch.strip():
         command.branch = None
     if command.repo_url is None:
-        command.repo_url = execution_cfg.default_repo_url or None
+        command.repo_url = execution_cfg.default_repo_url or _get_system_config_sync("execution.default_repo_url")
     if command.branch is None:
         command.branch = execution_cfg.default_branch
     if command.category is None:

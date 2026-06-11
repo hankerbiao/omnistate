@@ -10,7 +10,7 @@ interface PlanTaskTableProps {
   /** 是否有可批量下发的自动化用例 */
   hasAutoCasesForDispatch: boolean;
   /** 更新任务状态 */
-  onStatusUpdate: (taskId: string, status: PlanTask['status']) => void;
+  onStatusUpdate: (taskId: string, planId: string, status: PlanTask['status']) => void;
   /** 打开结果回填弹窗 */
   onOpenResultModal: (task: PlanTask) => void;
   /** 打开发送弹窗（单个下发 - 自动化用例） */
@@ -155,7 +155,7 @@ const PlanTaskTable: React.FC<PlanTaskTableProps> = ({
                       {(['pending', 'running', 'done', 'fail'] as const).map(s => (
                         <button
                           key={s}
-                          onClick={() => onStatusUpdate(task.id, s)}
+                          onClick={() => onStatusUpdate(task.id, task.planId, s)}
                           title={s}
                           style={{
                             padding: '2px 5px', fontSize: 9, border: 'none', borderRadius: 3, cursor: 'pointer',

@@ -104,6 +104,8 @@ jwt:
 # =============================================================================
 execution:
   scheduler_interval_sec: 60
+  default_repo_url: "http://10.17.55.151:6600/litaiqing/redfish_case_repo.git"
+  default_branch: "master"
 
   # Kafka Worker 配置
   kafka_worker_agent_id: "execution-kafka-worker"

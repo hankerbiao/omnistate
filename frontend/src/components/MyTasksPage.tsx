@@ -186,17 +186,13 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
   // ── React Query: Update plan task status with archive mutation ──
 
   const archiveMutation = useMutation({
-    mutationFn: async ({ taskId, status }: { taskId: string; status: PlanTask['status'] }) => {
-      const currentTasks = queryClient.getQueryData<PlanTask[]>(queryKeys.planItems.my(userId)) || [];
-      const task = currentTasks.find(t => t.id === taskId);
-      if (task) {
-        await api.updatePlanItem(task.planId, taskId, { status });
-        if (status === 'done' || status === 'fail') {
-          await api.archiveItem(taskId);
-        }
+    mutationFn: async ({ taskId, planId, status }: { taskId: string; planId: string; status: PlanTask['status'] }) => {
+      await api.updatePlanItem(planId, taskId, { status });
+      if (status === 'done' || status === 'fail') {
+        await api.archiveItem(taskId);
       }
     },
-    onMutate: async ({ taskId, status }) => {
+    onMutate: async ({ taskId, status, planId }) => {
       await queryClient.cancelQueries({ queryKey: queryKeys.planItems.my(userId) });
       const previousPlanTasks = queryClient.getQueryData<PlanTask[]>(queryKeys.planItems.my(userId));
       queryClient.setQueryData<PlanTask[]>(queryKeys.planItems.my(userId), old =>
@@ -217,8 +213,8 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
     },
   });
 
-  const updatePlanTaskStatusWithArchive = useCallback((taskId: string, status: PlanTask['status']) => {
-    archiveMutation.mutate({ taskId, status });
+  const updatePlanTaskStatusWithArchive = useCallback((taskId: string, planId: string, status: PlanTask['status']) => {
+    archiveMutation.mutate({ taskId, planId, status });
   }, [archiveMutation]);
 
   const handleOpenResultModal = useCallback((task: PlanTask) => {

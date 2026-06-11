@@ -50,6 +50,10 @@ class TestCaseService(BaseService):
         "is_active",
         "change_log",
         "priority",
+        "owner_id",
+        "reviewer_id",
+        "auto_dev_id",
+        "ref_req_id",
         "estimated_duration_sec",
         "required_env",
         "tags",
@@ -233,8 +237,7 @@ class TestCaseService(BaseService):
         ensure_safe_generic_update(
             data=data,
             high_risk_fields={
-                'case_id', 'ref_req_id', 'workflow_item_id', 'status', 'is_deleted',
-                'owner_id', 'reviewer_id', 'auto_dev_id',
+                'case_id', 'workflow_item_id', 'status', 'is_deleted',
                 'created_at', 'updated_at'
             },
             allowed_fields=self._UPDATABLE_FIELDS,

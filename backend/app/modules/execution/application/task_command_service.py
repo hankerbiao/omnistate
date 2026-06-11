@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import secrets
 from datetime import datetime
 from typing import Any, Dict
 
@@ -73,7 +74,8 @@ class ExecutionTaskCommandService:
 
         year = datetime.now().year
         seq = await sequence_service.next(f"execution_task:{year}")
-        task_id = f"ET-{year}-{str(seq).zfill(6)}"
+        rand = secrets.token_hex(4)
+        task_id = f"ET-{year}-{str(seq).zfill(6)}-{rand}"
         set_execution_context(task_id=task_id, agent_id=request.agent_id)
 
         auto_case_ids = [item.auto_case_id for item in request.cases]
