@@ -10,6 +10,7 @@ import type {
 import CreateAutomationTestCaseForm from '../CreateAutomationTestCaseForm';
 import CreateTestCaseForm from '../CreateTestCaseForm';
 import TestCaseDetailModal from '../TestCaseDetailModal';
+import AutomationCaseDetailModal from '../AutomationCaseDetailModal';
 import PageHero from '../ui/PageHero';
 import CatalogTreeSidebar from '../catalog/CatalogTreeSidebar';
 import {
@@ -422,17 +423,12 @@ export default function TestCaseBoardPage() {
               setSelectedCase(null);
             }}
           />
-        ) : (
-          <div style={{ position: 'fixed', inset: 0, background: 'var(--overlay-bg)', zIndex: 1000, display: 'flex', justifyContent: 'center', alignItems: 'center' }}
-            onClick={() => setSelectedCase(null)}>
-            <div style={{ background: 'var(--surface-primary)', borderRadius: 12, padding: 40, textAlign: 'center', maxWidth: 420 }} onClick={e => e.stopPropagation()}>
-              <h3 style={{ marginTop: 0, color: 'var(--text-primary)' }}>{selectedCase.title}</h3>
-              <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>ID: {selectedCase.caseId}</p>
-              <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>状态: {getCaseStatusLabel(selectedCase.status)}</p>
-              <button onClick={() => setSelectedCase(null)} style={{ marginTop: 16, padding: '8px 24px', borderRadius: 8, border: 'none', background: 'var(--accent-primary)', color: '#fff', cursor: 'pointer', fontSize: 13 }}>关闭</button>
-            </div>
-          </div>
-        )
+        ) : selectedCase.type === 'auto' && selectedCase.autoData ? (
+          <AutomationCaseDetailModal
+            testCase={selectedCase.autoData}
+            onClose={() => setSelectedCase(null)}
+          />
+        ) : null
       )}
 
       {showCreateAuto && (

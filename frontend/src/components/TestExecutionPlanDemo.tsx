@@ -169,11 +169,17 @@ export default function TestExecutionPlanDemo() {
       .then(res => setUsers(res.data || []))
       .catch(() => setUsers([]));
 
-    api.listTestCases({ limit: 200 })
-      .then(res => {
+    const manualPromise = api.listTestCases({ limit: 200 });
+    const autoPromise = api.listAutomationTestCases({ limit: 200 });
+
+    Promise.all([manualPromise, autoPromise])
+      .then(([manualRes, autoRes]) => {
         const map: Record<string, { case_id: string; title: string; type: string; priority: string }> = {};
-        for (const tc of (res.data || [])) {
+        for (const tc of (manualRes.data || [])) {
           map[tc.case_id] = { case_id: tc.case_id, title: tc.title, type: 'manual', priority: tc.priority || 'P3' };
+        }
+        for (const atc of (autoRes.data || [])) {
+          map[atc.auto_case_id] = { case_id: atc.auto_case_id, title: atc.name, type: 'auto', priority: 'P3' };
         }
         setTestCases(map);
       })
@@ -1030,7 +1036,7 @@ function CreatePlanWizard({ wizardStep, onStepChange, newPlan, onNewPlanChange, 
                               <div style={{ fontSize: 12, fontWeight: 500 }}>{col.name}</div>
                               {col.description && <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 1 }}>{col.description}</div>}
                             </div>
-                            <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>{col.case_count || 0} 个用例</span>
+                            <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>{(col.case_count || 0) + (col.auto_case_count || 0)} 个用例</span>
                           </label>
                         );
                       })}
