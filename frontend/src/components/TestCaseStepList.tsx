@@ -27,6 +27,26 @@ function StepBlock({ step, index }: { step: TestCaseStep; index: number }) {
   );
 }
 
+function CleanupStepBlock({ step, index }: { step: TestCaseStep; index: number }) {
+  return (
+    <div style={styles.cleanupStepBlock}>
+      <div style={styles.cleanupStepHeader}>
+        <span style={styles.cleanupStepBadge}>{index + 1}</span>
+        <span style={styles.cleanupStepName}>{step.name}</span>
+        <span style={styles.cleanupStepTag}>清理</span>
+      </div>
+      <div style={styles.stepField}>
+        <span style={styles.fieldLabel}>动作</span>
+        <p style={{ ...styles.fieldText, color: '#92400e' }}>{step.action}</p>
+      </div>
+      <div style={{ ...styles.stepField, ...styles.cleanupExpectedField }}>
+        <span style={styles.fieldLabel}>期望</span>
+        <p style={{ ...styles.fieldText, color: '#92400e' }}>{step.expected}</p>
+      </div>
+    </div>
+  );
+}
+
 const TestCaseStepList: React.FC<TestCaseStepListProps> = ({
   steps,
   cleanupSteps = [],
@@ -73,7 +93,7 @@ const TestCaseStepList: React.FC<TestCaseStepListProps> = ({
           {cleanupExpanded && (
             <div style={styles.list}>
               {cleanupSteps.map((step, index) => (
-                <StepBlock key={step.step_id} step={step} index={index} />
+                <CleanupStepBlock key={step.step_id} step={step} index={index} />
               ))}
             </div>
           )}
@@ -179,6 +199,53 @@ const styles: Record<string, React.CSSProperties> = {
   cleanupChevron: {
     fontSize: 12,
     color: 'var(--text-secondary)',
+  },
+  // ── 清理步骤（警告风格） ──
+  cleanupStepBlock: {
+    border: '1px solid #fde68a',
+    borderRadius: 'var(--radius-md)',
+    padding: 'var(--space-4)',
+    backgroundColor: '#fffbeb',
+  },
+  cleanupStepHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-2)',
+    marginBottom: 'var(--space-3)',
+  },
+  cleanupStepBadge: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 28,
+    height: 28,
+    borderRadius: '50%',
+    backgroundColor: '#d97706',
+    color: 'white',
+    fontSize: 12,
+    fontWeight: 600,
+    flexShrink: 0,
+  },
+  cleanupStepName: {
+    fontSize: 14,
+    fontWeight: 600,
+    color: '#92400e',
+    flex: 1,
+  },
+  cleanupStepTag: {
+    fontSize: 10,
+    fontWeight: 600,
+    padding: '2px 8px',
+    borderRadius: 999,
+    backgroundColor: '#fde68a',
+    color: '#92400e',
+  },
+  cleanupExpectedField: {
+    marginBottom: 0,
+    padding: 'var(--space-2) var(--space-3)',
+    backgroundColor: '#fef3c7',
+    borderLeft: '3px solid #d97706',
+    borderRadius: 'var(--radius-sm)',
   },
   emptyState: {
     padding: 'var(--space-8) var(--space-4)',

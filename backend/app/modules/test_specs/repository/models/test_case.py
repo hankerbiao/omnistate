@@ -3,7 +3,7 @@
 """
 from typing import Optional, Dict, Any, List
 from datetime import datetime, timezone
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, field_validator
 from beanie import Document, before_event, Save, Insert
 from pymongo import IndexModel, ASCENDING, DESCENDING
 
@@ -62,6 +62,25 @@ class TestCaseDoc(Document):
     @before_event([Save, Insert])
     def update_updated_at(self):
         self.updated_at = datetime.now(timezone.utc)
+
+    @field_validator("cleanup_steps", mode="before")
+    @classmethod
+    def normalize_cleanup_steps(cls, v: Any) -> Any:
+        """兼容旧数据：清理步骤可能存为字符串数组而非结构体"""
+        if not isinstance(v, list):
+            return v
+        normalized = []
+        for i, item in enumerate(v):
+            if isinstance(item, str):
+                normalized.append(TestCaseStepEmbedded(
+                    step_id=f"cs_{i}",
+                    name=item,
+                    action=item,
+                    expected="环境恢复",
+                ))
+            else:
+                normalized.append(item)
+        return normalized
 
     class Settings:
         name = "test_cases"

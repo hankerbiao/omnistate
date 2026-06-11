@@ -3,6 +3,7 @@ import type { NavItem, NavSection, PageType } from '../types/app'
 export const navItems: NavItem[] = [
   { key: 'dashboard', label: '数据统计', icon: '◫', permission: 'nav:dashboard:view' },
   { key: 'myTasks', label: '我的任务', icon: '☰' },
+  { key: 'search', label: '全局搜索', icon: '🔍' },
   { key: 'requirements', label: '测试用例编写需求', icon: '▣' },
   { key: 'testCases', label: '用例看板', icon: '⚡' },
   { key: 'collections', label: '预制用例集', icon: '📁' },
@@ -18,7 +19,7 @@ export const navItems: NavItem[] = [
 ]
 
 export const navSections: NavSection[] = [
-  { label: '概览', keys: ['myTasks'] },
+  { label: '概览', keys: ['myTasks', 'search'] },
   { label: '测试资产', keys: ['requirements', 'testCases', 'collections'] },
   { label: '执行', keys: ['agents', 'tasks', 'testPlanStudioDemo'] },
   { label: '系统', keys: ['dashboard', 'users', 'roles', 'roleGroup', 'permissions', 'catalogLabs', 'systemConfig'] },

@@ -20,6 +20,7 @@ import LineageViewPage from './components/lineage/LineageViewPage'
 import SearchResultsPage from './components/SearchResultsPage'
 import TestCaseCollectionPage from './components/TestCaseCollectionPage'
 import SystemConfigPage from './pages/SystemConfig'
+import SearchPage from './pages/SearchPage'
 import type { PageType } from './types/app'
 import './App.css'
 
@@ -83,6 +84,11 @@ function AppContent() {
 
   if (!isAuthenticated) {
     return <LoginPage onLoginSuccess={handleLoginSuccess} />
+  }
+
+  // Full-screen search page (Google-like), no sidebar/topbar
+  if (currentPage === 'search') {
+    return <SearchPage onNavigate={navigate as (page: string) => void} />
   }
 
   return (

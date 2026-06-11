@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import type { TestCaseResponse, UserResponse } from '../types';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import type { TestCaseResponse, UserResponse, ExecutionStatsResponse } from '../types';
 import { WorkflowPanel, WorkflowActionToolbar, WorkflowOverflowMenu } from './workflow';
 import { useWorkflow } from '../hooks/useWorkflow';
 import WorkflowCurrentStateBadge from './workflow/WorkflowCurrentStateBadge';
@@ -8,6 +8,19 @@ import { catalogStyles } from './catalog/catalogStyles';
 import { SWITCHABLE_USERS } from '../config/users';
 import { api } from '../services/api';
 import TestCaseHistoryPanel from './TestCaseHistoryPanel';
+const CONFIDENTIALITY_LABELS: Record<string, string> = {
+  PUBLIC: '公开',
+  INTERNAL: '内部',
+  CONFIDENTIAL: '机密',
+  RESTRICTED: '受限',
+};
+
+const VISIBILITY_LABELS: Record<string, string> = {
+  PUBLIC: '全网可见',
+  TEAM: '团队可见',
+  PRIVATE: '仅自己可见',
+};
+
 import TestCaseStepList from './TestCaseStepList';
 import TestCaseCommentPanel from './TestCaseCommentPanel';
 
@@ -19,12 +32,13 @@ interface TestCaseDetailModalProps {
   changeLogRefreshSignal?: number;
 }
 
-type DetailTab = 'steps' | 'workflow' | 'more' | 'comments';
+type DetailTab = 'steps' | 'workflow' | 'more' | 'comments' | 'stats';
 
 const DETAIL_TABS: { id: DetailTab; label: string; badge?: number }[] = [
   { id: 'steps', label: '步骤' },
   { id: 'workflow', label: '工作流' },
   { id: 'more', label: '更多' },
+  { id: 'stats', label: '执行统计' },
   { id: 'comments', label: '评论' },
 ];
 
@@ -75,6 +89,8 @@ const TestCaseDetailModal: React.FC<TestCaseDetailModalProps> = ({
   const [activeTab, setActiveTab] = useState<DetailTab>('steps');
   const [workflowRefreshSignal, setWorkflowRefreshSignal] = useState(0);
   const [userNameMap, setUserNameMap] = useState<Map<string, string>>(() => buildUserNameMap([]));
+  const [execStats, setExecStats] = useState<ExecutionStatsResponse | null>(null);
+  const [execStatsLoading, setExecStatsLoading] = useState(false);
   const wf = useWorkflow(testCase.workflow_item_id);
 
   useEffect(() => {
@@ -94,6 +110,25 @@ const TestCaseDetailModal: React.FC<TestCaseDetailModalProps> = ({
       cancelled = true;
     };
   }, []);
+
+  const fetchExecStats = useCallback(async () => {
+    setExecStatsLoading(true);
+    try {
+      const res = await api.getCaseExecutionStats(testCase.case_id);
+      setExecStats(res.data);
+    } catch {
+      setExecStats(null);
+    } finally {
+      setExecStatsLoading(false);
+    }
+  }, [testCase.case_id]);
+
+  const handleTabChange = useCallback((tab: DetailTab) => {
+    setActiveTab(tab);
+    if (tab === 'stats' && !execStats) {
+      fetchExecStats();
+    }
+  }, [fetchExecStats, execStats]);
 
   const ownerName = resolveUserName(userNameMap, testCase.owner_id);
   const reviewerName = resolveUserName(userNameMap, testCase.reviewer_id);
@@ -228,8 +263,8 @@ const TestCaseDetailModal: React.FC<TestCaseDetailModalProps> = ({
       {renderField('关联需求', testCase.ref_req_id)}
       {renderField('测试类别', testCase.test_category)}
       {renderField('风险等级', testCase.risk_level)}
-      {renderField('保密级别', testCase.confidentiality)}
-      {renderField('可见范围', testCase.visibility_scope)}
+      {renderField('保密级别', CONFIDENTIALITY_LABELS[testCase.confidentiality ?? ''] || testCase.confidentiality)}
+      {renderField('可见范围', VISIBILITY_LABELS[testCase.visibility_scope ?? ''] || testCase.visibility_scope)}
       {renderField('预计时长', testCase.estimated_duration_sec ? `${testCase.estimated_duration_sec}s` : null)}
       {testCase.is_destructive && renderField('破坏性测试', '是')}
       {testCase.is_need_auto && renderField('需要自动化', '是')}
@@ -493,7 +528,7 @@ const TestCaseDetailModal: React.FC<TestCaseDetailModalProps> = ({
               <button
                 type="button"
                 style={{ ...styles.mainTab, ...(activeTab === 'steps' ? styles.mainTabActive : {}) }}
-                onClick={() => setActiveTab('steps')}
+                onClick={() => handleTabChange('steps')}
               >
                 执行步骤
                 {stepCount > 0 && <span style={styles.mainTabBadge}>{stepCount}</span>}
@@ -502,21 +537,29 @@ const TestCaseDetailModal: React.FC<TestCaseDetailModalProps> = ({
               <button
                 type="button"
                 style={{ ...styles.mainTab, ...(activeTab === 'workflow' ? styles.mainTabActive : {}) }}
-                onClick={() => setActiveTab('workflow')}
+                onClick={() => handleTabChange('workflow')}
               >
                 工作流
               </button>
               <button
                 type="button"
                 style={{ ...styles.mainTab, ...(activeTab === 'more' ? styles.mainTabActive : {}) }}
-                onClick={() => setActiveTab('more')}
+                onClick={() => handleTabChange('more')}
               >
                 更多信息
               </button>
               <button
                 type="button"
+                style={{ ...styles.mainTab, ...(activeTab === 'stats' ? styles.mainTabActive : {}) }}
+                onClick={() => handleTabChange('stats')}
+              >
+                执行统计
+                {execStats && <span style={styles.mainTabBadge}>{execStats.total}</span>}
+              </button>
+              <button
+                type="button"
                 style={{ ...styles.mainTab, ...(activeTab === 'comments' ? styles.mainTabActive : {}) }}
-                onClick={() => setActiveTab('comments')}
+                onClick={() => handleTabChange('comments')}
               >
                 评论
               </button>
@@ -526,6 +569,78 @@ const TestCaseDetailModal: React.FC<TestCaseDetailModalProps> = ({
               {activeTab === 'steps' && stepsContent}
               {activeTab === 'workflow' && workflowContent}
               {activeTab === 'more' && moreContent}
+              {activeTab === 'stats' && (
+                <div style={{ padding: 'var(--space-4)' }}>
+                  {execStatsLoading ? (
+                    <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
+                      <div className="loading-spinner" style={{ width: 24, height: 24 }} />
+                    </div>
+                  ) : execStats ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                      {/* 统计卡片 */}
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8 }}>
+                        {[
+                          { label: '总次数', value: execStats.total, color: '#3b82f6' },
+                          { label: '通过', value: execStats.passed, color: '#16a34a' },
+                          { label: '失败', value: execStats.failed, color: '#dc2626' },
+                          { label: '通过率', value: `${execStats.pass_rate}%`, color: execStats.pass_rate >= 80 ? '#16a34a' : '#d97706' },
+                        ].map(({ label, value, color }) => (
+                          <div key={label} style={{
+                            background: '#f8fafc', borderRadius: 10, padding: '14px 16px',
+                            border: '1px solid #e2e8f0', textAlign: 'center',
+                          }}>
+                            <div style={{ fontSize: 24, fontWeight: 700, color, lineHeight: 1.2 }}>{value}</div>
+                            <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>{label}</div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* 最近执行记录 */}
+                      <div>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 8 }}>
+                          最近执行记录
+                        </div>
+                        {execStats.recent.length > 0 ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            {execStats.recent.map((r) => (
+                              <div key={r.result_id} style={{
+                                display: 'flex', alignItems: 'center', gap: 10,
+                                padding: '8px 12px', background: '#fff',
+                                borderRadius: 8, border: '1px solid #e2e8f0',
+                                fontSize: 12, color: '#475569',
+                              }}>
+                                <span style={{
+                                  width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+                                  backgroundColor: r.passed ? '#16a34a' : '#dc2626',
+                                }} />
+                                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {r.notes || (r.passed ? '测试通过' : '测试失败')}
+                                </span>
+                                <span style={{ color: '#94a3b8', whiteSpace: 'nowrap' }}>
+                                  {new Date(r.executed_at).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                                </span>
+                                <span style={{ color: '#94a3b8', whiteSpace: 'nowrap', fontFamily: 'monospace', fontSize: 11 }}>
+                                  {r.executed_by}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p style={{ fontSize: 12, color: '#94a3b8', fontStyle: 'italic' }}>暂无执行记录</p>
+                        )}
+                      </div>
+
+                      {execStats.last_executed_at && (
+                        <div style={{ fontSize: 11, color: '#94a3b8' }}>
+                          最近执行：{new Date(execStats.last_executed_at).toLocaleString('zh-CN')}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <p style={{ textAlign: 'center', fontSize: 13, color: '#94a3b8', padding: 40 }}>加载失败</p>
+                  )}
+                </div>
+              )}
               {activeTab === 'comments' && (
                 <TestCaseCommentPanel caseId={testCase.case_id} />
               )}

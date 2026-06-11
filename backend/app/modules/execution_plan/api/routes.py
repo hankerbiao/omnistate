@@ -49,7 +49,8 @@ def _handle_service_error(exc: Exception) -> None:
         raise HTTPException(status_code=400, detail=str(exc))
     if isinstance(exc, ExecutionPlanError):
         raise HTTPException(status_code=400, detail=str(exc))
-    raise
+    logger.error(f"执行计划未处理异常: {exc}", exc_info=True)
+    raise HTTPException(status_code=400, detail=f"{type(exc).__name__}: {exc}")
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -165,6 +166,23 @@ async def get_manual_result(
     try:
         result = await service.get_result(item_id=item_id)
         return APIResponse(data=result)
+    except Exception as exc:
+        _handle_service_error(exc)
+
+
+@router.get(
+    "/cases/{case_id}/execution-stats",
+    response_model=APIResponse[Dict[str, Any]],
+    summary="获取测试用例的执行统计",
+)
+async def get_case_execution_stats(
+    case_id: str,
+    service: ExecutionPlanServiceDep,
+):
+    """获取测试用例的历史执行统计（手工+自动化）。"""
+    try:
+        stats = await service.get_case_execution_stats(case_id)
+        return APIResponse(data=stats)
     except Exception as exc:
         _handle_service_error(exc)
 
@@ -332,7 +350,6 @@ async def delete_plan(
 
 @router.post(
     "/plans/{plan_id}/items",
-    response_model=APIResponse[Dict[str, Any]],
     status_code=201,
     summary="为计划添加条目",
 )
@@ -349,8 +366,13 @@ async def add_plan_items(
             items_data=[item.model_dump() for item in request.items],
         )
         return APIResponse(data=plan)
+    except HTTPException:
+        raise
     except Exception as exc:
-        _handle_service_error(exc)
+        logger.error(f"add_items 未处理异常: {exc}", exc_info=True)
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=400, detail=f"{type(exc).__name__}: {exc}")
 
 
 @router.delete(

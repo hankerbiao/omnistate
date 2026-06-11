@@ -350,6 +350,29 @@ export interface TestCaseChangeLogListResponse {
   total: number;
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+//  测试用例执行统计
+// ═══════════════════════════════════════════════════════════════════════
+
+export interface ExecutionRecord {
+  result_id: string;
+  passed: boolean;
+  executed_by: string;
+  executed_at: string;
+  plan_id: string;
+  notes: string;
+}
+
+export interface ExecutionStatsResponse {
+  case_id: string;
+  total: number;
+  passed: number;
+  failed: number;
+  pass_rate: number;
+  last_executed_at: string | null;
+  recent: ExecutionRecord[];
+}
+
 export interface ListTestCasesParams extends PaginationParams {
   ref_req_id?: string;
   status?: string;

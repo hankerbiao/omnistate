@@ -266,6 +266,62 @@ class ExecutionPlanService(BaseService):
             raise ResultNotFoundError(item_id)
         return self._result_to_dict(result_doc)
 
+    async def get_case_execution_stats(self, case_id: str) -> Dict[str, Any]:
+        """获取测试用例的执行统计（手工 + 自动化）。"""
+        from beanie.odm.operators.find.comparison import In as InOp
+
+        # 查询手工结果
+        manual_results = await ManualExecutionResultDoc.find(
+            ManualExecutionResultDoc.case_id == case_id,
+            ManualExecutionResultDoc.is_deleted == False,
+        ).sort("-executed_at").to_list()
+
+        total = len(manual_results)
+        passed = sum(1 for r in manual_results if r.passed)
+        last_result = manual_results[0] if manual_results else None
+
+        # 自动化执行统计：从计划条目关联的 task 状态获取
+        auto_items = await ExecutionPlanItemDoc.find(
+            ExecutionPlanItemDoc.case_id == case_id,
+            ExecutionPlanItemDoc.ref_type == "auto",
+            ExecutionPlanItemDoc.execution_task_id != None,
+            ExecutionPlanItemDoc.is_deleted == False,
+        ).to_list()
+
+        task_ids = [it.execution_task_id for it in auto_items if it.execution_task_id]
+        if task_ids:
+            task_docs = await ExecutionTaskDoc.find(
+                InOp(ExecutionTaskDoc.task_id, task_ids),
+            ).to_list()
+            _TASK_PASS_STATUS = {"PASSED", "DONE"}
+            _TASK_FAIL_STATUS = {"FAILED", "ERROR", "TIMEOUT"}
+            for t in task_docs:
+                total += 1
+                if t.overall_status in _TASK_PASS_STATUS:
+                    passed += 1
+
+        # 最近 10 条记录
+        recent = []
+        for r in manual_results[:10]:
+            recent.append({
+                "result_id": r.result_id,
+                "passed": r.passed,
+                "executed_by": r.executed_by,
+                "executed_at": r.executed_at.isoformat(),
+                "plan_id": r.plan_id,
+                "notes": r.notes or "",
+            })
+
+        return {
+            "case_id": case_id,
+            "total": total,
+            "passed": passed,
+            "failed": total - passed,
+            "pass_rate": round(passed / total * 100, 1) if total > 0 else 0,
+            "last_executed_at": last_result.executed_at.isoformat() if last_result else None,
+            "recent": recent,
+        }
+
     async def dispatch_item(
         self,
         item_id: str,
@@ -342,7 +398,14 @@ class ExecutionPlanService(BaseService):
             ExecutionPlanItemDoc.plan_id == plan_id,
             ExecutionPlanItemDoc.is_deleted == False,
         ).sort("+order_no").to_list()
-        return [await self._item_to_response(doc) for doc in docs]
+        result = []
+        for doc in docs:
+            try:
+                result.append(await self._item_to_response(doc))
+            except Exception as e:
+                logger.error(f"_item_to_response 失败 (item_id={doc.item_id}): {e}", exc_info=True)
+                raise
+        return result
 
     async def _item_to_response(self, item: ExecutionPlanItemDoc) -> Dict[str, Any]:
         await self._sync_auto_item_status(item)

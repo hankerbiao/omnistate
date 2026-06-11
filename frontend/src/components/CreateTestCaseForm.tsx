@@ -218,7 +218,15 @@ const CreateTestCaseForm: React.FC<CreateTestCaseFormProps> = ({
         })),
       });
       if (isEditMode && editTestCase) {
-        await api.updateTestCase(editTestCase.case_id, payload);
+        // Strip high-risk fields that must be updated via explicit commands
+        const {
+          owner_id: _owner,
+          reviewer_id: _reviewer,
+          auto_dev_id: _autoDev,
+          ref_req_id: _refReq,
+          ...safePayload
+        } = payload;
+        await api.updateTestCase(editTestCase.case_id, safePayload);
       } else {
         await api.createTestCase(payload);
       }

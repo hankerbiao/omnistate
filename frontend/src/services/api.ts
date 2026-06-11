@@ -1,4 +1,4 @@
-import type { LoginRequest, LoginResponse, ApiResponse, CreateRequirementRequest, RequirementResponse, ListRequirementsParams, CreateTestCaseRequest, UpdateTestCaseRequest, TestCaseResponse, TestCaseChangeLogListResponse, ListTestCasesParams, CatalogLab, CreateCatalogLabRequest, UpdateCatalogLabRequest, CatalogTreeResponse, DispatchTaskRequest, DispatchTaskResponse, ExecutionAgent, AgentCleanupOfflineResponse, ListAgentsParams, CreateAutomationTestCaseRequest, AutomationTestCaseResponse, ListAutomationTestCasesParams, ExecutionTask, ListTasksParams, TaskStatus, RerunTaskRequest, AttachmentInfo, WorkflowTransitionRequest, WorkflowTransitionResponse, WorkflowTransitionsResponse, WorkflowTransitionLog, RoleResponse, PermissionResponse, CreateRoleRequest, UpdateRoleRequest, UpdateRolePermissionsRequest, CurrentUserPermissionsResponse, UserResponse, CreateUserRequest, UpdateUserRequest, UpdateUserRolesRequest, UpdateUserPasswordRequest, ListUsersParams, NavigationPageResponse, UserNavigationResponse, UpdateUserNavigationRequest, WorkItem, LineageGraphResponse, CommentListResponse, CreateCommentRequest, TestCaseComment, PlanTaskItemResponse, SubmitManualResultRequest, PlanItemDispatchRequest, BatchDispatchPlanItemsRequest, CreatePlanRequest, AddPlanItemsRequest, UserEffectivePermissionsResponse, UpdateUserExtraPermissionsRequest, SystemConfigListResponse, SystemConfig, BatchUpdateConfigRequest, TestConnectionRequest, TestConnectionResponse, ConfigHistory, CollectionAnalysisResult } from '../types';
+import type { LoginRequest, LoginResponse, ApiResponse, CreateRequirementRequest, RequirementResponse, ListRequirementsParams, CreateTestCaseRequest, UpdateTestCaseRequest, TestCaseResponse, TestCaseChangeLogListResponse, ListTestCasesParams, CatalogLab, CreateCatalogLabRequest, UpdateCatalogLabRequest, CatalogTreeResponse, DispatchTaskRequest, DispatchTaskResponse, ExecutionAgent, AgentCleanupOfflineResponse, ListAgentsParams, CreateAutomationTestCaseRequest, AutomationTestCaseResponse, ListAutomationTestCasesParams, ExecutionTask, ListTasksParams, TaskStatus, RerunTaskRequest, AttachmentInfo, WorkflowTransitionRequest, WorkflowTransitionResponse, WorkflowTransitionsResponse, WorkflowTransitionLog, RoleResponse, PermissionResponse, CreateRoleRequest, UpdateRoleRequest, UpdateRolePermissionsRequest, CurrentUserPermissionsResponse, UserResponse, CreateUserRequest, UpdateUserRequest, UpdateUserRolesRequest, UpdateUserPasswordRequest, ListUsersParams, NavigationPageResponse, UserNavigationResponse, UpdateUserNavigationRequest, WorkItem, LineageGraphResponse, CommentListResponse, CreateCommentRequest, TestCaseComment, PlanTaskItemResponse, SubmitManualResultRequest, PlanItemDispatchRequest, BatchDispatchPlanItemsRequest, CreatePlanRequest, AddPlanItemsRequest, UserEffectivePermissionsResponse, UpdateUserExtraPermissionsRequest, SystemConfigListResponse, SystemConfig, BatchUpdateConfigRequest, TestConnectionRequest, TestConnectionResponse, ConfigHistory, ExecutionStatsResponse, CollectionAnalysisResult } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
 
@@ -941,6 +941,14 @@ class ApiClient {
       { method: 'POST', body: JSON.stringify({ text }) },
     );
     return res.data.polished;
+  }
+
+  /** 获取测试用例执行统计 */
+  async getCaseExecutionStats(caseId: string): Promise<ApiResponse<ExecutionStatsResponse>> {
+    return this.request<ExecutionStatsResponse>(
+      `/execution-plans/cases/${encodeURIComponent(caseId)}/execution-stats`,
+      { method: 'GET' },
+    );
   }
 }
 
