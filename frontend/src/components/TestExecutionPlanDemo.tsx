@@ -165,9 +165,14 @@ export default function TestExecutionPlanDemo() {
 
   // ── Fetch users, test cases, and collections ──
   useEffect(() => {
-    api.listUsers({ status: 'active' })
+    api.listUsers({ limit: 200 })
       .then(res => setUsers(res.data || []))
-      .catch(() => setUsers([]));
+      .catch(() => {
+        // 权限不足时至少包含当前用户
+        api.getCurrentUser().then(u => {
+          if (u.data) setUsers([u.data]);
+        }).catch(() => setUsers([]));
+      });
 
     const manualPromise = api.listTestCases({ limit: 200 });
     const autoPromise = api.listAutomationTestCases({ limit: 200 });
@@ -331,7 +336,9 @@ export default function TestExecutionPlanDemo() {
   const toggleSelectCollection = async (col: { collection_id: string; name: string }) => {
     try {
       const res = await api.getCollection(col.collection_id);
-      const caseIds = (res.data as any)?.case_ids || [];
+      const data = res.data as any;
+      const caseIds = [...(data?.case_ids || []), ...(data?.auto_case_ids || [])];
+      if (caseIds.length === 0) return;
       setNewPlan(prev => {
         const allSelected = caseIds.every((cid: string) => prev.selectedCases.includes(cid));
         const ids = new Set(prev.selectedCases);
