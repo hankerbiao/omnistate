@@ -200,24 +200,50 @@ class RabbitMQProducerManager:
                 timestamp=int(datetime.now(UTC).timestamp()),
             )
 
+        # 构建消息体
+        body_bytes = json.dumps(
+            task_message.task_data,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
+
+        # 打印详细消息包
+        log.info(
+            f"RabbitMQ 消息包详情 | task_id={task_message.task_id} | "
+            f"exchange={self.config.task_exchange} | "
+            f"routing_key={self.config.task_routing_key} | "
+            f"payload={json.dumps(task_message.task_data, ensure_ascii=False, indent=2)}"
+        )
+
         try:
             # 发布消息
             self.channel.basic_publish(
                 exchange=self.config.task_exchange,
                 routing_key=self.config.task_routing_key,
-                body=json.dumps(
-                    task_message.task_data,
-                    ensure_ascii=False,
-                    separators=(",", ":"),
-                ).encode("utf-8"),
+                body=body_bytes,
                 properties=properties,
                 mandatory=False,
             )
             log.info(f"任务成功发送到 RabbitMQ: {task_message.task_id}")
             return True
         except AMQPError as exc:
-            log.error(f"RabbitMQ 发送失败, task_id={task_message.task_id}, error={exc}")
-            return False
+            log.warning(f"RabbitMQ 首次发送失败, task_id={task_message.task_id}, error={exc}, 准备重试...")
+            # 重试：断开旧连接，建立新连接再试一次
+            try:
+                self.stop()
+                self.start()
+                self.channel.basic_publish(
+                    exchange=self.config.task_exchange,
+                    routing_key=self.config.task_routing_key,
+                    body=body_bytes,
+                    properties=properties,
+                    mandatory=False,
+                )
+                log.info(f"任务重发成功: {task_message.task_id}")
+                return True
+            except Exception as retry_exc:
+                log.error(f"RabbitMQ 重试发送失败, task_id={task_message.task_id}, error={retry_exc}")
+                return False
         except Exception as exc:
             log.error(f"RabbitMQ 发送失败, task_id={task_message.task_id}, error={exc}")
             return False

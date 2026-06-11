@@ -242,14 +242,15 @@ export default function TestExecutionPlanDemo() {
       for (const id of removedIds) {
         await api.deletePlanItem(activePlanId, id);
       }
-      const currentCaseIds = editingItems.map(i => i.case_id);
-      const newCaseIds = selectedAddCaseIds.filter(cid => !currentCaseIds.includes(cid));
-      if (newCaseIds.length > 0) {
-        const items = newCaseIds.map(cid => {
-          const tc = caseMap.get(cid);
-          return { ref_type: tc?.type === 'auto' ? 'auto' : 'manual', case_id: cid };
-        });
-        await api.addPlanItems(activePlanId, { items });
+      const existingCaseIds = new Set(activePlanItems.map(i => i.case_id));
+      const newItems = editingItems
+        .filter(e => !existingCaseIds.has(e.case_id))
+        .map(e => ({
+          ref_type: e.ref_type === 'auto' ? 'auto' as const : 'manual' as const,
+          case_id: e.case_id,
+        }));
+      if (newItems.length > 0) {
+        await api.addPlanItems(activePlanId, { items: newItems });
       }
       setEditingPlanId('');
       setSelectedAddCaseIds([]);
@@ -260,13 +261,39 @@ export default function TestExecutionPlanDemo() {
     } finally {
       setSaving(false);
     }
-  }, [activePlanId, activePlanItems, editingItems, selectedAddCaseIds]);
+  }, [activePlanId, activePlanItems, editingItems]);
 
   const handleAddCaseToggle = useCallback((cid: string) => {
     setSelectedAddCaseIds(prev =>
       prev.includes(cid) ? prev.filter(c => c !== cid) : [...prev, cid],
     );
   }, []);
+
+  // 添加已选用例到编辑列表（立即生效，无需等待"保存更改"）
+  const handleAddSelectedCases = useCallback(() => {
+    setEditingItems(prev => {
+      const existingIds = new Set(prev.map(i => i.case_id));
+      const newItems = selectedAddCaseIds
+        .filter(cid => !existingIds.has(cid))
+        .map((cid, i) => {
+          const tc = caseMap.get(cid);
+          return {
+            item_id: `new-${cid}-${Date.now()}`,
+            case_id: cid,
+            case_title: tc?.title || cid,
+            ref_type: tc?.type === 'auto' ? 'auto' : 'manual',
+            component: '',
+            priority: tc?.priority || 'P3',
+            assignee_id: null,
+            status: 'pending',
+            order_no: prev.length + i + 1,
+          };
+        });
+      return [...prev, ...newItems];
+    });
+    setShowAddCases(false);
+    setSelectedAddCaseIds([]);
+  }, [selectedAddCaseIds, caseMap]);
 
   const openArchive = useCallback(() => {
     setShowArchive(true);
@@ -476,7 +503,8 @@ export default function TestExecutionPlanDemo() {
           editingItems={editingItems}
           selectedAddCaseIds={selectedAddCaseIds}
           onToggle={handleAddCaseToggle}
-          onClose={() => { setShowAddCases(false); setSelectedAddCaseIds([]); }}
+          onClose={() => setShowAddCases(false)}
+          onConfirm={handleAddSelectedCases}
           cases={Array.from(caseMap.values()).map((tc: any) => ({ id: tc.id, title: tc.title, type: tc.type || 'manual', priority: tc.priority || 'P3' }))}
         />
       )}
@@ -887,11 +915,12 @@ function DataTable({ items, isEditing, onRemoveItem, users }: {
 //  AddCasesModal — 编辑模式下添加用例
 // ═══════════════════════════════════════════════════════════════════
 
-function AddCasesModal({ editingItems, selectedAddCaseIds, onToggle, onClose, cases }: {
+function AddCasesModal({ editingItems, selectedAddCaseIds, onToggle, onClose, onConfirm, cases }: {
   editingItems: PlanItemSummary[];
   selectedAddCaseIds: string[];
   onToggle: (cid: string) => void;
   onClose: () => void;
+  onConfirm: () => void;
   cases: { id: string; title: string; type: string; priority: string }[];
 }) {
   return (
@@ -936,7 +965,7 @@ function AddCasesModal({ editingItems, selectedAddCaseIds, onToggle, onClose, ca
         </div>
         <div style={{ padding: '10px 18px', borderTop: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
           <button className="btn btn--ghost btn--sm" onClick={onClose} style={{ fontSize: 12 }}>取消</button>
-          <button className="btn btn--primary btn--sm" onClick={onClose}
+          <button className="btn btn--primary btn--sm" onClick={onConfirm}
             disabled={selectedAddCaseIds.length === 0} style={{ fontSize: 12 }}>
             添加 {selectedAddCaseIds.length > 0 ? `${selectedAddCaseIds.length} 个` : ''}
           </button>

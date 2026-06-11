@@ -51,7 +51,7 @@ class TestCaseMetadataQuery(TestCaseMetadataQueryPort):
             bindings.append(
                 AutoCaseDispatchInfo(
                     auto_case_id=auto_case_id,
-                    case_id=doc.dml_manual_case_id,
+                    case_id=doc.dml_manual_case_id or auto_case_id,
                     script_entity_id=getattr(
                         getattr(doc, "script_ref", None), "entity_id", None
                     ),
