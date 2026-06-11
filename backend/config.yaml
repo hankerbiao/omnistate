@@ -38,9 +38,9 @@ rabbitmq:
   ssl_enabled: false
 
   # 任务下发队列（生产者：backend -> agent）
-  task_queue: "dml-test-queue"
+  task_queue: "dml_task_queue"
   task_exchange: ""
-  task_routing_key: "dml-test-queue"
+  task_routing_key: "dml_task_queue"
 
   # 消费者预取数量
   prefetch_count: 10

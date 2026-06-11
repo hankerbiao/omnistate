@@ -389,6 +389,8 @@ def build_dispatch_task_data(command: DispatchExecutionTaskCommand) -> Dict[str,
             "files": files_dict,
             "pytest_options": pytest_options,
             "timeout": command.timeout,
+            "is_proxy": command.is_proxy,
+            "nc_pypi": command.nc_pypi,
         }
     }
 

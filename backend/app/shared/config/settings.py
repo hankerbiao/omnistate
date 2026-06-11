@@ -78,6 +78,10 @@ class RabbitMQConfig(BaseModel):
     task_exchange: str = ""
     task_routing_key: str = "dml_task_queue"
 
+    # 死信队列配置（需与 RabbitMQ 服务端已存在的队列参数一致）
+    dead_letter_exchange: str = "dml_dlx"
+    dead_letter_routing_key: str = "dml_dead_letter"
+
     # 消费者预取数量
     prefetch_count: int = 10
 

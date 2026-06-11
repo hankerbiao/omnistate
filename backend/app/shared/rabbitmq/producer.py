@@ -102,7 +102,11 @@ class RabbitMQProducerManager:
         self.channel.confirm_delivery()
 
         # 声明持久化队列
-        self.channel.queue_declare(queue=self.config.task_queue, durable=True)
+        queue_arguments = {
+            "x-dead-letter-exchange": self.config.dead_letter_exchange,
+            "x-dead-letter-routing-key": self.config.dead_letter_routing_key,
+        }
+        self.channel.queue_declare(queue=self.config.task_queue, durable=True, arguments=queue_arguments)
 
         self.is_running = True
         log.info("RabbitMQ 生产者管理器已启动")
@@ -224,7 +228,8 @@ class RabbitMQProducerManager:
                 properties=properties,
                 mandatory=False,
             )
-            log.info(f"任务成功发送到 RabbitMQ: {task_message.task_id}")
+            log.info(f"任务成功发送到 RabbitMQ: {task_message.task_id}, exchange={self.config.task_exchange}, routing_key={self.config.task_routing_key}")
+            log.debug(f"RabbitMQ 确认: task_id={task_message.task_id}, publisher_confirm=ACK, delivery_mode=persistent")
             return True
         except AMQPError as exc:
             log.warning(f"RabbitMQ 首次发送失败, task_id={task_message.task_id}, error={exc}, 准备重试...")
