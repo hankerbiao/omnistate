@@ -159,7 +159,7 @@ component source, auto display ids, re-dispatch, delete rules, approval, result 
 ## 12. References
 
 frontend: TestExecutionPlan.tsx, MyTasksPage.tsx, myTasksTypes.ts, ResultBackfillModal.tsx, testPlan.ts
-backend: execution/api/routes.py, execution/models/execution.py, workflow/business.py, lineage/lineage_service.py, init_rbac.py, bootstrap.py
+backend: execution/api/routes.py, execution/models/execution.py, workflow/business.py, init/init_rbac.py, bootstrap.py
 
 ---
 

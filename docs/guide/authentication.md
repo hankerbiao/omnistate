@@ -547,8 +547,8 @@ Content-Type: application/json
 
 ```bash
 cd backend
-python scripts/init_rbac.py
-python scripts/create_user.py --user-id admin --username 管理员 --password 'admin123' --roles ADMIN
+python scripts/init/init_rbac.py
+python scripts/init/create_user.py --user-id admin --username 管理员 --password 'admin123' --roles ADMIN
 ```
 
 ## 10. 文档修正说明

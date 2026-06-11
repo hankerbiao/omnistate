@@ -40,7 +40,7 @@ python app/init_mongodb.py
 
 ```bash
 cd backend
-python scripts/init_rbac.py
+python scripts/init/init_rbac.py
 ```
 
 该脚本会初始化默认权限和默认角色。
@@ -51,13 +51,13 @@ python scripts/init_rbac.py
 
 ### 4.3 创建管理员用户
 
-`scripts/create_user.py` 不是无参脚本，必须带参数执行。
+`scripts/init/create_user.py` 不是无参脚本，必须带参数执行。
 
 示例：
 
 ```bash
 cd backend
-python scripts/create_user.py \
+python scripts/init/create_user.py \
   --user-id admin \
   --username 管理员 \
   --password 'admin123' \

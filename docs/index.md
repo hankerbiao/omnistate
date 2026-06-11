@@ -30,8 +30,8 @@ features:
 cd backend
 pip install -r requirements.txt
 python app/init_mongodb.py
-python scripts/init_rbac.py
-python scripts/create_user.py --user-id admin --username 管理员 --password 'admin123' --roles ADMIN
+python scripts/init/init_rbac.py
+python scripts/init/create_user.py --user-id admin --username 管理员 --password 'admin123' --roles ADMIN
 python -m app.main
 ```
 
