@@ -4,7 +4,6 @@
  * 基于前端设计评审重构的 Demo 版本，主要改进:
  * - 左侧计划列表侧栏 + 右侧计划详情区分工
  * - 看板按执行状态分组（待执行/执行中/失败/已完成）
- * - 组件视图作为替代视图（原名"看板"改名为"组件视图"）
  * - 去除重复的 meta bar
  * - 减少 emoji 依赖，使用 badge + 色彩传递语义
  * - 搜索无结果时显示明确空状态
@@ -46,6 +45,8 @@ interface PlanItemSummary {
   assignee_id: string | null;
   status: string;
   order_no: number;
+  execution_task_id?: string | null;
+  result?: { passed?: boolean; notes?: string; actual?: string } | null;
 }
 
 type ViewMode = 'statusBoard' | 'componentView' | 'listView';
@@ -211,6 +212,9 @@ export default function TestExecutionPlanDemo() {
       .finally(() => setDetailLoading(false));
   }, [activePlanId]);
 
+  // ── Result viewer ──
+  const [resultModal, setResultModal] = useState<{ item: PlanItemSummary; taskData: any; loading: boolean } | null>(null);
+
   // ══════════════════════════════════════════════════
   //  Actions
   // ══════════════════════════════════════════════════
@@ -309,6 +313,17 @@ export default function TestExecutionPlanDemo() {
       await api.unarchiveItem(itemId);
       setArchivedItems(prev => prev.filter((i: any) => i.item_id !== itemId));
     } catch { /* ignore */ }
+  }, []);
+
+  const handleViewResult = useCallback(async (item: PlanItemSummary) => {
+    if (!item.execution_task_id) return;
+    setResultModal({ item, taskData: null, loading: true });
+    try {
+      const res = await api.getTaskStatus(item.execution_task_id);
+      setResultModal(prev => prev ? { ...prev, taskData: res.data, loading: false } : null);
+    } catch {
+      setResultModal(prev => prev ? { ...prev, taskData: { error: true }, loading: false } : null);
+    }
   }, []);
 
   const resetWizard = () => {
@@ -492,6 +507,7 @@ export default function TestExecutionPlanDemo() {
               saving={saving}
               onShowAddCases={() => setShowAddCases(true)}
               users={users}
+              onViewResult={handleViewResult}
             />
           )}
         </div>
@@ -534,6 +550,16 @@ export default function TestExecutionPlanDemo() {
         onClose={() => setShowArchive(false)}
         onUnarchive={handleUnarchive}
       />
+
+      {/* ── Result modal ── */}
+      {resultModal && (
+        <ResultModal
+          item={resultModal.item}
+          taskData={resultModal.taskData}
+          loading={resultModal.loading}
+          onClose={() => setResultModal(null)}
+        />
+      )}
     </div>
   );
 }
@@ -618,7 +644,7 @@ function PlanSidebar({ plans, activePlanId, loading, searchQuery, onSelect }: {
 //  PlanDetailView — 右侧计划详情 + 视图切换
 // ═══════════════════════════════════════════════════════════════════
 
-function PlanDetailView({ plan, items, viewMode, onViewModeChange, isEditing, onStartEditing, onCancelEditing, onSaveEditing, onRemoveItem, saving, onShowAddCases, users }: {
+function PlanDetailView({ plan, items, viewMode, onViewModeChange, isEditing, onStartEditing, onCancelEditing, onSaveEditing, onRemoveItem, saving, onShowAddCases, users, onViewResult }: {
   plan: PlanSummary;
   items: PlanItemSummary[];
   viewMode: ViewMode;
@@ -631,6 +657,7 @@ function PlanDetailView({ plan, items, viewMode, onViewModeChange, isEditing, on
   saving: boolean;
   onShowAddCases: () => void;
   users: UserResponse[];
+  onViewResult?: (item: PlanItemSummary) => void;
 }) {
   const meta = PLAN_STATUS_META[plan.status] || { label: plan.status, color: '#8b949e' };
 
@@ -673,7 +700,6 @@ function PlanDetailView({ plan, items, viewMode, onViewModeChange, isEditing, on
       <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 10, flexShrink: 0 }}>
         {([
           { key: 'statusBoard' as ViewMode, label: '状态看板' },
-          { key: 'componentView' as ViewMode, label: '组件视图' },
           { key: 'listView' as ViewMode, label: '列表' },
         ]).map(v => (
           <button key={v.key} onClick={() => onViewModeChange(v.key)}
@@ -704,11 +730,11 @@ function PlanDetailView({ plan, items, viewMode, onViewModeChange, isEditing, on
             )}
           </div>
         ) : viewMode === 'statusBoard' ? (
-          <StatusBoard items={items} isEditing={isEditing} onRemoveItem={onRemoveItem} users={users} />
+          <StatusBoard items={items} isEditing={isEditing} onRemoveItem={onRemoveItem} users={users} onViewResult={onViewResult} />
         ) : viewMode === 'componentView' ? (
-          <ComponentBoard items={items} isEditing={isEditing} onRemoveItem={onRemoveItem} users={users} />
+          <ComponentBoard items={items} isEditing={isEditing} onRemoveItem={onRemoveItem} users={users} onViewResult={onViewResult} />
         ) : (
-          <DataTable items={items} isEditing={isEditing} onRemoveItem={onRemoveItem} users={users} />
+          <DataTable items={items} isEditing={isEditing} onRemoveItem={onRemoveItem} users={users} onViewResult={onViewResult} />
         )}
       </div>
     </div>
@@ -719,11 +745,12 @@ function PlanDetailView({ plan, items, viewMode, onViewModeChange, isEditing, on
 //  StatusBoard — 按执行状态分栏看板
 // ═══════════════════════════════════════════════════════════════════
 
-function StatusBoard({ items, isEditing, onRemoveItem, users }: {
+function StatusBoard({ items, isEditing, onRemoveItem, users, onViewResult }: {
   items: PlanItemSummary[];
   isEditing?: boolean;
   onRemoveItem?: (itemId: string) => void;
   users: UserResponse[];
+  onViewResult?: (item: PlanItemSummary) => void;
 }) {
   const groups = useMemo(() => {
     const map = new Map<string, PlanItemSummary[]>();
@@ -755,7 +782,7 @@ function StatusBoard({ items, isEditing, onRemoveItem, users }: {
                 <div style={{ padding: 12, textAlign: 'center', fontSize: 11, color: 'var(--text-tertiary)', border: '1px dashed var(--border-subtle)', borderRadius: 8 }}>-</div>
               )}
               {caseItems.map(item => (
-                <StatusCard key={item.item_id} item={item} isEditing={isEditing} onRemoveItem={onRemoveItem} users={users} />
+                <StatusCard key={item.item_id} item={item} isEditing={isEditing} onRemoveItem={onRemoveItem} users={users} onViewResult={onViewResult} />
               ))}
             </div>
           </div>
@@ -765,11 +792,12 @@ function StatusBoard({ items, isEditing, onRemoveItem, users }: {
   );
 }
 
-function StatusCard({ item, isEditing, onRemoveItem, users }: {
+function StatusCard({ item, isEditing, onRemoveItem, users, onViewResult }: {
   item: PlanItemSummary;
   isEditing?: boolean;
   onRemoveItem?: (itemId: string) => void;
   users: UserResponse[];
+  onViewResult?: (item: PlanItemSummary) => void;
 }) {
   const meta = STATUS_META[item.status as ItemStatus] || STATUS_META.pending;
   const isAuto = item.ref_type === 'auto';
@@ -800,6 +828,16 @@ function StatusCard({ item, isEditing, onRemoveItem, users }: {
             {users.find(u => u.user_id === item.assignee_id)?.username || item.assignee_id}
           </span>
         )}
+        {item.execution_task_id && onViewResult && (
+          <button type="button" onClick={(e) => { e.stopPropagation(); onViewResult(item); }}
+            style={{
+              fontSize: 9, padding: '1px 6px', borderRadius: 4, border: '1px solid var(--border-subtle)',
+              background: 'var(--surface-secondary)', color: 'var(--accent-primary)', cursor: 'pointer',
+              marginLeft: 'auto',
+            }}>
+            结果
+          </button>
+        )}
       </div>
     </div>
   );
@@ -809,11 +847,12 @@ function StatusCard({ item, isEditing, onRemoveItem, users }: {
 //  ComponentBoard — 按组件分栏（原名"看板"）
 // ═══════════════════════════════════════════════════════════════════
 
-function ComponentBoard({ items, isEditing, onRemoveItem, users }: {
+function ComponentBoard({ items, isEditing, onRemoveItem, users, onViewResult }: {
   items: PlanItemSummary[];
   isEditing?: boolean;
   onRemoveItem?: (itemId: string) => void;
   users: UserResponse[];
+  onViewResult?: (item: PlanItemSummary) => void;
 }) {
   const groups = useMemo(() => {
     const map = new Map<string, PlanItemSummary[]>();
@@ -837,7 +876,7 @@ function ComponentBoard({ items, isEditing, onRemoveItem, users }: {
           </div>
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4, overflowY: 'auto' }}>
             {caseItems.map(item => (
-              <StatusCard key={item.item_id} item={item} isEditing={isEditing} onRemoveItem={onRemoveItem} users={users} />
+              <StatusCard key={item.item_id} item={item} isEditing={isEditing} onRemoveItem={onRemoveItem} users={users} onViewResult={onViewResult} />
             ))}
           </div>
         </div>
@@ -850,11 +889,12 @@ function ComponentBoard({ items, isEditing, onRemoveItem, users }: {
 //  DataTable — 表格视图
 // ═══════════════════════════════════════════════════════════════════
 
-function DataTable({ items, isEditing, onRemoveItem, users }: {
+function DataTable({ items, isEditing, onRemoveItem, users, onViewResult }: {
   items: PlanItemSummary[];
   isEditing?: boolean;
   onRemoveItem?: (itemId: string) => void;
   users: UserResponse[];
+  onViewResult?: (item: PlanItemSummary) => void;
 }) {
   const compName = (id: string) => id;
   return (
@@ -868,6 +908,7 @@ function DataTable({ items, isEditing, onRemoveItem, users }: {
             <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: 'var(--text-secondary)', fontSize: 11, borderBottom: '1px solid var(--border-subtle)' }}>优先级</th>
             <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: 'var(--text-secondary)', fontSize: 11, borderBottom: '1px solid var(--border-subtle)' }}>执行人</th>
             <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: 'var(--text-secondary)', fontSize: 11, borderBottom: '1px solid var(--border-subtle)' }}>状态</th>
+            <th style={{ padding: '8px 12px', textAlign: 'center', fontWeight: 600, color: 'var(--text-secondary)', fontSize: 11, borderBottom: '1px solid var(--border-subtle)' }}>结果</th>
             {isEditing && <th style={{ padding: '8px 12px', textAlign: 'center', width: 30, borderBottom: '1px solid var(--border-subtle)' }}></th>}
           </tr>
         </thead>
@@ -895,6 +936,17 @@ function DataTable({ items, isEditing, onRemoveItem, users }: {
                   <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 6,
                     background: `${statusMeta.color}15`, color: statusMeta.color, fontWeight: 600,
                   }}>{statusMeta.label}</span>
+                </td>
+                <td style={{ padding: '7px 12px', textAlign: 'center' }}>
+                  {item.execution_task_id && onViewResult ? (
+                    <button type="button" onClick={(e) => { e.stopPropagation(); onViewResult(item); }}
+                      style={{ fontSize: 10, padding: '2px 10px', borderRadius: 4, border: '1px solid var(--border-subtle)',
+                        background: 'var(--surface-secondary)', color: 'var(--accent-primary)', cursor: 'pointer' }}>
+                      结果
+                    </button>
+                  ) : (
+                    <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>-</span>
+                  )}
                 </td>
                 {isEditing && onRemoveItem && (
                   <td style={{ padding: '7px 12px', textAlign: 'center' }}>
@@ -1291,6 +1343,95 @@ function ArchivedModal({ open, loading, items, onClose, onUnarchive }: {
                 </button>
               </div>
             ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  ResultModal — 用例执行结果查看
+// ═══════════════════════════════════════════════════════════════════
+
+function ResultModal({ item, taskData, loading, onClose }: {
+  item: PlanItemSummary;
+  taskData: any;
+  loading: boolean;
+  onClose: () => void;
+}) {
+  const caseSummary = taskData?.cases?.find((c: any) => c.case_id === item.case_id);
+  const r = caseSummary?.result_data;
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'var(--overlay-bg)', backdropFilter: 'blur(2px)', zIndex: 2000, display: 'flex', justifyContent: 'center', alignItems: 'center' }}
+      onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{
+        background: 'var(--surface-primary)', borderRadius: 12, width: 600, maxWidth: '94vw',
+        maxHeight: '80vh', display: 'flex', flexDirection: 'column',
+        boxShadow: '0 25px 80px rgba(0,0,0,0.3)', border: '1px solid var(--border-default)',
+      }}>
+        <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 10, fontFamily: 'monospace', color: 'var(--text-tertiary)', background: 'var(--surface-tertiary)', padding: '1px 8px', borderRadius: 4 }}>{item.case_id}</span>
+              <span style={{ fontSize: 13, fontWeight: 600 }}>执行结果</span>
+            </span>
+          </div>
+          <button onClick={onClose} style={{ fontSize: 18, color: 'var(--text-tertiary)', background: 'none', border: 'none', cursor: 'pointer' }}>x</button>
+        </div>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px' }}>
+          {loading ? (
+            <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 13 }}>加载执行结果...</div>
+          ) : taskData?.error ? (
+            <div style={{ padding: 30, textAlign: 'center', color: 'var(--status-error)', fontSize: 13 }}>获取结果失败</div>
+          ) : !caseSummary ? (
+            <div style={{ padding: 30, textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 13 }}>暂未获取到执行结果</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                {[
+                  { label: '执行状态', value: caseSummary.status, color: STATUS_META[caseSummary.status as ItemStatus]?.color || '#8b949e' },
+                  { label: '分派状态', value: caseSummary.dispatch_status },
+                  { label: '进度', value: `${caseSummary.progress_percent ?? 0}%` },
+                  { label: '尝试次数', value: caseSummary.dispatch_attempts ?? 0 },
+                  { label: '事件数', value: caseSummary.event_count ?? 0 },
+                ].map(kv => (
+                  <div key={kv.label} style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border-subtle)', background: 'var(--surface-secondary)', minWidth: 80 }}>
+                    <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginBottom: 2 }}>{kv.label}</div>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: kv.color || 'var(--text-primary)' }}>{kv.value ?? '-'}</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 16px', fontSize: 12 }}>
+                {caseSummary.started_at && <><span style={{ color: 'var(--text-tertiary)' }}>开始</span><span>{new Date(caseSummary.started_at).toLocaleString('zh-CN')}</span></>}
+                {caseSummary.finished_at && <><span style={{ color: 'var(--text-tertiary)' }}>结束</span><span>{new Date(caseSummary.finished_at).toLocaleString('zh-CN')}</span></>}
+                {caseSummary.failure_message && <><span style={{ color: 'var(--status-error)' }}>失败信息</span><span style={{ color: 'var(--status-error)' }}>{caseSummary.failure_message}</span></>}
+              </div>
+              {r?.assertions?.length > 0 && (
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 8 }}>断言 ({r.assertions.length})</div>
+                  {r.assertions.map((a: any, i: number) => (
+                    <div key={i} style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border-subtle)', fontSize: 12, marginBottom: 4 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                        <span style={{ fontWeight: 500 }}>#{a.seq ?? i + 1} {a.name || '-'}</span>
+                        <span style={{ padding: '1px 6px', borderRadius: 4, fontSize: 10, fontWeight: 600,
+                          color: a.status === 'PASSED' ? '#3fb950' : a.status === 'FAILED' ? '#f85149' : '#58a6ff',
+                          background: a.status === 'PASSED' ? 'rgba(63,185,80,0.1)' : a.status === 'FAILED' ? 'rgba(248,81,73,0.1)' : 'rgba(88,166,255,0.1)',
+                        }}>{a.status || '-'}</span>
+                      </div>
+                      {a.error && <div style={{ color: 'var(--status-error)', fontSize: 11, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{JSON.stringify(a.error)}</div>}
+                      {a.timestamp && <div style={{ color: 'var(--text-tertiary)', fontSize: 10, marginTop: 2 }}>{new Date(a.timestamp).toLocaleString('zh-CN')}</div>}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {r?.data && Object.keys(r.data).length > 0 && (
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>返回数据</div>
+                  <pre style={{ fontSize: 11, background: 'var(--surface-secondary)', padding: 10, borderRadius: 6, overflow: 'auto', maxHeight: 200, margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{JSON.stringify(r.data, null, 2)}</pre>
+                </div>
+              )}
+            </div>
           )}
         </div>
       </div>
