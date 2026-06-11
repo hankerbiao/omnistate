@@ -1,18 +1,27 @@
 # Scripts 目录说明
 
-本目录包含 dmlv4 项目中常用的脚本工具，按功能分为以下几类：
+本目录包含 dmlv4 项目中常用的脚本工具，按功能分为以下目录：
+
+```
+scripts/
+├── init/         # 初始化脚本（RBAC、用户创建）
+├── auth/         # 认证相关（Token 生成）
+├── mock/         # 模拟数据与服务
+├── maintenance/  # 维护脚本
+└── logs/         # 运行日志
+```
 
 ---
 
-## 初始化脚本
+## init/ — 初始化脚本
 
-### `init_rbac.py` - RBAC 初始化
+### `init/init_rbac.py` - RBAC 初始化
 初始化系统权限(Permission)和角色(Role)。
 
 **使用方法：**
 ```bash
 # 默认执行，创建所有默认角色和权限
-python scripts/init_rbac.py
+python scripts/init/init_rbac.py
 ```
 
 **功能说明：**
@@ -22,19 +31,19 @@ python scripts/init_rbac.py
 
 ---
 
-### `seed_test_users.py` - 测试用户创建
+### `init/seed_test_users.py` - 测试用户创建
 一键创建多个测试账号，方便开发和演示使用。
 
 **使用方法：**
 ```bash
 # 创建所有测试用户（默认密码: Test@123）
-python scripts/seed_test_users.py
+python scripts/init/seed_test_users.py
 
 # 覆盖已存在的用户
-python scripts/seed_test_users.py --reset
+python scripts/init/seed_test_users.py --reset
 
 # 自定义统一密码
-python scripts/seed_test_users.py --password MyPass@456
+python scripts/init/seed_test_users.py --password MyPass@456
 ```
 
 **创建的测试用户：**
@@ -50,13 +59,13 @@ python scripts/seed_test_users.py --password MyPass@456
 
 ---
 
-### `create_user.py` - 单个用户创建
+### `init/create_user.py` - 单个用户创建
 创建单个 RBAC 用户账号。
 
 **使用方法：**
 ```bash
 # 基本用法
-python scripts/create_user.py \
+python scripts/init/create_user.py \
   --user-id admin \
   --username 管理员 \
   --password 'admin123' \
@@ -64,7 +73,7 @@ python scripts/create_user.py \
   --email admin@example.com
 
 # 覆盖已存在的用户
-python scripts/create_user.py \
+python scripts/init/create_user.py \
   --user-id admin \
   --username 新管理员 \
   --password 'newpass' \
@@ -72,7 +81,7 @@ python scripts/create_user.py \
   --upsert
 
 # 多角色分配
-python scripts/create_user.py \
+python scripts/init/create_user.py \
   --user-id developer \
   --username 测试开发 \
   --password 'dev123' \
@@ -92,24 +101,24 @@ python scripts/create_user.py \
 
 ---
 
-## Token 相关
+## auth/ — 认证相关
 
-### `create_token.py` - 生成 JWT Token
+### `auth/create_token.py` - 生成 JWT Token
 为指定用户生成访问令牌。
 
 **使用方法：**
 ```bash
 # 基本用法（默认 8 小时有效期）
-python scripts/create_token.py --user-id admin
+python scripts/auth/create_token.py --user-id admin
 
 # 自定义有效期（2 小时）
-python scripts/create_token.py --user-id admin --expire-minutes 120
+python scripts/auth/create_token.py --user-id admin --expire-minutes 120
 
 # 保存到文件
-python scripts/create_token.py --user-id admin --save-to-file /tmp/token.txt
+python scripts/auth/create_token.py --user-id admin --save-to-file /tmp/token.txt
 
 # 打印 token payload 内容
-python scripts/create_token.py --user-id admin --print-payload
+python scripts/auth/create_token.py --user-id admin --print-payload
 ```
 
 **参数说明：**
@@ -122,33 +131,33 @@ python scripts/create_token.py --user-id admin --print-payload
 
 ---
 
-## 测试数据生成
+## mock/ — 模拟数据与服务
 
-### `generate_mock_test_cases.py` - 生成模拟测试用例
+### `mock/generate_mock_test_cases.py` - 生成模拟测试用例
 通过 API 批量创建测试用例，用于演示或测试数据准备。
 
 **使用方法：**
 ```bash
 # 默认参数创建全部模板用例
-python scripts/generate_mock_test_cases.py
+python scripts/mock/generate_mock_test_cases.py
 
 # 只创建 5 条
-python scripts/generate_mock_test_cases.py --count 5
+python scripts/mock/generate_mock_test_cases.py --count 5
 
 # 指定后端地址
-python scripts/generate_mock_test_cases.py --url http://10.17.154.252:8000
+python scripts/mock/generate_mock_test_cases.py --url http://10.17.154.252:8000
 
 # 指定登录用户
-python scripts/generate_mock_test_cases.py --user admin --password 'Admin@123'
+python scripts/mock/generate_mock_test_cases.py --user admin --password 'Admin@123'
 
 # 免 token 模式（需后端开启 dev_bypass_auth）
-python scripts/generate_mock_test_cases.py --no-auth
+python scripts/mock/generate_mock_test_cases.py --no-auth
 
 # 关联到指定需求
-python scripts/generate_mock_test_cases.py --req-id TR-2026-00001
+python scripts/mock/generate_mock_test_cases.py --req-id TR-2026-00001
 
 # 预览模式（不实际创建）
-python scripts/generate_mock_test_cases.py --dry-run
+python scripts/mock/generate_mock_test_cases.py --dry-run
 ```
 
 **参数说明：**
@@ -164,45 +173,13 @@ python scripts/generate_mock_test_cases.py --dry-run
 
 ---
 
-## 代理相关
-
-### `register_agent.py` - 注册执行代理
-将测试执行代理注册到平台。
-
-**使用方法：**
-```bash
-# 默认注册（自动检测本机信息）
-python scripts/register_agent.py
-
-# 指定平台地址
-export AGENT_PLATFORM_URL=http://10.17.154.252:8000
-python scripts/register_agent.py
-
-# 指定代理端口（自动拼接 base_url）
-export AGENT_PORT=19091
-python scripts/register_agent.py
-
-# 指定区域
-export AGENT_REGION=beijing
-python scripts/register_agent.py
-```
-
-**环境变量：**
-| 变量 | 默认值 | 说明 |
-|------|--------|------|
-| `AGENT_PLATFORM_URL` | http://127.0.0.1:8000 | 平台地址 |
-| `AGENT_PORT` | 无 | 代理服务端口 |
-| `AGENT_REGION` | default | 代理区域 |
-
----
-
-### `mock_rabbitmq_consumer.py` - RabbitMQ 消费模拟
+### `mock/mock_rabbitmq_consumer.py` - RabbitMQ 消费模拟
 消费 RabbitMQ 任务队列中的消息，模拟执行后回写结果到 Kafka。
 
 **使用方法：**
 ```bash
 # 启动消费（自动从 config.yaml 读取配置）
-python scripts/mock_rabbitmq_consumer.py
+python scripts/mock/mock_rabbitmq_consumer.py
 ```
 
 **功能说明：**
@@ -213,18 +190,18 @@ python scripts/mock_rabbitmq_consumer.py
 
 ---
 
-## 维护脚本
+## maintenance/ — 维护脚本
 
-### `remove_test_specs_status_projection.py` - 清理废弃字段
+### `maintenance/remove_test_specs_status_projection.py` - 清理废弃字段
 移除 test_specs 集合中遗留的 status 字段和索引。
 
 **使用方法：**
 ```bash
 # 只查看不修改（预览模式）
-python scripts/remove_test_specs_status_projection.py
+python scripts/maintenance/remove_test_specs_status_projection.py
 
 # 确认后执行清理
-python scripts/remove_test_specs_status_projection.py --apply
+python scripts/maintenance/remove_test_specs_status_projection.py --apply
 ```
 
 **参数说明：**
@@ -240,20 +217,20 @@ python scripts/remove_test_specs_status_projection.py --apply
 
 ```bash
 # 1. 初始化 RBAC（角色和权限）
-python scripts/init_rbac.py
+python scripts/init/init_rbac.py
 
 # 2. 创建管理员账号
-python scripts/create_user.py \
+python scripts/init/create_user.py \
   --user-id admin \
   --username 管理员 \
   --password 'Admin@123' \
   --roles ADMIN
 
 # 3. 生成管理员 token
-python scripts/create_token.py --user-id admin --save-to-file /tmp/admin_token.txt
+python scripts/auth/create_token.py --user-id admin --save-to-file /tmp/admin_token.txt
 
 # 4. 或者使用一键脚本创建测试用户（方便演示）
-python scripts/seed_test_users.py
+python scripts/init/seed_test_users.py
 ```
 
 后续开发调试可直接使用 `seed_test_users.py` 快速创建多个测试账号。
