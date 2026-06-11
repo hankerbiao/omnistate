@@ -16,7 +16,6 @@ from app.modules.test_specs.api import (
 from app.modules.execution.api import execution_router
 from app.modules.auth.api import router as auth_router
 from app.modules.attachments.api import router as attachments_router
-from app.modules.lineage.api import lineage_router
 from app.modules.search.api import search_router
 from app.modules.execution_plan.api import router as execution_plan_router
 from app.modules.test_case_collection.api import collection_router
@@ -39,7 +38,6 @@ api_router.include_router(automation_test_case_router, prefix="/api/v1", tags=["
 api_router.include_router(execution_router, prefix="/api/v1", tags=["Execution"])
 api_router.include_router(auth_router, prefix="/api/v1", tags=["Auth"])
 api_router.include_router(attachments_router, prefix="/api/v1", tags=["Attachments"])
-api_router.include_router(lineage_router, prefix="/api/v1", tags=["Lineage"])
 api_router.include_router(search_router, prefix="/api/v1", tags=["Search"])
 api_router.include_router(execution_plan_router, prefix="/api/v1", tags=["ExecutionPlans"])
 api_router.include_router(collection_router, prefix="/api/v1", tags=["TestCaseCollection"])

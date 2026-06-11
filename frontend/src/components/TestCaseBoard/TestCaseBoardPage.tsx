@@ -74,6 +74,11 @@ export default function TestCaseBoardPage() {
   const [deleteTarget, setDeleteTarget] = useState<UnifiedCaseItem | null>(null);
   const [deleting, setDeleting] = useState(false);
 
+  // ── Delete all confirmation ──
+  const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false);
+  const [deletingAll, setDeletingAll] = useState(false);
+  const [deleteAllProgress, setDeleteAllProgress] = useState<{ current: number; total: number } | null>(null);
+
   const fetchAll = useCallback(async () => {
     setLoading(true);
     try {
@@ -148,6 +153,42 @@ export default function TestCaseBoardPage() {
     }
     setDeleting(false);
   }, [deleteTarget, fetchAll]);
+
+  const handleDeleteAll = useCallback(async () => {
+    setDeletingAll(true);
+    setDeleteAllProgress({ current: 0, total: cards.length });
+    let successCount = 0;
+    let failCount = 0;
+    const CONCURRENCY = 5;
+    try {
+      // Process in batches to avoid overwhelming the server
+      for (let i = 0; i < cards.length; i += CONCURRENCY) {
+        const batch = cards.slice(i, i + CONCURRENCY);
+        const results = await Promise.allSettled(
+          batch.map(card =>
+            card.type === 'manual'
+              ? api.deleteTestCase(card.id)
+              : api.deleteAutomationTestCase(card.id)
+          )
+        );
+        results.forEach(r => {
+          if (r.status === 'fulfilled') successCount++;
+          else failCount++;
+        });
+        setDeleteAllProgress({ current: Math.min(i + CONCURRENCY, cards.length), total: cards.length });
+      }
+      setShowDeleteAllConfirm(false);
+      if (failCount > 0) {
+        alert(`删除完成：成功 ${successCount} 个，失败 ${failCount} 个`);
+      }
+      await fetchAll();
+    } catch (err) {
+      console.error('批量删除失败:', err);
+      alert('批量删除失败: ' + (err instanceof Error ? err.message : '未知错误'));
+    }
+    setDeletingAll(false);
+    setDeleteAllProgress(null);
+  }, [cards, fetchAll]);
 
   const stats = useMemo(() => ({
     total: cards.length, auto: autoCases.length, manual: manualCases.length,
@@ -250,6 +291,9 @@ export default function TestCaseBoardPage() {
             </button>
             <button onClick={() => setShowCreateAuto(true)} style={{ ...btnStyle, background: 'var(--accent-secondary)', color: '#fff', border: 'none' }}>
               <IconPlus /> 自动
+            </button>
+            <button onClick={() => setShowDeleteAllConfirm(true)} style={{ ...btnStyle, background: 'var(--surface-primary)', color: 'var(--status-error)', border: '1px solid var(--status-error)' }}>
+              🗑 删除全部
             </button>
             <button onClick={fetchAll} style={{ ...btnStyle, background: 'var(--surface-primary)', color: 'var(--text-primary)', border: '1px solid var(--border-default)' }}>
               <IconRefresh />
@@ -445,6 +489,67 @@ export default function TestCaseBoardPage() {
                 {deleting ? '删除中...' : '确认删除'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Delete all confirmation modal ── */}
+      {showDeleteAllConfirm && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'var(--overlay-bg)', zIndex: 3000,
+          display: 'flex', justifyContent: 'center', alignItems: 'center',
+          backdropFilter: 'blur(2px)',
+        }} onClick={() => !deletingAll && setShowDeleteAllConfirm(false)}>
+          <div style={{
+            background: 'var(--surface-primary)', borderRadius: 14, padding: '28px 32px',
+            textAlign: 'center', maxWidth: 420, width: '90%',
+            boxShadow: 'var(--shadow-lg)',
+          }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize: 40, marginBottom: 12 }}>⚠️</div>
+            <h3 style={{ margin: '0 0 8px', fontSize: 17, fontWeight: 600, color: 'var(--text-primary)' }}>
+              {deletingAll ? '正在删除...' : '确认删除全部用例'}
+            </h3>
+            {!deletingAll ? (
+              <>
+                <p style={{ margin: '0 0 8px', fontSize: 14, color: 'var(--text-secondary)' }}>
+                  确定要删除当前加载的全部测试用例吗？
+                </p>
+                <p style={{ margin: '0 0 4px', fontSize: 13, color: 'var(--status-error)', fontWeight: 600 }}>
+                  共 {stats.total} 个（手工 {stats.manual} 个 / 自动化 {stats.auto} 个）
+                </p>
+                <p style={{ margin: '0 0 20px', fontSize: 12, color: 'var(--status-error)', fontWeight: 500 }}>
+                  此操作不可撤销，关联数据将被一并删除。
+                </p>
+                <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+                  <button onClick={() => setShowDeleteAllConfirm(false)} style={{
+                    padding: '8px 24px', borderRadius: 8, border: '1px solid var(--border-default)',
+                    background: 'var(--surface-primary)', color: 'var(--text-primary)', cursor: 'pointer',
+                    fontSize: 13, fontWeight: 500,
+                  }}>取消</button>
+                  <button onClick={handleDeleteAll} style={{
+                    padding: '8px 24px', borderRadius: 8, border: 'none',
+                    background: 'var(--status-error)', color: '#fff',
+                    cursor: 'pointer', fontSize: 13, fontWeight: 600,
+                  }}>确认删除全部</button>
+                </div>
+              </>
+            ) : (
+              <div style={{ padding: '12px 0' }}>
+                <div style={{
+                  width: '100%', height: 6, background: 'var(--surface-secondary)',
+                  borderRadius: 3, overflow: 'hidden', marginBottom: 12,
+                }}>
+                  <div style={{
+                    height: '100%', background: 'var(--status-error)',
+                    borderRadius: 3, transition: 'width 0.2s',
+                    width: deleteAllProgress ? `${(deleteAllProgress.current / deleteAllProgress.total) * 100}%` : '0%',
+                  }} />
+                </div>
+                <p style={{ margin: 0, fontSize: 13, color: 'var(--text-secondary)' }}>
+                  {deleteAllProgress?.current ?? 0} / {deleteAllProgress?.total ?? 0}
+                </p>
+              </div>
+            )}
           </div>
         </div>
       )}

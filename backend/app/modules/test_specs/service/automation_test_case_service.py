@@ -80,6 +80,17 @@ class AutomationTestCaseService(BaseService):
         docs = await query.sort("-created_at").skip(offset).limit(limit).to_list()
         return [self._doc_to_dict(doc) for doc in docs]
 
+    async def delete_automation_test_case(self, doc_id: str) -> None:
+        """按文档 ID 逻辑删除自动化测试用例。"""
+        from bson import ObjectId
+        doc = await AutomationTestCaseDoc.find_one(
+            {"_id": ObjectId(doc_id), "is_deleted": False},
+        )
+        if not doc:
+            raise KeyError("automation test case not found")
+        doc.is_deleted = True
+        await doc.save()
+
     async def report_automation_test_case_metadata(
         self,
         payload: Dict[str, Any],

@@ -110,6 +110,24 @@ async def get_automation_test_case(
         raise HTTPException(status_code=404, detail="automation test case not found")
 
 
+@router.delete(
+    "/{doc_id}",
+    response_model=APIResponse[dict],
+    summary="删除自动化测试用例",
+    dependencies=[Depends(require_permission("test_cases:write"))],
+)
+async def delete_automation_test_case(
+    doc_id: str,
+    service: AutomationTestCaseServiceDep,
+):
+    """按文档 ID 逻辑删除自动化测试用例。"""
+    try:
+        await service.delete_automation_test_case(doc_id)
+        return APIResponse(data={"deleted": True})
+    except KeyError:
+        raise HTTPException(status_code=404, detail="automation test case not found")
+
+
 @router.get(
     "/by-manual-case-id/{dml_manual_case_id}",
     response_model=APIResponse[AutomationTestCaseResponse],
