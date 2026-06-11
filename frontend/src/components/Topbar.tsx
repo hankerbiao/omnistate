@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { useTheme } from 'next-themes'
-import GlobalSearch from './GlobalSearch'
 
 interface SwitchableUser {
   userId: string
@@ -19,7 +18,6 @@ interface TopbarProps {
   onUserClick?: () => void
   onSwitchUser?: (userId: string, password: string) => Promise<void>
   switchableUsers?: SwitchableUser[]
-  onSearchNavigate?: (page: string) => void
 }
 
 const Topbar: React.FC<TopbarProps> = ({
@@ -31,7 +29,6 @@ const Topbar: React.FC<TopbarProps> = ({
   onUserClick,
   onSwitchUser,
   switchableUsers,
-  onSearchNavigate,
 }) => {
   const [switching, setSwitching] = useState(false)
   const { resolvedTheme, setTheme } = useTheme()
@@ -59,8 +56,6 @@ const Topbar: React.FC<TopbarProps> = ({
       </div>
 
       <div className="topbar__actions">
-        {onSearchNavigate && <GlobalSearch onNavigate={onSearchNavigate} />}
-
         <button
           type="button"
           className="btn btn--ghost btn--sm"

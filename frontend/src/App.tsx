@@ -17,7 +17,6 @@ import DashboardPage from './components/DashboardPage'
 import CatalogLabsPage from './components/CatalogLabsPage'
 import TestExecutionPlanDemo from './components/TestExecutionPlanDemo'
 import LineageViewPage from './components/lineage/LineageViewPage'
-import SearchResultsPage from './components/SearchResultsPage'
 import TestCaseCollectionPage from './components/TestCaseCollectionPage'
 import SystemConfigPage from './pages/SystemConfig'
 import SearchPage from './pages/SearchPage'
@@ -45,10 +44,10 @@ function AppContent() {
             initialStatusFilter={requirementsFilter}
           />
         )
-      case 'search':
-        return <SearchResultsPage key={currentUserId} onNavigate={navigate as (page: string) => void} />
       case 'collections':
         return <TestCaseCollectionPage key={currentUserId} currentUserId={currentUserId} />
+      case 'search':
+        return <SearchPage key={currentUserId} onNavigate={navigate as (page: string) => void} />
       case 'systemConfig':
         return <SystemConfigPage key={currentUserId} />
       case 'agents':
@@ -84,11 +83,6 @@ function AppContent() {
 
   if (!isAuthenticated) {
     return <LoginPage onLoginSuccess={handleLoginSuccess} />
-  }
-
-  // Full-screen search page (Google-like), no sidebar/topbar
-  if (currentPage === 'search') {
-    return <SearchPage onNavigate={navigate as (page: string) => void} />
   }
 
   return (

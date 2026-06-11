@@ -14,52 +14,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { api } from '../services/api';
-
-// ═══════════════════════════════════════════════════════════════════
-//  Mock data (same as original, reused for wizard)
-// ═══════════════════════════════════════════════════════════════════
-
-interface MockUser { id: string; name: string; }
-interface MockComponent { id: string; name: string; }
-interface MockCase { id: string; title: string; type: 'auto' | 'manual'; component: string; priority: string; duration: number; }
-interface MockCollection { id: string; name: string; description?: string; caseIds: string[]; }
-
-const MOCK_USERS: MockUser[] = [
-  { id: 'zhangwei', name: '张伟' }, { id: 'lina', name: '李娜' },
-  { id: 'wanghao', name: '王浩' }, { id: 'chenyu', name: '陈雨' },
-  { id: 'liuqing', name: '刘青' }, { id: 'zhaomin', name: '赵敏' },
-  { id: 'sunjie', name: '孙杰' }, { id: 'huxin', name: '胡欣' },
-];
-const MOCK_COMPONENTS: MockComponent[] = [
-  { id: 'mem', name: '内存验证组' }, { id: 'fw', name: '固件验证组' },
-  { id: 'tool', name: '工具链组' }, { id: 'storage', name: '存储验证组' },
-  { id: 'platform', name: '平台质量组' },
-];
-const MOCK_CASES: MockCase[] = [
-  { id: 'TC-001', title: '内存读写压力测试', type: 'auto', component: 'mem', priority: 'P1', duration: 30 },
-  { id: 'TC-002', title: '内存边界值校验', type: 'manual', component: 'mem', priority: 'P2', duration: 15 },
-  { id: 'TC-003', title: '固件版本升级测试', type: 'auto', component: 'fw', priority: 'P1', duration: 45 },
-  { id: 'TC-004', title: '固件异常断电恢复', type: 'manual', component: 'fw', priority: 'P0', duration: 60 },
-  { id: 'TC-005', title: 'CI/CD 管道集成测试', type: 'auto', component: 'tool', priority: 'P2', duration: 20 },
-  { id: 'TC-006', title: '覆盖率分析工具验证', type: 'manual', component: 'tool', priority: 'P3', duration: 25 },
-  { id: 'TC-007', title: '存储读写性能基准', type: 'auto', component: 'storage', priority: 'P1', duration: 40 },
-  { id: 'TC-008', title: 'RAID 重建测试', type: 'manual', component: 'storage', priority: 'P2', duration: 90 },
-  { id: 'TC-009', title: '多用户并发访问测试', type: 'auto', component: 'platform', priority: 'P1', duration: 35 },
-  { id: 'TC-010', title: '安全权限验证', type: 'manual', component: 'platform', priority: 'P0', duration: 20 },
-  { id: 'TC-011', title: 'DDR4 兼容性测试', type: 'auto', component: 'mem', priority: 'P2', duration: 50 },
-  { id: 'TC-012', title: '固件日志轮转测试', type: 'manual', component: 'fw', priority: 'P3', duration: 10 },
-  { id: 'TC-013', title: '分布式节点通信测试', type: 'auto', component: 'storage', priority: 'P1', duration: 60 },
-  { id: 'TC-014', title: '工具链部署验证', type: 'manual', component: 'tool', priority: 'P2', duration: 30 },
-  { id: 'TC-015', title: '跨固件版本回滚测试', type: 'auto', component: 'fw', priority: 'P1', duration: 35 },
-];
-const MOCK_COLLECTIONS: MockCollection[] = [
-  { id: 'col-1', name: 'Sprint 1 回归用例集', description: 'Sprint 1 阶段的全部回归测试用例', caseIds: ['TC-001', 'TC-003', 'TC-007', 'TC-011'] },
-  { id: 'col-2', name: '核心功能冒烟测试', description: '每次提交前必跑的冒烟测试集合', caseIds: ['TC-001', 'TC-003', 'TC-009'] },
-  { id: 'col-3', name: '内存子系统全量', description: '内存模块的所有测试用例', caseIds: ['TC-001', 'TC-002', 'TC-011'] },
-  { id: 'col-4', name: '稳定性长稳测试集', description: '长时间稳定性测试用例', caseIds: ['TC-004', 'TC-008', 'TC-013'] },
-];
-
-const caseMap = new Map(MOCK_CASES.map(c => [c.id, c]));
+import type { UserResponse } from '../types';
 
 // ═══════════════════════════════════════════════════════════════════
 //  Types
@@ -151,6 +106,23 @@ export default function TestExecutionPlanDemo() {
   const [archivedItems, setArchivedItems] = useState<any[]>([]);
   const [archiveLoading, setArchiveLoading] = useState(false);
 
+  // ── Users (from real API) ──
+  const [users, setUsers] = useState<UserResponse[]>([]);
+
+  // ── Test cases & collections (from real API) ──
+  const [testCases, setTestCases] = useState<Record<string, { case_id: string; title: string; type: string; priority: string }>>({});
+  const [collections, setCollections] = useState<{ collection_id: string; name: string; description?: string | null; case_count: number }[]>([]);
+
+  // Build caseMap from real test cases
+  const caseMap = useMemo(() => new Map(
+    Object.values(testCases).map(tc => [tc.case_id, {
+      id: tc.case_id,
+      title: tc.title,
+      type: (tc.type === 'auto' ? 'auto' : 'manual') as 'auto' | 'manual',
+      priority: tc.priority,
+    }]),
+  ), [testCases]);
+
   // ── Wizard ──
   const [showWizard, setShowWizard] = useState(false);
   const [wizardStep, setWizardStep] = useState(1);
@@ -158,7 +130,7 @@ export default function TestExecutionPlanDemo() {
   const [submittingPlan, setSubmittingPlan] = useState(false);
   const [newPlan, setNewPlan] = useState<{
     title: string; description: string; startDate: string; endDate: string; triggerAt: string;
-    selectedCases: string[]; assignments: Record<string, { component: string; assignee: string }>;
+    selectedCases: string[]; assignments: Record<string, { assignee: string }>;
   }>({
     title: '', description: '', startDate: '', endDate: '', triggerAt: '',
     selectedCases: [], assignments: {},
@@ -190,6 +162,27 @@ export default function TestExecutionPlanDemo() {
   }, []);
 
   useEffect(() => { void fetchPlans(); }, [fetchPlans]);
+
+  // ── Fetch users, test cases, and collections ──
+  useEffect(() => {
+    api.listUsers({ status: 'active' })
+      .then(res => setUsers(res.data || []))
+      .catch(() => setUsers([]));
+
+    api.listTestCases({ limit: 200 })
+      .then(res => {
+        const map: Record<string, { case_id: string; title: string; type: string; priority: string }> = {};
+        for (const tc of (res.data || [])) {
+          map[tc.case_id] = { case_id: tc.case_id, title: tc.title, type: 'manual', priority: tc.priority || 'P3' };
+        }
+        setTestCases(map);
+      })
+      .catch(() => setTestCases({}));
+
+    api.listCollections()
+      .then(res => setCollections(res.data || []))
+      .catch(() => setCollections([]));
+  }, []);
 
   // ── Fetch plan detail ──
   useEffect(() => {
@@ -306,7 +299,6 @@ export default function TestExecutionPlanDemo() {
             ref_type: tc?.type === 'auto' ? 'auto' : 'manual',
             case_id: cid,
             assignee_id: newPlan.assignments[cid]?.assignee || undefined,
-            component: newPlan.assignments[cid]?.component || tc?.component || undefined,
           };
         }),
       });
@@ -330,21 +322,25 @@ export default function TestExecutionPlanDemo() {
         : [...prev.selectedCases, cid],
     }));
   };
-  const toggleSelectCollection = (col: MockCollection) => {
-    setNewPlan(prev => {
-      const allSelected = col.caseIds.every(cid => prev.selectedCases.includes(cid));
-      const ids = new Set(prev.selectedCases);
-      for (const cid of col.caseIds) {
-        if (allSelected) ids.delete(cid);
-        else ids.add(cid);
-      }
-      return { ...prev, selectedCases: Array.from(ids) };
-    });
+  const toggleSelectCollection = async (col: { collection_id: string; name: string }) => {
+    try {
+      const res = await api.getCollection(col.collection_id);
+      const caseIds = (res.data as any)?.case_ids || [];
+      setNewPlan(prev => {
+        const allSelected = caseIds.every((cid: string) => prev.selectedCases.includes(cid));
+        const ids = new Set(prev.selectedCases);
+        for (const cid of caseIds) {
+          if (allSelected) ids.delete(cid);
+          else ids.add(cid);
+        }
+        return { ...prev, selectedCases: Array.from(ids) };
+      });
+    } catch { /* ignore */ }
   };
-  const setAssignment = (caseId: string, field: 'component' | 'assignee', value: string) => {
+  const setAssignment = (caseId: string, value: string) => {
     setNewPlan(prev => ({
       ...prev,
-      assignments: { ...prev.assignments, [caseId]: { ...(prev.assignments[caseId] || { component: '', assignee: '' }), [field]: value } },
+      assignments: { ...prev.assignments, [caseId]: { assignee: value } },
     }));
   };
 
@@ -455,6 +451,7 @@ export default function TestExecutionPlanDemo() {
               onRemoveItem={removeEditingItem}
               saving={saving}
               onShowAddCases={() => setShowAddCases(true)}
+              users={users}
             />
           )}
         </div>
@@ -467,6 +464,7 @@ export default function TestExecutionPlanDemo() {
           selectedAddCaseIds={selectedAddCaseIds}
           onToggle={handleAddCaseToggle}
           onClose={() => { setShowAddCases(false); setSelectedAddCaseIds([]); }}
+          cases={Array.from(caseMap.values()).map((tc: any) => ({ id: tc.id, title: tc.title, type: tc.type || 'manual', priority: tc.priority || 'P3' }))}
         />
       )}
       {showWizard && (
@@ -483,6 +481,9 @@ export default function TestExecutionPlanDemo() {
           onToggleCase={toggleSelectCase}
           onToggleCollection={toggleSelectCollection}
           onSetAssignment={setAssignment}
+          users={users}
+          collections={collections}
+          caseMap={caseMap}
         />
       )}
       <ArchivedModal
@@ -576,7 +577,7 @@ function PlanSidebar({ plans, activePlanId, loading, searchQuery, onSelect }: {
 //  PlanDetailView — 右侧计划详情 + 视图切换
 // ═══════════════════════════════════════════════════════════════════
 
-function PlanDetailView({ plan, items, viewMode, onViewModeChange, isEditing, onStartEditing, onCancelEditing, onSaveEditing, onRemoveItem, saving, onShowAddCases }: {
+function PlanDetailView({ plan, items, viewMode, onViewModeChange, isEditing, onStartEditing, onCancelEditing, onSaveEditing, onRemoveItem, saving, onShowAddCases, users }: {
   plan: PlanSummary;
   items: PlanItemSummary[];
   viewMode: ViewMode;
@@ -588,6 +589,7 @@ function PlanDetailView({ plan, items, viewMode, onViewModeChange, isEditing, on
   onRemoveItem: (itemId: string) => void;
   saving: boolean;
   onShowAddCases: () => void;
+  users: UserResponse[];
 }) {
   const meta = PLAN_STATUS_META[plan.status] || { label: plan.status, color: '#8b949e' };
 
@@ -661,11 +663,11 @@ function PlanDetailView({ plan, items, viewMode, onViewModeChange, isEditing, on
             )}
           </div>
         ) : viewMode === 'statusBoard' ? (
-          <StatusBoard items={items} isEditing={isEditing} onRemoveItem={onRemoveItem} />
+          <StatusBoard items={items} isEditing={isEditing} onRemoveItem={onRemoveItem} users={users} />
         ) : viewMode === 'componentView' ? (
-          <ComponentBoard items={items} isEditing={isEditing} onRemoveItem={onRemoveItem} />
+          <ComponentBoard items={items} isEditing={isEditing} onRemoveItem={onRemoveItem} users={users} />
         ) : (
-          <DataTable items={items} isEditing={isEditing} onRemoveItem={onRemoveItem} />
+          <DataTable items={items} isEditing={isEditing} onRemoveItem={onRemoveItem} users={users} />
         )}
       </div>
     </div>
@@ -676,10 +678,11 @@ function PlanDetailView({ plan, items, viewMode, onViewModeChange, isEditing, on
 //  StatusBoard — 按执行状态分栏看板
 // ═══════════════════════════════════════════════════════════════════
 
-function StatusBoard({ items, isEditing, onRemoveItem }: {
+function StatusBoard({ items, isEditing, onRemoveItem, users }: {
   items: PlanItemSummary[];
   isEditing?: boolean;
   onRemoveItem?: (itemId: string) => void;
+  users: UserResponse[];
 }) {
   const groups = useMemo(() => {
     const map = new Map<string, PlanItemSummary[]>();
@@ -711,7 +714,7 @@ function StatusBoard({ items, isEditing, onRemoveItem }: {
                 <div style={{ padding: 12, textAlign: 'center', fontSize: 11, color: 'var(--text-tertiary)', border: '1px dashed var(--border-subtle)', borderRadius: 8 }}>-</div>
               )}
               {caseItems.map(item => (
-                <StatusCard key={item.item_id} item={item} isEditing={isEditing} onRemoveItem={onRemoveItem} />
+                <StatusCard key={item.item_id} item={item} isEditing={isEditing} onRemoveItem={onRemoveItem} users={users} />
               ))}
             </div>
           </div>
@@ -721,10 +724,11 @@ function StatusBoard({ items, isEditing, onRemoveItem }: {
   );
 }
 
-function StatusCard({ item, isEditing, onRemoveItem }: {
+function StatusCard({ item, isEditing, onRemoveItem, users }: {
   item: PlanItemSummary;
   isEditing?: boolean;
   onRemoveItem?: (itemId: string) => void;
+  users: UserResponse[];
 }) {
   const meta = STATUS_META[item.status as ItemStatus] || STATUS_META.pending;
   const isAuto = item.ref_type === 'auto';
@@ -752,7 +756,7 @@ function StatusCard({ item, isEditing, onRemoveItem }: {
         <span style={{ fontSize: 9, color: PRIORITY_COLORS[item.priority] || '#8b949e', fontWeight: 600 }}>{item.priority}</span>
         {item.assignee_id && (
           <span style={{ fontSize: 9, color: 'var(--text-tertiary)' }}>
-            {MOCK_USERS.find(u => u.id === item.assignee_id)?.name || item.assignee_id}
+            {users.find(u => u.user_id === item.assignee_id)?.username || item.assignee_id}
           </span>
         )}
       </div>
@@ -764,10 +768,11 @@ function StatusCard({ item, isEditing, onRemoveItem }: {
 //  ComponentBoard — 按组件分栏（原名"看板"）
 // ═══════════════════════════════════════════════════════════════════
 
-function ComponentBoard({ items, isEditing, onRemoveItem }: {
+function ComponentBoard({ items, isEditing, onRemoveItem, users }: {
   items: PlanItemSummary[];
   isEditing?: boolean;
   onRemoveItem?: (itemId: string) => void;
+  users: UserResponse[];
 }) {
   const groups = useMemo(() => {
     const map = new Map<string, PlanItemSummary[]>();
@@ -779,7 +784,7 @@ function ComponentBoard({ items, isEditing, onRemoveItem }: {
     return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b));
   }, [items]);
 
-  const compName = (id: string) => MOCK_COMPONENTS.find(c => c.id === id)?.name || id;
+  const compName = (id: string) => id;
 
   return (
     <div style={{ height: '100%', display: 'flex', gap: 10, overflow: 'auto' }}>
@@ -791,7 +796,7 @@ function ComponentBoard({ items, isEditing, onRemoveItem }: {
           </div>
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4, overflowY: 'auto' }}>
             {caseItems.map(item => (
-              <StatusCard key={item.item_id} item={item} isEditing={isEditing} onRemoveItem={onRemoveItem} />
+              <StatusCard key={item.item_id} item={item} isEditing={isEditing} onRemoveItem={onRemoveItem} users={users} />
             ))}
           </div>
         </div>
@@ -804,12 +809,13 @@ function ComponentBoard({ items, isEditing, onRemoveItem }: {
 //  DataTable — 表格视图
 // ═══════════════════════════════════════════════════════════════════
 
-function DataTable({ items, isEditing, onRemoveItem }: {
+function DataTable({ items, isEditing, onRemoveItem, users }: {
   items: PlanItemSummary[];
   isEditing?: boolean;
   onRemoveItem?: (itemId: string) => void;
+  users: UserResponse[];
 }) {
-  const compName = (id: string) => MOCK_COMPONENTS.find(c => c.id === id)?.name || id;
+  const compName = (id: string) => id;
   return (
     <div style={{ height: '100%', overflow: 'auto' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
@@ -842,7 +848,7 @@ function DataTable({ items, isEditing, onRemoveItem }: {
                 <td style={{ padding: '7px 12px', color: 'var(--text-secondary)' }}>{compName(item.component)}</td>
                 <td style={{ padding: '7px 12px', color: PRIORITY_COLORS[item.priority] || '#8b949e', fontWeight: 600 }}>{item.priority}</td>
                 <td style={{ padding: '7px 12px', color: 'var(--text-secondary)' }}>
-                  {item.assignee_id ? (MOCK_USERS.find(u => u.id === item.assignee_id)?.name || item.assignee_id) : '-'}
+                  {item.assignee_id ? (users.find(u => u.user_id === item.assignee_id)?.username || item.assignee_id) : '-'}
                 </td>
                 <td style={{ padding: '7px 12px' }}>
                   <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 6,
@@ -868,11 +874,12 @@ function DataTable({ items, isEditing, onRemoveItem }: {
 //  AddCasesModal — 编辑模式下添加用例
 // ═══════════════════════════════════════════════════════════════════
 
-function AddCasesModal({ editingItems, selectedAddCaseIds, onToggle, onClose }: {
+function AddCasesModal({ editingItems, selectedAddCaseIds, onToggle, onClose, cases }: {
   editingItems: PlanItemSummary[];
   selectedAddCaseIds: string[];
   onToggle: (cid: string) => void;
   onClose: () => void;
+  cases: { id: string; title: string; type: string; priority: string }[];
 }) {
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000 }}>
@@ -890,7 +897,7 @@ function AddCasesModal({ editingItems, selectedAddCaseIds, onToggle, onClose }: 
             已选 {selectedAddCaseIds.length} 个
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-            {MOCK_CASES.map(tc => {
+            {cases.map(tc => {
               const alreadyInPlan = editingItems.some(e => e.case_id === tc.id);
               const selected = selectedAddCaseIds.includes(tc.id);
               return (
@@ -930,13 +937,14 @@ function AddCasesModal({ editingItems, selectedAddCaseIds, onToggle, onClose }: 
 //  CreatePlanWizard — 新建计划向导
 // ═══════════════════════════════════════════════════════════════════
 
-function CreatePlanWizard({ wizardStep, onStepChange, newPlan, onNewPlanChange, caseSearch, onCaseSearchChange, submittingPlan, onCreatePlan, onClose, onToggleCase, onToggleCollection, onSetAssignment }: {
+function CreatePlanWizard({ wizardStep, onStepChange, newPlan, onNewPlanChange, caseSearch, onCaseSearchChange, submittingPlan, onCreatePlan, onClose, onToggleCase, onToggleCollection, onSetAssignment, users, collections, caseMap }: {
   wizardStep: number; onStepChange: (s: number) => void;
   newPlan: any; onNewPlanChange: (p: any) => void;
   caseSearch: string; onCaseSearchChange: (s: string) => void;
   submittingPlan: boolean; onCreatePlan: () => void; onClose: () => void;
-  onToggleCase: (cid: string) => void; onToggleCollection: (col: MockCollection) => void;
-  onSetAssignment: (caseId: string, field: 'component' | 'assignee', value: string) => void;
+  onToggleCase: (cid: string) => void; onToggleCollection: (col: any) => void;
+  onSetAssignment: (caseId: string, value: string) => void;
+  users: UserResponse[]; collections: any[]; caseMap: Map<string, any>;
 }) {
   const stepLabels = ['基本信息', '选择用例', '分配执行人', '排期确认'];
   return (
@@ -1004,33 +1012,29 @@ function CreatePlanWizard({ wizardStep, onStepChange, newPlan, onNewPlanChange, 
                 {(() => {
                   const q = caseSearch.trim().toLowerCase();
                   const matchedCollections = q
-                    ? MOCK_COLLECTIONS.filter(col => col.name.toLowerCase().includes(q) || (col.description || '').includes(q) || col.caseIds.some(cid => cid.includes(q)))
-                    : MOCK_COLLECTIONS;
-                  const matchedCases = q ? MOCK_CASES.filter(tc => tc.id.includes(q) || tc.title.toLowerCase().includes(q)) : MOCK_CASES;
+                    ? collections.filter((col: any) => col.name?.toLowerCase().includes(q) || (col.description || '').toLowerCase().includes(q))
+                    : collections;
+                  const allCases = Array.from(caseMap.values());
+                  const matchedCases = q ? allCases.filter((tc: any) => tc.id.includes(q) || tc.title.toLowerCase().includes(q)) : allCases;
                   return (
                     <>
-                      {matchedCollections.map(col => {
-                        const allSelected = col.caseIds.every(cid => newPlan.selectedCases.includes(cid));
-                        const someSelected = col.caseIds.some(cid => newPlan.selectedCases.includes(cid));
+                      {matchedCollections.map((col: any) => {
                         return (
-                          <label key={col.id} onClick={() => onToggleCollection(col)}
+                          <label key={col.collection_id} onClick={() => onToggleCollection(col)}
                             style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 6, cursor: 'pointer',
-                              border: allSelected ? '1px solid var(--accent-primary)' : '1px solid var(--border-subtle)',
-                              background: allSelected ? 'color-mix(in srgb, var(--accent-primary) 6%, transparent)' : 'var(--bg-primary)',
+                              border: '1px solid var(--border-subtle)',
+                              background: 'var(--bg-primary)',
                               marginBottom: 2,
                             }}>
-                            <input type="checkbox" checked={allSelected}
-                              ref={el => { if (el) el.indeterminate = someSelected && !allSelected; }}
-                              onChange={() => {}} style={{ accentColor: 'var(--accent-primary)' }} />
                             <div style={{ flex: 1 }}>
-                              <div style={{ fontSize: 12, fontWeight: allSelected ? 600 : 500 }}>{col.name}</div>
+                              <div style={{ fontSize: 12, fontWeight: 500 }}>{col.name}</div>
                               {col.description && <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 1 }}>{col.description}</div>}
                             </div>
-                            <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>{col.caseIds.length} 个用例</span>
+                            <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>{col.case_count || 0} 个用例</span>
                           </label>
                         );
                       })}
-                      {matchedCases.map(tc => {
+                      {matchedCases.map((tc: any) => {
                         const sel = newPlan.selectedCases.includes(tc.id);
                         return (
                           <label key={tc.id} onClick={() => onToggleCase(tc.id)}
@@ -1045,7 +1049,7 @@ function CreatePlanWizard({ wizardStep, onStepChange, newPlan, onNewPlanChange, 
                               background: tc.type === 'auto' ? 'rgba(57,208,214,0.12)' : 'rgba(163,113,247,0.12)',
                               color: tc.type === 'auto' ? '#39d0d6' : '#a371f7', fontWeight: 600,
                             }}>{tc.type === 'auto' ? 'AUTO' : 'MANUAL'}</span>
-                            <span style={{ fontSize: 10, color: PRIORITY_COLORS[tc.priority], fontWeight: 600 }}>{tc.priority}</span>
+                            {tc.priority && <span style={{ fontSize: 10, color: PRIORITY_COLORS[tc.priority] || '#8b949e', fontWeight: 600 }}>{tc.priority}</span>}
                           </label>
                         );
                       })}
@@ -1062,7 +1066,7 @@ function CreatePlanWizard({ wizardStep, onStepChange, newPlan, onNewPlanChange, 
           {wizardStep === 3 && (
             <div>
               <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 10 }}>
-                为已选用例分配组件和执行人
+                为已选用例分配执行人
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {newPlan.selectedCases.map((cid: string) => {
@@ -1076,16 +1080,11 @@ function CreatePlanWizard({ wizardStep, onStepChange, newPlan, onNewPlanChange, 
                         background: tc.type === 'auto' ? 'rgba(57,208,214,0.12)' : 'rgba(163,113,247,0.12)',
                         color: tc.type === 'auto' ? '#39d0d6' : '#a371f7', fontWeight: 600,
                       }}>{tc.type === 'auto' ? 'AUTO' : 'MANUAL'}</span>
-                      <select className="form-input form-select" style={{ width: 130, fontSize: 11 }}
-                        value={newPlan.assignments[cid]?.component || tc.component}
-                        onChange={e => onSetAssignment(cid, 'component', e.target.value)}>
-                        {MOCK_COMPONENTS.map(comp => <option key={comp.id} value={comp.id}>{comp.name}</option>)}
-                      </select>
-                      <select className="form-input form-select" style={{ width: 80, fontSize: 11 }}
+                      <select className="form-input form-select" style={{ width: 120, fontSize: 11 }}
                         value={newPlan.assignments[cid]?.assignee || ''}
-                        onChange={e => onSetAssignment(cid, 'assignee', e.target.value)}>
+                        onChange={e => onSetAssignment(cid, e.target.value)}>
                         <option value="">执行人</option>
-                        {MOCK_USERS.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                        {users.map(u => <option key={u.user_id} value={u.user_id}>{u.username}</option>)}
                       </select>
                     </div>
                   );

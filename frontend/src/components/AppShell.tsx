@@ -65,7 +65,6 @@ const AppShell: React.FC<AppShellProps> = ({ children }) => {
           onUserClick={() => navigate('profile')}
           onSwitchUser={handleSwitchUser}
           switchableUsers={switchableUsers}
-          onSearchNavigate={navigate as (page: string) => void}
         />
         <main style={styles.workspace}>
           {children}
