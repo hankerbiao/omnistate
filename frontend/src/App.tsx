@@ -15,6 +15,7 @@ import PermissionManagement from './components/PermissionManagement'
 import DashboardPage from './components/DashboardPage'
 import CatalogLabsPage from './components/CatalogLabsPage'
 import TestExecutionPlanDemo from './components/TestExecutionPlanDemo'
+import CaseGovernancePage from './components/CaseGovernancePage'
 import LineageViewPage from './components/lineage/LineageViewPage'
 import TestCaseCollectionPage from './components/TestCaseCollectionPage'
 import SystemConfigPage from './pages/SystemConfig'
@@ -61,6 +62,8 @@ function AppContent() {
         return <PermissionManagement key={currentUserId} />
       case 'catalogLabs':
         return <CatalogLabsPage key={currentUserId} />
+      case 'caseGovernance':
+        return <CaseGovernancePage key={currentUserId} />
       case 'manualTestCases':
       case 'testPlanStudioDemo':
         return <TestExecutionPlanDemo key={currentUserId} />

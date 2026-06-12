@@ -54,6 +54,8 @@ class TestCaseQueryService:
         is_active: Optional[bool] = None,
         lab_id: Optional[str] = None,
         catalog_prefix: Optional[list[str]] = None,
+        tags: Optional[list[str]] = None,
+        missing_fields: Optional[str] = None,
         limit: int = 20,
         offset: int = 0,
     ) -> list[dict]:
@@ -66,6 +68,8 @@ class TestCaseQueryService:
             is_active=is_active,
             lab_id=lab_id,
             catalog_prefix=catalog_prefix,
+            tags=tags,
+            missing_fields=missing_fields,
             limit=limit,
             offset=offset,
         )

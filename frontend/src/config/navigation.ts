@@ -9,6 +9,7 @@ export const navItems: NavItem[] = [
   { key: 'collections', label: '预制用例集', icon: '📁' },
   { key: 'agents', label: '执行代理', icon: '◉' },
   { key: 'testPlanStudioDemo', label: '执行计划', icon: '▤' },
+  { key: 'caseGovernance', label: '用例治理', icon: '⬡' },
   { key: 'users', label: '用户管理', icon: '⊕', permission: 'users:read' },
   { key: 'roles', label: '角色管理', icon: '⊞', permission: 'roles:read' },
   { key: 'roleGroup', label: '用户组管理', icon: '⊡', permission: 'roles:read' },
@@ -20,7 +21,7 @@ export const navItems: NavItem[] = [
 export const navSections: NavSection[] = [
   { label: '概览', keys: ['myTasks', 'search'] },
   { label: '测试资产', keys: ['requirements', 'testCases', 'collections'] },
-  { label: '执行', keys: ['agents', 'testPlanStudioDemo'] },
+  { label: '执行', keys: ['agents', 'testPlanStudioDemo', 'caseGovernance'] },
   { label: '系统', keys: ['dashboard', 'users', 'roles', 'roleGroup', 'permissions', 'catalogLabs', 'systemConfig'] },
 ]
 

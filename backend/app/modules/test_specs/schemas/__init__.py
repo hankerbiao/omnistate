@@ -18,11 +18,13 @@ from .requirement import (
 from .test_case import (
     AutomationTestCaseReportResponse,
     AutomationTestCaseResponse,
+    BatchUpdateCasesRequest,
     CreateAutomationTestCaseRequest,
     CreateTestCaseRequest,
     LinkAutomationCaseRequest,
     ReportAutomationCaseMetadataRequest,
     TestCaseResponse,
+    UpdateAutoCaseTagsRequest,
     UpdateTestCaseRequest,
 )
 
@@ -33,9 +35,11 @@ __all__ = [
     "RequirementResponse",
     "AutomationTestCaseReportResponse",
     "AutomationTestCaseResponse",
+    "BatchUpdateCasesRequest",
     "CreateAutomationTestCaseRequest",
     "ReportAutomationCaseMetadataRequest",
     "CreateTestCaseRequest",
+    "UpdateAutoCaseTagsRequest",
     "UpdateTestCaseRequest",
     "TestCaseResponse",
     "LinkAutomationCaseRequest",

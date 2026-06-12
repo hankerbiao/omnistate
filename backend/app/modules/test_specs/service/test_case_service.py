@@ -151,6 +151,8 @@ class TestCaseService(BaseService):
             is_active: Optional[bool] = None,
             lab_id: Optional[str] = None,
             catalog_prefix: Optional[List[str]] = None,
+            tags: Optional[List[str]] = None,
+            missing_fields: Optional[str] = None,
             limit: int = 20,
             offset: int = 0,
     ) -> List[Dict[str, Any]]:
@@ -167,6 +169,30 @@ class TestCaseService(BaseService):
                 )
             else:
                 mongo_query["lab_id"] = lab_id
+
+        # Tag 过滤：匹配包含所有指定 tag 的用例
+        if tags:
+            mongo_query["tags"] = {"$all": tags}
+
+        # 缺失字段过滤：构建 $and 条件
+        _needs_auto_link_filter = False
+        if missing_fields:
+            missing_conditions = []
+            for field in missing_fields.split(","):
+                field = field.strip()
+                if field == "lab_id":
+                    missing_conditions.append({"$or": [{"lab_id": None}, {"lab_id": ""}]})
+                elif field == "catalog_path":
+                    missing_conditions.append({"$or": [{"catalog_path": None}, {"catalog_path": []}]})
+                elif field == "tags":
+                    missing_conditions.append({"$or": [{"tags": None}, {"tags": []}]})
+                elif field == "auto_link":
+                    _needs_auto_link_filter = True
+            if missing_conditions:
+                if len(missing_conditions) == 1:
+                    mongo_query.update(missing_conditions[0])
+                else:
+                    mongo_query["$and"] = missing_conditions
 
         query = TestCaseDoc.find(mongo_query)
         if ref_req_id:
@@ -199,6 +225,17 @@ class TestCaseService(BaseService):
             docs = filtered_docs[offset:offset + limit]
         else:
             docs = await query.sort("-created_at").skip(offset).limit(limit).to_list()
+
+        # auto_link 缺失过滤：查询未关联自动化用例的手工用例
+        if _needs_auto_link_filter and docs:
+            linked_ids: set = set()
+            case_id_list = [doc.case_id for doc in docs]
+            async for auto_doc in AutomationTestCaseDoc.find(
+                AutomationTestCaseDoc.dml_manual_case_id.in_(case_id_list),
+                {"is_deleted": False},
+            ).project({"dml_manual_case_id": 1}):
+                linked_ids.add(auto_doc.dml_manual_case_id)
+            docs = [doc for doc in docs if doc.case_id not in linked_ids]
 
         # Phase 3B: 转换时确保使用工作流状态作为真实来源
         if not docs:
@@ -400,6 +437,140 @@ class TestCaseService(BaseService):
         case_doc.ref_req_id = target_req_id
         await case_doc.save()
 
+        return await self._enrich_test_case_status(self._doc_to_dict(case_doc))
+
+    async def batch_update_test_cases(
+        self,
+        case_ids: List[str],
+        lab_id: Optional[str] = None,
+        catalog_path: Optional[List[str]] = None,
+        tags_add: Optional[List[str]] = None,
+        tags_remove: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """批量更新测试用例（lab_id、catalog_path、tags 追加/移除）。
+
+        逐条更新，单条失败不影响其他，返回部分失败报告。
+        """
+        updated_count = 0
+        failures: List[Dict[str, str]] = []
+
+        for case_id in case_ids:
+            try:
+                doc = await TestCaseDoc.find_one(
+                    TestCaseDoc.case_id == case_id,
+                    {"is_deleted": False},
+                )
+                if not doc:
+                    failures.append({"case_id": case_id, "reason": "not found"})
+                    continue
+
+                update_data: Dict[str, Any] = {}
+
+                # 处理 lab_id / catalog_path
+                if lab_id is not None or catalog_path is not None:
+                    new_lab = lab_id if lab_id is not None else doc.lab_id
+                    new_path = catalog_path if catalog_path is not None else list(doc.catalog_path or [])
+                    if new_lab and new_path:
+                        old_lab_id = doc.lab_id
+                        old_path = list(doc.catalog_path or [])
+                        catalog_fields = await self._catalog_service.prepare_catalog_fields(
+                            new_lab, new_path,
+                        )
+                        update_data.update(catalog_fields)
+                        await self._catalog_service.adjust_path_on_update(
+                            old_lab_id, old_path,
+                            catalog_fields["lab_id"], catalog_fields["catalog_path"],
+                        )
+
+                # 处理 tags 追加/移除
+                current_tags = set(doc.tags or [])
+                if tags_add:
+                    current_tags.update(tags_add)
+                if tags_remove:
+                    current_tags -= set(tags_remove)
+                if tags_add or tags_remove:
+                    update_data["tags"] = sorted(current_tags)
+
+                if not update_data:
+                    continue
+
+                self._apply_updates(doc, update_data, self._UPDATABLE_FIELDS)
+                await doc.save()
+                updated_count += 1
+            except Exception as exc:
+                failures.append({"case_id": case_id, "reason": str(exc)})
+
+        return {
+            "updated_count": updated_count,
+            "failed_count": len(failures),
+            "failures": failures,
+        }
+
+    async def governance_stats(self) -> Dict[str, Any]:
+        """获取用例治理统计（缺失 Lab/目录/Tag/未关联自动化的用例数）。"""
+        base_filter = {"is_deleted": False}
+
+        total_manual = await TestCaseDoc.find(base_filter).count()
+
+        # 缺失 Lab：lab_id 为空或 null
+        missing_lab = await TestCaseDoc.find({
+            **base_filter,
+            "$or": [{"lab_id": None}, {"lab_id": ""}],
+        }).count()
+
+        # 缺失目录：catalog_path 为空数组或 null
+        missing_catalog = await TestCaseDoc.find({
+            **base_filter,
+            "$or": [{"catalog_path": None}, {"catalog_path": []}],
+        }).count()
+
+        # 缺失 Tag：tags 为空数组或 null
+        missing_tags = await TestCaseDoc.find({
+            **base_filter,
+            "$or": [{"tags": None}, {"tags": []}],
+        }).count()
+
+        # 未关联自动化用例：反查 AutomationTestCaseDoc
+        linked_manual_ids = set()
+        async for auto_doc in AutomationTestCaseDoc.find(
+            {"is_deleted": False, "dml_manual_case_id": {"$nin": ["", None]}},
+        ).project({"dml_manual_case_id": 1}):
+            linked_manual_ids.add(auto_doc.dml_manual_case_id)
+
+        unlinked_auto = await TestCaseDoc.find({
+            **base_filter,
+            "case_id": {"$nin": list(linked_manual_ids)} if linked_manual_ids else {"$exists": True},
+        }).count()
+
+        total_auto = await AutomationTestCaseDoc.find({"is_deleted": False}).count()
+
+        return {
+            "total_manual": total_manual,
+            "total_auto": total_auto,
+            "missing_lab": missing_lab,
+            "missing_catalog": missing_catalog,
+            "missing_tags": missing_tags,
+            "unlinked_auto": unlinked_auto,
+        }
+
+    async def unlink_automation_case(self, case_id: str) -> Dict[str, Any]:
+        """解除自动化用例与手工用例的关联（清空 dml_manual_case_id）。"""
+        case_doc = await TestCaseDoc.find_one(
+            TestCaseDoc.case_id == case_id,
+            {"is_deleted": False},
+        )
+        if not case_doc:
+            raise KeyError("test case not found")
+
+        auto_doc = await AutomationTestCaseDoc.find_one(
+            AutomationTestCaseDoc.dml_manual_case_id == case_id,
+            {"is_deleted": False},
+        )
+        if not auto_doc:
+            raise KeyError("no linked automation test case found")
+
+        auto_doc.dml_manual_case_id = ""
+        await auto_doc.save()
         return await self._enrich_test_case_status(self._doc_to_dict(case_doc))
 
     async def _create_test_case_with_transaction(

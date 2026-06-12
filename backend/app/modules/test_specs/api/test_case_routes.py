@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from app.modules.test_specs.api.dependencies import (
     TestCaseCommandServiceDep,
     TestCaseQueryServiceDep,
+    TestCaseServiceDep,
     build_operation_context,
 )
 from app.modules.test_specs.application import (
@@ -17,6 +18,7 @@ from app.modules.test_specs.application import (
 )
 from app.modules.test_specs.domain.exceptions import TestCaseNotFoundError
 from app.modules.test_specs.schemas import (
+    BatchUpdateCasesRequest,
     CreateTestCaseRequest,
     LinkAutomationCaseRequest,
     TestCaseChangeLogListResponse,
@@ -27,6 +29,42 @@ from app.shared.api.schemas.base import APIResponse
 from app.shared.auth import get_current_user, require_permission
 
 router = APIRouter(prefix="/test-cases", tags=["TestCases"])
+
+
+@router.get(
+    "/governance-stats",
+    response_model=APIResponse[dict],
+    summary="获取用例治理统计",
+    dependencies=[Depends(require_permission("test_cases:read"))],
+)
+async def governance_stats(
+    service: TestCaseServiceDep,
+):
+    """返回用例治理统计：总数、缺Lab、缺目录、缺Tag、未关联自动化的用例数。"""
+    data = await service.governance_stats()
+    return APIResponse(data=data)
+
+
+@router.put(
+    "/batch",
+    response_model=APIResponse[dict],
+    summary="批量更新测试用例（治理补全）",
+    dependencies=[Depends(require_permission("test_cases:write"))],
+)
+async def batch_update_test_cases(
+    request: BatchUpdateCasesRequest,
+    service: TestCaseServiceDep,
+    current_user=Depends(get_current_user),
+):
+    """批量更新测试用例的 Lab、目录路径、Tag。"""
+    result = await service.batch_update_test_cases(
+        case_ids=request.case_ids,
+        lab_id=request.lab_id,
+        catalog_path=request.catalog_path,
+        tags_add=request.tags_add,
+        tags_remove=request.tags_remove,
+    )
+    return APIResponse(data=result)
 
 
 @router.post(
@@ -105,6 +143,8 @@ async def list_test_cases(
     is_active: Optional[bool] = Query(None),
     lab_id: Optional[str] = Query(None),
     catalog_prefix: Optional[str] = Query(None, description="JSON 数组，目录前缀"),
+    tags: Optional[str] = Query(None, description="JSON 数组，包含指定 Tag"),
+    missing_fields: Optional[str] = Query(None, description="逗号分隔，如 lab_id,catalog_path,tags,auto_link"),
     limit: int = Query(20, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ):
@@ -117,6 +157,15 @@ async def list_test_cases(
         except (json.JSONDecodeError, ValueError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    parsed_tags: Optional[list[str]] = None
+    if tags:
+        try:
+            parsed_tags = json.loads(tags)
+            if not isinstance(parsed_tags, list):
+                raise ValueError("tags 必须是 JSON 数组")
+        except (json.JSONDecodeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     data = await query_service.list_test_cases(
         ref_req_id=ref_req_id,
         status=status,
@@ -126,6 +175,8 @@ async def list_test_cases(
         is_active=is_active,
         lab_id=lab_id,
         catalog_prefix=parsed_prefix,
+        tags=parsed_tags,
+        missing_fields=missing_fields,
         limit=limit,
         offset=offset,
     )
@@ -220,3 +271,22 @@ async def link_automation_case(
         raise HTTPException(status_code=404, detail="test case not found")
     except TestCaseNotFoundError:
         raise HTTPException(status_code=404, detail="test case not found")
+
+
+@router.delete(
+    "/{case_id}/automation-link",
+    response_model=APIResponse[dict],
+    summary="解除自动化用例关联",
+    dependencies=[Depends(require_permission("test_cases:write"))],
+)
+async def unlink_automation_case(
+    case_id: str,
+    service: TestCaseServiceDep,
+    current_user=Depends(get_current_user),
+):
+    """解除自动化用例与手工用例的关联（清空 dml_manual_case_id）。"""
+    try:
+        await service.unlink_automation_case(case_id)
+        return APIResponse(data={"unlinked": True})
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=str(e))

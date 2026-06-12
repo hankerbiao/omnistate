@@ -152,6 +152,22 @@ class LinkAutomationCaseRequest(BaseModel):
     version: Optional[str] = Field(None, description="自动化用例版本（为空时默认最新版本）")
 
 
+class BatchUpdateCasesRequest(BaseModel):
+    """批量更新测试用例请求体（治理补全用）。"""
+    case_ids: List[str] = Field(..., min_length=1, description="要更新的用例 ID 列表")
+    lab_id: Optional[str] = Field(None, description="批量设置 Lab")
+    catalog_path: Optional[List[str]] = Field(None, description="批量设置目录路径")
+    tags_add: Optional[List[str]] = Field(None, description="批量追加 Tag（并集）")
+    tags_remove: Optional[List[str]] = Field(None, description="批量移除 Tag（差集）")
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class UpdateAutoCaseTagsRequest(BaseModel):
+    """更新自动化用例标签请求体。"""
+    tags: List[str] = Field(default_factory=list, description="标签列表（全量替换）")
+
+
 class CreateAutomationTestCaseRequest(BaseModel):
     """创建自动化测试用例请求体。"""
     auto_case_id: Optional[str] = Field(

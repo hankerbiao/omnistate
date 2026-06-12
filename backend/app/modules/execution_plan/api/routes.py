@@ -3,18 +3,13 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 
 from app.modules.execution_plan.api.dependencies import (
     ExecutionPlanServiceDep,
     SequenceIdServiceDep,
 )
-from app.modules.execution_plan.domain.exceptions import (
-    ExecutionPlanError,
-    ItemNotFoundError,
-    PlanNotFoundError,
-    ResultNotFoundError,
-)
+from app.modules.execution_plan.api.exception_handler import register_exception_handlers
 from app.modules.execution_plan.schemas.execution_plan import (
     AddPlanItemsRequest,
     BatchDispatchRequest,
@@ -27,9 +22,9 @@ from app.modules.execution_plan.schemas.execution_plan import (
 )
 from app.shared.api.schemas.base import APIResponse
 from app.shared.auth import get_current_user
-from app.shared.core.logger import log as logger
 
 router = APIRouter(prefix="/execution-plans", tags=["ExecutionPlan"])
+register_exception_handlers(router)
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -39,18 +34,6 @@ router = APIRouter(prefix="/execution-plans", tags=["ExecutionPlan"])
 def _get_user_id(current_user: Dict[str, Any]) -> str:
     """从当前用户信息中提取 user_id。"""
     return current_user.get("user_id") or current_user.get("id") or ""
-
-
-def _handle_service_error(exc: Exception) -> None:
-    """统一处理领域异常为 HTTP 错误。"""
-    if isinstance(exc, (PlanNotFoundError, ItemNotFoundError, ResultNotFoundError)):
-        raise HTTPException(status_code=404, detail=str(exc))
-    if isinstance(exc, ValueError):
-        raise HTTPException(status_code=400, detail=str(exc))
-    if isinstance(exc, ExecutionPlanError):
-        raise HTTPException(status_code=400, detail=str(exc))
-    logger.error(f"执行计划未处理异常: {exc}", exc_info=True)
-    raise HTTPException(status_code=400, detail=f"{type(exc).__name__}: {exc}")
 
 
 # ═══════════════════════════════════════════════════════════════════════

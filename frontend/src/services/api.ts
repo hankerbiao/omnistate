@@ -380,6 +380,34 @@ class ApiClient {
     });
   }
 
+  async updateAutoCaseTags(autoCaseId: string, tags: string[]): Promise<ApiResponse<AutomationTestCaseResponse>> {
+    return this.request<AutomationTestCaseResponse>(`/automation-test-cases/${autoCaseId}/tags`, {
+      method: 'PUT',
+      body: JSON.stringify({ tags }),
+    });
+  }
+
+  // ── 用例治理 API ──
+
+  async getGovernanceStats(): Promise<ApiResponse<import('../types').GovernanceStats>> {
+    return this.request<import('../types').GovernanceStats>('/test-cases/governance-stats', {
+      method: 'GET',
+    });
+  }
+
+  async batchUpdateCases(request: import('../types').BatchUpdateCasesRequest): Promise<ApiResponse<import('../types').BatchUpdateResult>> {
+    return this.request<import('../types').BatchUpdateResult>('/test-cases/batch', {
+      method: 'PUT',
+      body: JSON.stringify(request),
+    });
+  }
+
+  async unlinkAutomationCase(caseId: string): Promise<ApiResponse<{ unlinked: boolean }>> {
+    return this.request<{ unlinked: boolean }>(`/test-cases/${caseId}/automation-link`, {
+      method: 'DELETE',
+    });
+  }
+
   async listTasks(params: ListTasksParams = {}): Promise<ApiResponse<ExecutionTask[]>> {
     const queryParams = new URLSearchParams();
 

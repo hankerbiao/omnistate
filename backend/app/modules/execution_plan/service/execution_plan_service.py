@@ -1,12 +1,14 @@
 """执行计划应用服务。"""
 from __future__ import annotations
 
+import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from app.modules.execution.application.task_command_service import ExecutionTaskCommandService
 from app.modules.execution.repository.models import ExecutionTaskDoc
 from app.modules.execution.schemas import DispatchCaseItem, DispatchTaskRequest
+from app.modules.execution_plan.domain.constants import PlanItemStatus, TASK_TO_ITEM_STATUS
 from app.modules.execution_plan.domain.exceptions import (
     ItemNotFoundError,
     PlanNotFoundError,
@@ -26,12 +28,7 @@ from app.modules.test_specs.repository.models import AutomationTestCaseDoc, Test
 from app.shared.service import BaseService, SequenceIdService
 from app.shared.core.logger import log as logger
 
-_TASK_STATUS_MAP = {
-    "QUEUED": "running",
-    "RUNNING": "running",
-    "PASSED": "done",
-    "FAILED": "fail",
-}
+_TASK_STATUS_MAP = TASK_TO_ITEM_STATUS
 
 
 class ExecutionPlanService(BaseService):
@@ -48,6 +45,7 @@ class ExecutionPlanService(BaseService):
         if status:
             query["status"] = status
         docs = await ExecutionPlanDoc.find(query).sort("-updated_at").to_list()
+        logger.debug(f"[CRUD] list_plans status={status} count={len(docs)}")
         return [self._plan_to_dict(doc) for doc in docs]
 
     async def create_plan(self, data: Dict[str, Any], actor_id: str) -> Dict[str, Any]:
@@ -71,6 +69,7 @@ class ExecutionPlanService(BaseService):
             created_by=actor_id,
         )
         await doc.insert()
+        logger.info(f"[CRUD] create_plan plan_id={plan_id} title={title} actor={actor_id}")
         return self._plan_to_dict(doc)
 
     async def get_plan(self, plan_id: str) -> Dict[str, Any]:
@@ -105,6 +104,7 @@ class ExecutionPlanService(BaseService):
             ExecutionPlanItemDoc.plan_id == plan_id,
             ExecutionPlanItemDoc.is_deleted == False,  # noqa: E712
         ).update({"$set": {"is_deleted": True}})
+        logger.info(f"[CRUD] delete_plan plan_id={plan_id}")
 
     async def add_items(
         self,
@@ -164,12 +164,13 @@ class ExecutionPlanService(BaseService):
         allowed = {"assignee_id", "status", "component", "order_no"}
         updates = self._filter_updates(data, allowed)
         if "status" in updates:
-            status = str(updates["status"])
-            if status not in {"pending", "running", "done", "fail"}:
-                raise ValueError(f"status 无效: {status}")
+            status_val = str(updates["status"])
+            if status_val not in PlanItemStatus._value2member_map_:
+                raise ValueError(f"status 无效: {status_val}, 可选: {[s.value for s in PlanItemStatus]}")
         self._apply_updates(item, updates, allowed)
         await item.save()
         await self._recalculate_plan_progress(plan_id)
+        logger.debug(f"[ITEM] update_item plan={plan_id} item={item_id} updates={updates}")
         return await self._item_to_response(item)
 
     async def batch_update_assignee(
@@ -190,9 +191,11 @@ class ExecutionPlanService(BaseService):
         ).update({"$set": {"assignee_id": assignee_id, "updated_at": datetime.now(timezone.utc)}})
 
         await self._recalculate_plan_progress(plan_id)
+        updated = result.modified_count
+        logger.debug(f"[ITEM] batch_update_assignee plan={plan_id} count={updated} assignee={assignee_id}")
         return {
             "plan_id": plan_id,
-            "updated_count": result.modified_count,
+            "updated_count": updated,
             "assignee_id": assignee_id,
         }
 
@@ -213,10 +216,13 @@ class ExecutionPlanService(BaseService):
             ExecutionPlanItemDoc.archived_at == None,  # noqa: E711
             ExecutionPlanItemDoc.is_deleted == False,  # noqa: E712
         ).sort("-updated_at").to_list()
+        plan_ids = {doc.plan_id for doc in docs}
+        plan_map = await self._batch_load_plan_titles(plan_ids)
         results: List[Dict[str, Any]] = []
         for doc in docs:
             try:
-                results.append(await self._item_to_response(doc))
+                await self._sync_auto_item_status(doc)
+                results.append(await self._item_to_response(doc, _plan_title=plan_map.get(doc.plan_id, "")))
             except Exception as exc:
                 logger.warning(f"跳过异常计划条目 {doc.item_id}: {exc}")
                 continue
@@ -233,8 +239,8 @@ class ExecutionPlanService(BaseService):
             ExecutionPlanItemDoc.is_deleted == False,  # noqa: E712
         ]
         if status:
-            if status not in {"pending", "running", "done", "fail"}:
-                raise ValueError(f"status 无效: {status}")
+            if status not in PlanItemStatus._value2member_map_:
+                raise ValueError(f"status 无效: {status}, 可选: {[s.value for s in PlanItemStatus]}")
             filters.append(ExecutionPlanItemDoc.status == status)
         if plan_id:
             filters.append(ExecutionPlanItemDoc.plan_id == plan_id)
@@ -243,19 +249,13 @@ class ExecutionPlanService(BaseService):
             *filters,
         ).sort("-updated_at").limit(limit).to_list()
 
-        # 批量获取 plan_title，避免 N+1 查询
         plan_ids = {doc.plan_id for doc in docs}
-        plan_map: Dict[str, str] = {}
-        if plan_ids:
-            plan_docs = await ExecutionPlanDoc.find(
-                ExecutionPlanDoc.plan_id.in_(plan_ids),
-                ExecutionPlanDoc.is_deleted == False,  # noqa: E712
-            ).to_list()
-            plan_map = {p.plan_id: p.title for p in plan_docs}
+        plan_map = await self._batch_load_plan_titles(plan_ids)
 
         results: List[Dict[str, Any]] = []
         for doc in docs:
             try:
+                await self._sync_auto_item_status(doc)
                 doc_dict = await self._item_to_response(doc, _plan_title=plan_map.get(doc.plan_id, ""))
                 results.append(doc_dict)
             except Exception as exc:
@@ -349,16 +349,17 @@ class ExecutionPlanService(BaseService):
             ExecutionPlanItemDoc.archived_at != None,  # noqa: E711
             ExecutionPlanItemDoc.is_deleted == False,  # noqa: E712
         ).sort("-archived_at").to_list()
-        # 批量获取 plan_title，避免 N+1 查询
         plan_ids = {doc.plan_id for doc in docs}
-        plan_map: Dict[str, str] = {}
-        if plan_ids:
-            plan_docs = await ExecutionPlanDoc.find(
-                ExecutionPlanDoc.plan_id.in_(plan_ids),
-                ExecutionPlanDoc.is_deleted == False,  # noqa: E712
-            ).to_list()
-            plan_map = {p.plan_id: p.title for p in plan_docs}
-        return [await self._item_to_response(doc, _plan_title=plan_map.get(doc.plan_id, "")) for doc in docs]
+        plan_map = await self._batch_load_plan_titles(plan_ids)
+        results: List[Dict[str, Any]] = []
+        for doc in docs:
+            try:
+                await self._sync_auto_item_status(doc)
+                results.append(await self._item_to_response(doc, _plan_title=plan_map.get(doc.plan_id, "")))
+            except Exception as exc:
+                logger.warning(f"跳过异常计划条目 {doc.item_id}: {exc}")
+                continue
+        return results
 
     async def archive_item(self, item_id: str, actor_id: str) -> None:
         item = await self._get_item_by_id_or_raise(item_id)
@@ -392,6 +393,7 @@ class ExecutionPlanService(BaseService):
             if existing:
                 existing.is_deleted = True
                 await existing.save()
+                logger.debug(f"[RESULT] replace previous result_id={item.result_id}")
         result_doc = ManualExecutionResultDoc(
             result_id=result_id,
             item_id=item.item_id,
@@ -412,9 +414,10 @@ class ExecutionPlanService(BaseService):
         )
         await result_doc.insert()
         item.result_id = result_id
-        item.status = "done" if request.passed else "fail"
+        item.status = PlanItemStatus.DONE.value if request.passed else PlanItemStatus.FAIL.value
         await item.save()
         await self._recalculate_plan_progress(item.plan_id)
+        logger.info(f"[RESULT] submit_result item={item_id} result={result_id} passed={request.passed} actor={actor_id}")
         return self._result_to_dict(result_doc)
 
     async def get_result(self, item_id: str) -> Dict[str, Any]:
@@ -520,10 +523,12 @@ class ExecutionPlanService(BaseService):
             actor_id=actor_id,
             sequence_service=sequence_service,
         )
-        item.execution_task_id = data.get("task_id")
-        item.status = "running"
+        task_id = data.get("task_id", "?")
+        item.execution_task_id = task_id
+        item.status = PlanItemStatus.RUNNING.value
         await item.save()
         await self._recalculate_plan_progress(item.plan_id)
+        logger.info(f"[DISPATCH] item={item_id} task={task_id} actor={actor_id}")
         return data
 
     async def batch_dispatch(
@@ -560,10 +565,12 @@ class ExecutionPlanService(BaseService):
             ExecutionPlanItemDoc.plan_id == plan_id,
             ExecutionPlanItemDoc.is_deleted == False,
         ).sort("+order_no").to_list()
+        plan_title = await self._get_plan_title(plan_id)
         result = []
         for doc in docs:
             try:
-                result.append(await self._item_to_response(doc))
+                await self._sync_auto_item_status(doc)
+                result.append(await self._item_to_response(doc, _plan_title=plan_title))
             except Exception as e:
                 logger.error(f"_item_to_response 失败 (item_id={doc.item_id}): {e}", exc_info=True)
                 raise
@@ -574,13 +581,8 @@ class ExecutionPlanService(BaseService):
         item: ExecutionPlanItemDoc,
         _plan_title: Optional[str] = None,
     ) -> Dict[str, Any]:
-        await self._sync_auto_item_status(item)
         if _plan_title is None:
-            plan_doc = await ExecutionPlanDoc.find_one(
-                ExecutionPlanDoc.plan_id == item.plan_id,
-                ExecutionPlanDoc.is_deleted == False,
-            )
-            _plan_title = plan_doc.title if plan_doc else ""
+            _plan_title = await self._get_plan_title(item.plan_id)
         result_payload = None
         if item.result_id:
             result_doc = await ManualExecutionResultDoc.find_one(
@@ -609,7 +611,7 @@ class ExecutionPlanService(BaseService):
     async def _sync_auto_item_status(self, item: ExecutionPlanItemDoc) -> None:
         if item.ref_type != "auto" or not item.execution_task_id:
             return
-        if item.status in {"done", "fail"} and item.result_id:
+        if item.status in {PlanItemStatus.DONE.value, PlanItemStatus.FAIL.value} and item.result_id:
             return
         task_doc = await ExecutionTaskDoc.find_one(
             ExecutionTaskDoc.task_id == item.execution_task_id,
@@ -619,9 +621,12 @@ class ExecutionPlanService(BaseService):
             return
         mapped = _TASK_STATUS_MAP.get(task_doc.overall_status)
         if mapped and mapped != item.status:
+            old_status = item.status
             item.status = mapped
             await item.save()
             await self._recalculate_plan_progress(item.plan_id)
+            logger.debug(f"[SYNC] item={item.item_id} task={item.execution_task_id} "
+                        f"status {old_status} -> {mapped} (task_overall={task_doc.overall_status})")
 
     async def _recalculate_plan_progress(self, plan_id: str) -> None:
         plan_doc = await self._get_plan_or_raise(plan_id)
@@ -707,6 +712,22 @@ class ExecutionPlanService(BaseService):
         if not doc:
             raise ItemNotFoundError(item_id)
         return doc
+
+    @staticmethod
+    async def _batch_load_plan_titles(plan_ids: set[str]) -> Dict[str, str]:
+        """批量加载 plan_id → plan_title 映射，避免 N+1 查询。"""
+        if not plan_ids:
+            return {}
+        plan_docs = await ExecutionPlanDoc.find(
+            ExecutionPlanDoc.plan_id.in_(plan_ids),
+            ExecutionPlanDoc.is_deleted == False,
+        ).to_list()
+        return {p.plan_id: p.title for p in plan_docs}
+
+    async def _get_plan_title(self, plan_id: str) -> str:
+        """查询单个 plan 的 title。"""
+        plans = await self._batch_load_plan_titles({plan_id})
+        return plans.get(plan_id, "")
 
     @staticmethod
     def _plan_to_dict(doc: ExecutionPlanDoc) -> Dict[str, Any]:

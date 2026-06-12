@@ -9,6 +9,7 @@ from app.modules.test_specs.schemas import (
     AutomationTestCaseResponse,
     CreateAutomationTestCaseRequest,
     ReportAutomationCaseMetadataRequest,
+    UpdateAutoCaseTagsRequest,
 )
 from app.modules.test_specs.service import AutomationTestCaseService
 from app.shared.api.schemas.base import APIResponse
@@ -141,6 +142,25 @@ async def get_automation_test_case_by_manual_case_id(
     """按 dml_manual_case_id 查询最新一条上报记录。"""
     try:
         data = await service.get_automation_test_case_by_manual_case_id(dml_manual_case_id)
+        return APIResponse(data=data)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="automation test case not found")
+
+
+@router.put(
+    "/{auto_case_id}/tags",
+    response_model=APIResponse[AutomationTestCaseResponse],
+    summary="更新自动化用例标签",
+    dependencies=[Depends(require_permission("test_cases:write"))],
+)
+async def update_auto_case_tags(
+    auto_case_id: str,
+    request: UpdateAutoCaseTagsRequest,
+    service: AutomationTestCaseServiceDep,
+):
+    """更新自动化测试用例的标签（全量替换）。"""
+    try:
+        data = await service.update_tags(auto_case_id, request.tags)
         return APIResponse(data=data)
     except KeyError:
         raise HTTPException(status_code=404, detail="automation test case not found")

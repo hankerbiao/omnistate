@@ -382,6 +382,8 @@ export interface ListTestCasesParams extends PaginationParams {
   is_active?: boolean;
   lab_id?: string;
   catalog_prefix?: string;
+  tags?: string;
+  missing_fields?: string;
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -1197,4 +1199,31 @@ export interface CollectionAnalysisResult {
   redundancy: RedundancyAnalysis;
   coverage: CoverageAnalysis;
   recommendations: string[];
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  用例治理（Case Governance）
+// ═══════════════════════════════════════════════════════════════════════
+
+export interface GovernanceStats {
+  total_manual: number;
+  total_auto: number;
+  missing_lab: number;
+  missing_catalog: number;
+  missing_tags: number;
+  unlinked_auto: number;
+}
+
+export interface BatchUpdateCasesRequest {
+  case_ids: string[];
+  lab_id?: string;
+  catalog_path?: string[];
+  tags_add?: string[];
+  tags_remove?: string[];
+}
+
+export interface BatchUpdateResult {
+  updated_count: number;
+  failed_count: number;
+  failures: { case_id: string; reason: string }[];
 }

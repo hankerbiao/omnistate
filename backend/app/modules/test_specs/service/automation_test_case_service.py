@@ -91,6 +91,18 @@ class AutomationTestCaseService(BaseService):
         doc.is_deleted = True
         await doc.save()
 
+    async def update_tags(self, auto_case_id: str, tags: List[str]) -> Dict[str, Any]:
+        """更新自动化用例标签（全量替换）。"""
+        doc = await AutomationTestCaseDoc.find_one(
+            AutomationTestCaseDoc.auto_case_id == auto_case_id,
+            {"is_deleted": False},
+        )
+        if not doc:
+            raise KeyError("automation test case not found")
+        doc.tags = tags
+        await doc.save()
+        return self._doc_to_dict(doc)
+
     async def report_automation_test_case_metadata(
         self,
         payload: Dict[str, Any],
