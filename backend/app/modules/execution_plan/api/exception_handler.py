@@ -4,8 +4,6 @@
 避免每个 handler 重复 try/except。"""
 from __future__ import annotations
 
-from typing import Any, Dict
-
 from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
 
@@ -35,7 +33,7 @@ async def _execution_plan_exception_handler(request: Request, exc: Exception) ->
 
     return JSONResponse(
         status_code=status_code,
-        content={"code": status_code, "message": detail, "data": None} as Dict[str, Any],
+        content={"code": status_code, "message": detail, "data": None},
     )
 
 

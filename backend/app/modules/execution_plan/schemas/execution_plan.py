@@ -47,22 +47,6 @@ class UpdatePlanRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class PlanListItem(BaseModel):
-    plan_id: str
-    title: str
-    description: str = ""
-    status: str
-    start_date: Optional[str] = None
-    end_date: Optional[str] = None
-    trigger_at: Optional[str] = None
-    created_by: str
-    item_count: int = 0
-    done_count: int = 0
-    progress_percent: int = 0
-    created_at: datetime
-    updated_at: datetime
-
-
 class PlanItemInput(BaseModel):
     ref_type: str = Field(..., description="manual|auto")
     case_id: str = Field(..., description="manual: case_id; auto: auto_case_id")
@@ -88,38 +72,8 @@ class UpdatePlanItemRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class PlanItemResponse(BaseModel):
-    """对齐前端 PlanTask。"""
-
-    item_id: str
-    plan_id: str
-    plan_title: str = ""
-    case_id: str
-    case_title: str = ""
-    ref_type: str
-    component: str = ""
-    priority: str = ""
-    assignee_id: Optional[str] = None
-    status: str
-    order_no: int = 0
-    execution_task_id: Optional[str] = None
-    result: Optional[PlanTaskResultPayload] = None
-
-
-class PlanDetailResponse(PlanListItem):
-    items: List[PlanItemResponse] = Field(default_factory=list)
-
-
 class SubmitManualResultRequest(PlanTaskResultPayload):
     model_config = ConfigDict(extra="forbid")
-
-
-class ManualResultResponse(PlanTaskResultPayload):
-    result_id: str
-    item_id: str
-    plan_id: str
-    case_id: str
-    executed_by: str
 
 
 class PlanItemDispatchRequest(BaseModel):
