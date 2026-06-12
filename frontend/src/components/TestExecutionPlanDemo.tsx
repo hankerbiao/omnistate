@@ -274,7 +274,7 @@ export default function TestExecutionPlanDemo() {
   }, []);
 
   // 添加已选用例到编辑列表（立即生效，无需等待"保存更改"）
-  const handleAddSelectedCases = useCallback(() => {
+  const handleAddSelectedCases = useCallback((assigneeId: string) => {
     setEditingItems(prev => {
       const existingIds = new Set(prev.map(i => i.case_id));
       const newItems = selectedAddCaseIds
@@ -288,7 +288,7 @@ export default function TestExecutionPlanDemo() {
             ref_type: tc?.type === 'auto' ? 'auto' : 'manual',
             component: '',
             priority: tc?.priority || 'P3',
-            assignee_id: null,
+            assignee_id: assigneeId || null,
             status: 'pending',
             order_no: prev.length + i + 1,
           };
@@ -522,6 +522,7 @@ export default function TestExecutionPlanDemo() {
           onClose={() => setShowAddCases(false)}
           onConfirm={handleAddSelectedCases}
           cases={Array.from(caseMap.values()).map((tc: any) => ({ id: tc.id, title: tc.title, type: tc.type || 'manual', priority: tc.priority || 'P3' }))}
+          users={users}
         />
       )}
       {showWizard && (
@@ -967,14 +968,16 @@ function DataTable({ items, isEditing, onRemoveItem, users, onViewResult }: {
 //  AddCasesModal — 编辑模式下添加用例
 // ═══════════════════════════════════════════════════════════════════
 
-function AddCasesModal({ editingItems, selectedAddCaseIds, onToggle, onClose, onConfirm, cases }: {
+function AddCasesModal({ editingItems, selectedAddCaseIds, onToggle, onClose, onConfirm, cases, users }: {
   editingItems: PlanItemSummary[];
   selectedAddCaseIds: string[];
   onToggle: (cid: string) => void;
   onClose: () => void;
-  onConfirm: () => void;
+  onConfirm: (assigneeId: string) => void;
   cases: { id: string; title: string; type: string; priority: string }[];
+  users: UserResponse[];
 }) {
+  const [assigneeId, setAssigneeId] = useState('');
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000 }}>
       <div onClick={e => e.stopPropagation()} style={{
@@ -987,8 +990,16 @@ function AddCasesModal({ editingItems, selectedAddCaseIds, onToggle, onClose, on
           <button onClick={onClose} style={{ fontSize: 20, color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer' }}>x</button>
         </div>
         <div style={{ flex: 1, overflowY: 'auto', padding: '10px 18px' }}>
-          <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 8 }}>
-            已选 {selectedAddCaseIds.length} 个
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+            <span style={{ fontSize: 11, color: 'var(--text-tertiary)', flexShrink: 0 }}>执行人</span>
+            <select className="form-input form-select" value={assigneeId} onChange={e => setAssigneeId(e.target.value)}
+              style={{ width: 160, fontSize: 11 }}>
+              <option value="">不指定</option>
+              {users.map(u => <option key={u.user_id} value={u.user_id}>{u.username}</option>)}
+            </select>
+            <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+              已选 {selectedAddCaseIds.length} 个
+            </span>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
             {cases.map(tc => {
@@ -1017,7 +1028,7 @@ function AddCasesModal({ editingItems, selectedAddCaseIds, onToggle, onClose, on
         </div>
         <div style={{ padding: '10px 18px', borderTop: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
           <button className="btn btn--ghost btn--sm" onClick={onClose} style={{ fontSize: 12 }}>取消</button>
-          <button className="btn btn--primary btn--sm" onClick={onConfirm}
+          <button className="btn btn--primary btn--sm" onClick={() => onConfirm(assigneeId)}
             disabled={selectedAddCaseIds.length === 0} style={{ fontSize: 12 }}>
             添加 {selectedAddCaseIds.length > 0 ? `${selectedAddCaseIds.length} 个` : ''}
           </button>
