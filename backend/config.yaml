@@ -1,149 +1,84 @@
-# =============================================================================
-# dmlv4 后端服务配置
-# =============================================================================
-# 所有服务配置集中在此文件中，方便统一管理和修改
-# 注意：敏感信息（如密码、密钥）请根据实际情况修改
-
-# =============================================================================
-# 应用基础配置
-# =============================================================================
 app:
-  host: "0.0.0.0"
+  host: 0.0.0.0
   port: 8000
   cors_origins:
-    - "*"
-  dev_user_id: "dev_admin"  # 免认证时使用的默认用户 ID（需在数据库中存在）
-
-# =============================================================================
-# MongoDB 配置
-# =============================================================================
+  - '*'
+  dev_user_id: dev_admin
 mongodb:
-  uri: "mongodb://10.17.154.252:27019?replicaSet=rs0"
-  db_name: "workflow_db2"
-
-# =============================================================================
-# RabbitMQ 配置
-# =============================================================================
+  uri: mongodb://10.17.154.252:27019?replicaSet=rs0
+  db_name: workflow_db2
 rabbitmq:
-  # 连接参数
-  host: "10.32.12.28"
+  host: 10.32.12.28
   port: 5672
-  username: "admin"
-  password: "admin@123+"
-  virtual_host: "/"
+  username: admin
+  password: admin@123+
+  virtual_host: /
   heartbeat: 60
   blocked_connection_timeout: 30
   connection_attempts: 3
   retry_delay: 2.0
   ssl_enabled: false
-
-  # 任务下发队列（生产者：backend -> agent）
-  task_queue: "dml_task_queue"
-  task_exchange: ""
-  task_routing_key: "dml_task_queue"
-
-  # 消费者预取数量
+  task_queue: dml_task_queue
+  task_exchange: ''
+  task_routing_key: dml_task_queue
   prefetch_count: 10
-
-# =============================================================================
-# Kafka 配置
-# =============================================================================
 kafka:
   bootstrap_servers:
-    - "10.17.154.252:9092"
-  client_id: "dmlv4-shard"
-
-  # Topic 配置
-  result_topic: "dmlv4.results"
-  dead_letter_topic: "dmlv4.deadletter"
-  test_events_topic: "dml-test-event"
-
-  # Consumer Group 配置
-  execution_result_group_id: "dmlv4-execution-result-consumers"
-  test_events_group_id: "dmlv4-test-events-consumers"
-
-  # Producer 选项
+  - 10.17.154.252:9092
+  client_id: dmlv4-shard
+  result_topic: dmlv4.results
+  dead_letter_topic: dmlv4.deadletter
+  test_events_topic: dml-test-event
+  execution_result_group_id: dmlv4-execution-result-consumers
+  test_events_group_id: dmlv4-test-events-consumers
   producer_options:
-    acks: "all"
+    acks: all
     retries: 3
     batch_size: 16384
     linger_ms: 10
     buffer_memory: 33554432
-
-  # Consumer 选项
   consumer_options:
-    auto_offset_reset: "earliest"
+    auto_offset_reset: earliest
     enable_auto_commit: true
     session_timeout_ms: 30000
     heartbeat_interval_ms: 3000
     max_poll_records: 100
     consumer_timeout_ms: 1000
-
-# =============================================================================
-# MinIO 配置（对象存储）
-# =============================================================================
 minio:
-  endpoint: "10.17.151.170:9000"
-  access_key: "admin"
-  secret_key: "kk123123"
-  bucket: "attachments"
+  endpoint: 10.17.151.170:9000
+  access_key: admin
+  secret_key: kk123123
+  bucket: attachments
   secure: false
-  presigned_url_expires_seconds: 604800  # 7天
-
-# =============================================================================
-# JWT 认证配置
-# =============================================================================
+  presigned_url_expires_seconds: 604800
 jwt:
-  secret_key: "fa5922eb48724ba4a4ff3ea16872f0c1aeb294b2c2322fb942fc7148c23fe5dc"
-  algorithm: "HS256"
-  issuer: "tcm-backend"
-  audience: "tcm-frontend"
-
-# =============================================================================
-# 任务执行配置
-# =============================================================================
+  secret_key: fa5922eb48724ba4a4ff3ea16872f0c1aeb294b2c2322fb942fc7148c23fe5dc
+  algorithm: HS256
+  issuer: tcm-backend
+  audience: tcm-frontend
 execution:
   scheduler_interval_sec: 60
-  default_repo_url: "http://10.17.55.151:6600/litaiqing/redfish_case_repo.git"
-  default_branch: "master"
-
-  # Kafka Worker 配置
-  kafka_worker_agent_id: "execution-kafka-worker"
+  default_repo_url: http://10.17.55.151:6600/litaiqing/redfish_case_repo.git
+  kafka_worker_agent_id: execution-kafka-worker
   kafka_worker_heartbeat_ttl_sec: 30
   kafka_worker_heartbeat_interval_sec: 10
-
-# =============================================================================
-# TMMS 外部系统配置
-# =============================================================================
 tmms:
   api_timeout_sec: 30
-  api_token: ""
-
-# =============================================================================
-# 终端配置
-# =============================================================================
+  api_token: ''
 terminal:
-  shell: "/bin/zsh"
-  workdir: ""
+  shell: /bin/zsh
+  workdir: ''
   idle_timeout_sec: 1800
   max_sessions_per_user: 1
-
-# =============================================================================
-# 日志配置
-# =============================================================================
 logging:
-  log_dir: "logs"
+  log_dir: logs
   retention:
     info_days: 7
     error_days: 30
     debug_days: 3
-
-  # ====== 结构化日志配置（新增） ======
-  json_format: true                  # 文件日志使用 JSON Lines 格式
-  enable_compress: true              # 轮转日志文件自动 .gz 压缩
-  trace_enabled: true                # 启用全链路追踪
-  slow_query_threshold_ms: 200       # 慢查询阈值（毫秒，预留字段）
-
-  # 按模块路径独立控制日志级别（可选）
+  json_format: true
+  enable_compress: true
+  trace_enabled: true
+  slow_query_threshold_ms: 200
   module_levels:
-    app.modules.execution: "DEBUG"
+    app.modules.execution: DEBUG

@@ -66,10 +66,8 @@ const STATUS_META: Record<ItemStatus, { label: string; color: string; bg: string
 };
 
 const PLAN_STATUS_META: Record<string, { label: string; color: string }> = {
-  draft:    { label: '草稿',   color: '#58a6ff' },
   active:   { label: '进行中', color: '#3fb950' },
   done:     { label: '已完成', color: '#8b949e' },
-  archived: { label: '已归档', color: '#6e7681' },
 };
 
 const PRIORITY_COLORS: Record<string, string> = {
@@ -109,6 +107,11 @@ export default function TestExecutionPlanDemo() {
 
   // ── Users (from real API) ──
   const [users, setUsers] = useState<UserResponse[]>([]);
+
+  // ── Overview ──
+  const [showOverview, setShowOverview] = useState(false);
+  const [overviewData, setOverviewData] = useState<Record<string, any> | null>(null);
+  const [overviewLoading, setOverviewLoading] = useState(false);
 
   // ── Test cases & collections (from real API) ──
   const [testCases, setTestCases] = useState<Record<string, { case_id: string; title: string; type: string; priority: string }>>({});
@@ -163,6 +166,23 @@ export default function TestExecutionPlanDemo() {
   }, []);
 
   useEffect(() => { void fetchPlans(); }, [fetchPlans]);
+
+  // ── Fetch overview data ──
+  const fetchOverview = useCallback(async () => {
+    setOverviewLoading(true);
+    try {
+      const res = await api.getPlanOverview();
+      setOverviewData((res.data as Record<string, any>) || null);
+    } catch {
+      setOverviewData(null);
+    } finally {
+      setOverviewLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (showOverview) fetchOverview();
+  }, [showOverview, fetchOverview]);
 
   // ── Fetch users, test cases, and collections ──
   useEffect(() => {
@@ -252,9 +272,18 @@ export default function TestExecutionPlanDemo() {
         .map(e => ({
           ref_type: e.ref_type === 'auto' ? 'auto' as const : 'manual' as const,
           case_id: e.case_id,
+          assignee_id: e.assignee_id || undefined,
         }));
       if (newItems.length > 0) {
         await api.addPlanItems(activePlanId, { items: newItems });
+      }
+      // 保存已存在条目的执行人变更
+      const changedItems = editingItems.filter(e => {
+        const orig = activePlanItems.find(o => o.item_id === e.item_id);
+        return orig && orig.assignee_id !== e.assignee_id;
+      });
+      for (const item of changedItems) {
+        await api.updatePlanItem(activePlanId, item.item_id, { assignee_id: item.assignee_id || '' });
       }
       setEditingPlanId('');
       setSelectedAddCaseIds([]);
@@ -299,6 +328,13 @@ export default function TestExecutionPlanDemo() {
     setSelectedAddCaseIds([]);
   }, [selectedAddCaseIds, caseMap]);
 
+  // 编辑模式下更新条目的执行人（本地状态，保存持久化）
+  const handleUpdateItemAssignee = useCallback((itemId: string, assigneeId: string) => {
+    setEditingItems(prev => prev.map(item =>
+      item.item_id === itemId ? { ...item, assignee_id: assigneeId || null } : item
+    ));
+  }, []);
+
   const openArchive = useCallback(() => {
     setShowArchive(true);
     setArchiveLoading(true);
@@ -315,14 +351,90 @@ export default function TestExecutionPlanDemo() {
     } catch { /* ignore */ }
   }, []);
 
-  const handleViewResult = useCallback(async (item: PlanItemSummary) => {
-    if (!item.execution_task_id) return;
-    setResultModal({ item, taskData: null, loading: true });
+  // 批量指派执行人
+  const handleBatchAssign = useCallback(async (itemIds: string[], assigneeId: string) => {
+    if (!activePlanId || itemIds.length === 0) return;
     try {
-      const res = await api.getTaskStatus(item.execution_task_id);
-      setResultModal(prev => prev ? { ...prev, taskData: res.data, loading: false } : null);
-    } catch {
-      setResultModal(prev => prev ? { ...prev, taskData: { error: true }, loading: false } : null);
+      await api.batchUpdateAssignee(activePlanId, { item_ids: itemIds, assignee_id: assigneeId });
+      // 更新本地状态
+      const updateItems = (items: PlanItemSummary[]) => items.map(item =>
+        itemIds.includes(item.item_id) ? { ...item, assignee_id: assigneeId } : item
+      );
+      setEditingItems(updateItems);
+      setActivePlanItems(updateItems);
+    } catch (err) {
+      console.error('批量指派失败:', err);
+    }
+  }, [activePlanId]);
+
+  // 终止运行任务：删除执行任务 + 重置条目为待执行状态（可重新下发）
+  const handleTerminateItem = useCallback(async (planId: string, itemId: string, executionTaskId?: string) => {
+    try {
+      const executionTaskIdToUse = executionTaskId
+        || [...editingItems, ...activePlanItems].find(i => i.item_id === itemId)?.execution_task_id;
+      if (executionTaskIdToUse) {
+        try { await api.deleteTask(executionTaskIdToUse); } catch { /* ignore */ }
+      }
+      // 重置为待执行状态，不清除 assignee，可重新下发
+      await api.updatePlanItem(planId, itemId, { status: 'pending' });
+      if (showOverview) fetchOverview();
+      if (activePlanId) {
+        const res = await api.getPlanDetail(activePlanId);
+        const d = res.data as Record<string, unknown> | undefined;
+        setActivePlanItems((d?.items as PlanItemSummary[]) || []);
+      }
+    } catch (err) {
+      console.error('终止失败:', err);
+    }
+  }, [activePlanId, showOverview, fetchOverview, activePlanItems, editingItems]);
+
+  // 删除计划条目（同时清理关联的执行任务）
+  const handleDeleteItem = useCallback(async (planId: string, itemId: string) => {
+    try {
+      const item = [...editingItems, ...activePlanItems].find(i => i.item_id === itemId);
+      if (item?.execution_task_id) {
+        try { await api.deleteTask(item.execution_task_id); } catch { /* ignore */ }
+      }
+      await api.deletePlanItem(planId, itemId);
+      if (showOverview) fetchOverview();
+      if (activePlanId) {
+        const res = await api.getPlanDetail(activePlanId);
+        const d = res.data as Record<string, unknown> | undefined;
+        setActivePlanItems((d?.items as PlanItemSummary[]) || []);
+      }
+    } catch (err) {
+      console.error('删除失败:', err);
+    }
+  }, [activePlanId, showOverview, fetchOverview, activePlanItems, editingItems]);
+
+  // 删除整个执行计划
+  const handleDeletePlan = useCallback(async (planId: string) => {
+    if (!window.confirm('确定要删除该执行计划及其所有条目？此操作不可撤销。')) return;
+    try {
+      await api.deletePlan(planId);
+      setActivePlanId(null);
+      setActivePlan(null);
+      setActivePlanItems([]);
+      fetchOverview();
+    } catch (err) {
+      console.error('删除计划失败:', err);
+    }
+  }, [fetchOverview]);
+
+  const handleViewResult = useCallback(async (item: PlanItemSummary) => {
+    if (!item.execution_task_id && !item.result) return;
+    if (item.execution_task_id) {
+      // 自动化任务 — 从 task 状态获取
+      setResultModal({ item, taskData: null, loading: true });
+      try {
+        const res = await api.getTaskStatus(item.execution_task_id);
+        setResultModal(prev => prev ? { ...prev, taskData: res.data, loading: false } : null);
+      } catch {
+        setResultModal(prev => prev ? { ...prev, taskData: { error: true }, loading: false } : null);
+      }
+    } else {
+      // 手工用例 — 直接展示 item.result
+      setResultModal({ item, taskData: { manualResult: item.result }, loading: false });
     }
   }, []);
 
@@ -445,7 +557,6 @@ export default function TestExecutionPlanDemo() {
         <div style={{ display: 'flex', gap: 4 }}>
           {[
             { key: '', label: '全部' },
-            { key: 'draft', label: '草稿' },
             { key: 'active', label: '进行中' },
             { key: 'done', label: '已完成' },
           ].map(f => (
@@ -460,6 +571,19 @@ export default function TestExecutionPlanDemo() {
             </button>
           ))}
         </div>
+        <div style={{ flex: 1 }} />
+        <button
+          onClick={() => setShowOverview(v => !v)}
+          style={{
+            padding: '3px 12px', fontSize: 12, border: 'none', borderRadius: 6, cursor: 'pointer',
+            background: showOverview ? 'var(--accent-primary)' : 'var(--surface-secondary)',
+            color: showOverview ? '#fff' : 'var(--text-secondary)',
+            fontWeight: showOverview ? 600 : 400,
+            marginRight: 8,
+          }}
+        >
+          {showOverview ? '计划列表' : '运行总览'}
+        </button>
         {error && (
           <div style={{ marginLeft: 'auto', fontSize: 12, color: '#f85149', display: 'flex', alignItems: 'center', gap: 6 }}>
             <span>{error}</span>
@@ -468,10 +592,25 @@ export default function TestExecutionPlanDemo() {
         )}
       </div>
 
-      {/* ── Main split: sidebar + detail ── */}
+      {/* ── Main split: sidebar + detail, or overview ── */}
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-        {/* ── Left: Plan list sidebar ── */}
-        <PlanSidebar
+        {showOverview ? (
+          <OverviewView
+            data={overviewData}
+            loading={overviewLoading}
+            onRefresh={fetchOverview}
+            onSelectPlan={(planId) => {
+              setShowOverview(false);
+              setActivePlanId(planId);
+            }}
+            users={users}
+            onViewResult={handleViewResult}
+            onDeleteItem={handleTerminateItem}  // 概览中删除 = 终止（删执行任务，保留用例）
+          />
+        ) : (
+          <>
+            {/* ── Left: Plan list sidebar ── */}
+            <PlanSidebar
           plans={filteredPlans}
           activePlanId={activePlanId}
           loading={loading}
@@ -508,9 +647,16 @@ export default function TestExecutionPlanDemo() {
               onShowAddCases={() => setShowAddCases(true)}
               users={users}
               onViewResult={handleViewResult}
+              onBatchAssign={handleBatchAssign}
+              onTerminateItem={handleTerminateItem}
+              onDeleteItem={handleDeleteItem}
+              onDeletePlan={handleDeletePlan}
+              onUpdateItemAssignee={handleUpdateItemAssignee}
             />
           )}
         </div>
+          </>
+        )}
       </div>
 
       {/* ── Modals ── */}
@@ -645,7 +791,7 @@ function PlanSidebar({ plans, activePlanId, loading, searchQuery, onSelect }: {
 //  PlanDetailView — 右侧计划详情 + 视图切换
 // ═══════════════════════════════════════════════════════════════════
 
-function PlanDetailView({ plan, items, viewMode, onViewModeChange, isEditing, onStartEditing, onCancelEditing, onSaveEditing, onRemoveItem, saving, onShowAddCases, users, onViewResult }: {
+function PlanDetailView({ plan, items, viewMode, onViewModeChange, isEditing, onStartEditing, onCancelEditing, onSaveEditing, onRemoveItem, saving, onShowAddCases, users, onViewResult, onBatchAssign, onTerminateItem, onDeleteItem, onDeletePlan, onUpdateItemAssignee }: {
   plan: PlanSummary;
   items: PlanItemSummary[];
   viewMode: ViewMode;
@@ -659,6 +805,10 @@ function PlanDetailView({ plan, items, viewMode, onViewModeChange, isEditing, on
   onShowAddCases: () => void;
   users: UserResponse[];
   onViewResult?: (item: PlanItemSummary) => void;
+  onBatchAssign?: (itemIds: string[], assigneeId: string) => void;
+  onTerminateItem?: (planId: string, itemId: string) => void;
+  onDeleteItem?: (planId: string, itemId: string) => void;
+  onUpdateItemAssignee?: (itemId: string, assigneeId: string) => void;
 }) {
   const meta = PLAN_STATUS_META[plan.status] || { label: plan.status, color: '#8b949e' };
 
@@ -693,7 +843,10 @@ function PlanDetailView({ plan, items, viewMode, onViewModeChange, isEditing, on
             </button>
           </div>
         ) : (
-          <button className="btn btn--ghost btn--sm" onClick={onStartEditing} style={{ fontSize: 12 }}>编辑</button>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button className="btn btn--ghost btn--sm" onClick={onStartEditing} style={{ fontSize: 12 }}>编辑</button>
+            <button className="btn btn--ghost btn--sm" onClick={() => onDeletePlan(plan.plan_id)} style={{ fontSize: 12, color: '#f85149' }}>删除</button>
+          </div>
         )}
       </div>
 
@@ -731,11 +884,11 @@ function PlanDetailView({ plan, items, viewMode, onViewModeChange, isEditing, on
             )}
           </div>
         ) : viewMode === 'statusBoard' ? (
-          <StatusBoard items={items} isEditing={isEditing} onRemoveItem={onRemoveItem} users={users} onViewResult={onViewResult} />
+          <StatusBoard items={items} isEditing={isEditing} onRemoveItem={onRemoveItem} users={users} onViewResult={onViewResult} onTerminateItem={onTerminateItem} onDeleteItem={onDeleteItem} onUpdateItemAssignee={onUpdateItemAssignee} />
         ) : viewMode === 'componentView' ? (
           <ComponentBoard items={items} isEditing={isEditing} onRemoveItem={onRemoveItem} users={users} onViewResult={onViewResult} />
         ) : (
-          <DataTable items={items} isEditing={isEditing} onRemoveItem={onRemoveItem} users={users} onViewResult={onViewResult} />
+          <DataTable items={items} isEditing={isEditing} onRemoveItem={onRemoveItem} users={users} onViewResult={onViewResult} onBatchAssign={onBatchAssign} onTerminateItem={onTerminateItem} onDeleteItem={onDeleteItem} onUpdateItemAssignee={onUpdateItemAssignee} />
         )}
       </div>
     </div>
@@ -746,12 +899,15 @@ function PlanDetailView({ plan, items, viewMode, onViewModeChange, isEditing, on
 //  StatusBoard — 按执行状态分栏看板
 // ═══════════════════════════════════════════════════════════════════
 
-function StatusBoard({ items, isEditing, onRemoveItem, users, onViewResult }: {
+function StatusBoard({ items, isEditing, onRemoveItem, users, onViewResult, onTerminateItem, onDeleteItem, onUpdateItemAssignee }: {
   items: PlanItemSummary[];
   isEditing?: boolean;
   onRemoveItem?: (itemId: string) => void;
   users: UserResponse[];
   onViewResult?: (item: PlanItemSummary) => void;
+  onTerminateItem?: (planId: string, itemId: string) => void;
+  onDeleteItem?: (planId: string, itemId: string) => void;
+  onUpdateItemAssignee?: (itemId: string, assigneeId: string) => void;
 }) {
   const groups = useMemo(() => {
     const map = new Map<string, PlanItemSummary[]>();
@@ -783,7 +939,7 @@ function StatusBoard({ items, isEditing, onRemoveItem, users, onViewResult }: {
                 <div style={{ padding: 12, textAlign: 'center', fontSize: 11, color: 'var(--text-tertiary)', border: '1px dashed var(--border-subtle)', borderRadius: 8 }}>-</div>
               )}
               {caseItems.map(item => (
-                <StatusCard key={item.item_id} item={item} isEditing={isEditing} onRemoveItem={onRemoveItem} users={users} onViewResult={onViewResult} />
+                <StatusCard key={item.item_id} item={item} isEditing={isEditing} onRemoveItem={onRemoveItem} users={users} onViewResult={onViewResult} onTerminateItem={onTerminateItem} onDeleteItem={onDeleteItem} onUpdateItemAssignee={onUpdateItemAssignee} />
               ))}
             </div>
           </div>
@@ -793,15 +949,19 @@ function StatusBoard({ items, isEditing, onRemoveItem, users, onViewResult }: {
   );
 }
 
-function StatusCard({ item, isEditing, onRemoveItem, users, onViewResult }: {
+function StatusCard({ item, isEditing, onRemoveItem, users, onViewResult, onTerminateItem, onDeleteItem, onUpdateItemAssignee }: {
   item: PlanItemSummary;
   isEditing?: boolean;
   onRemoveItem?: (itemId: string) => void;
   users: UserResponse[];
   onViewResult?: (item: PlanItemSummary) => void;
+  onTerminateItem?: (planId: string, itemId: string) => void;
+  onDeleteItem?: (planId: string, itemId: string) => void;
+  onUpdateItemAssignee?: (itemId: string, assigneeId: string) => void;
 }) {
   const meta = STATUS_META[item.status as ItemStatus] || STATUS_META.pending;
   const isAuto = item.ref_type === 'auto';
+  const [showAssigneePicker, setShowAssigneePicker] = useState(false);
   return (
     <div style={{
       padding: '8px 10px', borderRadius: 6, background: 'var(--surface-primary)',
@@ -824,12 +984,41 @@ function StatusCard({ item, isEditing, onRemoveItem, users, onViewResult }: {
           {isAuto ? 'AUTO' : 'MANUAL'}
         </span>
         <span style={{ fontSize: 9, color: PRIORITY_COLORS[item.priority] || '#8b949e', fontWeight: 600 }}>{item.priority}</span>
-        {item.assignee_id && (
-          <span style={{ fontSize: 9, color: 'var(--text-tertiary)' }}>
-            {users.find(u => u.user_id === item.assignee_id)?.username || item.assignee_id}
+        {isEditing && onUpdateItemAssignee ? (
+          showAssigneePicker ? (
+            <select
+              className="form-input form-select"
+              value={item.assignee_id || ''}
+              onChange={e => { onUpdateItemAssignee(item.item_id, e.target.value); setShowAssigneePicker(false); }}
+              style={{ fontSize: 9, width: 120 }}
+              autoFocus
+            >
+              <option value="">未指派</option>
+              {users.map(u => <option key={u.user_id} value={u.user_id}>{u.username}</option>)}
+            </select>
+          ) : (
+            <span onClick={() => setShowAssigneePicker(true)}
+              style={{ fontSize: 9, color: 'var(--accent-primary)', cursor: 'pointer', textDecoration: 'underline dotted' }}>
+              {item.assignee_id ? (users.find(u => u.user_id === item.assignee_id)?.username || item.assignee_id) : '+ 指派'}
+            </span>
+          )
+        ) : (
+          item.assignee_id && (
+            <span style={{ fontSize: 9, color: 'var(--text-tertiary)' }}>
+              {users.find(u => u.user_id === item.assignee_id)?.username || item.assignee_id}
+            </span>
+          )
+        )}
+        {item.result && (
+          <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3,
+            color: item.result.passed ? '#3fb950' : '#f85149',
+            background: item.result.passed ? 'rgba(63,185,80,0.1)' : 'rgba(248,81,73,0.1)',
+            fontWeight: 600, marginLeft: item.execution_task_id ? 0 : 'auto',
+          }}>
+            {item.result.passed ? '通过' : '失败'}
           </span>
         )}
-        {item.execution_task_id && onViewResult && (
+        {(item.execution_task_id || item.result) && onViewResult && (
           <button type="button" onClick={(e) => { e.stopPropagation(); onViewResult(item); }}
             style={{
               fontSize: 9, padding: '1px 6px', borderRadius: 4, border: '1px solid var(--border-subtle)',
@@ -887,22 +1076,131 @@ function ComponentBoard({ items, isEditing, onRemoveItem, users, onViewResult }:
 }
 
 // ═══════════════════════════════════════════════════════════════════
-//  DataTable — 表格视图
+//  DataTable — 表格视图（支持批量指派执行人）
 // ═══════════════════════════════════════════════════════════════════
 
-function DataTable({ items, isEditing, onRemoveItem, users, onViewResult }: {
+function DataTable({ items, isEditing, onRemoveItem, users, onViewResult, onBatchAssign, onTerminateItem, onDeleteItem, onUpdateItemAssignee }: {
   items: PlanItemSummary[];
   isEditing?: boolean;
   onRemoveItem?: (itemId: string) => void;
   users: UserResponse[];
   onViewResult?: (item: PlanItemSummary) => void;
+  onBatchAssign?: (itemIds: string[], assigneeId: string) => void;
+  onTerminateItem?: (planId: string, itemId: string) => void;
+  onDeleteItem?: (planId: string, itemId: string) => void;
+  onUpdateItemAssignee?: (itemId: string, assigneeId: string) => void;
 }) {
   const compName = (id: string) => id;
+  const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
+  const [batchAssigneeId, setBatchAssigneeId] = useState<string>('');
+
+  // 全选/取消全选
+  const handleSelectAll = () => {
+    if (selectedItemIds.size === items.length) {
+      setSelectedItemIds(new Set());
+    } else {
+      setSelectedItemIds(new Set(items.map(i => i.item_id)));
+    }
+  };
+
+  // 选择单个条目
+  const handleSelectItem = (itemId: string) => {
+    const newSet = new Set(selectedItemIds);
+    if (newSet.has(itemId)) {
+      newSet.delete(itemId);
+    } else {
+      newSet.add(itemId);
+    }
+    setSelectedItemIds(newSet);
+  };
+
+  // 批量指派
+  const handleBatchAssign = () => {
+    if (onBatchAssign && selectedItemIds.size > 0 && batchAssigneeId) {
+      onBatchAssign(Array.from(selectedItemIds), batchAssigneeId);
+      setSelectedItemIds(new Set());
+      setBatchAssigneeId('');
+    }
+  };
+
+  // 清除没有执行人的条目选择
+  const selectUnassigned = () => {
+    const unassignedIds = items.filter(i => !i.assignee_id).map(i => i.item_id);
+    setSelectedItemIds(new Set(unassignedIds));
+  };
+
   return (
     <div style={{ height: '100%', overflow: 'auto' }}>
+      {/* 批量操作栏 */}
+      {isEditing && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 10,
+          padding: '8px 12px', marginBottom: 8,
+          background: 'var(--surface-primary)', borderRadius: 6,
+          border: '1px solid var(--border-subtle)',
+        }}>
+          <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
+            已选 {selectedItemIds.size} 条
+          </span>
+          <button
+            onClick={selectUnassigned}
+            style={{
+              fontSize: 11, padding: '2px 8px', borderRadius: 4,
+              border: '1px solid var(--border-subtle)', background: 'transparent',
+              color: 'var(--text-secondary)', cursor: 'pointer',
+            }}
+          >
+            选中无执行人
+          </button>
+          <select
+            className="form-input form-select"
+            value={batchAssigneeId}
+            onChange={e => setBatchAssigneeId(e.target.value)}
+            style={{ width: 140, fontSize: 11 }}
+          >
+            <option value="">选择执行人</option>
+            {users.map(u => <option key={u.user_id} value={u.user_id}>{u.username}</option>)}
+          </select>
+          <button
+            onClick={handleBatchAssign}
+            disabled={selectedItemIds.size === 0 || !batchAssigneeId}
+            style={{
+              fontSize: 11, padding: '2px 12px', borderRadius: 4,
+              border: 'none', background: selectedItemIds.size > 0 && batchAssigneeId ? 'var(--accent-primary)' : 'var(--surface-tertiary)',
+              color: selectedItemIds.size > 0 && batchAssigneeId ? '#fff' : 'var(--text-tertiary)',
+              cursor: selectedItemIds.size > 0 && batchAssigneeId ? 'pointer' : 'not-allowed',
+            }}
+          >
+            指派
+          </button>
+          {selectedItemIds.size > 0 && (
+            <button
+              onClick={() => setSelectedItemIds(new Set())}
+              style={{
+                fontSize: 11, padding: '2px 8px', borderRadius: 4,
+                border: 'none', background: 'transparent',
+                color: 'var(--text-tertiary)', cursor: 'pointer',
+              }}
+            >
+              清除选择
+            </button>
+          )}
+        </div>
+      )}
+
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
         <thead>
           <tr style={{ background: 'var(--surface-primary)', position: 'sticky', top: 0, zIndex: 1 }}>
+            {isEditing && (
+              <th style={{ padding: '8px 12px', textAlign: 'center', width: 40, borderBottom: '1px solid var(--border-subtle)' }}>
+                <input
+                  type="checkbox"
+                  checked={items.length > 0 && selectedItemIds.size === items.length}
+                  onChange={handleSelectAll}
+                  style={{ cursor: 'pointer' }}
+                />
+              </th>
+            )}
             <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: 'var(--text-secondary)', fontSize: 11, borderBottom: '1px solid var(--border-subtle)' }}>用例</th>
             <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: 'var(--text-secondary)', fontSize: 11, borderBottom: '1px solid var(--border-subtle)' }}>类型</th>
             <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: 'var(--text-secondary)', fontSize: 11, borderBottom: '1px solid var(--border-subtle)' }}>组件</th>
@@ -916,8 +1214,22 @@ function DataTable({ items, isEditing, onRemoveItem, users, onViewResult }: {
         <tbody>
           {items.map(item => {
             const statusMeta = STATUS_META[item.status as ItemStatus] || STATUS_META.pending;
+            const isSelected = selectedItemIds.has(item.item_id);
             return (
-              <tr key={item.item_id} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+              <tr key={item.item_id} style={{
+                borderBottom: '1px solid var(--border-subtle)',
+                background: isSelected ? 'color-mix(in srgb, var(--accent-primary) 5%, transparent)' : 'transparent',
+              }}>
+                {isEditing && (
+                  <td style={{ padding: '7px 12px', textAlign: 'center' }}>
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => handleSelectItem(item.item_id)}
+                      style={{ cursor: 'pointer' }}
+                    />
+                  </td>
+                )}
                 <td style={{ padding: '7px 12px' }}>
                   <div style={{ fontWeight: 500 }}>{item.case_title}</div>
                   <div style={{ fontSize: 10, fontFamily: 'monospace', color: 'var(--text-tertiary)' }}>{item.case_id}</div>
@@ -931,7 +1243,22 @@ function DataTable({ items, isEditing, onRemoveItem, users, onViewResult }: {
                 <td style={{ padding: '7px 12px', color: 'var(--text-secondary)' }}>{compName(item.component)}</td>
                 <td style={{ padding: '7px 12px', color: PRIORITY_COLORS[item.priority] || '#8b949e', fontWeight: 600 }}>{item.priority}</td>
                 <td style={{ padding: '7px 12px', color: 'var(--text-secondary)' }}>
-                  {item.assignee_id ? (users.find(u => u.user_id === item.assignee_id)?.username || item.assignee_id) : '-'}
+                  {isEditing && onUpdateItemAssignee ? (
+                    <select
+                      className="form-input form-select"
+                      value={item.assignee_id || ''}
+                      onChange={e => onUpdateItemAssignee(item.item_id, e.target.value)}
+                      style={{ fontSize: 11, width: 110 }}
+                      onClick={e => e.stopPropagation()}
+                    >
+                      <option value="">未指派</option>
+                      {users.map(u => <option key={u.user_id} value={u.user_id}>{u.username}</option>)}
+                    </select>
+                  ) : item.assignee_id ? (
+                    users.find(u => u.user_id === item.assignee_id)?.username || item.assignee_id
+                  ) : (
+                    <span style={{ color: 'var(--status-warn)', fontSize: 10 }}>未指派</span>
+                  )}
                 </td>
                 <td style={{ padding: '7px 12px' }}>
                   <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 6,
@@ -939,11 +1266,20 @@ function DataTable({ items, isEditing, onRemoveItem, users, onViewResult }: {
                   }}>{statusMeta.label}</span>
                 </td>
                 <td style={{ padding: '7px 12px', textAlign: 'center' }}>
-                  {item.execution_task_id && onViewResult ? (
+                  {item.result && (
+                    <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 3,
+                      color: item.result.passed ? '#3fb950' : '#f85149',
+                      background: item.result.passed ? 'rgba(63,185,80,0.1)' : 'rgba(248,81,73,0.1)',
+                      fontWeight: 600, marginRight: 6,
+                    }}>
+                      {item.result.passed ? '通过' : '失败'}
+                    </span>
+                  )}
+                  {(item.execution_task_id || item.result) && onViewResult ? (
                     <button type="button" onClick={(e) => { e.stopPropagation(); onViewResult(item); }}
                       style={{ fontSize: 10, padding: '2px 10px', borderRadius: 4, border: '1px solid var(--border-subtle)',
                         background: 'var(--surface-secondary)', color: 'var(--accent-primary)', cursor: 'pointer' }}>
-                      结果
+                      详情
                     </button>
                   ) : (
                     <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>-</span>
@@ -977,8 +1313,38 @@ function AddCasesModal({ editingItems, selectedAddCaseIds, onToggle, onClose, on
   cases: { id: string; title: string; type: string; priority: string }[];
   users: UserResponse[];
 }) {
+  const [step, setStep] = useState<1 | 2>(1);
   const [assigneeId, setAssigneeId] = useState('');
   const editingCaseIds = useMemo(() => new Set(editingItems.map(e => e.case_id)), [editingItems]);
+
+  // 进入第二步：指派执行人
+  const goToAssignStep = () => {
+    if (selectedAddCaseIds.length > 0) {
+      setStep(2);
+    }
+  };
+
+  // 返回第一步
+  const goBack = () => {
+    setStep(1);
+  };
+
+  // 确认添加
+  const handleConfirm = () => {
+    if (assigneeId && selectedAddCaseIds.length > 0) {
+      onConfirm(assigneeId);
+      setStep(1);
+      setAssigneeId('');
+    }
+  };
+
+  // 关闭时重置状态
+  const handleClose = () => {
+    setStep(1);
+    setAssigneeId('');
+    onClose();
+  };
+
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000 }}>
       <div onClick={e => e.stopPropagation()} style={{
@@ -986,53 +1352,149 @@ function AddCasesModal({ editingItems, selectedAddCaseIds, onToggle, onClose, on
         maxHeight: '70vh', display: 'flex', flexDirection: 'column',
         boxShadow: '0 25px 60px rgba(0,0,0,0.3)', border: '1px solid var(--border-default)',
       }}>
+        {/* Header */}
         <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ fontSize: 14, fontWeight: 600 }}>添加测试用例</span>
-          <button onClick={onClose} style={{ fontSize: 20, color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer' }}>x</button>
-        </div>
-        <div style={{ flex: 1, overflowY: 'auto', padding: '10px 18px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-            <span style={{ fontSize: 11, color: 'var(--text-tertiary)', flexShrink: 0 }}>执行人</span>
-            <select className="form-input form-select" value={assigneeId} onChange={e => setAssigneeId(e.target.value)}
-              style={{ width: 160, fontSize: 11 }}>
-              <option value="">不指定</option>
-              {users.map(u => <option key={u.user_id} value={u.user_id}>{u.username}</option>)}
-            </select>
-            <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
-              已选 {selectedAddCaseIds.length} 个
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span style={{ fontSize: 14, fontWeight: 600 }}>
+              {step === 1 ? '添加测试用例' : '指派执行人'}
             </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <span style={{
+                fontSize: 10, padding: '2px 8px', borderRadius: 8,
+                background: step === 1 ? 'var(--accent-primary)' : 'rgba(63,185,80,0.12)',
+                color: step === 1 ? '#fff' : '#3fb950',
+                fontWeight: 600,
+              }}>1. 选用例</span>
+              <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>→</span>
+              <span style={{
+                fontSize: 10, padding: '2px 8px', borderRadius: 8,
+                background: step === 2 ? 'var(--accent-primary)' : 'var(--surface-tertiary)',
+                color: step === 2 ? '#fff' : 'var(--text-tertiary)',
+                fontWeight: step === 2 ? 600 : 400,
+              }}>2. 指派</span>
+            </div>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-            {cases.map(tc => {
-              const alreadyInPlan = editingCaseIds.has(tc.id);
-              const selected = selectedAddCaseIds.includes(tc.id);
-              return (
-                <label key={tc.id} onClick={() => { if (!alreadyInPlan) onToggle(tc.id); }}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', borderRadius: 6,
-                    cursor: alreadyInPlan ? 'not-allowed' : 'pointer', opacity: alreadyInPlan ? 0.5 : 1,
-                    border: selected ? '1.5px solid var(--accent-primary)' : '1px solid var(--border-subtle)',
-                    background: selected ? 'color-mix(in srgb, var(--accent-primary) 5%, transparent)' : 'var(--bg-primary)',
-                  }}>
-                  <input type="checkbox" checked={selected || alreadyInPlan} disabled={alreadyInPlan} onChange={() => {}} style={{ accentColor: 'var(--accent-primary)' }} />
-                  <span style={{ fontSize: 10, fontFamily: 'monospace', color: 'var(--text-tertiary)', minWidth: 50 }}>{tc.id}</span>
-                  <span style={{ flex: 1, fontSize: 12 }}>{tc.title}</span>
-                  <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3,
-                    background: tc.type === 'auto' ? 'rgba(57,208,214,0.12)' : 'rgba(163,113,247,0.12)',
-                    color: tc.type === 'auto' ? '#39d0d6' : '#a371f7', fontWeight: 600,
-                  }}>{tc.type === 'auto' ? 'AUTO' : 'MANUAL'}</span>
-                  {alreadyInPlan && <span style={{ fontSize: 9, color: 'var(--text-tertiary)' }}>已在计划中</span>}
-                </label>
-              );
-            })}
-          </div>
+          <button onClick={handleClose} style={{ fontSize: 20, color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer' }}>x</button>
         </div>
+
+        {/* Content */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '10px 18px' }}>
+          {step === 1 ? (
+            // 第一步：选择用例
+            <>
+              <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 12 }}>
+                已选择 <strong style={{ color: 'var(--accent-primary)' }}>{selectedAddCaseIds.length}</strong> 个用例
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                {cases.map(tc => {
+                  const alreadyInPlan = editingCaseIds.has(tc.id);
+                  const selected = selectedAddCaseIds.includes(tc.id);
+                  return (
+                    <label key={tc.id} onClick={() => { if (!alreadyInPlan) onToggle(tc.id); }}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', borderRadius: 6,
+                        cursor: alreadyInPlan ? 'not-allowed' : 'pointer', opacity: alreadyInPlan ? 0.5 : 1,
+                        border: selected ? '1.5px solid var(--accent-primary)' : '1px solid var(--border-subtle)',
+                        background: selected ? 'color-mix(in srgb, var(--accent-primary) 5%, transparent)' : 'var(--bg-primary)',
+                      }}>
+                      <input type="checkbox" checked={selected || alreadyInPlan} disabled={alreadyInPlan} onChange={() => {}} style={{ accentColor: 'var(--accent-primary)' }} />
+                      <span style={{ fontSize: 10, fontFamily: 'monospace', color: 'var(--text-tertiary)', minWidth: 50 }}>{tc.id}</span>
+                      <span style={{ flex: 1, fontSize: 12 }}>{tc.title}</span>
+                      <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3,
+                        background: tc.type === 'auto' ? 'rgba(57,208,214,0.12)' : 'rgba(163,113,247,0.12)',
+                        color: tc.type === 'auto' ? '#39d0d6' : '#a371f7', fontWeight: 600,
+                      }}>{tc.type === 'auto' ? 'AUTO' : 'MANUAL'}</span>
+                      {alreadyInPlan && <span style={{ fontSize: 9, color: 'var(--text-tertiary)' }}>已在计划中</span>}
+                    </label>
+                  );
+                })}
+              </div>
+            </>
+          ) : (
+            // 第二步：指派执行人
+            <>
+              <div style={{
+                background: 'var(--surface-primary)', borderRadius: 8, padding: '12px 14px',
+                marginBottom: 16, border: '1px solid var(--border-subtle)',
+              }}>
+                <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 6 }}>即将添加的用例</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
+                  {selectedAddCaseIds.length} 个用例
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 4 }}>
+                  请为这些用例指定执行人
+                </div>
+              </div>
+
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 8 }}>
+                  选择执行人 <span style={{ color: 'var(--status-error)' }}>*</span>
+                </label>
+                <select
+                  className="form-input form-select"
+                  value={assigneeId}
+                  onChange={e => setAssigneeId(e.target.value)}
+                  style={{ width: '100%', fontSize: 13, padding: '8px 12px' }}
+                >
+                  <option value="">请选择执行人</option>
+                  {users.map(u => <option key={u.user_id} value={u.user_id}>{u.username}</option>)}
+                </select>
+                {!assigneeId && (
+                  <div style={{ fontSize: 11, color: 'var(--status-warn)', marginTop: 6 }}>
+                    必须指定执行人才能添加用例
+                  </div>
+                )}
+              </div>
+
+              {/* 预览已选用的例 */}
+              <div style={{ maxHeight: 200, overflowY: 'auto', border: '1px solid var(--border-subtle)', borderRadius: 6 }}>
+                {cases.filter(tc => selectedAddCaseIds.includes(tc.id)).map(tc => (
+                  <div key={tc.id} style={{
+                    display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px',
+                    borderBottom: '1px solid var(--border-subtle)',
+                    fontSize: 11,
+                  }}>
+                    <span style={{ fontFamily: 'monospace', color: 'var(--text-tertiary)', minWidth: 50 }}>{tc.id}</span>
+                    <span style={{ flex: 1 }}>{tc.title}</span>
+                    <span style={{
+                      fontSize: 9, padding: '1px 4px', borderRadius: 3,
+                      background: tc.type === 'auto' ? 'rgba(57,208,214,0.12)' : 'rgba(163,113,247,0.12)',
+                      color: tc.type === 'auto' ? '#39d0d6' : '#a371f7',
+                    }}>{tc.type === 'auto' ? 'AUTO' : 'MANUAL'}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Footer */}
         <div style={{ padding: '10px 18px', borderTop: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
-          <button className="btn btn--ghost btn--sm" onClick={onClose} style={{ fontSize: 12 }}>取消</button>
-          <button className="btn btn--primary btn--sm" onClick={() => onConfirm(assigneeId)}
-            disabled={selectedAddCaseIds.length === 0} style={{ fontSize: 12 }}>
-            添加 {selectedAddCaseIds.length > 0 ? `${selectedAddCaseIds.length} 个` : ''}
-          </button>
+          {step === 1 ? (
+            <>
+              <button className="btn btn--ghost btn--sm" onClick={handleClose} style={{ fontSize: 12 }}>取消</button>
+              <button
+                className="btn btn--primary btn--sm"
+                onClick={goToAssignStep}
+                disabled={selectedAddCaseIds.length === 0}
+                style={{ fontSize: 12 }}
+              >
+                下一步：指派执行人 →
+              </button>
+            </>
+          ) : (
+            <>
+              <button className="btn btn--ghost btn--sm" onClick={goBack} style={{ fontSize: 12 }}>← 返回</button>
+              <button
+                className="btn btn--primary btn--sm"
+                onClick={handleConfirm}
+                disabled={!assigneeId}
+                style={{ fontSize: 12 }}
+              >
+                确认添加 ({selectedAddCaseIds.length} 个)
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -1363,6 +1825,169 @@ function ArchivedModal({ open, loading, items, onClose, onUnarchive }: {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+//  OverviewView — 运行总览
+// ═══════════════════════════════════════════════════════════════════
+
+function OverviewView({ data, loading, onRefresh, onSelectPlan, users, onViewResult, onTerminateItem, onDeleteItem }: {
+  data: Record<string, any> | null;
+  loading: boolean;
+  onRefresh: () => void;
+  onSelectPlan: (planId: string) => void;
+  users: UserResponse[];
+  onViewResult?: (item: PlanItemSummary) => void;
+  onDeleteItem?: (planId: string, itemId: string, executionTaskId?: string) => void;
+}) {
+  const plans = (data?.plans as any[]) || [];
+  const runningItems = (data?.running_items as any[]) || [];
+
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: '16px 20px', background: 'var(--surface-secondary)' }}>
+      {/* 头部统计 */}
+      <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexShrink: 0 }}>
+        {[
+          { label: '总计划', value: data?.total_plans ?? 0, color: '#58a6ff' },
+          { label: '总条目', value: data?.total_items ?? 0, color: '#8b949e' },
+          { label: '执行中', value: data?.running_count ?? 0, color: '#3fb950' },
+          { label: '待执行', value: data?.pending_count ?? 0, color: '#d29922' },
+          { label: '已完成', value: data?.done_count ?? 0, color: '#8b949e' },
+          { label: '失败', value: data?.fail_count ?? 0, color: '#f85149' },
+        ].map(s => (
+          <div key={s.label} style={{
+            padding: '10px 16px', borderRadius: 8, border: '1px solid var(--border-subtle)',
+            background: 'var(--bg-elevated)', minWidth: 80, textAlign: 'center',
+          }}>
+            <div style={{ fontSize: 20, fontWeight: 700, color: s.color }}>{s.value}</div>
+            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>{s.label}</div>
+          </div>
+        ))}
+        <div style={{ display: 'flex', alignItems: 'flex-end', marginLeft: 'auto' }}>
+          <button className="btn btn--ghost btn--sm" onClick={onRefresh} disabled={loading}
+            style={{ fontSize: 12 }}>
+            {loading ? '刷新中...' : '刷新'}
+          </button>
+        </div>
+      </div>
+
+      {/* 计划概览卡片 */}
+      <div style={{ marginBottom: 16, flexShrink: 0 }}>
+        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 8 }}>
+          执行计划列表
+        </div>
+        {loading && plans.length === 0 ? (
+          <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 12 }}>加载中...</div>
+        ) : plans.length === 0 ? (
+          <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 12 }}>暂无计划</div>
+        ) : (
+          <div style={{ display: 'flex', gap: 8, overflow: 'auto', paddingBottom: 4 }}>
+            {plans.map((p: any) => {
+              const planStatusMeta = PLAN_STATUS_META[p.status] || { label: p.status, color: '#8b949e' };
+              return (
+                <div key={p.plan_id} onClick={() => onSelectPlan(p.plan_id)}
+                  style={{
+                    minWidth: 200, padding: '10px 14px', borderRadius: 8, cursor: 'pointer',
+                    background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)',
+                  }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600 }}>{p.title}</span>
+                    <span style={{
+                      fontSize: 9, padding: '1px 6px', borderRadius: 4, fontWeight: 600,
+                      color: planStatusMeta.color, background: `${planStatusMeta.color}18`,
+                    }}>{planStatusMeta.label}</span>
+                  </div>
+                  <div style={{ height: 3, background: 'var(--surface-tertiary)', borderRadius: 2, marginBottom: 6 }}>
+                    <div style={{ width: `${p.progress_percent ?? 0}%`, height: '100%', background: 'var(--accent-primary)', borderRadius: 2 }} />
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, fontSize: 11, color: 'var(--text-tertiary)' }}>
+                    <span>共 {p.item_count}</span>
+                    <span style={{ color: '#3fb950' }}>运行 {p.running_count}</span>
+                    <span style={{ color: '#d29922' }}>待执 {p.pending_count}</span>
+                    <span style={{ color: '#f85149' }}>失败 {p.fail_count}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* 运行中任务列表 */}
+      <div style={{ flex: 1, overflow: 'auto' }}>
+        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 8 }}>
+          运行中任务
+        </div>
+        {loading && runningItems.length === 0 ? (
+          <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 12 }}>加载中...</div>
+        ) : runningItems.length === 0 ? (
+          <div style={{ padding: 30, textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 12 }}>暂没有运行中的任务</div>
+        ) : (
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <thead>
+              <tr style={{ background: 'var(--surface-primary)', position: 'sticky', top: 0, zIndex: 1 }}>
+                <th style={{ padding: '6px 10px', textAlign: 'left', fontWeight: 600, color: 'var(--text-secondary)', fontSize: 11, borderBottom: '1px solid var(--border-subtle)' }}>计划</th>
+                <th style={{ padding: '6px 10px', textAlign: 'left', fontWeight: 600, color: 'var(--text-secondary)', fontSize: 11, borderBottom: '1px solid var(--border-subtle)' }}>用例ID</th>
+                <th style={{ padding: '6px 10px', textAlign: 'left', fontWeight: 600, color: 'var(--text-secondary)', fontSize: 11, borderBottom: '1px solid var(--border-subtle)' }}>标题</th>
+                <th style={{ padding: '6px 10px', textAlign: 'left', fontWeight: 600, color: 'var(--text-secondary)', fontSize: 11, borderBottom: '1px solid var(--border-subtle)' }}>类型</th>
+                <th style={{ padding: '6px 10px', textAlign: 'left', fontWeight: 600, color: 'var(--text-secondary)', fontSize: 11, borderBottom: '1px solid var(--border-subtle)' }}>执行人</th>
+                <th style={{ padding: '6px 10px', textAlign: 'left', fontWeight: 600, color: 'var(--text-secondary)', fontSize: 11, borderBottom: '1px solid var(--border-subtle)' }}>优先级</th>
+                <th style={{ padding: '6px 10px', textAlign: 'center', fontWeight: 600, color: 'var(--text-secondary)', fontSize: 11, borderBottom: '1px solid var(--border-subtle)' }}>结果</th>
+                <th style={{ padding: '6px 10px', textAlign: 'center', fontWeight: 600, color: 'var(--text-secondary)', fontSize: 11, borderBottom: '1px solid var(--border-subtle)', width: 100 }}>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {runningItems.map((item: any) => {
+                const statusMeta = STATUS_META[item.status as ItemStatus] || STATUS_META.pending;
+                return (
+                  <tr key={item.item_id} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                    <td style={{ padding: '6px 10px', color: 'var(--accent-primary)', fontSize: 11, cursor: 'pointer' }}
+                      onClick={() => onSelectPlan(item.plan_id)}>
+                      {item.plan_title || item.plan_id}
+                    </td>
+                    <td style={{ padding: '6px 10px', fontFamily: 'monospace', fontSize: 10, color: 'var(--text-tertiary)' }}>{item.case_id}</td>
+                    <td style={{ padding: '6px 10px', fontWeight: 500 }}>{item.case_title}</td>
+                    <td style={{ padding: '6px 10px' }}>
+                      <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3,
+                        background: item.ref_type === 'auto' ? 'rgba(57,208,214,0.12)' : 'rgba(163,113,247,0.12)',
+                        color: item.ref_type === 'auto' ? '#39d0d6' : '#a371f7', fontWeight: 600,
+                      }}>{item.ref_type === 'auto' ? 'AUTO' : 'MANUAL'}</span>
+                    </td>
+                    <td style={{ padding: '6px 10px', color: 'var(--text-secondary)' }}>
+                      {item.assignee_id ? (users.find((u: UserResponse) => u.user_id === item.assignee_id)?.username || item.assignee_id) : (
+                        <span style={{ color: 'var(--status-warn)', fontSize: 10 }}>未指派</span>
+                      )}
+                    </td>
+                    <td style={{ padding: '6px 10px', color: PRIORITY_COLORS[item.priority] || '#8b949e', fontWeight: 600 }}>{item.priority}</td>
+                    <td style={{ padding: '6px 10px', textAlign: 'center' }}>
+                      {(item.execution_task_id || item.result) && onViewResult ? (
+                        <button type="button" onClick={(e) => { e.stopPropagation(); onViewResult(item); }}
+                          style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, border: '1px solid var(--border-subtle)',
+                            background: 'var(--surface-secondary)', color: 'var(--accent-primary)', cursor: 'pointer' }}>
+                          查看
+                        </button>
+                      ) : (
+                        <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>-</span>
+                      )}
+                    </td>
+                    <td style={{ padding: '6px 10px', textAlign: 'center' }}>
+                      {onDeleteItem && (
+                        <button type="button" onClick={(e) => { e.stopPropagation(); onDeleteItem(item.plan_id, item.item_id, item.execution_task_id); }}
+                          style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, border: '1px solid var(--border-subtle)',
+                            background: 'transparent', color: '#d29922', cursor: 'pointer' }}>
+                          取消执行
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
 //  ResultModal — 用例执行结果查看
 // ═══════════════════════════════════════════════════════════════════
 
@@ -1372,7 +1997,7 @@ function ResultModal({ item, taskData, loading, onClose }: {
   loading: boolean;
   onClose: () => void;
 }) {
-  const caseSummary = taskData?.cases?.find((c: any) => c.case_id === item.case_id);
+  const caseSummary = taskData?.cases?.find((c: any) => c.auto_case_id === item.case_id);
   const r = caseSummary?.result_data;
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'var(--overlay-bg)', backdropFilter: 'blur(2px)', zIndex: 2000, display: 'flex', justifyContent: 'center', alignItems: 'center' }}
@@ -1400,6 +2025,7 @@ function ResultModal({ item, taskData, loading, onClose }: {
             <div style={{ padding: 30, textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 13 }}>暂未获取到执行结果</div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {/* ── 摘要卡片 ── */}
               <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                 {[
                   { label: '执行状态', value: caseSummary.status, color: STATUS_META[caseSummary.status as ItemStatus]?.color || '#8b949e' },
@@ -1414,6 +2040,30 @@ function ResultModal({ item, taskData, loading, onClose }: {
                   </div>
                 ))}
               </div>
+
+              {/* ── 步骤统计 ── */}
+              {(caseSummary.step_total > 0) && (
+                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                  <div style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border-subtle)', background: 'var(--surface-secondary)' }}>
+                    <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginBottom: 2 }}>步骤总数</div>
+                    <div style={{ fontSize: 14, fontWeight: 600 }}>{caseSummary.step_total}</div>
+                  </div>
+                  <div style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid rgba(63,185,80,0.3)', background: 'rgba(63,185,80,0.05)' }}>
+                    <div style={{ fontSize: 10, color: '#3fb950', marginBottom: 2 }}>通过</div>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: '#3fb950' }}>{caseSummary.step_passed ?? 0}</div>
+                  </div>
+                  <div style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid rgba(248,81,73,0.3)', background: 'rgba(248,81,73,0.05)' }}>
+                    <div style={{ fontSize: 10, color: '#f85149', marginBottom: 2 }}>失败</div>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: '#f85149' }}>{caseSummary.step_failed ?? 0}</div>
+                  </div>
+                  <div style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid rgba(139,148,158,0.3)', background: 'rgba(139,148,158,0.05)' }}>
+                    <div style={{ fontSize: 10, color: '#8b949e', marginBottom: 2 }}>跳过</div>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: '#8b949e' }}>{caseSummary.step_skipped ?? 0}</div>
+                  </div>
+                </div>
+              )}
+
+              {/* ── 时间线 ── */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 16px', fontSize: 12 }}>
                 {caseSummary.started_at && <><span style={{ color: 'var(--text-tertiary)' }}>开始</span><span>{new Date(caseSummary.started_at).toLocaleString('zh-CN')}</span></>}
                 {caseSummary.finished_at && <><span style={{ color: 'var(--text-tertiary)' }}>结束</span><span>{new Date(caseSummary.finished_at).toLocaleString('zh-CN')}</span></>}

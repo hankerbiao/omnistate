@@ -1,4 +1,6 @@
-import type { AutomationTestCaseResponse } from '../types';
+import { useState, useEffect } from 'react';
+import type { AutomationTestCaseResponse, ExecutionStatsResponse } from '../types';
+import { api } from '../services/api';
 
 interface Props {
   testCase: AutomationTestCaseResponse;
@@ -27,6 +29,16 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 export default function AutomationCaseDetailModal({ testCase: tc, onClose }: Props) {
   const isProd = tc.status === 'active' || tc.status === 'released';
+  const [execStats, setExecStats] = useState<ExecutionStatsResponse | null>(null);
+  const [statsLoading, setStatsLoading] = useState(false);
+
+  useEffect(() => {
+    setStatsLoading(true);
+    api.getCaseExecutionStats(tc.auto_case_id)
+      .then(res => setExecStats(res.data))
+      .catch(() => setExecStats(null))
+      .finally(() => setStatsLoading(false));
+  }, [tc.auto_case_id]);
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'var(--overlay-bg)', zIndex: 1000, display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(2px)' }}
@@ -133,6 +145,42 @@ export default function AutomationCaseDetailModal({ testCase: tc, onClose }: Pro
                 ))}
               </Section>
             )}
+
+            <Section title="执行统计">
+              {statsLoading ? (
+                <div style={{ fontSize: 12, color: 'var(--text-tertiary)', padding: 8 }}>加载中...</div>
+              ) : execStats ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 6 }}>
+                    {[
+                      { label: '总次数', value: execStats.total, color: '#3b82f6' },
+                      { label: '通过', value: execStats.passed, color: '#16a34a' },
+                      { label: '失败', value: execStats.failed, color: '#dc2626' },
+                      { label: '通过率', value: `${execStats.pass_rate}%`, color: execStats.pass_rate >= 80 ? '#16a34a' : '#d97706' },
+                    ].map(({ label, value, color }) => (
+                      <div key={label} style={{ textAlign: 'center', background: 'var(--surface-secondary)', borderRadius: 8, padding: '8px 6px', border: '1px solid var(--border-subtle)' }}>
+                        <div style={{ fontSize: 18, fontWeight: 700, color, lineHeight: 1.2 }}>{value}</div>
+                        <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 2 }}>{label}</div>
+                      </div>
+                    ))}
+                  </div>
+                  {execStats.recent.length > 0 && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                      <div style={{ fontSize: 10, color: 'var(--text-tertiary)', fontWeight: 600 }}>最近执行</div>
+                      {execStats.recent.slice(0, 5).map(r => (
+                        <div key={r.result_id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--text-secondary)' }}>
+                          <span style={{ width: 6, height: 6, borderRadius: '50%', flexShrink: 0, background: r.passed ? '#16a34a' : '#dc2626' }} />
+                          <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.notes || (r.passed ? '通过' : '失败')}</span>
+                          <span style={{ whiteSpace: 'nowrap' }}>{new Date(r.executed_at).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div style={{ fontSize: 12, color: 'var(--text-tertiary)', padding: 8 }}>暂无执行数据</div>
+              )}
+            </Section>
           </div>
         </div>
       </div>

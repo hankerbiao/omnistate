@@ -214,7 +214,7 @@ DEFAULT_ROLES = {
     },
     "TESTER": {
         "name": "TESTER", "description": "测试执行工程师", "is_system": True,
-        "permission_ids": [*_READ, "test_cases:write", *_WORKFLOW, "execution_tasks:read", "execution_plans:read", "execution_plans:write", "terminal:connect", "navigation:write"],
+        "permission_ids": [*_READ, "test_cases:write", *_WORKFLOW, *_EXEC_READ, "execution_tasks:write", "execution_plans:write", "terminal:connect", "navigation:write"],
     },
     "AUTO_DEV": {
         "name": "AUTO_DEV", "description": "自动化测试开发工程师", "is_system": True,

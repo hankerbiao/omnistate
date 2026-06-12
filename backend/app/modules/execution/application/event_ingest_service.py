@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import timezone
 from typing import Any
 
-from app.modules.execution.application.constants import ConsumeStatus, OverallStatus
+from app.modules.execution.application.constants import ConsumeStatus, DispatchStatus, OverallStatus
 from app.modules.execution.application.progress_coordinator import ExecutionProgressCoordinator
 from app.modules.execution.domain.status_rules import resolve_case_status
 from app.modules.execution.repository.models import (
@@ -128,6 +128,16 @@ class ExecutionEventIngestService:
                 "case_id": event.case_id,
                 "is_deleted": False,
             })
+            # 框架上报的 case_id 可能不匹配系统 case_id，兜底取第一条 case
+            if case_doc is None:
+                fallback = await (
+                    ExecutionTaskCaseDoc.find({"task_id": event.task_id})
+                    .sort("order_no")
+                    .limit(1)
+                    .to_list()
+                )
+                if fallback:
+                    case_doc = fallback[0]
             if case_doc is None:
                 elog(
                     "warning",
@@ -265,6 +275,11 @@ class ExecutionEventIngestService:
         ExecutionEventIngestService._apply_assert_counters(target, event)
         if resolved_status is not None:
             target.status = resolved_status
+        # 根据事件阶段同步下发状态
+        if event.phase == "case_start":
+            target.dispatch_status = DispatchStatus.DISPATCHED
+        elif event.phase == "case_finish":
+            target.dispatch_status = DispatchStatus.COMPLETED
         ExecutionEventIngestService._apply_failure_message(target, event)
         existing_assertions = ExecutionEventIngestService._build_assertion_history(
             target=target,

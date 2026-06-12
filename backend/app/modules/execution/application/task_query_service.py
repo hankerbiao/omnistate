@@ -49,6 +49,9 @@ class ExecutionTaskQueryService:
         result["dispatch_response"] = task_doc.dispatch_response
         result["dispatch_error"] = task_doc.dispatch_error
         result["request_payload"] = task_doc.request_payload
+        # 补充 case 列表，供前端展示执行结果
+        case_map = await self._load_task_case_map([task_id])
+        result["cases"] = case_map.get(task_id, [])
         return result
 
     async def list_task_biz_logs(self, task_id: str, limit: int = 200) -> List[Dict[str, Any]]:

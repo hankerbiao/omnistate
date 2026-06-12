@@ -380,6 +380,7 @@ async def init_rbac_data():
             "work_items:transition",
             "execution_agents:read",
             "execution_tasks:read",
+            "execution_tasks:write",
             "terminal:connect",
             "navigation:read",
             "navigation:write",

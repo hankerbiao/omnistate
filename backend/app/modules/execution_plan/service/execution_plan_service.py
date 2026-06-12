@@ -64,7 +64,7 @@ class ExecutionPlanService(BaseService):
             plan_id=plan_id,
             title=title,
             description=str(data.get("description") or ""),
-            status=str(data.get("status") or "draft"),
+            status=str(data.get("status") or "active"),
             start_date=data.get("start_date"),
             end_date=data.get("end_date"),
             trigger_at=data.get("trigger_at"),
@@ -94,7 +94,11 @@ class ExecutionPlanService(BaseService):
         return await self.get_plan(plan_id)
 
     async def delete_plan(self, plan_id: str) -> None:
-        doc = await self._get_plan_or_raise(plan_id)
+        doc = await ExecutionPlanDoc.find_one(ExecutionPlanDoc.plan_id == plan_id)
+        if not doc:
+            raise PlanNotFoundError(plan_id)
+        if doc.is_deleted:
+            return  # 已是删除状态，幂等返回
         doc.is_deleted = True
         await doc.save()
         await ExecutionPlanItemDoc.find(
@@ -168,11 +172,40 @@ class ExecutionPlanService(BaseService):
         await self._recalculate_plan_progress(plan_id)
         return await self._item_to_response(item)
 
+    async def batch_update_assignee(
+        self,
+        plan_id: str,
+        item_ids: List[str],
+        assignee_id: Optional[str],
+    ) -> Dict[str, Any]:
+        """批量更新计划条目的执行人。"""
+        await self._get_plan_or_raise(plan_id)
+        if not item_ids:
+            raise ValueError("item_ids 不能为空")
+
+        result = await ExecutionPlanItemDoc.find(
+            ExecutionPlanItemDoc.plan_id == plan_id,
+            ExecutionPlanItemDoc.item_id.in_(item_ids),
+            ExecutionPlanItemDoc.is_deleted == False,  # noqa: E712
+        ).update({"$set": {"assignee_id": assignee_id, "updated_at": datetime.now(timezone.utc)}})
+
+        await self._recalculate_plan_progress(plan_id)
+        return {
+            "plan_id": plan_id,
+            "updated_count": result.modified_count,
+            "assignee_id": assignee_id,
+        }
+
     async def delete_item(self, plan_id: str, item_id: str) -> None:
         item = await self._get_item_or_raise(plan_id, item_id)
         item.is_deleted = True
         await item.save()
         await self._recalculate_plan_progress(plan_id)
+
+    async def get_item(self, item_id: str) -> Dict[str, Any]:
+        """获取单个计划条目详情（公开方法）。"""
+        item = await self._get_item_by_id_or_raise(item_id)
+        return await self._item_to_response(item)
 
     async def list_my_items(self, assignee_id: str) -> List[Dict[str, Any]]:
         docs = await ExecutionPlanItemDoc.find(
@@ -189,13 +222,143 @@ class ExecutionPlanService(BaseService):
                 continue
         return results
 
+    async def list_items(
+        self,
+        status: Optional[str] = None,
+        plan_id: Optional[str] = None,
+        limit: int = 200,
+    ) -> List[Dict[str, Any]]:
+        """查询计划条目列表，支持按状态和计划ID过滤，不限执行人。"""
+        filters: List[Any] = [
+            ExecutionPlanItemDoc.is_deleted == False,  # noqa: E712
+        ]
+        if status:
+            if status not in {"pending", "running", "done", "fail"}:
+                raise ValueError(f"status 无效: {status}")
+            filters.append(ExecutionPlanItemDoc.status == status)
+        if plan_id:
+            filters.append(ExecutionPlanItemDoc.plan_id == plan_id)
+
+        docs = await ExecutionPlanItemDoc.find(
+            *filters,
+        ).sort("-updated_at").limit(limit).to_list()
+
+        # 批量获取 plan_title，避免 N+1 查询
+        plan_ids = {doc.plan_id for doc in docs}
+        plan_map: Dict[str, str] = {}
+        if plan_ids:
+            plan_docs = await ExecutionPlanDoc.find(
+                ExecutionPlanDoc.plan_id.in_(plan_ids),
+                ExecutionPlanDoc.is_deleted == False,  # noqa: E712
+            ).to_list()
+            plan_map = {p.plan_id: p.title for p in plan_docs}
+
+        results: List[Dict[str, Any]] = []
+        for doc in docs:
+            try:
+                doc_dict = await self._item_to_response(doc, _plan_title=plan_map.get(doc.plan_id, ""))
+                results.append(doc_dict)
+            except Exception as exc:
+                logger.warning(f"跳过异常计划条目 {doc.item_id}: {exc}")
+                continue
+        return results
+
+    async def get_overview(self) -> Dict[str, Any]:
+        """获取所有执行计划的运行总览（聚合统计 + 运行中的条目）。"""
+        # 1. 一次查询获取所有未删除的计划
+        plans = await ExecutionPlanDoc.find(
+            ExecutionPlanDoc.is_deleted == False,  # noqa: E712
+        ).sort("-updated_at").to_list()
+
+        plan_id_to_doc: Dict[str, ExecutionPlanDoc] = {p.plan_id: p for p in plans}
+
+        # 2. 一次查询获取所有未删除的条目，避免逐 plan 查询
+        all_items = await ExecutionPlanItemDoc.find(
+            ExecutionPlanItemDoc.is_deleted == False,  # noqa: E712
+        ).to_list()
+
+        # 按 plan_id 分组
+        items_by_plan: Dict[str, List[ExecutionPlanItemDoc]] = {}
+        for item in all_items:
+            items_by_plan.setdefault(item.plan_id, []).append(item)
+
+        plan_summaries: List[Dict[str, Any]] = []
+        total_items = 0
+        running_items_total = 0
+        pending_items_total = 0
+        done_items_total = 0
+        fail_items_total = 0
+
+        for plan_doc in plans:
+            items = items_by_plan.get(plan_doc.plan_id, [])
+            running_count = sum(1 for i in items if i.status == "running")
+            pending_count = sum(1 for i in items if i.status == "pending")
+            done_count = sum(1 for i in items if i.status == "done")
+            fail_count = sum(1 for i in items if i.status == "fail")
+            item_count = len(items)
+
+            total_items += item_count
+            running_items_total += running_count
+            pending_items_total += pending_count
+            done_items_total += done_count
+            fail_items_total += fail_count
+
+            plan_summaries.append({
+                "plan_id": plan_doc.plan_id,
+                "title": plan_doc.title,
+                "status": plan_doc.status,
+                "progress_percent": plan_doc.progress_percent,
+                "item_count": item_count,
+                "running_count": running_count,
+                "pending_count": pending_count,
+                "done_count": done_count,
+                "fail_count": fail_count,
+            })
+
+        # 3. 获取运行中的条目（已在内存中，无需再次查询）
+        running_items = [i for i in all_items if i.status == "running"]
+        running_items.sort(key=lambda x: x.updated_at or datetime.min, reverse=True)
+
+        running_items_data: List[Dict[str, Any]] = []
+        for item in running_items:
+            try:
+                plan_doc = plan_id_to_doc.get(item.plan_id)
+                plan_title = plan_doc.title if plan_doc else ""
+                plan_status = plan_doc.status if plan_doc else ""
+                item_data = await self._item_to_response(item, _plan_title=plan_title)
+                item_data["plan_status"] = plan_status
+                running_items_data.append(item_data)
+            except Exception as exc:
+                logger.warning(f"跳过异常计划条目 {item.item_id}: {exc}")
+                continue
+
+        return {
+            "total_plans": len(plans),
+            "total_items": total_items,
+            "running_count": running_items_total,
+            "pending_count": pending_items_total,
+            "done_count": done_items_total,
+            "fail_count": fail_items_total,
+            "plans": plan_summaries,
+            "running_items": running_items_data,
+        }
+
     async def list_archived_items(self, assignee_id: str) -> List[Dict[str, Any]]:
         docs = await ExecutionPlanItemDoc.find(
             ExecutionPlanItemDoc.assignee_id == assignee_id,
             ExecutionPlanItemDoc.archived_at != None,  # noqa: E711
             ExecutionPlanItemDoc.is_deleted == False,  # noqa: E712
         ).sort("-archived_at").to_list()
-        return [await self._item_to_response(doc) for doc in docs]
+        # 批量获取 plan_title，避免 N+1 查询
+        plan_ids = {doc.plan_id for doc in docs}
+        plan_map: Dict[str, str] = {}
+        if plan_ids:
+            plan_docs = await ExecutionPlanDoc.find(
+                ExecutionPlanDoc.plan_id.in_(plan_ids),
+                ExecutionPlanDoc.is_deleted == False,  # noqa: E712
+            ).to_list()
+            plan_map = {p.plan_id: p.title for p in plan_docs}
+        return [await self._item_to_response(doc, _plan_title=plan_map.get(doc.plan_id, "")) for doc in docs]
 
     async def archive_item(self, item_id: str, actor_id: str) -> None:
         item = await self._get_item_by_id_or_raise(item_id)
@@ -294,7 +457,6 @@ class ExecutionPlanService(BaseService):
                 InOp(ExecutionTaskDoc.task_id, task_ids),
             ).to_list()
             _TASK_PASS_STATUS = {"PASSED", "DONE"}
-            _TASK_FAIL_STATUS = {"FAILED", "ERROR", "TIMEOUT"}
             for t in task_docs:
                 total += 1
                 if t.overall_status in _TASK_PASS_STATUS:
@@ -407,12 +569,18 @@ class ExecutionPlanService(BaseService):
                 raise
         return result
 
-    async def _item_to_response(self, item: ExecutionPlanItemDoc) -> Dict[str, Any]:
+    async def _item_to_response(
+        self,
+        item: ExecutionPlanItemDoc,
+        _plan_title: Optional[str] = None,
+    ) -> Dict[str, Any]:
         await self._sync_auto_item_status(item)
-        plan_doc = await ExecutionPlanDoc.find_one(
-            ExecutionPlanDoc.plan_id == item.plan_id,
-            ExecutionPlanDoc.is_deleted == False,
-        )
+        if _plan_title is None:
+            plan_doc = await ExecutionPlanDoc.find_one(
+                ExecutionPlanDoc.plan_id == item.plan_id,
+                ExecutionPlanDoc.is_deleted == False,
+            )
+            _plan_title = plan_doc.title if plan_doc else ""
         result_payload = None
         if item.result_id:
             result_doc = await ManualExecutionResultDoc.find_one(
@@ -424,7 +592,7 @@ class ExecutionPlanService(BaseService):
         return {
             "item_id": item.item_id,
             "plan_id": item.plan_id,
-            "plan_title": plan_doc.title if plan_doc else "",
+            "plan_title": _plan_title,
             "case_id": item.case_id,
             "case_title": item.case_title,
             "ref_type": item.ref_type,

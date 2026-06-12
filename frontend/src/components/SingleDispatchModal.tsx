@@ -2,6 +2,21 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { api } from '../services/api';
 import type { PlanItemDispatchRequest, AutomationConfigField } from '../types';
 
+/** 将字符串值按字段 type 转换为对应类型 */
+function convertParamValue(val: string, field: AutomationConfigField): unknown {
+  // 优先使用选项的原始值类型
+  if (field.options && field.options.length > 0) {
+    const matched = field.options.find(o => String(o.value) === val);
+    if (matched) return matched.value;
+  }
+
+  const t = field.type?.toLowerCase() || 'string';
+  if (t === 'int') return parseInt(val, 10);
+  if (t === 'float' || t === 'number') return parseFloat(val);
+  if (t === 'bool' || t === 'boolean') return val === 'true';
+  return val; // string / default
+}
+
 interface Props {
   open: boolean;
   itemId: string;
@@ -128,12 +143,12 @@ const SingleDispatchModal: React.FC<Props> = ({
       timeout: autoCase?.timeout || undefined,
     };
 
-    // Per-case parameters
+    // Per-case parameters — convert to proper types based on param_spec
     if (autoCase?.param_spec && autoCase.param_spec.length > 0) {
-      const parameters: Record<string, string> = {};
+      const parameters: Record<string, unknown> = {};
       for (const p of autoCase.param_spec) {
         const val = paramValues[p.name];
-        if (val) parameters[p.name] = val;
+        if (val) parameters[p.name] = convertParamValue(val, p);
       }
       if (Object.keys(parameters).length > 0) {
         request.parameters = parameters;

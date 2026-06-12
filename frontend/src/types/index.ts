@@ -756,6 +756,7 @@ export interface TaskStatus {
   created_at: string;
   updated_at: string;
   error_message?: string;
+  cases?: ExecutionTaskCaseSummary[];
   result_summary?: Record<string, unknown>;
   request_payload?: {
     // 顶层结构（20260520 新增）
@@ -1084,6 +1085,11 @@ export interface PlanItemInput {
 
 export interface AddPlanItemsRequest {
   items: PlanItemInput[];
+}
+
+export interface BatchUpdateAssigneeRequest {
+  item_ids: string[];
+  assignee_id?: string;
 }
 
 // ═══════════════════════════════════════════════════════════════════════

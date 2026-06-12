@@ -1,6 +1,7 @@
 from app.modules.execution_plan.schemas.execution_plan import (
     AddPlanItemsRequest,
     BatchDispatchRequest,
+    BatchUpdateAssigneeRequest,
     CreatePlanRequest,
     ManualResultResponse,
     PlanDetailResponse,
@@ -26,4 +27,5 @@ __all__ = [
     "ManualResultResponse",
     "PlanItemDispatchRequest",
     "BatchDispatchRequest",
+    "BatchUpdateAssigneeRequest",
 ]

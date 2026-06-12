@@ -6,7 +6,6 @@ import AppShell from './components/AppShell'
 import RequirementsPage from './components/RequirementsPage'
 import { TestCaseBoardPage } from './components/TestCaseBoard'
 import AgentList from './components/AgentList'
-import TaskList from './components/TaskList'
 import RoleManagement from './components/RoleManagement'
 import RoleGroupManagement from './components/RoleGroupManagement'
 import UserManagement from './components/UserManagement'
@@ -62,6 +61,7 @@ function AppContent() {
         return <PermissionManagement key={currentUserId} />
       case 'catalogLabs':
         return <CatalogLabsPage key={currentUserId} />
+      case 'manualTestCases':
       case 'testPlanStudioDemo':
         return <TestExecutionPlanDemo key={currentUserId} />
       case 'lineageView':
@@ -72,12 +72,8 @@ function AppContent() {
             entityId={lineageEntityId}
           />
         )
-      case 'tasks':
-        return <TaskList key={currentUserId} onLogout={handleLogout} />
-      case 'manualTestCases':
-        return <TaskList key={currentUserId} onLogout={handleLogout} />
       default:
-        return <TaskList key={currentUserId} onLogout={handleLogout} />
+        return <TestExecutionPlanDemo key={currentUserId} />
     }
   }, [currentUserId, handleWorkflowNavigate, handleLogout, navigate, requirementsFilter, lineageEntityType, lineageEntityId])
 

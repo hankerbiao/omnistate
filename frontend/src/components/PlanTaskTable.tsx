@@ -167,28 +167,26 @@ const PlanTaskTable: React.FC<PlanTaskTableProps> = ({
                           {s === 'done' ? '✓' : s === 'running' ? '▶' : s === 'fail' ? '✗' : '○'}
                         </button>
                       ))}
-                      {task.status !== 'done' && (
-                        task.type === 'auto' ? (
-                          <button
-                            onClick={() => onOpenDispatchModal(task)}
-                            style={{
-                              padding: '2px 8px', fontSize: 9, border: 'none', borderRadius: 3, cursor: 'pointer',
-                              background: '#39d0d6', color: '#fff', fontWeight: 600, marginLeft: 4,
-                            }}
-                          >
-                            ⚡ 下发
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() => onOpenResultModal(task)}
-                            style={{
-                              padding: '2px 8px', fontSize: 9, border: 'none', borderRadius: 3, cursor: 'pointer',
-                              background: 'var(--accent-primary)', color: '#fff', fontWeight: 600, marginLeft: 4,
-                            }}
-                          >
-                            回填
-                          </button>
-                        )
+                      {task.type === 'auto' ? (
+                        <button
+                          onClick={() => onOpenDispatchModal(task)}
+                          style={{
+                            padding: '2px 8px', fontSize: 9, border: 'none', borderRadius: 3, cursor: 'pointer',
+                            background: '#39d0d6', color: '#fff', fontWeight: 600, marginLeft: 4,
+                          }}
+                        >
+                          ⚡ 下发
+                        </button>
+                      ) : task.status !== 'done' && (
+                        <button
+                          onClick={() => onOpenResultModal(task)}
+                          style={{
+                            padding: '2px 8px', fontSize: 9, border: 'none', borderRadius: 3, cursor: 'pointer',
+                            background: 'var(--accent-primary)', color: '#fff', fontWeight: 600, marginLeft: 4,
+                          }}
+                        >
+                          回填
+                        </button>
                       )}
                     </div>
                   </td>

@@ -24,8 +24,8 @@ class ExecutionPlanDoc(Document):
     done_count: int = Field(default=0, description="已完成条目数")
     progress_percent: int = Field(default=0, description="进度 0-100")
     is_deleted: bool = Field(default=False)
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     @before_event([Save, Insert])
     def _touch_updated_at(self) -> None:
@@ -58,8 +58,8 @@ class ExecutionPlanItemDoc(Document):
     result_id: Optional[str] = Field(None, description="关联手工结果 ID")
     archived_at: Optional[datetime] = Field(None, description="归档时间，null=未归档")
     is_deleted: bool = Field(default=False)
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     @before_event([Save, Insert])
     def _touch_updated_at(self) -> None:
@@ -96,8 +96,8 @@ class ManualExecutionResultDoc(Document):
     executed_by: str = Field(..., description="执行人 user_id")
     executed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     is_deleted: bool = Field(default=False)
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     @before_event([Save, Insert])
     def _touch_updated_at(self) -> None:

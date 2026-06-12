@@ -152,3 +152,12 @@ class BatchDispatchRequest(BaseModel):
     parameters: Dict[str, Any] = Field(default_factory=dict)
 
     model_config = ConfigDict(extra="forbid")
+
+
+class BatchUpdateAssigneeRequest(BaseModel):
+    """批量更新计划条目执行人请求。"""
+
+    item_ids: List[str] = Field(..., description="要更新的条目ID列表")
+    assignee_id: Optional[str] = Field(None, description="执行人user_id，null表示取消指派")
+
+    model_config = ConfigDict(extra="forbid")

@@ -1,4 +1,4 @@
-import type { TestCaseResponse, AutomationTestCaseResponse } from '../../types';
+import type { TestCaseResponse, AutomationTestCaseResponse, ExecutionStatsResponse } from '../../types';
 import type { UnifiedCaseItem, DetailTab } from './testCaseBoardTypes';
 import {
   getManualDot, getManualLabel, getAutoDot, getAutoLabel,
@@ -6,6 +6,8 @@ import {
 } from './testCaseBoardTypes';
 import { boardStyles as S } from './testCaseBoardStyles';
 import TestCaseStepList from '../TestCaseStepList';
+import { api } from '../../services/api';
+import { useState, useCallback, useEffect } from 'react';
 
 /* ═══════════════════════════════════════════════════════════════════
    Props
@@ -315,6 +317,7 @@ const ManualDetailPanel: React.FC<{
         {activeTab === 'info' && <ManualInfoContent d={d} />}
         {activeTab === 'steps' && <ManualStepsContent d={d} />}
         {activeTab === 'meta' && <ManualMetaContent d={d} />}
+        {activeTab === 'stats' && <StatsContent caseId={d.case_id} />}
       </div>
     </>
   );
@@ -371,8 +374,114 @@ const AutoDetailPanel: React.FC<{
         {activeTab === 'params' && <AutoParamsContent d={d} />}
         {activeTab === 'relations' && <AutoRelationsContent d={d} />}
         {activeTab === 'meta' && <AutoMetaContent d={d} />}
+        {activeTab === 'stats' && <StatsContent caseId={d.auto_case_id} isAuto />}
       </div>
     </>
+  );
+};
+
+/* ═══════════════════════════════════════════════════════════════════
+   Execution Stats
+   ═══════════════════════════════════════════════════════════════════ */
+
+const StatsContent: React.FC<{ caseId: string; isAuto?: boolean }> = ({ caseId, isAuto }) => {
+  const [data, setData] = useState<ExecutionStatsResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    setLoading(true);
+    api.getCaseExecutionStats(caseId)
+      .then(res => setData(res.data))
+      .catch(() => setData(null))
+      .finally(() => setLoading(false));
+  }, [caseId]);
+
+  if (loading) {
+    return <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 13 }}>加载中...</div>;
+  }
+  if (!data) {
+    return <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 13 }}>暂无执行数据</div>;
+  }
+
+  // 近 10 次执行结果柱状条（绿色通过 / 红色失败）
+  const recentResults = [...data.recent].reverse().slice(-10);
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* 统计卡片 */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8 }}>
+        {[
+          { label: '总次数', value: data.total, color: '#3b82f6' },
+          { label: '通过', value: data.passed, color: '#16a34a' },
+          { label: '失败', value: data.failed, color: '#dc2626' },
+          { label: '通过率', value: `${data.pass_rate}%`, color: data.pass_rate >= 80 ? '#16a34a' : '#d97706' },
+        ].map(({ label, value, color }) => (
+          <div key={label} style={{
+            background: 'var(--bg-secondary)', borderRadius: 10, padding: '14px 16px',
+            border: '1px solid var(--border-muted)', textAlign: 'center',
+          }}>
+            <div style={{ fontSize: 22, fontWeight: 700, color, lineHeight: 1.2 }}>{value}</div>
+            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4 }}>{label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* 最近执行趋势 */}
+      {recentResults.length > 0 && (
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>最近执行趋势（近 {recentResults.length} 次）</div>
+          <div style={{ display: 'flex', gap: 3, alignItems: 'flex-end', height: 40 }}>
+            {recentResults.map((r, i) => (
+              <div key={r.result_id || i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                <div style={{
+                  width: '100%', height: r.passed ? 28 : 28, borderRadius: 3,
+                  background: r.passed ? '#16a34a' : '#dc2626',
+                  opacity: 0.85,
+                  transition: 'opacity 0.15s',
+                }} title={r.passed ? '通过' : '失败'} />
+                <span style={{ fontSize: 8, color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}>
+                  {r.executed_at ? new Date(r.executed_at).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit' }) : ''}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 最近执行记录 */}
+      {data.recent.length > 0 && (
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>最近执行记录</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {data.recent.slice(0, 10).map((r) => (
+              <div key={r.result_id} style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                padding: '8px 12px', background: 'var(--bg-secondary)',
+                borderRadius: 8, border: '1px solid var(--border-muted)',
+                fontSize: 12, color: 'var(--text-primary)',
+              }}>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, background: r.passed ? '#16a34a' : '#dc2626' }} />
+                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {r.notes || (r.passed ? '通过' : '失败')}
+                </span>
+                <span style={{ color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}>
+                  {new Date(r.executed_at).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                </span>
+                <span style={{ color: 'var(--text-tertiary)', whiteSpace: 'nowrap', fontFamily: 'monospace', fontSize: 11 }}>
+                  {r.executed_by}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {data.last_executed_at && (
+        <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
+          最近执行：{new Date(data.last_executed_at).toLocaleString('zh-CN')}
+        </div>
+      )}
+    </div>
   );
 };
 
@@ -404,6 +513,7 @@ const TestCaseBoardDetail: React.FC<TestCaseBoardDetailProps> = ({
     { id: 'params', label: '参数与环境', show: !isManual && Boolean(item.autoData?.param_spec?.length || (item.autoData?.runtime_env && Object.keys(item.autoData.runtime_env).length > 0)) },
     { id: 'relations', label: '关联', show: !isManual },
     { id: 'workflow', label: '工作流', show: isManual && Boolean(item.manualData?.workflow_item_id) },
+    { id: 'stats', label: '执行统计', show: true },
     { id: 'meta', label: '元数据', show: true },
   ];
   const tabs = allTabs.filter(t => t.show);

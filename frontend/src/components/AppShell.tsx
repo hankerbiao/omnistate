@@ -9,7 +9,6 @@ const PAGE_TITLES: Record<string, { title: string; description?: string }> = {
   manualTestCases: { title: '测试用例', description: '查看和管理手工测试用例' },
   testCases: { title: '用例看板', description: '概览、浏览和管理测试用例' },
   agents: { title: '执行代理', description: '监控代理运行状态' },
-  tasks: { title: '执行任务', description: '下发和管理测试任务' },
   users: { title: '用户管理', description: '管理系统用户和权限' },
   roles: { title: '角色管理', description: '配置角色和权限' },
   roleGroup: { title: '用户组管理', description: '管理组成员与权限' },

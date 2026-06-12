@@ -18,9 +18,9 @@ from app.modules.execution_plan.domain.exceptions import (
 from app.modules.execution_plan.schemas.execution_plan import (
     AddPlanItemsRequest,
     BatchDispatchRequest,
+    BatchUpdateAssigneeRequest,
     CreatePlanRequest,
     PlanItemDispatchRequest,
-    PlanItemResponse,
     SubmitManualResultRequest,
     UpdatePlanItemRequest,
     UpdatePlanRequest,
@@ -78,6 +78,43 @@ async def list_my_plan_items(
 
 
 @router.get(
+    "/items",
+    response_model=APIResponse[List[Dict[str, Any]]],
+    summary="查询计划条目列表（支持状态/计划筛选，不限执行人）",
+)
+async def list_plan_items(
+    service: ExecutionPlanServiceDep,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    status: Optional[str] = Query(None, description="按状态筛选: pending|running|done|fail"),
+    plan_id: Optional[str] = Query(None, description="按计划ID筛选"),
+    limit: int = Query(200, description="返回条目数量上限", ge=1, le=1000),
+):
+    """查询所有未删除计划的条目列表，支持按状态和计划ID过滤，不限制执行人。"""
+    try:
+        items = await service.list_items(status=status, plan_id=plan_id, limit=limit)
+        return APIResponse(data=items)
+    except Exception as exc:
+        _handle_service_error(exc)
+
+
+@router.get(
+    "/items/overview",
+    response_model=APIResponse[Dict[str, Any]],
+    summary="获取所有计划的运行总览",
+)
+async def get_plan_overview(
+    service: ExecutionPlanServiceDep,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """返回所有执行计划的统计摘要及运行中条目列表。"""
+    try:
+        overview = await service.get_overview()
+        return APIResponse(data=overview)
+    except Exception as exc:
+        _handle_service_error(exc)
+
+
+@router.get(
     "/items/{item_id}",
     response_model=APIResponse[Dict[str, Any]],
     summary="获取单条计划条目详情",
@@ -89,9 +126,8 @@ async def get_plan_item(
 ):
     """获取计划内单条条目的详细信息（含结果）。"""
     try:
-        item = await service._get_item_by_id_or_raise(item_id)
-        response = await service._item_to_response(item)
-        return APIResponse(data=response)
+        item = await service.get_item(item_id)
+        return APIResponse(data=item)
     except Exception as exc:
         _handle_service_error(exc)
 
@@ -253,7 +289,7 @@ async def batch_dispatch_items(
 async def list_plans(
     service: ExecutionPlanServiceDep,
     current_user: Dict[str, Any] = Depends(get_current_user),
-    status: Optional[str] = Query(None, description="按状态筛选: draft|active|done|archived"),
+    status: Optional[str] = Query(None, description="按状态筛选: active|done"),
 ):
     """返回所有执行计划列表（不含条目详情）。"""
     try:
@@ -370,8 +406,6 @@ async def add_plan_items(
         raise
     except Exception as exc:
         logger.error(f"add_items 未处理异常: {exc}", exc_info=True)
-        import traceback
-        traceback.print_exc()
         raise HTTPException(status_code=400, detail=f"{type(exc).__name__}: {exc}")
 
 
@@ -390,6 +424,29 @@ async def delete_plan_item(
     try:
         await service.delete_item(plan_id=plan_id, item_id=item_id)
         return APIResponse(data={"plan_id": plan_id, "item_id": item_id, "deleted": True})
+    except Exception as exc:
+        _handle_service_error(exc)
+
+
+@router.put(
+    "/plans/{plan_id}/items/batch-assignee",
+    response_model=APIResponse[Dict[str, Any]],
+    summary="批量更新计划条目执行人",
+)
+async def batch_update_assignee(
+    plan_id: str,
+    request: BatchUpdateAssigneeRequest,
+    service: ExecutionPlanServiceDep,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """批量更新执行计划条目的执行人（指派或取消指派）。"""
+    try:
+        result = await service.batch_update_assignee(
+            plan_id=plan_id,
+            item_ids=request.item_ids,
+            assignee_id=request.assignee_id,
+        )
+        return APIResponse(data=result)
     except Exception as exc:
         _handle_service_error(exc)
 

@@ -10,7 +10,7 @@ import { SWITCHABLE_USERS } from '../../config/users';
 
 export type CaseType = 'auto' | 'manual';
 export type TypeFilter = 'all' | 'auto' | 'manual';
-export type DetailTab = 'info' | 'steps' | 'code' | 'params' | 'relations' | 'workflow' | 'meta';
+export type DetailTab = 'info' | 'steps' | 'code' | 'params' | 'relations' | 'workflow' | 'meta' | 'stats';
 
 export interface UnifiedCaseItem {
   type: CaseType;

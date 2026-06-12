@@ -173,8 +173,8 @@ def _get_system_config_sync(key: str) -> str | None:
         from pymongo import MongoClient
         from app.shared.config import get_settings
         settings = get_settings()
-        client = MongoClient(settings.MONGO_URI)
-        db = client[settings.MONGO_DB_NAME]
+        client = MongoClient(settings.mongodb.uri)
+        db = client[settings.mongodb.db_name]
         doc = db["system_configs"].find_one({"config_key": key})
         client.close()
         if doc and doc.get("config_value"):
@@ -342,7 +342,8 @@ def _apply_defaults(command: DispatchExecutionTaskCommand) -> None:
     if command.repo_url is None:
         command.repo_url = execution_cfg.default_repo_url or _get_system_config_sync("execution.default_repo_url")
     if command.branch is None:
-        command.branch = execution_cfg.default_branch
+        mongo_branch = _get_system_config_sync("execution.default_branch")
+        command.branch = mongo_branch or execution_cfg.default_branch
     if command.category is None:
         command.category = ""
     if command.project_tag is None:
