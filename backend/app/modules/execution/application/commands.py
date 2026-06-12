@@ -44,4 +44,4 @@ class DispatchExecutionTaskCommand:
     attachments: Optional[List[Dict[str, Any]]] = field(default_factory=list)
 
     is_proxy: bool = True  # 是否为代理命令，默认为 False
-    nc_pypi: str = 'http://10.2.48.111:8080/simple'
+    nc_pypi: str = 'http://10.32.12.28:8080/simple'

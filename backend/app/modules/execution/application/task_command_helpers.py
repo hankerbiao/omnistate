@@ -175,7 +175,7 @@ def _get_system_config_sync(key: str) -> str | None:
         settings = get_settings()
         client = MongoClient(settings.MONGO_URI)
         db = client[settings.MONGO_DB_NAME]
-        doc = db["sys_configs"].find_one({"config_key": key})
+        doc = db["system_configs"].find_one({"config_key": key})
         client.close()
         if doc and doc.get("config_value"):
             return str(doc["config_value"])
