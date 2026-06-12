@@ -755,13 +755,6 @@ function PlanSidebar({ plans, activePlanId, loading, searchQuery, onSelect }: {
                 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
                   <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{p.title}</span>
-                  <span style={{
-                    fontSize: 10, padding: '1px 7px', borderRadius: 6,
-                    background: `${meta.color}18`, color: meta.color, fontWeight: 600,
-                    whiteSpace: 'nowrap',
-                  }}>
-                    {meta.label}
-                  </span>
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
                   {p.start_date || '-'} 至 {p.end_date || '-'}
