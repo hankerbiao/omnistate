@@ -978,6 +978,7 @@ function AddCasesModal({ editingItems, selectedAddCaseIds, onToggle, onClose, on
   users: UserResponse[];
 }) {
   const [assigneeId, setAssigneeId] = useState('');
+  const editingCaseIds = useMemo(() => new Set(editingItems.map(e => e.case_id)), [editingItems]);
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000 }}>
       <div onClick={e => e.stopPropagation()} style={{
@@ -1003,7 +1004,7 @@ function AddCasesModal({ editingItems, selectedAddCaseIds, onToggle, onClose, on
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
             {cases.map(tc => {
-              const alreadyInPlan = editingItems.some(e => e.case_id === tc.id);
+              const alreadyInPlan = editingCaseIds.has(tc.id);
               const selected = selectedAddCaseIds.includes(tc.id);
               return (
                 <label key={tc.id} onClick={() => { if (!alreadyInPlan) onToggle(tc.id); }}
