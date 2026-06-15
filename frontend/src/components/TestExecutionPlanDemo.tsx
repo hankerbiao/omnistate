@@ -2082,32 +2082,24 @@ function ResultModal({ item, taskData, timelineData, loading, onClose }: {
   const r = caseSummary?.result_data;
   const isManual = !item.execution_task_id;
 
-  // 构建任务状态时间线
+  // 构建任务状态时间线（4个关键阶段：下发 → 消费 → 进度 → 完成）
   const buildTaskTimelineItems = () => {
     const items: import('./TimelineView').TimelineItem[] = [];
     const t = taskData;
     if (!t) return items;
 
-    // triggered_at
+    const FINAL_STATUSES = ['PASSED', 'FAILED', 'SKIPPED', 'CANCELLED', 'TIMEOUT'];
+
+    // ① 任务下发
     if (t.triggered_at) {
       items.push({
         time: t.triggered_at,
-        title: '任务触发',
+        title: '任务下发',
         status: 'info',
       });
     }
-    // dispatch_status 变更
-    if (t.dispatch_status) {
-      items.push({
-        time: t.created_at || t.triggered_at,
-        title: '下发状态',
-        description: `当前状态: ${t.dispatch_status}`,
-        badge: t.dispatch_status,
-        status: t.dispatch_status === 'COMPLETED' ? 'success' :
-                t.dispatch_status === 'DISPATCH_FAILED' ? 'failed' : 'running',
-      });
-    }
-    // consumed_at
+
+    // ② 开始被消费
     if (t.consumed_at) {
       items.push({
         time: t.consumed_at,
@@ -2115,44 +2107,36 @@ function ResultModal({ item, taskData, timelineData, loading, onClose }: {
         status: 'success',
       });
     }
-    // started_at
-    if (t.started_at) {
+
+    // ③ 收到进度（已开始但未完成，且有进度数据）
+    const hasProgress = (t.progress_percent ?? 0) > 0;
+    const isFinished = t.finished_at || (t.overall_status && FINAL_STATUSES.includes(t.overall_status));
+    const progressTime = t.last_event_at || t.started_at || t.consumed_at || t.triggered_at;
+    if (hasProgress && !isFinished && progressTime) {
       items.push({
-        time: t.started_at,
-        title: '任务开始执行',
+        time: progressTime,
+        title: `执行进度 ${t.progress_percent}%`,
+        description: t.reported_case_count != null && t.case_count != null
+          ? `已完成 ${t.reported_case_count} / ${t.case_count} 个用例`
+          : undefined,
         status: 'running',
       });
     }
-    // finished_at
+
+    // ④ 完成
     if (t.finished_at) {
+      const isPassed = t.overall_status === 'PASSED';
       items.push({
         time: t.finished_at,
-        title: '任务执行结束',
-        status: t.overall_status === 'PASSED' ? 'success' :
-                t.overall_status === 'FAILED' ? 'failed' : 'info',
-      });
-    }
-    // overall_status
-    if (t.overall_status) {
-      items.push({
-        time: t.finished_at || t.updated_at || t.created_at,
-        title: '总体执行状态',
-        description: t.overall_status,
+        title: isPassed ? '执行通过' : '执行失败',
+        description: t.overall_status
+          ? `最终状态: ${t.overall_status}${t.passed_case_count != null && t.case_count != null ? ` | 通过 ${t.passed_case_count} / ${t.case_count}` : ''}`
+          : undefined,
         badge: t.overall_status,
-        status: t.overall_status === 'PASSED' ? 'success' :
-                ['FAILED', 'TIMEOUT'].includes(t.overall_status) ? 'failed' :
-                t.overall_status === 'RUNNING' ? 'running' : 'info',
+        status: isPassed ? 'success' : 'failed',
       });
     }
-    // last_event
-    if (t.last_event_at) {
-      items.push({
-        time: t.last_event_at,
-        title: '最近事件',
-        description: t.last_event_type ? `${t.last_event_type} (${t.last_event_phase || '-'})` : undefined,
-        status: 'info',
-      });
-    }
+
     return items;
   };
 

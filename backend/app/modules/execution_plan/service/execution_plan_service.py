@@ -553,6 +553,43 @@ class ExecutionPlanService(BaseService):
         logger.info(f"[DISPATCH] item={item_id} task={task_id} actor={actor_id}")
         return data
 
+    async def re_execute_item(
+        self,
+        item_id: str,
+        request: PlanItemDispatchRequest,
+        actor_id: str,
+        sequence_service: SequenceIdService,
+    ) -> Dict[str, Any]:
+        """重新执行计划条目，不覆盖原有结果历史。
+
+        对 auto 条目：重置状态为 pending，清除 execution_task_id 后重新下发。
+                    旧任务记录通过 trigger_source 可追溯。
+        对 manual 条目：重置状态为 pending，不清除 result_id（旧结果保留可查）。
+                    用户重新回填时 submit_result 会自动覆盖。
+        """
+        item = await self._get_item_by_id_or_raise(item_id)
+
+        if item.ref_type == "auto":
+            item.status = PlanItemStatus.PENDING.value
+            item.execution_task_id = None
+            await item.save()
+            await self._recalculate_plan_progress(item.plan_id)
+            return await self.dispatch_item(
+                item_id=item_id,
+                request=request,
+                actor_id=actor_id,
+                sequence_service=sequence_service,
+            )
+
+        elif item.ref_type == "manual":
+            item.status = PlanItemStatus.PENDING.value
+            await item.save()
+            await self._recalculate_plan_progress(item.plan_id)
+            return {"item_id": item_id, "status": "pending", "ref_type": "manual"}
+
+        else:
+            raise ValueError(f"不支持的条目类型: {item.ref_type}")
+
     async def batch_dispatch(
         self,
         request: BatchDispatchRequest,
@@ -634,8 +671,6 @@ class ExecutionPlanService(BaseService):
 
     async def _sync_auto_item_status(self, item: ExecutionPlanItemDoc) -> None:
         if item.ref_type != "auto" or not item.execution_task_id:
-            return
-        if item.status in {PlanItemStatus.DONE.value, PlanItemStatus.FAIL.value} and item.result_id:
             return
         task_doc = await ExecutionTaskDoc.find_one(
             ExecutionTaskDoc.task_id == item.execution_task_id,

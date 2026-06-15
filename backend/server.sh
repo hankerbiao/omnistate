@@ -17,7 +17,14 @@ LOG_FILE="$LOG_DIR/server.log"
 APP_MODULE="app.main:app"
 HOST="0.0.0.0"
 PORT="8801"
-UVICORN_BIN="$(command -v uvicorn)"
+
+# 优先使用虚拟环境的 Python
+VENV_PYTHON="$PROJECT_ROOT/.venv/bin/python"
+if [[ -x "$VENV_PYTHON" ]]; then
+    PYTHON_BIN="$VENV_PYTHON"
+else
+    PYTHON_BIN="$(command -v python3)"
+fi
 
 # 颜色输出
 RED='\033[0;31m'
@@ -74,7 +81,7 @@ cmd_start() {
 
     # 后台启动 uvicorn，端口通过 DML_APP_PORT 环境变量暴露给应用
     export DML_APP_PORT="$PORT"
-    nohup "$UVICORN_BIN" "$APP_MODULE" \
+    nohup "$PYTHON_BIN" -m uvicorn "$APP_MODULE" \
         --host "$HOST" \
         --port "$PORT" \
         --reload \
