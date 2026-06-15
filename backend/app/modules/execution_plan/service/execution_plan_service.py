@@ -52,7 +52,7 @@ class ExecutionPlanService(BaseService):
         # 批量查询所有非删除条目，按 plan_id 分组，避免 N+1 查询
         plan_ids = [doc.plan_id for doc in docs]
         items_cursor = ExecutionPlanItemDoc.find(
-            ExecutionPlanItemDoc.plan_id.is_in(plan_ids),
+            InOp(ExecutionPlanItemDoc.plan_id, list(plan_ids)),
             ExecutionPlanItemDoc.is_deleted == False,
         )
         items_by_plan: Dict[str, List[ExecutionPlanItemDoc]] = {}

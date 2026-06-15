@@ -339,6 +339,9 @@ def _apply_defaults(command: DispatchExecutionTaskCommand) -> None:
         command.repo_url = None
     if isinstance(command.branch, str) and not command.branch.strip():
         command.branch = None
+    # git detached HEAD 状态会返回 "HEAD"，视为未配置，走系统默认分支回退
+    if command.branch == "HEAD":
+        command.branch = None
     if command.repo_url is None:
         command.repo_url = execution_cfg.default_repo_url or _get_system_config_sync("execution.default_repo_url")
     if command.branch is None:
