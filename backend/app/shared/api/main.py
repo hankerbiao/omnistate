@@ -21,12 +21,7 @@ from app.modules.execution_plan.api import router as execution_plan_router
 from app.modules.test_case_collection.api import collection_router
 from app.modules.system_config.api import router as system_config_router, ai_router as ai_tools_router
 from app.modules.ai_analysis.api import router as ai_analysis_router
-from app.shared.api.routes import health_router
-
 api_router = APIRouter()
-
-# 健康检查路由
-api_router.include_router(health_router, prefix="/health", tags=["Health"])
 
 # 业务路由
 api_router.include_router(workflow_router, prefix="/api/v1", tags=["WorkItems"])

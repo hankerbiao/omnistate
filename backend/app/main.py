@@ -6,6 +6,7 @@ from pymongo import AsyncMongoClient
 from app.shared.api.middleware.debug_http import DebugHttpLoggingMiddleware
 from app.shared.api.errors.handlers import setup_exception_handlers
 from app.shared.api.main import api_router
+from app.shared.api.routes import health_router
 from app.shared.db.config import settings
 from app.shared.core.logger import log
 from app.shared.core.mongo_client import set_mongo_client
@@ -88,6 +89,7 @@ if settings.APP_DEBUG:
 setup_exception_handlers(app)
 
 app.include_router(api_router)
+app.include_router(health_router, prefix="/health", tags=["Health"])
 
 
 def main() -> None:

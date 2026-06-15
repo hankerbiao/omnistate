@@ -1192,6 +1192,59 @@ export interface CoverageAnalysis {
   gaps: string[];
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+//  用例集合（Test Case Collection）
+// ═══════════════════════════════════════════════════════════════════════
+
+export interface CollectionListItem {
+  collection_id: string;
+  name: string;
+  description: string | null;
+  tags: string[];
+  case_count: number;
+  auto_case_count: number;
+  created_by: string;
+  updated_at: string;
+}
+
+export interface CollectionResponse {
+  collection_id: string;
+  name: string;
+  description: string | null;
+  tags: string[];
+  case_ids: string[];
+  auto_case_ids: string[];
+  case_count: number;
+  auto_case_count: number;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateCollectionRequest {
+  name: string;
+  description?: string | null;
+  tags?: string[];
+  case_ids?: string[];
+  auto_case_ids?: string[];
+}
+
+export interface UpdateCollectionRequest {
+  name?: string | null;
+  description?: string | null;
+  tags?: string[] | null;
+}
+
+export interface AddCasesRequest {
+  case_ids?: string[];
+  auto_case_ids?: string[];
+}
+
+export interface RemoveCasesRequest {
+  case_ids?: string[];
+  auto_case_ids?: string[];
+}
+
 export interface CollectionAnalysisResult {
   collection_id: string;
   overall_score: number;
