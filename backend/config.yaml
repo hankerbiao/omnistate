@@ -70,6 +70,17 @@ terminal:
   workdir: ''
   idle_timeout_sec: 1800
   max_sessions_per_user: 1
+redis:
+  sentinel_hosts:
+  - 10.17.152.51:26379
+  - 10.17.151.56:26379
+  - 10.17.152.46:26379
+  master_name: redis_master
+  username: dmlv4
+  password: 7GipPaqKHQNn37Vb
+  db: 0
+  socket_timeout: 2
+  max_connections: 100
 logging:
   log_dir: logs
   retention:

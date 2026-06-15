@@ -46,7 +46,28 @@ class ExecutionPlanService(BaseService):
             filters.append(ExecutionPlanDoc.status == status)
         docs = await ExecutionPlanDoc.find(*filters).sort("-updated_at").to_list()
         logger.debug(f"[CRUD] list_plans status={status} count={len(docs)}")
-        return [self._plan_to_dict(doc) for doc in docs]
+
+        # 批量查询所有非删除条目，按 plan_id 分组，避免 N+1 查询
+        plan_ids = [doc.plan_id for doc in docs]
+        items_cursor = ExecutionPlanItemDoc.find(
+            ExecutionPlanItemDoc.plan_id.is_in(plan_ids),
+            ExecutionPlanItemDoc.is_deleted == False,
+        )
+        items_by_plan: Dict[str, List[ExecutionPlanItemDoc]] = {}
+        async for item in items_cursor:
+            items_by_plan.setdefault(item.plan_id, []).append(item)
+
+        results = []
+        for doc in docs:
+            plan_dict = self._plan_to_dict(doc)
+            items = items_by_plan.get(doc.plan_id, [])
+            item_count = len(items)
+            done_count = sum(1 for i in items if i.status == "done")
+            plan_dict["item_count"] = item_count
+            plan_dict["done_count"] = done_count
+            plan_dict["progress_percent"] = round(done_count / item_count * 100) if item_count else 0
+            results.append(plan_dict)
+        return results
 
     async def create_plan(self, data: Dict[str, Any], actor_id: str) -> Dict[str, Any]:
         title = str(data.get("title", "")).strip()

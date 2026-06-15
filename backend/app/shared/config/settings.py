@@ -208,6 +208,18 @@ class LoggingConfig(BaseModel):
 # =============================================================================
 # 主配置类
 # =============================================================================
+class RedisConfig(BaseModel):
+    """Redis 配置。"""
+
+    sentinel_hosts: list[str] = Field(default_factory=lambda: ["localhost:26379"])
+    master_name: str = "redis_master"
+    username: str = ""
+    password: str = ""
+    db: int = 0
+    socket_timeout: int = 2
+    max_connections: int = 100
+
+
 class Settings(BaseModel):
     """应用统一配置。"""
 
@@ -220,6 +232,7 @@ class Settings(BaseModel):
     execution: ExecutionConfig = Field(default_factory=ExecutionConfig)
     tmms: TmmsConfig = Field(default_factory=TmmsConfig)
     terminal: TerminalConfig = Field(default_factory=TerminalConfig)
+    redis: RedisConfig = Field(default_factory=RedisConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
 
 
