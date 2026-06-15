@@ -67,8 +67,6 @@ dependencies = [
 
     # ML / Data
     "transformers>=4.57.3",
-    "torch>=2.9.1",
-    "torchvision>=0.24.1",
     "sentence-transformers>=3.0.0",
     "accelerate>=1.12.0",
     "safetensors>=0.7.0",
