@@ -1281,3 +1281,43 @@ export interface BatchUpdateResult {
   failed_count: number;
   failures: { case_id: string; reason: string }[];
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Execution Timeline types
+// ═══════════════════════════════════════════════════════════════════════
+
+export interface TaskTimelineEvent {
+  event_id: string;
+  task_id: string;
+  case_id?: string | null;
+  event_type: string;
+  phase?: string | null;
+  event_seq?: number | null;
+  event_status?: string | null;
+  event_timestamp: string;
+  payload: Record<string, unknown>;
+  metadata: Record<string, unknown>;
+  ingested_at: string;
+}
+
+export interface TaskBizLog {
+  id: string;
+  task_id: string;
+  case_id?: string | null;
+  event_id?: string | null;
+  node: string;
+  action: string;
+  outcome?: string | null;
+  status_before?: Record<string, unknown> | null;
+  status_after?: Record<string, unknown> | null;
+  operator_id?: string | null;
+  request_id?: string | null;
+  detail: Record<string, unknown>;
+  level: string;
+  created_at: string;
+}
+
+export interface TaskTimeline {
+  biz_logs: TaskBizLog[];
+  events: TaskTimelineEvent[];
+}

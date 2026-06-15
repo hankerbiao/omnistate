@@ -628,6 +628,8 @@ class ExecutionPlanService(BaseService):
             "execution_task_id": item.execution_task_id,
             "result": result_payload,
             "archived_at": item.archived_at.isoformat() if item.archived_at else None,
+            "created_at": item.created_at.isoformat() if item.created_at else None,
+            "updated_at": item.updated_at.isoformat() if item.updated_at else None,
         }
 
     async def _sync_auto_item_status(self, item: ExecutionPlanItemDoc) -> None:

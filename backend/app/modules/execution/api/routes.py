@@ -332,3 +332,23 @@ async def get_task_status(
         return APIResponse(data=data)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.get(
+    "/tasks/{task_id}/timeline",
+    response_model=APIResponse[dict],
+    summary="获取任务事件时间线",
+    dependencies=[Depends(require_permission("execution_tasks:read"))],
+)
+async def get_task_timeline(
+        task_id: str,
+        service: ExecutionTaskQueryServiceDep,
+        current_user=Depends(get_current_user),
+        limit: int = Query(200, ge=1, le=500, description="返回条数上限"),
+):
+    """获取任务事件时间线，包含业务轨迹日志和 Kafka 事件。"""
+    try:
+        data = await service.get_task_timeline(task_id, limit=limit)
+        return APIResponse(data=data)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))

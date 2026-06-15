@@ -14,6 +14,7 @@ import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { api } from '../services/api';
 import type { UserResponse } from '../types';
+import TimelineView from './TimelineView';
 
 // ═══════════════════════════════════════════════════════════════════
 //  Types
@@ -47,6 +48,8 @@ interface PlanItemSummary {
   order_no: number;
   execution_task_id?: string | null;
   result?: { passed?: boolean; notes?: string; actual?: string } | null;
+  created_at?: string | null;
+  updated_at?: string | null;
 }
 
 type ViewMode = 'statusBoard' | 'componentView' | 'listView';
@@ -240,7 +243,12 @@ export default function TestExecutionPlanDemo() {
   }, [activePlanId]);
 
   // ── Result viewer ──
-  const [resultModal, setResultModal] = useState<{ item: PlanItemSummary; taskData: any; loading: boolean } | null>(null);
+  const [resultModal, setResultModal] = useState<{
+    item: PlanItemSummary;
+    taskData: any;
+    timelineData: any;
+    loading: boolean;
+  } | null>(null);
 
   // ══════════════════════════════════════════════════
   //  Actions
@@ -459,8 +467,16 @@ export default function TestExecutionPlanDemo() {
       // 自动化任务 — 从 task 状态获取
       setResultModal({ item, taskData: null, loading: true });
       try {
-        const res = await api.getTaskStatus(item.execution_task_id);
-        setResultModal(prev => prev ? { ...prev, taskData: res.data, loading: false } : null);
+        const [statusRes, timelineRes] = await Promise.all([
+          api.getTaskStatus(item.execution_task_id),
+          api.getTaskTimeline(item.execution_task_id).catch(() => null),
+        ]);
+        setResultModal(prev => prev ? {
+          ...prev,
+          taskData: statusRes.data,
+          timelineData: timelineRes?.data || null,
+          loading: false,
+        } : null);
       } catch {
         setResultModal(prev => prev ? { ...prev, taskData: { error: true }, loading: false } : null);
       }
@@ -737,6 +753,7 @@ export default function TestExecutionPlanDemo() {
         <ResultModal
           item={resultModal.item}
           taskData={resultModal.taskData}
+          timelineData={resultModal.timelineData}
           loading={resultModal.loading}
           onClose={() => setResultModal(null)}
         />
@@ -839,6 +856,16 @@ function PlanDetailView({ plan, items, viewMode, onViewModeChange, isEditing, on
 }) {
   const meta = PLAN_STATUS_META[plan.status] || { label: plan.status, color: '#8b949e' };
 
+  // 各状态计数
+  const statusCounts = useMemo(() => {
+    const counts: Record<string, number> = { pending: 0, running: 0, fail: 0, done: 0 };
+    for (const item of items) {
+      const key = STATUS.includes(item.status as ItemStatus) ? item.status : 'pending';
+      counts[key] = (counts[key] || 0) + 1;
+    }
+    return counts;
+  }, [items]);
+
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: '16px 20px' }}>
       {/* Plan header — 单一来源，不再在子视图中重复 */}
@@ -860,6 +887,22 @@ function PlanDetailView({ plan, items, viewMode, onViewModeChange, isEditing, on
         </span>
         <div style={{ width: 60, height: 3, background: 'var(--surface-tertiary)', borderRadius: 2, overflow: 'hidden' }}>
           <div style={{ width: `${plan.progress_percent ?? 0}%`, height: '100%', background: plan.status === 'active' ? 'var(--accent-primary)' : '#8b949e', borderRadius: 2 }} />
+        </div>
+        {/* ── 各状态计数 ── */}
+        <div style={{ display: 'flex', gap: 4, fontSize: 10 }}>
+          {([
+            { key: 'pending', label: '待执行', color: '#8b949e' },
+            { key: 'running', label: '执行中', color: '#58a6ff' },
+            { key: 'fail',    label: '失败',   color: '#f85149' },
+            { key: 'done',    label: '已完成', color: '#3fb950' },
+          ] as const).map(s => statusCounts[s.key] > 0 && (
+            <span key={s.key} style={{
+              padding: '1px 5px', borderRadius: 4,
+              background: `${s.color}12`, color: s.color, fontWeight: 600,
+            }}>
+              {s.label}: {statusCounts[s.key]}
+            </span>
+          ))}
         </div>
         <div style={{ flex: 1 }} />
         {isEditing ? (
@@ -1056,6 +1099,12 @@ function StatusCard({ item, isEditing, onRemoveItem, users, onViewResult, onTerm
           </button>
         )}
       </div>
+      {/* ── 时间信息 ── */}
+      {item.updated_at && (
+        <div style={{ fontSize: 9, color: 'var(--text-tertiary)', marginTop: 4, opacity: 0.6 }}>
+          更新: {new Date(item.updated_at).toLocaleString('zh-CN')}
+        </div>
+      )}
     </div>
   );
 }
@@ -1234,6 +1283,7 @@ function DataTable({ items, isEditing, onRemoveItem, users, onViewResult, onBatc
             <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: 'var(--text-secondary)', fontSize: 11, borderBottom: '1px solid var(--border-subtle)' }}>优先级</th>
             <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: 'var(--text-secondary)', fontSize: 11, borderBottom: '1px solid var(--border-subtle)' }}>执行人</th>
             <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: 'var(--text-secondary)', fontSize: 11, borderBottom: '1px solid var(--border-subtle)' }}>状态</th>
+            <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: 'var(--text-secondary)', fontSize: 11, borderBottom: '1px solid var(--border-subtle)' }}>更新时间</th>
             <th style={{ padding: '8px 12px', textAlign: 'center', fontWeight: 600, color: 'var(--text-secondary)', fontSize: 11, borderBottom: '1px solid var(--border-subtle)' }}>结果</th>
             {isEditing && <th style={{ padding: '8px 12px', textAlign: 'center', width: 30, borderBottom: '1px solid var(--border-subtle)' }}></th>}
           </tr>
@@ -1291,6 +1341,9 @@ function DataTable({ items, isEditing, onRemoveItem, users, onViewResult, onBatc
                   <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 6,
                     background: `${statusMeta.color}15`, color: statusMeta.color, fontWeight: 600,
                   }}>{statusMeta.label}</span>
+                </td>
+                <td style={{ padding: '7px 12px', fontSize: 10, color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}>
+                  {item.updated_at ? new Date(item.updated_at).toLocaleString('zh-CN') : '-'}
                 </td>
                 <td style={{ padding: '7px 12px', textAlign: 'center' }}>
                   {item.result && (
@@ -2018,20 +2071,201 @@ function OverviewView({ data, loading, onRefresh, onSelectPlan, users, onViewRes
 //  ResultModal — 用例执行结果查看
 // ═══════════════════════════════════════════════════════════════════
 
-function ResultModal({ item, taskData, loading, onClose }: {
+function ResultModal({ item, taskData, timelineData, loading, onClose }: {
   item: PlanItemSummary;
   taskData: any;
+  timelineData: any;
   loading: boolean;
   onClose: () => void;
 }) {
   const caseSummary = taskData?.cases?.find((c: any) => c.auto_case_id === item.case_id);
   const r = caseSummary?.result_data;
+  const isManual = !item.execution_task_id;
+
+  // 构建任务状态时间线
+  const buildTaskTimelineItems = () => {
+    const items: import('./TimelineView').TimelineItem[] = [];
+    const t = taskData;
+    if (!t) return items;
+
+    // triggered_at
+    if (t.triggered_at) {
+      items.push({
+        time: t.triggered_at,
+        title: '任务触发',
+        status: 'info',
+      });
+    }
+    // dispatch_status 变更
+    if (t.dispatch_status) {
+      items.push({
+        time: t.created_at || t.triggered_at,
+        title: '下发状态',
+        description: `当前状态: ${t.dispatch_status}`,
+        badge: t.dispatch_status,
+        status: t.dispatch_status === 'COMPLETED' ? 'success' :
+                t.dispatch_status === 'DISPATCH_FAILED' ? 'failed' : 'running',
+      });
+    }
+    // consumed_at
+    if (t.consumed_at) {
+      items.push({
+        time: t.consumed_at,
+        title: '任务被消费',
+        status: 'success',
+      });
+    }
+    // started_at
+    if (t.started_at) {
+      items.push({
+        time: t.started_at,
+        title: '任务开始执行',
+        status: 'running',
+      });
+    }
+    // finished_at
+    if (t.finished_at) {
+      items.push({
+        time: t.finished_at,
+        title: '任务执行结束',
+        status: t.overall_status === 'PASSED' ? 'success' :
+                t.overall_status === 'FAILED' ? 'failed' : 'info',
+      });
+    }
+    // overall_status
+    if (t.overall_status) {
+      items.push({
+        time: t.finished_at || t.updated_at || t.created_at,
+        title: '总体执行状态',
+        description: t.overall_status,
+        badge: t.overall_status,
+        status: t.overall_status === 'PASSED' ? 'success' :
+                ['FAILED', 'TIMEOUT'].includes(t.overall_status) ? 'failed' :
+                t.overall_status === 'RUNNING' ? 'running' : 'info',
+      });
+    }
+    // last_event
+    if (t.last_event_at) {
+      items.push({
+        time: t.last_event_at,
+        title: '最近事件',
+        description: t.last_event_type ? `${t.last_event_type} (${t.last_event_phase || '-'})` : undefined,
+        status: 'info',
+      });
+    }
+    return items;
+  };
+
+  // 构建 Case 级状态时间线
+  const buildCaseTimelineItems = () => {
+    const items: import('./TimelineView').TimelineItem[] = [];
+    if (!caseSummary) return items;
+    const c = caseSummary;
+
+    // dispatch_status
+    if (c.dispatch_status) {
+      items.push({
+        time: c.dispatched_at || c.started_at || c.created_at,
+        title: '用例下发状态',
+        description: c.dispatch_status,
+        badge: c.dispatch_status,
+        status: c.dispatch_status === 'COMPLETED' ? 'success' :
+                c.dispatch_status === 'DISPATCH_FAILED' ? 'failed' : 'running',
+      });
+    }
+    // dispatched_at
+    if (c.dispatched_at) {
+      items.push({
+        time: c.dispatched_at,
+        title: '用例下发时间',
+        status: 'info',
+      });
+    }
+    // started_at
+    if (c.started_at) {
+      items.push({
+        time: c.started_at,
+        title: '用例开始执行',
+        status: 'running',
+      });
+    }
+    // finished_at
+    if (c.finished_at) {
+      items.push({
+        time: c.finished_at,
+        title: '用例执行结束',
+        status: c.status === 'PASSED' ? 'success' :
+                c.status === 'FAILED' ? 'failed' : 'info',
+      });
+    }
+    // status
+    if (c.status) {
+      items.push({
+        time: c.finished_at || c.last_event_at || c.started_at || c.created_at,
+        title: '用例执行状态',
+        description: c.status,
+        badge: c.status,
+        status: c.status === 'PASSED' ? 'success' :
+                c.status === 'FAILED' ? 'failed' :
+                c.status === 'RUNNING' ? 'running' : 'info',
+      });
+    }
+    // last_event
+    if (c.last_event_at) {
+      items.push({
+        time: c.last_event_at,
+        title: '用例最近事件',
+        status: 'info',
+      });
+    }
+    return items;
+  };
+
+  // 构建业务日志时间线
+  const buildBizLogTimelineItems = () => {
+    if (!timelineData?.biz_logs) return [];
+    return timelineData.biz_logs.map((log: any) => ({
+      time: log.created_at,
+      title: log.action,
+      description: `${log.node}${log.outcome ? ` — ${log.outcome}` : ''}`,
+      status: log.outcome === 'success' || log.outcome === 'completed' ? 'success' as const :
+              log.outcome === 'failed' ? 'failed' as const :
+              log.level === 'WARNING' ? 'warning' as const : 'info' as const,
+      badge: log.outcome || log.level,
+      badgeColor: log.outcome === 'success' ? '#3fb950' :
+                  log.outcome === 'failed' ? '#f85149' :
+                  log.level === 'WARNING' ? '#d29922' : '#8b949e',
+      expandable: log.detail && Object.keys(log.detail).length > 0 ? (
+        <pre style={{ fontSize: 10, margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+          {JSON.stringify(log.detail, null, 2)}
+        </pre>
+      ) : undefined,
+    }));
+  };
+
+  // 构建事件时间线
+  const buildEventTimelineItems = () => {
+    if (!timelineData?.events) return [];
+    return timelineData.events.map((evt: any) => ({
+      time: evt.event_timestamp,
+      title: evt.event_type,
+      description: `phase: ${evt.phase || '-'}${evt.event_status ? ` | status: ${evt.event_status}` : ''}`,
+      status: 'info' as const,
+      badge: evt.phase || undefined,
+      expandable: evt.payload && Object.keys(evt.payload).length > 0 ? (
+        <pre style={{ fontSize: 10, margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+          {JSON.stringify(evt.payload, null, 2)}
+        </pre>
+      ) : undefined,
+    }));
+  };
+
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'var(--overlay-bg)', backdropFilter: 'blur(2px)', zIndex: 2000, display: 'flex', justifyContent: 'center', alignItems: 'center' }}
       onClick={onClose}>
       <div onClick={e => e.stopPropagation()} style={{
-        background: 'var(--surface-primary)', borderRadius: 12, width: 600, maxWidth: '94vw',
-        maxHeight: '80vh', display: 'flex', flexDirection: 'column',
+        background: 'var(--surface-primary)', borderRadius: 12, width: 680, maxWidth: '94vw',
+        maxHeight: '85vh', display: 'flex', flexDirection: 'column',
         boxShadow: '0 25px 80px rgba(0,0,0,0.3)', border: '1px solid var(--border-default)',
       }}>
         <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -2048,6 +2282,29 @@ function ResultModal({ item, taskData, loading, onClose }: {
             <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 13 }}>加载执行结果...</div>
           ) : taskData?.error ? (
             <div style={{ padding: 30, textAlign: 'center', color: 'var(--status-error)', fontSize: 13 }}>获取结果失败</div>
+          ) : isManual ? (
+            /* ── 手工用例结果 ── */
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                {[
+                  { label: '结果', value: taskData?.manualResult?.passed ? '通过' : '失败',
+                    color: taskData?.manualResult?.passed ? '#3fb950' : '#f85149' },
+                  { label: '严重程度', value: taskData?.manualResult?.severity || '-' },
+                  { label: '备注', value: taskData?.manualResult?.notes || '-' },
+                  { label: '执行人', value: taskData?.manualResult?.executed_by || '-' },
+                ].map(kv => (
+                  <div key={kv.label} style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border-subtle)', background: 'var(--surface-secondary)', minWidth: 80 }}>
+                    <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginBottom: 2 }}>{kv.label}</div>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: kv.color || 'var(--text-primary)' }}>{kv.value ?? '-'}</div>
+                  </div>
+                ))}
+              </div>
+              {taskData?.manualResult?.executed_at && (
+                <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
+                  执行时间: {new Date(taskData.manualResult.executed_at).toLocaleString('zh-CN')}
+                </div>
+              )}
+            </div>
           ) : !caseSummary ? (
             <div style={{ padding: 30, textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 13 }}>暂未获取到执行结果</div>
           ) : (
@@ -2090,12 +2347,19 @@ function ResultModal({ item, taskData, loading, onClose }: {
                 </div>
               )}
 
-              {/* ── 时间线 ── */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 16px', fontSize: 12 }}>
-                {caseSummary.started_at && <><span style={{ color: 'var(--text-tertiary)' }}>开始</span><span>{new Date(caseSummary.started_at).toLocaleString('zh-CN')}</span></>}
-                {caseSummary.finished_at && <><span style={{ color: 'var(--text-tertiary)' }}>结束</span><span>{new Date(caseSummary.finished_at).toLocaleString('zh-CN')}</span></>}
-                {caseSummary.failure_message && <><span style={{ color: 'var(--status-error)' }}>失败信息</span><span style={{ color: 'var(--status-error)' }}>{caseSummary.failure_message}</span></>}
-              </div>
+              {/* ── 任务状态时间线 ── */}
+              <TimelineView
+                items={buildTaskTimelineItems()}
+                title="任务状态时间线"
+              />
+
+              {/* ── 用例状态时间线 ── */}
+              <TimelineView
+                items={buildCaseTimelineItems()}
+                title="用例状态时间线"
+              />
+
+              {/* ── 断言 ── */}
               {r?.assertions?.length > 0 && (
                 <div>
                   <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 8 }}>断言 ({r.assertions.length})</div>
@@ -2114,11 +2378,30 @@ function ResultModal({ item, taskData, loading, onClose }: {
                   ))}
                 </div>
               )}
+
+              {/* ── 返回数据 ── */}
               {r?.data && Object.keys(r.data).length > 0 && (
                 <div>
                   <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>返回数据</div>
                   <pre style={{ fontSize: 11, background: 'var(--surface-secondary)', padding: 10, borderRadius: 6, overflow: 'auto', maxHeight: 200, margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{JSON.stringify(r.data, null, 2)}</pre>
                 </div>
+              )}
+
+              {/* ── 业务轨迹日志 ── */}
+              {timelineData?.biz_logs?.length > 0 && (
+                <TimelineView
+                  items={buildBizLogTimelineItems()}
+                  title="操作日志"
+                />
+              )}
+
+              {/* ── 事件时间线 ── */}
+              {timelineData?.events?.length > 0 && (
+                <TimelineView
+                  items={buildEventTimelineItems()}
+                  title="事件时间线"
+                  defaultCollapsed
+                />
               )}
             </div>
           )}
