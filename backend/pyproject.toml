@@ -2,7 +2,7 @@
 name = "dmlv4-backend"
 version = "1.0.0"
 description = "DML V4 Backend"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     # Web framework
     "fastapi>=0.135.1",
@@ -137,7 +137,8 @@ dev = [
 ]
 
 [tool.uv]
-dev-dependencies = [
+[dependency-groups]
+dev = [
     "ipykernel>=6.0.0",
     "ipython>=9.4.0",
     "jupyter-client>=8.0.0",
