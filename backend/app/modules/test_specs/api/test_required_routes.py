@@ -79,7 +79,7 @@ async def list_requirements(
     tpm_owner_id: Optional[str] = Query(None),
     manual_dev_id: Optional[str] = Query(None),
     auto_dev_id: Optional[str] = Query(None),
-    limit: int = Query(20, ge=1, le=200),
+    limit: int = Query(20, ge=1, le=500),
     offset: int = Query(0, ge=0),
 ):
     data = await query_service.list_requirements(

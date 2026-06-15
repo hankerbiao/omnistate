@@ -145,7 +145,7 @@ async def list_test_cases(
     catalog_prefix: Optional[str] = Query(None, description="JSON 数组，目录前缀"),
     tags: Optional[str] = Query(None, description="JSON 数组，包含指定 Tag"),
     missing_fields: Optional[str] = Query(None, description="逗号分隔，如 lab_id,catalog_path,tags,auto_link"),
-    limit: int = Query(20, ge=1, le=200),
+    limit: int = Query(20, ge=1, le=500),
     offset: int = Query(0, ge=0),
 ):
     parsed_prefix: Optional[list[str]] = None

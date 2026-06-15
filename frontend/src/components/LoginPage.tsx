@@ -9,8 +9,8 @@ interface LoginPageProps {
 const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
   const [formData, setFormData] = useState<LoginRequest>(() => {
     // 尝试从 localStorage 恢复保存的凭据
-    const savedUserId = localStorage.getItem('saved_user_id') || '';
-    const savedPassword = localStorage.getItem('saved_password') || '';
+    const savedUserId = localStorage.getItem('saved_user_id') || 'admin';
+    const savedPassword = localStorage.getItem('saved_password') || 'Test@123';
     return {
       user_id: savedUserId,
       password: savedPassword,

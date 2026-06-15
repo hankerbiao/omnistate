@@ -226,7 +226,14 @@ export default function TestExecutionPlanDemo() {
     api.getPlanDetail(activePlanId)
       .then(res => {
         const d = res.data as Record<string, unknown> | undefined;
-        setActivePlanItems((d?.items as PlanItemSummary[]) || []);
+        const items = (d?.items as PlanItemSummary[]) || [];
+        setActivePlanItems(items);
+        // 用实际返回的 items 更新侧边栏计数，剔除后端可能统计的已删除条目
+        setPlans(prev => prev.map(p =>
+          p.plan_id === activePlanId
+            ? { ...p, item_count: items.length, done_count: items.filter(i => i.status === 'done').length }
+            : p
+        ));
       })
       .catch(() => setActivePlanItems([]))
       .finally(() => setDetailLoading(false));
@@ -290,14 +297,28 @@ export default function TestExecutionPlanDemo() {
       setShowAddCases(false);
       const res = await api.getPlanDetail(activePlanId);
       const d = res.data as Record<string, unknown> | undefined;
-      setActivePlanItems((d?.items as PlanItemSummary[]) || []);
+      const items = (d?.items as PlanItemSummary[]) || [];
+      setActivePlanItems(items);
+      // 同步更新侧边栏计数
+      setPlans(prev => prev.map(p =>
+        p.plan_id === activePlanId
+          ? { ...p, item_count: items.length, done_count: items.filter(i => i.status === 'done').length }
+          : p
+      ));
     } catch (err) {
       console.error('保存失败:', err);
       // 即使 API 报错，条目可能已部分入库，尝试刷新
       try {
         const res = await api.getPlanDetail(activePlanId);
         const d = res.data as Record<string, unknown> | undefined;
-        setActivePlanItems((d?.items as PlanItemSummary[]) || []);
+        const items = (d?.items as PlanItemSummary[]) || [];
+        setActivePlanItems(items);
+        // 同步更新侧边栏计数
+        setPlans(prev => prev.map(p =>
+          p.plan_id === activePlanId
+            ? { ...p, item_count: items.length, done_count: items.filter(i => i.status === 'done').length }
+            : p
+        ));
       } catch { /* ignore */ }
       setEditingPlanId('');
       setSelectedAddCaseIds([]);

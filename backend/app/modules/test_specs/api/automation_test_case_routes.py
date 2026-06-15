@@ -77,7 +77,7 @@ async def list_automation_test_cases(
     status: Optional[str] = Query(None),
     maintainer_id: Optional[str] = Query(None),
     linked_manual_case_id: Optional[str] = Query(None),
-    limit: int = Query(20, ge=1, le=200),
+    limit: int = Query(20, ge=1, le=500),
     offset: int = Query(0, ge=0),
 ):
     """分页查询自动化测试用例列表。"""

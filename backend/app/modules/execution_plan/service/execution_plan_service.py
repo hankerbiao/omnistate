@@ -41,10 +41,10 @@ class ExecutionPlanService(BaseService):
         self._task_command_service = task_command_service or ExecutionTaskCommandService()
 
     async def list_plans(self, status: Optional[str] = None) -> List[Dict[str, Any]]:
-        query: Dict[str, Any] = {"is_deleted": False}
+        filters = [ExecutionPlanDoc.is_deleted == False]
         if status:
-            query["status"] = status
-        docs = await ExecutionPlanDoc.find(query).sort("-updated_at").to_list()
+            filters.append(ExecutionPlanDoc.status == status)
+        docs = await ExecutionPlanDoc.find(*filters).sort("-updated_at").to_list()
         logger.debug(f"[CRUD] list_plans status={status} count={len(docs)}")
         return [self._plan_to_dict(doc) for doc in docs]
 

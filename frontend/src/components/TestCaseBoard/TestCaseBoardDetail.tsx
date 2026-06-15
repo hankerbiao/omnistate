@@ -353,6 +353,15 @@ const AutoDetailPanel: React.FC<{
           <span style={{ fontSize: 12, color: dotColor, fontWeight: 600 }}>{getAutoLabel(d.status)}</span>
           <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--text-tertiary)', padding: '1px 6px', borderRadius: 4, background: 'var(--surface-tertiary)' }}>v{d.version}</span>
           {d.automation_type && <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{d.automation_type}</span>}
+          {d.linked_manual_case_id ? (
+            <span style={{ fontSize: 12, fontFamily: 'monospace', color: 'var(--accent-green)', padding: '2px 8px', borderRadius: 4, background: 'rgba(63,185,80,0.12)', whiteSpace: 'nowrap' }}>
+              {'\uD83D\uDCCB'} {d.linked_manual_case_id}
+            </span>
+          ) : (
+            <span style={{ fontSize: 12, color: 'var(--accent-orange)', fontWeight: 600, padding: '2px 8px', borderRadius: 4, background: 'rgba(210,153,34,0.15)', whiteSpace: 'nowrap' }}>
+              {'\u26A0'} 未关联手工用例
+            </span>
+          )}
           <div style={{ flex: 1 }} />
           <button className="btn btn--primary btn--sm" onClick={onOpenDispatch}>{'\u25B6'} 下发执行</button>
           <button className="btn btn--ghost btn--sm" onClick={onRefresh}>{'\u21BB'}</button>
