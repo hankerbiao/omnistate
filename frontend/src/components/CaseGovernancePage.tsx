@@ -441,53 +441,140 @@ const LinkModal: React.FC<{
   onClose: () => void;
   isLinking: boolean;
 }> = ({ testCase, autoCases, search, onSearchChange, onLink, onClose, isLinking }) => {
-  const filtered = search
-    ? autoCases.filter(a => a.name?.toLowerCase().includes(search.toLowerCase()) || a.auto_case_id.toLowerCase().includes(search.toLowerCase()))
-    : autoCases;
+  const [frameworkFilter, setFrameworkFilter] = useState('');
+
+  // 提取所有框架选项
+  const frameworkOptions = useMemo(() => {
+    const set = new Set(autoCases.map(a => a.framework).filter(Boolean));
+    return Array.from(set).sort();
+  }, [autoCases]);
+
+  // 搜索 + 框架筛选
+  const filtered = useMemo(() => {
+    let list = autoCases;
+    if (search) {
+      const q = search.toLowerCase();
+      list = list.filter(a => a.name?.toLowerCase().includes(q) || a.auto_case_id.toLowerCase().includes(q));
+    }
+    if (frameworkFilter) {
+      list = list.filter(a => a.framework === frameworkFilter);
+    }
+    return list;
+  }, [autoCases, search, frameworkFilter]);
 
   // 只显示未关联或关联到当前用例的自动用例
   const linkable = filtered.filter(a => !a.linked_manual_case_id || a.linked_manual_case_id === testCase.case_id);
+
+  const STATUS_COLORS: Record<string, string> = {
+    ACTIVE: '#3fb950', INACTIVE: '#6b7280', DRAFT: '#9ca3af', DEPRECATED: '#f85149',
+  };
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
          onClick={onClose}>
       <div style={{
-        background: 'var(--bg-primary, #fff)', borderRadius: 12, padding: 24, width: 520, maxHeight: '80vh', overflow: 'auto',
+        background: 'var(--bg-primary, #fff)', borderRadius: 12, padding: 24, width: 560, maxHeight: '80vh', overflow: 'hidden',
+        display: 'flex', flexDirection: 'column',
         boxShadow: '0 8px 30px rgba(0,0,0,0.12)',
       }} onClick={e => e.stopPropagation()}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
-          <h3 style={{ fontSize: 16, fontWeight: 600 }}>关联自动化用例</h3>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18 }}>×</button>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <h3 style={{ fontSize: 16, fontWeight: 600, margin: 0 }}>关联自动化用例</h3>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, color: 'var(--text-secondary, #6b7280)' }}>×</button>
         </div>
-        <p style={{ fontSize: 13, color: 'var(--text-secondary, #6b7280)', marginBottom: 12 }}>
+
+        <p style={{ fontSize: 13, color: 'var(--text-secondary, #6b7280)', marginBottom: 12, marginTop: 0 }}>
           为 <strong>{testCase.case_id}</strong> 选择要关联的自动化用例
         </p>
-        <input
-          type="text" placeholder="搜索自动用例..." value={search}
-          onChange={e => onSearchChange(e.target.value)}
-          style={{ ...inputStyle, width: '100%', marginBottom: 12 }}
-        />
-        <div style={{ maxHeight: 320, overflow: 'auto' }}>
+
+        {/* 搜索 + 框架筛选行 */}
+        <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+          <input
+            type="text" placeholder="搜索自动用例名称或 ID..." value={search}
+            onChange={e => onSearchChange(e.target.value)}
+            style={{ ...inputStyle, flex: 1 }}
+          />
+          <select
+            value={frameworkFilter}
+            onChange={e => setFrameworkFilter(e.target.value)}
+            style={{ ...inputStyle, width: 130 }}
+          >
+            <option value="">全部框架</option>
+            {frameworkOptions.map(fw => (
+              <option key={fw} value={fw}>{fw}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* 用例列表 */}
+        <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
           {linkable.length === 0 ? (
-            <p style={{ textAlign: 'center', color: 'var(--text-secondary, #6b7280)', padding: 20 }}>无可关联的自动用例</p>
-          ) : linkable.map(a => (
-            <div key={a.auto_case_id} style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              padding: '8px 12px', borderBottom: '1px solid var(--border-default, #d1d5db)',
-            }}>
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 500 }}>{a.name}</div>
-                <div style={{ fontSize: 11, color: 'var(--text-secondary, #6b7280)' }}>{a.auto_case_id} · {a.framework}</div>
-              </div>
-              <button
-                onClick={() => onLink(a.auto_case_id)}
-                disabled={isLinking}
-                style={{ ...actionBtnStyle, opacity: isLinking ? 0.5 : 1 }}
-              >
-                关联
-              </button>
+            <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-secondary, #6b7280)', fontSize: 13 }}>
+              {search || frameworkFilter ? '没有匹配的自动用例' : '暂无可关联的自动用例'}
             </div>
-          ))}
+          ) : linkable.map(a => {
+            const sc = STATUS_COLORS[a.status] || '#9ca3af';
+            const isConflicted = a.linked_manual_case_id && a.linked_manual_case_id !== testCase.case_id;
+            return (
+              <div key={a.auto_case_id} style={{
+                display: 'flex', alignItems: 'center', gap: 12,
+                padding: '10px 12px', marginBottom: 6,
+                borderRadius: 8, border: '1px solid var(--border-default, #d1d5db)',
+                background: 'var(--bg-primary, #fff)',
+                transition: 'border-color 0.12s, box-shadow 0.12s',
+              }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = '#2563eb'; e.currentTarget.style.boxShadow = '0 1px 4px rgba(37,99,235,0.12)'; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-default, #d1d5db)'; e.currentTarget.style.boxShadow = 'none'; }}
+              >
+                {/* 状态指示灯 */}
+                <span style={{
+                  width: 8, height: 8, borderRadius: '50%', background: sc, flexShrink: 0,
+                }} />
+
+                {/* 用例信息 */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary, #1f2937)', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {a.name}
+                    {a.automation_type && (
+                      <span style={{ fontSize: 10, color: 'var(--text-tertiary, #9ca3af)', fontWeight: 400, marginLeft: 6 }}>
+                        ({a.automation_type})
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, fontSize: 11, color: 'var(--text-secondary, #6b7280)', flexWrap: 'wrap' }}>
+                    <span style={{ fontFamily: 'monospace' }}>{a.auto_case_id}</span>
+                    {a.framework && <span>· {a.framework}</span>}
+                    {a.maintainer_id && <span>· 维护: {a.maintainer_id}</span>}
+                    <span style={{ color: sc, fontWeight: 500 }}>· {a.status}</span>
+                  </div>
+                  {isConflicted && (
+                    <div style={{ fontSize: 11, color: '#f0883e', marginTop: 4 }}>
+                      ⚠️ 已关联到其他手工用例 ({a.linked_manual_case_id})，关联将解除旧关系
+                    </div>
+                  )}
+                </div>
+
+                {/* 关联按钮 */}
+                <button
+                  onClick={() => onLink(a.auto_case_id)}
+                  disabled={isLinking}
+                  style={{
+                    padding: '5px 14px', borderRadius: 6, border: 'none',
+                    background: isLinking ? 'var(--bg-secondary, #f3f4f6)' : '#2563eb',
+                    color: isLinking ? 'var(--text-secondary, #6b7280)' : '#fff',
+                    fontSize: 12, fontWeight: 500, cursor: isLinking ? 'default' : 'pointer',
+                    whiteSpace: 'nowrap', flexShrink: 0,
+                  }}
+                >
+                  {isLinking ? '关联中...' : '关联'}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* 底部提示 */}
+        <div style={{ fontSize: 11, color: 'var(--text-tertiary, #9ca3af)', marginTop: 10, textAlign: 'center' }}>
+          共 {linkable.length} 个可关联的自动化用例
         </div>
       </div>
     </div>

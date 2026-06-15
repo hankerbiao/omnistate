@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
-import type { AutomationTestCaseResponse, ExecutionStatsResponse } from '../types';
+import { useState, useEffect, useCallback } from 'react';
+import type { AutomationTestCaseResponse, ExecutionStatsResponse, TestCaseResponse } from '../types';
 import { api } from '../services/api';
+import TestCaseDetailModal from './TestCaseDetailModal';
 
 interface Props {
   testCase: AutomationTestCaseResponse;
@@ -31,6 +32,20 @@ export default function AutomationCaseDetailModal({ testCase: tc, onClose }: Pro
   const isProd = tc.status === 'active' || tc.status === 'released';
   const [execStats, setExecStats] = useState<ExecutionStatsResponse | null>(null);
   const [statsLoading, setStatsLoading] = useState(false);
+  const [manualCase, setManualCase] = useState<TestCaseResponse | null>(null);
+  const [manualCaseLoading, setManualCaseLoading] = useState(false);
+
+  const handleViewManualCase = useCallback(async () => {
+    if (!tc.linked_manual_case_id) return;
+    setManualCaseLoading(true);
+    try {
+      const res = await api.getTestCase(tc.linked_manual_case_id);
+      setManualCase(res.data);
+    } catch {
+      // 如果查询失败，不显示详情
+    }
+    setManualCaseLoading(false);
+  }, [tc.linked_manual_case_id]);
 
   useEffect(() => {
     setStatsLoading(true);
@@ -41,6 +56,7 @@ export default function AutomationCaseDetailModal({ testCase: tc, onClose }: Pro
   }, [tc.auto_case_id]);
 
   return (
+    <>
     <div style={{ position: 'fixed', inset: 0, background: 'var(--overlay-bg)', zIndex: 1000, display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(2px)' }}
       onClick={onClose}>
       <div style={st.modal} onClick={e => e.stopPropagation()}>
@@ -83,6 +99,33 @@ export default function AutomationCaseDetailModal({ testCase: tc, onClose }: Pro
                 </div>
               </div>
             )}
+            <Section title="关联手工用例">
+              {tc.linked_manual_case_id ? (
+                <div style={st.field}>
+                  <span style={st.fieldLabel}>手工用例 ID</span>
+                  <span style={{ ...st.fieldValue, fontFamily: "'JetBrains Mono', monospace", marginBottom: 6 }}>{tc.linked_manual_case_id}</span>
+                  <button
+                    onClick={handleViewManualCase}
+                    disabled={manualCaseLoading}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 4,
+                      padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border-subtle)',
+                      background: 'var(--surface-secondary)', color: 'var(--accent-primary)',
+                      fontSize: 11, fontWeight: 500, cursor: 'pointer',
+                      transition: 'background 0.12s',
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.background = 'var(--accent-primary-bg)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'var(--surface-secondary)'; }}
+                  >
+                    {manualCaseLoading ? '加载中...' : '📋 查看详情'}
+                  </button>
+                </div>
+              ) : (
+                <span style={{ fontSize: 12, color: 'var(--accent-orange)', fontStyle: 'italic', padding: '2px 0' }}>
+                  ⚠️ 未关联手工用例
+                </span>
+              )}
+            </Section>
             <Section title="元数据">
               <Field label="创建时间" value={new Date(tc.created_at).toLocaleString('zh-CN')} />
               <Field label="更新时间" value={new Date(tc.updated_at).toLocaleString('zh-CN')} />
@@ -185,6 +228,14 @@ export default function AutomationCaseDetailModal({ testCase: tc, onClose }: Pro
         </div>
       </div>
     </div>
+
+      {manualCase && (
+        <TestCaseDetailModal
+          testCase={manualCase}
+          onClose={() => setManualCase(null)}
+        />
+      )}
+    </>
   );
 }
 

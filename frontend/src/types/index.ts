@@ -680,6 +680,7 @@ export interface ListAutomationTestCasesParams extends PaginationParams {
   automation_type?: string;
   status?: string;
   maintainer_id?: string;
+  linked_manual_case_id?: string;
 }
 
 // ═══════════════════════════════════════════════════════════════════════

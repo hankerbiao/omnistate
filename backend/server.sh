@@ -3,30 +3,36 @@
 # server.sh — DML V4 后端服务启停管理脚本
 #
 # Usage:
-#   ./scripts/server.sh start     启动服务（后台运行）
-#   ./scripts/server.sh stop      停止服务
-#   ./scripts/server.sh restart   重启服务
-#   ./scripts/server.sh status    查看服务状态
+#   ./server.sh start     启动服务（后台运行）
+#   ./server.sh stop      停止服务
+#   ./server.sh restart   重启服务
+#   ./server.sh status    查看服务状态
 
 set -e
 
-PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
 PID_FILE="$PROJECT_ROOT/.server.pid"
 LOG_DIR="$PROJECT_ROOT/logs"
 LOG_FILE="$LOG_DIR/server.log"
 APP_MODULE="app.main:app"
 HOST="0.0.0.0"
 PORT="8000"
+UVICORN_BIN="$(command -v uvicorn)"
 
 # 颜色输出
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
 info()  { echo -e "${GREEN}[✓]${NC} $1"; }
 warn()  { echo -e "${YELLOW}[!]${NC} $1"; }
 error() { echo -e "${RED}[✗]${NC} $1"; }
+
+# 查找 uvicorn 主进程 PID（匹配端口和模块）
+find_pid() {
+    pgrep -f "uvicorn.*${APP_MODULE}.*${PORT}" 2>/dev/null | head -1
+}
 
 read_pid() {
     if [[ -f "$PID_FILE" ]]; then
@@ -41,12 +47,14 @@ is_running() {
 
 cmd_status() {
     local pid
-    pid=$(read_pid)
-    if [[ -n "$pid" ]] && is_running "$pid"; then
+    pid=$(find_pid)
+    if [[ -n "$pid" ]]; then
         info "Server is running (PID: $pid)"
+        # 同步 PID 文件
+        echo "$pid" > "$PID_FILE"
     else
-        if [[ -n "$pid" ]]; then
-            warn "Stale PID file found (PID: $pid), process not running"
+        if [[ -f "$PID_FILE" ]]; then
+            warn "Stale PID file found, process not running"
             rm -f "$PID_FILE"
         fi
         error "Server is not running"
@@ -56,16 +64,16 @@ cmd_status() {
 
 cmd_start() {
     local pid
-    pid=$(read_pid)
-    if [[ -n "$pid" ]] && is_running "$pid"; then
+    pid=$(find_pid)
+    if [[ -n "$pid" ]]; then
         warn "Server is already running (PID: $pid)"
         exit 1
     fi
 
     mkdir -p "$LOG_DIR"
 
-    # 后台启动 uvicorn，将输出重定向到日志文件
-    nohup uv run uvicorn "$APP_MODULE" \
+    # 后台启动 uvicorn
+    nohup "$UVICORN_BIN" "$APP_MODULE" \
         --host "$HOST" \
         --port "$PORT" \
         --reload \
@@ -76,7 +84,6 @@ cmd_start() {
     info "Server started (PID: $new_pid)"
     echo "    Log: $LOG_FILE"
 
-    # 等待片刻确认进程存活
     sleep 1
     if ! is_running "$new_pid"; then
         warn "Server exited shortly after starting — check logs:"
@@ -88,14 +95,10 @@ cmd_start() {
 
 cmd_stop() {
     local pid
-    pid=$(read_pid)
+    pid=$(find_pid)
+
     if [[ -z "$pid" ]]; then
         error "Server is not running"
-        return
-    fi
-
-    if ! is_running "$pid"; then
-        warn "Process (PID: $pid) already exited"
         rm -f "$PID_FILE"
         return
     fi
@@ -145,7 +148,7 @@ main() {
             cmd_status
             ;;
         *)
-            echo "Usage: $0 {start|stop|restart|status}"
+            echo "Usage: $(basename "$0") {start|stop|restart|status}"
             echo ""
             echo "Commands:"
             echo "  start     Start the server (daemon mode)"

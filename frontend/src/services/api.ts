@@ -408,6 +408,22 @@ class ApiClient {
     });
   }
 
+  async linkAutomationCase(caseId: string, req: { auto_case_id: string; version?: string }): Promise<ApiResponse<{ linked: boolean }>> {
+    return this.request<{ linked: boolean }>(`/test-cases/${caseId}/automation-link`, {
+      method: 'POST',
+      body: JSON.stringify(req),
+    });
+  }
+
+  async listLabs(params: { active_only?: boolean } = {}): Promise<ApiResponse<import('../types').CatalogLab[]>> {
+    const queryParams = new URLSearchParams();
+    if (params.active_only) queryParams.append('active_only', 'true');
+    const queryString = queryParams.toString();
+    return this.request<import('../types').CatalogLab[]>(`/catalog/labs${queryString ? `?${queryString}` : ''}`, {
+      method: 'GET',
+    });
+  }
+
   async listTasks(params: ListTasksParams = {}): Promise<ApiResponse<ExecutionTask[]>> {
     const queryParams = new URLSearchParams();
 
