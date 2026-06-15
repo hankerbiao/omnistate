@@ -121,8 +121,6 @@ dependencies = [
     "reportlab>=4.4.7",
     "pdf2image>=1.17.0",
 
-    # git dependencies
-    "data_integration_search",
 ]
 
 [project.optional-dependencies]
@@ -148,8 +146,6 @@ dev-dependencies = [
     "pydeps>=3.0.6",
 ]
 
-[tool.uv.sources]
-data_integration_search = { git = "https://github.com/hankerbiao/Unified-API-Access.git", rev = "1b9f88598c7e71685e7f97d3718872fb24cd587d", subdirectory = "data-integration-search" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
