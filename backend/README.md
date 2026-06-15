@@ -202,7 +202,7 @@ AI 分析模块，提供用例集质量分析能力。
 
 ```bash
 cd backend
-pip install -r requirements.txt
+uv sync
 ```
 
 ### 2. 初始化基础数据

@@ -284,7 +284,7 @@ async def unlink_automation_case(
     service: TestCaseServiceDep,
     current_user=Depends(get_current_user),
 ):
-    """解除自动化用例与手工用例的关联（清空 dml_manual_case_id）。"""
+    """解除自动化用例与手工用例的关联（清空 linked_manual_case_id）。"""
     try:
         await service.unlink_automation_case(case_id)
         return APIResponse(data={"unlinked": True})

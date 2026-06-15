@@ -90,8 +90,24 @@ class TestCaseService(BaseService):
         self._catalog_service = catalog_service or CatalogService()
 
     async def _enrich_test_case_status(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """使用工作流状态补齐测试用例响应中的派生状态字段。"""
+        """使用工作流状态和关联信息补齐测试用例响应中的派生状态字段。"""
         enriched = await enrich_projected_status(data)
+
+        # 补齐自动化用例关联信息
+        linked_auto_id = data.get("linked_auto_case_id")
+        if linked_auto_id:
+            auto_doc = await AutomationTestCaseDoc.find_one(
+                {"auto_case_id": linked_auto_id, "is_deleted": False},
+            )
+            if auto_doc:
+                enriched["auto_case_ref"] = {
+                    "auto_case_id": auto_doc.auto_case_id,
+                    "name": auto_doc.name,
+                    "version": auto_doc.code_snapshot.version if auto_doc.code_snapshot else None,
+                }
+        else:
+            enriched["auto_case_ref"] = None
+
         return await self._catalog_service.enrich_case_dict(enriched)
 
     async def _get_workflow_states_for_test_cases(self, case_ids: List[str]) -> Dict[str, str]:
@@ -175,7 +191,6 @@ class TestCaseService(BaseService):
             mongo_query["tags"] = {"$all": tags}
 
         # 缺失字段过滤：构建 $and 条件
-        _needs_auto_link_filter = False
         if missing_fields:
             missing_conditions = []
             for field in missing_fields.split(","):
@@ -187,7 +202,7 @@ class TestCaseService(BaseService):
                 elif field == "tags":
                     missing_conditions.append({"$or": [{"tags": None}, {"tags": []}]})
                 elif field == "auto_link":
-                    _needs_auto_link_filter = True
+                    missing_conditions.append({"$or": [{"linked_auto_case_id": None}, {"linked_auto_case_id": {"$exists": False}}]})
             if missing_conditions:
                 if len(missing_conditions) == 1:
                     mongo_query.update(missing_conditions[0])
@@ -225,17 +240,6 @@ class TestCaseService(BaseService):
             docs = filtered_docs[offset:offset + limit]
         else:
             docs = await query.sort("-created_at").skip(offset).limit(limit).to_list()
-
-        # auto_link 缺失过滤：查询未关联自动化用例的手工用例
-        if _needs_auto_link_filter and docs:
-            linked_ids: set = set()
-            case_id_list = [doc.case_id for doc in docs]
-            async for auto_doc in AutomationTestCaseDoc.find(
-                AutomationTestCaseDoc.dml_manual_case_id.in_(case_id_list),
-                {"is_deleted": False},
-            ).project({"dml_manual_case_id": 1}):
-                linked_ids.add(auto_doc.dml_manual_case_id)
-            docs = [doc for doc in docs if doc.case_id not in linked_ids]
 
         # Phase 3B: 转换时确保使用工作流状态作为真实来源
         if not docs:
@@ -337,7 +341,7 @@ class TestCaseService(BaseService):
             auto_case_id: str,
             version: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """将自动化测试用例关联到手工测试用例"""
+        """将自动化测试用例关联到手工测试用例（双向写入）。"""
         case_doc = await TestCaseDoc.find_one(
             TestCaseDoc.case_id == case_id,
             {"is_deleted": False},
@@ -345,7 +349,6 @@ class TestCaseService(BaseService):
         if not case_doc:
             raise KeyError("test case not found")
 
-        # 查找自动化测试用例。当前模型仅保留最新版本，version 参数仅用于兼容接口签名。
         auto_doc = await AutomationTestCaseDoc.find_one(
             AutomationTestCaseDoc.auto_case_id == auto_case_id,
             {"is_deleted": False},
@@ -353,8 +356,30 @@ class TestCaseService(BaseService):
         if not auto_doc:
             raise KeyError("automation test case not found")
 
-        if auto_doc.dml_manual_case_id != case_doc.case_id:
-            raise ValueError("automation test case dml_manual_case_id does not match test case case_id")
+        # 如果自动用例已关联其他手工用例，先解除旧关联
+        if auto_doc.linked_manual_case_id and auto_doc.linked_manual_case_id != case_id:
+            old_case = await TestCaseDoc.find_one(
+                TestCaseDoc.case_id == auto_doc.linked_manual_case_id,
+                {"is_deleted": False},
+            )
+            if old_case:
+                old_case.linked_auto_case_id = None
+                await old_case.save()
+
+        # 如果手用用例已关联其他自动用例，先解除旧关联
+        if case_doc.linked_auto_case_id and case_doc.linked_auto_case_id != auto_case_id:
+            old_auto = await AutomationTestCaseDoc.find_one(
+                AutomationTestCaseDoc.auto_case_id == case_doc.linked_auto_case_id,
+                {"is_deleted": False},
+            )
+            if old_auto:
+                old_auto.linked_manual_case_id = ""
+                await old_auto.save()
+
+        # 建立双向关联
+        case_doc.linked_auto_case_id = auto_case_id
+        auto_doc.linked_manual_case_id = case_id
+        await auto_doc.save()
         await case_doc.save()
         return await self._enrich_test_case_status(self._doc_to_dict(case_doc))
 
@@ -530,17 +555,13 @@ class TestCaseService(BaseService):
             "$or": [{"tags": None}, {"tags": []}],
         }).count()
 
-        # 未关联自动化用例：反查 AutomationTestCaseDoc
-        linked_manual_ids = set()
-        async for auto_doc in AutomationTestCaseDoc.find(
-            {"is_deleted": False, "dml_manual_case_id": {"$nin": ["", None]}},
-        ).project({"dml_manual_case_id": 1}):
-            linked_manual_ids.add(auto_doc.dml_manual_case_id)
-
+        # 未关联自动化用例：使用 linked_auto_case_id 直接查询
         unlinked_auto = await TestCaseDoc.find({
             **base_filter,
-            "case_id": {"$nin": list(linked_manual_ids)} if linked_manual_ids else {"$exists": True},
+            "$or": [{"linked_auto_case_id": None}, {"linked_auto_case_id": {"$exists": False}}],
         }).count()
+
+        total_auto = await AutomationTestCaseDoc.find({"is_deleted": False}).count()
 
         total_auto = await AutomationTestCaseDoc.find({"is_deleted": False}).count()
 
@@ -554,7 +575,7 @@ class TestCaseService(BaseService):
         }
 
     async def unlink_automation_case(self, case_id: str) -> Dict[str, Any]:
-        """解除自动化用例与手工用例的关联（清空 dml_manual_case_id）。"""
+        """解除自动化用例与手工用例的关联（双向清空）。"""
         case_doc = await TestCaseDoc.find_one(
             TestCaseDoc.case_id == case_id,
             {"is_deleted": False},
@@ -563,14 +584,16 @@ class TestCaseService(BaseService):
             raise KeyError("test case not found")
 
         auto_doc = await AutomationTestCaseDoc.find_one(
-            AutomationTestCaseDoc.dml_manual_case_id == case_id,
+            AutomationTestCaseDoc.linked_manual_case_id == case_id,
             {"is_deleted": False},
         )
         if not auto_doc:
             raise KeyError("no linked automation test case found")
 
-        auto_doc.dml_manual_case_id = ""
+        auto_doc.linked_manual_case_id = ""
+        case_doc.linked_auto_case_id = None
         await auto_doc.save()
+        await case_doc.save()
         return await self._enrich_test_case_status(self._doc_to_dict(case_doc))
 
     async def _create_test_case_with_transaction(

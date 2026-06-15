@@ -240,24 +240,24 @@ const AutoRelationsContent: React.FC<{ d: AutomationTestCaseResponse }> = ({ d }
           </div>
         </div>
         <span style={S.relationArrow}>{'\u2192'}</span>
-        <div style={{ ...S.relationNode, ...(d.dml_manual_case_id ? {} : { opacity: 0.4 }) }}>
+        <div style={{ ...S.relationNode, ...(d.linked_manual_case_id ? {} : { opacity: 0.4 }) }}>
           <span style={S.relationIcon}>{'\uD83D\uDCCB'}</span>
           <div>
             <span style={S.relationLabel}>手工用例</span>
-            {d.dml_manual_case_id ? (
-              <span style={S.relationValue}>{d.dml_manual_case_id}</span>
+            {d.linked_manual_case_id ? (
+              <span style={S.relationValue}>{d.linked_manual_case_id}</span>
             ) : (
               <span style={{ fontSize: 12, color: 'var(--text-tertiary)', fontStyle: 'italic' }}>未关联</span>
             )}
           </div>
         </div>
         <span style={S.relationArrow}>{'\u2192'}</span>
-        <div style={{ ...S.relationNode, opacity: d.dml_manual_case_id ? 0.65 : 0.3 }}>
+        <div style={{ ...S.relationNode, opacity: d.linked_manual_case_id ? 0.65 : 0.3 }}>
           <span style={S.relationIcon}>{'\uD83D\uDCD0'}</span>
           <div>
             <span style={S.relationLabel}>关联需求</span>
             <span style={{ fontSize: 12, color: 'var(--text-tertiary)', fontStyle: 'italic' }}>
-              {d.dml_manual_case_id ? '通过手工用例关联' : '待关联手工用例'}
+              {d.linked_manual_case_id ? '通过手工用例关联' : '待关联手工用例'}
             </span>
           </div>
         </div>

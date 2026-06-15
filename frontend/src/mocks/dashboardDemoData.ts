@@ -218,7 +218,7 @@ function buildAutomationCases(testCases: TestCaseResponse[]): AutomationTestCase
     .map((tc, i) => ({
       id: `auto-${i + 1}`,
       auto_case_id: `AUTO-${tc.case_id.replace('TC-', '')}`,
-      dml_manual_case_id: tc.case_id,
+      linked_manual_case_id: tc.case_id,
       name: tc.title,
       version: '1.0.0',
       status: 'ACTIVE',

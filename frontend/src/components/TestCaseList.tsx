@@ -353,13 +353,13 @@ const TestCaseList: React.FC = () => {
                         {/* Manual case */}
                         <div style={{
                           ...styles.relationNode,
-                          ...(selected.dml_manual_case_id ? {} : { opacity: 0.4 }),
+                          ...(selected.linked_manual_case_id ? {} : { opacity: 0.4 }),
                         }}>
                           <span style={styles.relationIcon}>📋</span>
                           <div>
                             <span style={styles.relationLabel}>手工用例</span>
-                            {selected.dml_manual_case_id ? (
-                              <span style={styles.relationValue}>{selected.dml_manual_case_id}</span>
+                            {selected.linked_manual_case_id ? (
+                              <span style={styles.relationValue}>{selected.linked_manual_case_id}</span>
                             ) : (
                               <span style={{ fontSize: 12, color: 'var(--text-tertiary)', fontStyle: 'italic' }}>未关联</span>
                             )}
@@ -371,23 +371,23 @@ const TestCaseList: React.FC = () => {
                         {/* Requirement */}
                         <div style={{
                           ...styles.relationNode,
-                          opacity: selected.dml_manual_case_id ? 0.65 : 0.3,
+                          opacity: selected.linked_manual_case_id ? 0.65 : 0.3,
                         }}>
                           <span style={styles.relationIcon}>📐</span>
                           <div>
                             <span style={styles.relationLabel}>关联需求</span>
                             <span style={{ fontSize: 12, color: 'var(--text-tertiary)', fontStyle: 'italic' }}>
-                              {selected.dml_manual_case_id ? '通过手工用例关联' : '待关联手工用例'}
+                              {selected.linked_manual_case_id ? '通过手工用例关联' : '待关联手工用例'}
                             </span>
                           </div>
                         </div>
                       </div>
                     </Section>
 
-                    {selected.dml_manual_case_id && (
+                    {selected.linked_manual_case_id && (
                       <Section title="快速操作">
                         <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: 0 }}>
-                          手工用例 <strong style={{ fontFamily: 'monospace', color: 'var(--accent-cyan)' }}>{selected.dml_manual_case_id}</strong> 已关联到此自动化用例。
+                          手工用例 <strong style={{ fontFamily: 'monospace', color: 'var(--accent-cyan)' }}>{selected.linked_manual_case_id}</strong> 已关联到此自动化用例。
                           可前往手工用例详情页查看完整的需求关联。
                         </p>
                       </Section>
@@ -403,7 +403,7 @@ const TestCaseList: React.FC = () => {
                       <div style={styles.grid2}>
                         <Field label="维护人">{selected.maintainer_id || '-'}</Field>
                         <Field label="审核人">{selected.reviewer_id || '-'}</Field>
-                        <Field label="手工用例 ID" mono>{selected.dml_manual_case_id || '-'}</Field>
+                        <Field label="手工用例 ID" mono>{selected.linked_manual_case_id || '-'}</Field>
                       </div>
                     </Section>
                     <Section title="时间">

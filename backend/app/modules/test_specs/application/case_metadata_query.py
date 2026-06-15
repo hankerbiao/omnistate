@@ -51,7 +51,7 @@ class TestCaseMetadataQuery(TestCaseMetadataQueryPort):
             bindings.append(
                 AutoCaseDispatchInfo(
                     auto_case_id=auto_case_id,
-                    case_id=doc.dml_manual_case_id or auto_case_id,
+                    case_id=doc.linked_manual_case_id or auto_case_id,
                     script_entity_id=getattr(
                         getattr(doc, "script_ref", None), "entity_id", None
                     ),
@@ -66,10 +66,10 @@ class TestCaseMetadataQuery(TestCaseMetadataQueryPort):
         from app.shared.domain.exceptions import NotFoundError
 
         auto_docs = await AutomationTestCaseDoc.find({
-            "dml_manual_case_id": {"$in": case_ids},
+            "linked_manual_case_id": {"$in": case_ids},
             "is_deleted": False,
         }).to_list()
-        mapping = {doc.dml_manual_case_id: doc.auto_case_id for doc in auto_docs}
+        mapping = {doc.linked_manual_case_id: doc.auto_case_id for doc in auto_docs}
         missing = [case_id for case_id in case_ids if case_id not in mapping]
         if missing:
             raise NotFoundError(

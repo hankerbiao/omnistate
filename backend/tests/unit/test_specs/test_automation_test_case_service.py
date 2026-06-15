@@ -63,7 +63,7 @@ class _FakeAutoDoc:
 
     def model_dump(self) -> dict:
         data = {}
-        for attr in ["auto_case_id", "name", "dml_manual_case_id", "framework",
+        for attr in ["auto_case_id", "name", "linked_manual_case_id", "framework",
                       "automation_type", "status", "description", "is_deleted",
                       "script_ref", "config_path", "script_name", "script_path",
                       "code_snapshot", "param_spec", "tags", "report_meta",
@@ -209,7 +209,7 @@ def test_get_auto_case_not_found():
 
 
 def test_get_by_manual_case_id_found():
-    _make_auto("ATC-001", dml_manual_case_id="TC-001")
+    _make_auto("ATC-001", linked_manual_case_id="TC-001")
     service = AutomationTestCaseService()
     with patch(f"{SERVICE}.AutomationTestCaseDoc", _FakeAutoDoc):
         result = asyncio_run(service.get_automation_test_case_by_manual_case_id("TC-001"))
@@ -252,7 +252,7 @@ def test_list_auto_cases_filters_by_framework():
 
 def test_extract_report_payload_valid():
     cases, summary = AutomationTestCaseService._extract_report_payload({
-        "cases": [{"dml_manual_case_id": "TC-001"}],
+        "cases": [{"linked_manual_case_id": "TC-001"}],
         "summary": {"total_cases": 1},
     })
     assert len(cases) == 1
@@ -272,13 +272,13 @@ def test_extract_report_payload_empty_cases_raises():
 def test_extract_report_payload_mismatched_total_raises():
     with pytest.raises(ValueError, match="must match cases length"):
         AutomationTestCaseService._extract_report_payload({
-            "cases": [{"dml_manual_case_id": "TC-001"}],
+            "cases": [{"linked_manual_case_id": "TC-001"}],
             "summary": {"total_cases": 999},
         })
 
 
 def test_extract_manual_case_id_valid():
-    cid = AutomationTestCaseService._extract_manual_case_id({"dml_manual_case_id": "TC-001"})
+    cid = AutomationTestCaseService._extract_manual_case_id({"linked_manual_case_id": "TC-001"})
     assert cid == "TC-001"
 
 
@@ -288,7 +288,7 @@ def test_extract_manual_case_id_fallback_to_case_id():
 
 
 def test_extract_manual_case_id_missing_raises():
-    with pytest.raises(ValueError, match="dml_manual_case_id is required"):
+    with pytest.raises(ValueError, match="linked_manual_case_id is required"):
         AutomationTestCaseService._extract_manual_case_id({})
 
 
@@ -301,7 +301,7 @@ def test_build_report_doc_data():
         "TC-001",
         {"framework": "pytest", "description": "Test"},
     )
-    assert result["dml_manual_case_id"] == "TC-001"
+    assert result["linked_manual_case_id"] == "TC-001"
     assert result["framework"] == "pytest"
     assert result["status"] == "ACTIVE"
 
@@ -318,7 +318,7 @@ def test_build_report_doc_data_framework_fallback():
 def test_report_metadata_new_case():
     service = AutomationTestCaseService()
     payload = {
-        "cases": [{"dml_manual_case_id": "TC-001", "framework": "pytest"}],
+        "cases": [{"linked_manual_case_id": "TC-001", "framework": "pytest"}],
         "summary": {"total_cases": 1},
     }
     with patch(f"{SERVICE}.AutomationTestCaseDoc", _FakeAutoDoc), \
@@ -331,10 +331,10 @@ def test_report_metadata_new_case():
 
 
 def test_report_metadata_updates_existing():
-    _make_auto("ATC-001", dml_manual_case_id="TC-001", framework="old-fw")
+    _make_auto("ATC-001", linked_manual_case_id="TC-001", framework="old-fw")
     service = AutomationTestCaseService()
     payload = {
-        "cases": [{"dml_manual_case_id": "TC-001", "framework": "new-fw"}],
+        "cases": [{"linked_manual_case_id": "TC-001", "framework": "new-fw"}],
         "summary": {"total_cases": 1},
     }
     with patch(f"{SERVICE}.AutomationTestCaseDoc", _FakeAutoDoc), \
@@ -350,7 +350,7 @@ def test_report_metadata_updates_existing():
 
 def test_try_link_test_case_no_manual_id():
     service = AutomationTestCaseService()
-    doc = _FakeAutoDoc(auto_case_id="ATC-001", dml_manual_case_id=None)
+    doc = _FakeAutoDoc(auto_case_id="ATC-001", linked_manual_case_id=None)
     result = asyncio_run(service._try_link_test_case(doc, {}))
     assert result["linked"] is False
 
@@ -358,7 +358,7 @@ def test_try_link_test_case_no_manual_id():
 def test_try_link_test_case_found():
     _FakeTestCaseDoc.store["TC-001"] = _FakeTestCaseDoc(case_id="TC-001", is_deleted=False)
     service = AutomationTestCaseService()
-    doc = _FakeAutoDoc(auto_case_id="ATC-001", dml_manual_case_id="TC-001")
+    doc = _FakeAutoDoc(auto_case_id="ATC-001", linked_manual_case_id="TC-001")
     with patch(f"{SERVICE}.TestCaseDoc", _FakeTestCaseDoc):
         result = asyncio_run(service._try_link_test_case(doc, {}))
     assert result["linked"] is True
@@ -367,7 +367,7 @@ def test_try_link_test_case_found():
 
 def test_try_link_test_case_not_found():
     service = AutomationTestCaseService()
-    doc = _FakeAutoDoc(auto_case_id="ATC-001", dml_manual_case_id="TC-MISSING")
+    doc = _FakeAutoDoc(auto_case_id="ATC-001", linked_manual_case_id="TC-MISSING")
     with patch(f"{SERVICE}.TestCaseDoc", _FakeTestCaseDoc):
         result = asyncio_run(service._try_link_test_case(doc, {}))
     assert result["linked"] is False

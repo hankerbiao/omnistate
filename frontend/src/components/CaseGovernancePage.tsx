@@ -446,7 +446,7 @@ const LinkModal: React.FC<{
     : autoCases;
 
   // 只显示未关联或关联到当前用例的自动用例
-  const linkable = filtered.filter(a => !a.dml_manual_case_id || a.dml_manual_case_id === testCase.case_id);
+  const linkable = filtered.filter(a => !a.linked_manual_case_id || a.linked_manual_case_id === testCase.case_id);
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}

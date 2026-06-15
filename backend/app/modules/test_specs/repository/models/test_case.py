@@ -56,6 +56,7 @@ class TestCaseDoc(Document):
     steps: List[TestCaseStepEmbedded] = Field(default_factory=list, description="执行步骤")
     cleanup_steps: List[TestCaseStepEmbedded] = Field(default_factory=list, description="清理步骤")
     is_deleted: bool = Field(default=False, description="逻辑删除标志")
+    linked_auto_case_id: Optional[str] = Field(default=None, description="关联的自动化用例 business id")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -94,6 +95,7 @@ class TestCaseDoc(Document):
             IndexModel("priority"),
             IndexModel("is_active"),
             IndexModel("is_deleted"),
+            IndexModel([("linked_auto_case_id", ASCENDING)], sparse=True),
             IndexModel([("ref_req_id", ASCENDING), ("created_at", DESCENDING)]),
             IndexModel("created_at"),
         ]

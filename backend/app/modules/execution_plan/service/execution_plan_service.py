@@ -573,7 +573,7 @@ class ExecutionPlanService(BaseService):
                 result.append(await self._item_to_response(doc, _plan_title=plan_title))
             except Exception as e:
                 logger.error(f"_item_to_response 失败 (item_id={doc.item_id}): {e}", exc_info=True)
-                raise
+                continue
         return result
 
     async def _item_to_response(
@@ -668,7 +668,7 @@ class ExecutionPlanService(BaseService):
         if not auto_doc:
             raise ValueError(f"自动化用例不存在: {case_id}")
         manual_doc = await TestCaseDoc.find_one(
-            TestCaseDoc.case_id == auto_doc.dml_manual_case_id,
+            TestCaseDoc.case_id == auto_doc.linked_manual_case_id,
             TestCaseDoc.is_deleted == False,
         )
         component = ""
@@ -682,7 +682,7 @@ class ExecutionPlanService(BaseService):
             "case_title": auto_doc.name,
             "component": component,
             "priority": priority,
-            "manual_case_id": auto_doc.dml_manual_case_id,
+            "manual_case_id": auto_doc.linked_manual_case_id,
         }
 
     async def _get_plan_or_raise(self, plan_id: str) -> ExecutionPlanDoc:

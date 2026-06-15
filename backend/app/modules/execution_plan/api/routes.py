@@ -9,7 +9,7 @@ from app.modules.execution_plan.api.dependencies import (
     ExecutionPlanServiceDep,
     SequenceIdServiceDep,
 )
-from app.modules.execution_plan.api.exception_handler import register_exception_handlers
+from app.modules.execution_plan.api.exception_handler import handle_service_error
 from app.modules.execution_plan.schemas.execution_plan import (
     AddPlanItemsRequest,
     BatchDispatchRequest,
@@ -24,7 +24,6 @@ from app.shared.api.schemas.base import APIResponse
 from app.shared.auth import get_current_user
 
 router = APIRouter(prefix="/execution-plans", tags=["ExecutionPlan"])
-register_exception_handlers(router)
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -98,8 +97,11 @@ async def get_plan_item(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """获取计划内单条条目的详细信息（含结果）。"""
-    item = await service.get_item(item_id)
-    return APIResponse(data=item)
+    try:
+        item = await service.get_item(item_id)
+        return APIResponse(data=item)
+    except Exception as exc:
+        handle_service_error(exc)
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -119,12 +121,15 @@ async def update_plan_item(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """更新计划条目的状态、指派人等字段。"""
-    item = await service.update_item(
-        plan_id=plan_id,
-        item_id=item_id,
-        data=data.model_dump(exclude_none=True),
-    )
-    return APIResponse(data=item)
+    try:
+        item = await service.update_item(
+            plan_id=plan_id,
+            item_id=item_id,
+            data=data.model_dump(exclude_none=True),
+        )
+        return APIResponse(data=item)
+    except Exception as exc:
+        handle_service_error(exc)
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -143,13 +148,16 @@ async def submit_manual_result(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """提交手工用例的执行结果回填。"""
-    actor_id = _get_user_id(current_user)
-    result = await service.submit_result(
-        item_id=item_id,
-        request=request,
-        actor_id=actor_id,
-    )
-    return APIResponse(data=result)
+    try:
+        actor_id = _get_user_id(current_user)
+        result = await service.submit_result(
+            item_id=item_id,
+            request=request,
+            actor_id=actor_id,
+        )
+        return APIResponse(data=result)
+    except Exception as exc:
+        handle_service_error(exc)
 
 
 @router.get(
@@ -163,8 +171,11 @@ async def get_manual_result(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """获取某个计划条目已有的手工回填结果。"""
-    result = await service.get_result(item_id=item_id)
-    return APIResponse(data=result)
+    try:
+        result = await service.get_result(item_id=item_id)
+        return APIResponse(data=result)
+    except Exception as exc:
+        handle_service_error(exc)
 
 
 @router.get(
@@ -198,14 +209,17 @@ async def dispatch_single_item(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """将计划内的单条自动化用例下发到执行引擎。"""
-    actor_id = _get_user_id(current_user)
-    result = await service.dispatch_item(
-        item_id=item_id,
-        request=request,
-        actor_id=actor_id,
-        sequence_service=sequence_service,
-    )
-    return APIResponse(data=result)
+    try:
+        actor_id = _get_user_id(current_user)
+        result = await service.dispatch_item(
+            item_id=item_id,
+            request=request,
+            actor_id=actor_id,
+            sequence_service=sequence_service,
+        )
+        return APIResponse(data=result)
+    except Exception as exc:
+        handle_service_error(exc)
 
 
 @router.post(
@@ -220,13 +234,16 @@ async def batch_dispatch_items(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """批量下发计划内的自动化用例到执行引擎。"""
-    actor_id = _get_user_id(current_user)
-    results = await service.batch_dispatch(
-        request=request,
-        actor_id=actor_id,
-        sequence_service=sequence_service,
-    )
-    return APIResponse(data=results)
+    try:
+        actor_id = _get_user_id(current_user)
+        results = await service.batch_dispatch(
+            request=request,
+            actor_id=actor_id,
+            sequence_service=sequence_service,
+        )
+        return APIResponse(data=results)
+    except Exception as exc:
+        handle_service_error(exc)
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -260,12 +277,15 @@ async def create_plan(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """创建一个新的执行计划（不含条目）。"""
-    actor_id = _get_user_id(current_user)
-    plan = await service.create_plan(
-        data=request.model_dump(exclude_none=True),
-        actor_id=actor_id,
-    )
-    return APIResponse(data=plan)
+    try:
+        actor_id = _get_user_id(current_user)
+        plan = await service.create_plan(
+            data=request.model_dump(exclude_none=True),
+            actor_id=actor_id,
+        )
+        return APIResponse(data=plan)
+    except Exception as exc:
+        handle_service_error(exc)
 
 
 @router.get(
@@ -279,8 +299,11 @@ async def get_plan_detail(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """获取执行计划的详细信息，包含所有计划条目。"""
-    plan = await service.get_plan(plan_id=plan_id)
-    return APIResponse(data=plan)
+    try:
+        plan = await service.get_plan(plan_id=plan_id)
+        return APIResponse(data=plan)
+    except Exception as exc:
+        handle_service_error(exc)
 
 
 @router.put(
@@ -295,11 +318,14 @@ async def update_plan(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """更新执行计划的基本信息。"""
-    plan = await service.update_plan(
-        plan_id=plan_id,
-        data=request.model_dump(exclude_none=True),
-    )
-    return APIResponse(data=plan)
+    try:
+        plan = await service.update_plan(
+            plan_id=plan_id,
+            data=request.model_dump(exclude_none=True),
+        )
+        return APIResponse(data=plan)
+    except Exception as exc:
+        handle_service_error(exc)
 
 
 @router.delete(
@@ -313,8 +339,11 @@ async def delete_plan(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """软删除执行计划及其所有条目。"""
-    await service.delete_plan(plan_id=plan_id)
-    return APIResponse(data={"plan_id": plan_id, "deleted": True})
+    try:
+        await service.delete_plan(plan_id=plan_id)
+        return APIResponse(data={"plan_id": plan_id, "deleted": True})
+    except Exception as exc:
+        handle_service_error(exc)
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -333,11 +362,14 @@ async def add_plan_items(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """为已有执行计划添加测试用例条目。"""
-    plan = await service.add_items(
-        plan_id=plan_id,
-        items_data=[item.model_dump() for item in request.items],
-    )
-    return APIResponse(data=plan)
+    try:
+        plan = await service.add_items(
+            plan_id=plan_id,
+            items_data=[item.model_dump() for item in request.items],
+        )
+        return APIResponse(data=plan)
+    except Exception as exc:
+        handle_service_error(exc)
 
 
 @router.delete(
@@ -352,8 +384,11 @@ async def delete_plan_item(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """从执行计划中移除单个条目（软删除）。"""
-    await service.delete_item(plan_id=plan_id, item_id=item_id)
-    return APIResponse(data={"plan_id": plan_id, "item_id": item_id, "deleted": True})
+    try:
+        await service.delete_item(plan_id=plan_id, item_id=item_id)
+        return APIResponse(data={"plan_id": plan_id, "item_id": item_id, "deleted": True})
+    except Exception as exc:
+        handle_service_error(exc)
 
 
 @router.put(
@@ -368,12 +403,15 @@ async def batch_update_assignee(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """批量更新执行计划条目的执行人（指派或取消指派）。"""
-    result = await service.batch_update_assignee(
-        plan_id=plan_id,
-        item_ids=request.item_ids,
-        assignee_id=request.assignee_id,
-    )
-    return APIResponse(data=result)
+    try:
+        result = await service.batch_update_assignee(
+            plan_id=plan_id,
+            item_ids=request.item_ids,
+            assignee_id=request.assignee_id,
+        )
+        return APIResponse(data=result)
+    except Exception as exc:
+        handle_service_error(exc)
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -407,9 +445,12 @@ async def archive_item(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """将计划条目标记为已归档（放入收纳箱）。"""
-    actor_id = _get_user_id(current_user)
-    await service.archive_item(item_id=item_id, actor_id=actor_id)
-    return APIResponse(data={"item_id": item_id, "archived": True})
+    try:
+        actor_id = _get_user_id(current_user)
+        await service.archive_item(item_id=item_id, actor_id=actor_id)
+        return APIResponse(data={"item_id": item_id, "archived": True})
+    except Exception as exc:
+        handle_service_error(exc)
 
 
 @router.put(
@@ -423,5 +464,8 @@ async def unarchive_item(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """将计划条目从收纳箱移回待处理。"""
-    await service.unarchive_item(item_id=item_id)
-    return APIResponse(data={"item_id": item_id, "archived": False})
+    try:
+        await service.unarchive_item(item_id=item_id)
+        return APIResponse(data={"item_id": item_id, "archived": False})
+    except Exception as exc:
+        handle_service_error(exc)

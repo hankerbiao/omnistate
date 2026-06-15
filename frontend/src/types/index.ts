@@ -636,7 +636,7 @@ export interface CreateAutomationTestCaseRequest {
 export interface AutomationTestCaseResponse {
   id: string;
   auto_case_id: string;
-  dml_manual_case_id?: string;
+  linked_manual_case_id?: string;
   name: string;
   version: string;
   status: string;

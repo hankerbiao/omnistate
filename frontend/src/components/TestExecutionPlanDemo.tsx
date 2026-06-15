@@ -291,6 +291,17 @@ export default function TestExecutionPlanDemo() {
       const res = await api.getPlanDetail(activePlanId);
       const d = res.data as Record<string, unknown> | undefined;
       setActivePlanItems((d?.items as PlanItemSummary[]) || []);
+    } catch (err) {
+      console.error('保存失败:', err);
+      // 即使 API 报错，条目可能已部分入库，尝试刷新
+      try {
+        const res = await api.getPlanDetail(activePlanId);
+        const d = res.data as Record<string, unknown> | undefined;
+        setActivePlanItems((d?.items as PlanItemSummary[]) || []);
+      } catch { /* ignore */ }
+      setEditingPlanId('');
+      setSelectedAddCaseIds([]);
+      setShowAddCases(false);
     } finally {
       setSaving(false);
     }
@@ -471,6 +482,8 @@ export default function TestExecutionPlanDemo() {
       setActivePlanId(planId);
     } catch (err) {
       console.error('创建计划失败:', err);
+      // 即使 addPlanItems 失败，计划可能已创建，刷新列表
+      await fetchPlans();
     } finally {
       setSubmittingPlan(false);
       setShowWizard(false);

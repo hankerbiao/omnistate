@@ -47,10 +47,10 @@ class AutomationTestCaseService(BaseService):
             raise KeyError("automation test case not found")
         return self._doc_to_dict(doc)
 
-    async def get_automation_test_case_by_manual_case_id(self, dml_manual_case_id: str) -> Dict[str, Any]:
-        """按 dml_manual_case_id 查询记录。"""
+    async def get_automation_test_case_by_manual_case_id(self, linked_manual_case_id: str) -> Dict[str, Any]:
+        """按 linked_manual_case_id 查询记录。"""
         doc = await AutomationTestCaseDoc.find_one(
-            {"dml_manual_case_id": dml_manual_case_id, "is_deleted": False},
+            {"linked_manual_case_id": linked_manual_case_id, "is_deleted": False},
         )
         if not doc:
             raise KeyError("automation test case not found")
@@ -62,7 +62,7 @@ class AutomationTestCaseService(BaseService):
         automation_type: Optional[str] = None,
         status: Optional[str] = None,
         maintainer_id: Optional[str] = None,
-        dml_manual_case_id: Optional[str] = None,
+        linked_manual_case_id: Optional[str] = None,
         limit: int = 20,
         offset: int = 0,
     ) -> List[Dict[str, Any]]:
@@ -74,8 +74,8 @@ class AutomationTestCaseService(BaseService):
             query = query.find(AutomationTestCaseDoc.automation_type == automation_type)
         if status:
             query = query.find(AutomationTestCaseDoc.status == status)
-        if dml_manual_case_id:
-            query = query.find({"dml_manual_case_id": dml_manual_case_id})
+        if linked_manual_case_id:
+            query = query.find({"linked_manual_case_id": linked_manual_case_id})
 
         docs = await query.sort("-created_at").skip(offset).limit(limit).to_list()
         return [self._doc_to_dict(doc) for doc in docs]
@@ -115,11 +115,11 @@ class AutomationTestCaseService(BaseService):
         conflict_count = 0
 
         for metadata in cases:
-            dml_manual_case_id = self._extract_manual_case_id(metadata)
+            linked_manual_case_id = self._extract_manual_case_id(metadata)
             existing = await AutomationTestCaseDoc.find_one(
-                {"dml_manual_case_id": dml_manual_case_id, "is_deleted": False},
+                {"linked_manual_case_id": linked_manual_case_id, "is_deleted": False},
             )
-            doc_data = self._build_report_doc_data(dml_manual_case_id, metadata, summary)
+            doc_data = self._build_report_doc_data(linked_manual_case_id, metadata, summary)
 
             if existing:
                 self._apply_updates(existing, doc_data, doc_data.keys())
@@ -148,7 +148,7 @@ class AutomationTestCaseService(BaseService):
 
     @staticmethod
     def _build_report_doc_data(
-        dml_manual_case_id: str,
+        linked_manual_case_id: str,
         metadata: Dict[str, Any],
         summary: Dict[str, Any] | None = None,
     ) -> Dict[str, Any]:
@@ -166,14 +166,14 @@ class AutomationTestCaseService(BaseService):
         config_path = metadata.get("config_path")
 
         return {
-            "name": dml_manual_case_id,
-            "dml_manual_case_id": dml_manual_case_id,
+            "name": linked_manual_case_id,
+            "linked_manual_case_id": linked_manual_case_id,
             "description": metadata.get("description"),
             "status": "ACTIVE",
             "framework": framework,
             "automation_type": metadata.get("module"),
             "script_ref": ScriptRefModel(
-                entity_id=script_path or config_path or dml_manual_case_id,
+                entity_id=script_path or config_path or linked_manual_case_id,
                 module=metadata.get("module"),
                 project_tag=metadata.get("project_tag"),
                 project_scope=metadata.get("project_scope"),
@@ -230,14 +230,14 @@ class AutomationTestCaseService(BaseService):
     @staticmethod
     def _extract_manual_case_id(metadata: Dict[str, Any]) -> str:
         """从单条上报元数据中提取框架侧 case 标识。"""
-        dml_manual_case_id = str(
-            metadata.get("dml_manual_case_id")
+        linked_manual_case_id = str(
+            metadata.get("linked_manual_case_id")
             or metadata.get("case_id")
             or ""
         ).strip()
-        if not dml_manual_case_id:
-            raise ValueError("case metadata.dml_manual_case_id is required")
-        return dml_manual_case_id
+        if not linked_manual_case_id:
+            raise ValueError("case metadata.linked_manual_case_id is required")
+        return linked_manual_case_id
 
     @staticmethod
     def _normalize_param_spec(param_spec: List[Dict[str, Any]]) -> List[ConfigFieldModel]:
@@ -261,8 +261,8 @@ class AutomationTestCaseService(BaseService):
         metadata: Dict[str, Any],
     ) -> Dict[str, Any]:
         """根据唯一关联键查找是否存在已关联的平台测试用例。"""
-        dml_manual_case_id = auto_doc.dml_manual_case_id
-        if not dml_manual_case_id:
+        linked_manual_case_id = auto_doc.linked_manual_case_id
+        if not linked_manual_case_id:
             return {
                 "linked": False,
                 "linked_case_id": None,
@@ -271,7 +271,7 @@ class AutomationTestCaseService(BaseService):
             }
 
         case_doc = await TestCaseDoc.find_one(
-            {"case_id": dml_manual_case_id, "is_deleted": False},
+            {"case_id": linked_manual_case_id, "is_deleted": False},
         )
         if not case_doc:
             return {

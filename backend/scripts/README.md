@@ -4,6 +4,7 @@
 
 ```
 scripts/
+├── server.sh     # 服务启停管理（start/stop/restart/status）
 ├── init/         # 初始化脚本（RBAC、用户创建）
 ├── auth/         # 认证相关（Token 生成）
 ├── mock/         # 模拟数据与服务
@@ -208,6 +209,35 @@ python scripts/maintenance/remove_test_specs_status_projection.py --apply
 | 参数 | 说明 |
 |------|------|
 | `--apply` | 执行清理操作，不带此参数只预览 |
+
+---
+
+---
+
+## server.sh — 服务启停管理
+
+后端服务的启动、停止、重启和状态查询。
+
+**使用方法：**
+```bash
+# 启动服务（后台运行，日志输出到 logs/server.log）
+./scripts/server.sh start
+
+# 查看服务运行状态
+./scripts/server.sh status
+
+# 停止服务
+./scripts/server.sh stop
+
+# 重启服务
+./scripts/server.sh restart
+```
+
+**功能说明：**
+- 启动时以 `uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload` 运行
+- PID 保存在 `.server.pid`，日志输出到 `logs/server.log`
+- 停止时先发送 SIGTERM，超时后自动 SIGKILL
+- 自动清理过期 PID 文件
 
 ---
 
