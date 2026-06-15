@@ -5,6 +5,8 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+from beanie.odm.operators.find.comparison import In as InOp
+
 from app.modules.execution.application.task_command_service import ExecutionTaskCommandService
 from app.modules.execution.repository.models import ExecutionTaskDoc
 from app.modules.execution.schemas import DispatchCaseItem, DispatchTaskRequest
@@ -207,7 +209,7 @@ class ExecutionPlanService(BaseService):
 
         result = await ExecutionPlanItemDoc.find(
             ExecutionPlanItemDoc.plan_id == plan_id,
-            ExecutionPlanItemDoc.item_id.in_(item_ids),
+            InOp(ExecutionPlanItemDoc.item_id, item_ids),
             ExecutionPlanItemDoc.is_deleted == False,  # noqa: E712
         ).update({"$set": {"assignee_id": assignee_id, "updated_at": datetime.now(timezone.utc)}})
 
@@ -455,7 +457,6 @@ class ExecutionPlanService(BaseService):
 
     async def get_case_execution_stats(self, case_id: str) -> Dict[str, Any]:
         """获取测试用例的执行统计（手工 + 自动化）。"""
-        from beanie.odm.operators.find.comparison import In as InOp
 
         # 查询手工结果
         manual_results = await ManualExecutionResultDoc.find(
@@ -740,7 +741,7 @@ class ExecutionPlanService(BaseService):
         if not plan_ids:
             return {}
         plan_docs = await ExecutionPlanDoc.find(
-            ExecutionPlanDoc.plan_id.in_(plan_ids),
+            InOp(ExecutionPlanDoc.plan_id, list(plan_ids)),
             ExecutionPlanDoc.is_deleted == False,
         ).to_list()
         return {p.plan_id: p.title for p in plan_docs}
