@@ -84,14 +84,6 @@ export const TYPE_COLORS: Record<string, { bg: string; color: string }> = {
   PLAN_TASK: { bg: 'rgba(163,113,247,0.15)', color: '#a371f7' },
 };
 
-export const COMPONENT_COLORS: Record<string, string> = {
-  '内存验证组': '#58a6ff',
-  '固件验证组': '#d29922',
-  '工具链组': '#3fb950',
-  '存储验证组': '#f0883e',
-  '平台质量组': '#a371f7',
-};
-
 export const STATUS_LABELS: Record<string, string> = {
   pending: '○ 待执行',
   running: '▶ 执行中',

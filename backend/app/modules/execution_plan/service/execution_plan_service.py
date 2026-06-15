@@ -694,12 +694,15 @@ class ExecutionPlanService(BaseService):
             ExecutionPlanItemDoc.is_deleted == False,
         ).to_list()
         item_count = len(items)
-        done_count = sum(1 for item in items if item.status == "done")
-        progress = round(done_count / item_count * 100) if item_count else 0
+        # 修复：同时统计 done + fail，两者都是终态，缺一则计划未完成
+        completed_count = sum(
+            1 for item in items if item.status in (PlanItemStatus.DONE, PlanItemStatus.FAIL)
+        )
+        progress = round(completed_count / item_count * 100) if item_count else 0
         plan_doc.item_count = item_count
-        plan_doc.done_count = done_count
+        plan_doc.done_count = completed_count
         plan_doc.progress_percent = progress
-        if item_count > 0 and done_count == item_count and plan_doc.status == "active":
+        if item_count > 0 and completed_count == item_count and plan_doc.status == "active":
             plan_doc.status = "done"
         await plan_doc.save()
 
