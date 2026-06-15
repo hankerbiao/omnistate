@@ -46,6 +46,7 @@ class AppConfig(BaseModel):
     debug: bool = False
     host: str = "0.0.0.0"
     port: int = 8000
+    service_name: str = "dmlv4-backend"
     cors_origins: list[str] = Field(default_factory=lambda: ["*"])
     # 开发模式免认证配置
     dev_bypass_auth: bool = False  # 设为 true 时跳过 JWT 验证
@@ -218,6 +219,9 @@ class RedisConfig(BaseModel):
     db: int = 0
     socket_timeout: int = 2
     max_connections: int = 100
+    protocol: int = 2
+    retry_on_timeout: bool = True
+    sentinel_socket_timeout: float = 0.5
 
 
 class Settings(BaseModel):
@@ -271,9 +275,20 @@ def load_yaml_config(config_path: Path | str | None = None) -> dict[str, Any]:
 def get_settings() -> Settings:
     """获取应用配置单例。
 
+    环境变量 `DML_APP_PORT` 会覆盖 config.yaml 中的 `app.port`，
+    确保 server.sh 启动的端口与代码内读取的端口一致。
+
     Returns:
         Settings: 应用配置实例
     """
     config_data = load_yaml_config()
+
+    # 环境变量 DML_APP_PORT 优先级高于配置文件，确保启动脚本与代码一致
+    env_port = os.getenv("DML_APP_PORT")
+    if env_port is not None:
+        app_config = config_data.get("app", {})
+        app_config["port"] = int(env_port)
+        config_data["app"] = app_config
+
     return Settings(**config_data)
 

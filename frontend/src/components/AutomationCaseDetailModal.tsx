@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import type { AutomationTestCaseResponse, ExecutionStatsResponse, TestCaseResponse } from '../types';
 import { api } from '../services/api';
 import TestCaseDetailModal from './TestCaseDetailModal';
+import LinkManualCaseModal from './LinkManualCaseModal';
 
 interface Props {
   testCase: AutomationTestCaseResponse;
@@ -34,6 +35,9 @@ export default function AutomationCaseDetailModal({ testCase: tc, onClose }: Pro
   const [statsLoading, setStatsLoading] = useState(false);
   const [manualCase, setManualCase] = useState<TestCaseResponse | null>(null);
   const [manualCaseLoading, setManualCaseLoading] = useState(false);
+
+  // ── 关联手工用例弹窗 ──
+  const [showLinkModal, setShowLinkModal] = useState(false);
 
   const handleViewManualCase = useCallback(async () => {
     if (!tc.linked_manual_case_id) return;
@@ -121,9 +125,21 @@ export default function AutomationCaseDetailModal({ testCase: tc, onClose }: Pro
                   </button>
                 </div>
               ) : (
-                <span style={{ fontSize: 12, color: 'var(--accent-orange)', fontStyle: 'italic', padding: '2px 0' }}>
-                  ⚠️ 未关联手工用例
-                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 12, color: 'var(--accent-orange)', fontStyle: 'italic', padding: '2px 0' }}>
+                    ⚠️ 未关联手工用例
+                  </span>
+                  <button
+                    onClick={() => setShowLinkModal(true)}
+                    style={{
+                      padding: '3px 10px', borderRadius: 4, border: '1px solid var(--border-default)',
+                      background: 'var(--bg-primary, #fff)', fontSize: 11, cursor: 'pointer',
+                      color: '#2563eb', fontWeight: 500,
+                    }}
+                  >
+                    关联手工用例
+                  </button>
+                </div>
               )}
             </Section>
             <Section title="元数据">
@@ -233,6 +249,15 @@ export default function AutomationCaseDetailModal({ testCase: tc, onClose }: Pro
         <TestCaseDetailModal
           testCase={manualCase}
           onClose={() => setManualCase(null)}
+        />
+      )}
+
+      {/* ── 关联手工用例弹窗 ── */}
+      {showLinkModal && (
+        <LinkManualCaseModal
+          autoCaseId={tc.auto_case_id}
+          onClose={() => setShowLinkModal(false)}
+          onLinked={() => { setShowLinkModal(false); onClose(); }}
         />
       )}
     </>

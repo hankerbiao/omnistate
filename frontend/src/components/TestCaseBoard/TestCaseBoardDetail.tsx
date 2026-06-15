@@ -8,6 +8,7 @@ import { boardStyles as S } from './testCaseBoardStyles';
 import TestCaseStepList from '../TestCaseStepList';
 import { api } from '../../services/api';
 import { useState, useCallback, useEffect } from 'react';
+import LinkManualCaseModal from '../LinkManualCaseModal';
 
 /* ═══════════════════════════════════════════════════════════════════
    Props
@@ -338,6 +339,9 @@ const AutoDetailPanel: React.FC<{
   const d = item.autoData!;
   const dotColor = getAutoDot(d.status);
 
+  // ── 关联手工用例弹窗 ──
+  const [showLinkModal, setShowLinkModal] = useState(false);
+
   return (
     <>
       <div style={S.detailHeader}>
@@ -362,6 +366,13 @@ const AutoDetailPanel: React.FC<{
               {'\u26A0'} 未关联手工用例
             </span>
           )}
+          {!d.linked_manual_case_id && (
+            <button onClick={() => setShowLinkModal(true)} style={{
+              fontSize: 11, padding: '3px 8px', borderRadius: 4, border: '1px solid var(--border-default)',
+              background: 'var(--surface-primary)', color: 'var(--accent-primary)', cursor: 'pointer',
+              fontWeight: 500, whiteSpace: 'nowrap',
+            }}>关联</button>
+          )}
           <div style={{ flex: 1 }} />
           <button className="btn btn--primary btn--sm" onClick={onOpenDispatch}>{'\u25B6'} 下发执行</button>
           <button className="btn btn--ghost btn--sm" onClick={onRefresh}>{'\u21BB'}</button>
@@ -385,6 +396,15 @@ const AutoDetailPanel: React.FC<{
         {activeTab === 'meta' && <AutoMetaContent d={d} />}
         {activeTab === 'stats' && <StatsContent caseId={d.auto_case_id} isAuto />}
       </div>
+
+      {/* ── 关联手工用例弹窗 ── */}
+      {showLinkModal && (
+        <LinkManualCaseModal
+          autoCaseId={d.auto_case_id}
+          onClose={() => setShowLinkModal(false)}
+          onLinked={() => { setShowLinkModal(false); onRefresh(); }}
+        />
+      )}
     </>
   );
 };

@@ -426,7 +426,7 @@ export default function TestCaseBoardPage() {
         ) : selectedCase.type === 'auto' && selectedCase.autoData ? (
           <AutomationCaseDetailModal
             testCase={selectedCase.autoData}
-            onClose={() => setSelectedCase(null)}
+            onClose={() => { setSelectedCase(null); fetchAll(); }}
           />
         ) : null
       )}

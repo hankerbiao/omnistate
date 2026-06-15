@@ -1,12 +1,14 @@
 """Redis 连接管理器。
 
-全局单例，应用启动后第一次调用时自动初始化 Sentinel 连接池。
+全局单例，由 FastAPI lifespan 事件初始化 Sentinel 连接池。
 业务代码通过 `redis_conn`（写）和 `redis_read`（读）直接使用。
 """
 
 from __future__ import annotations
 
+import json
 import queue
+import socket
 import threading
 from typing import Any
 
@@ -14,26 +16,8 @@ from redis.sentinel import Sentinel
 
 from app.modules.redis.domain.constants import DEFAULT_EVENT_CHANNEL, KEY_NAMESPACE, PUBLISH_QUEUE_MAXSIZE
 from app.modules.redis.domain.exceptions import RedisConnectionError
+from app.shared.config import get_settings
 from app.shared.core.logger import log as logger
-
-# ── 连接池参数（按并发量调整 max_connections）────────────────────────
-_POOL_KWARGS: dict[str, Any] = {
-    "socket_timeout": 2,
-    "username": "dmlv4",
-    "password": "7GipPaqKHQNn37Vb",
-    "db": 0,
-    "decode_responses": True,
-    "protocol": 2,
-    "max_connections": 100,
-    "retry_on_timeout": True,
-}
-
-SENTINEL_HOSTS: list[tuple[str, int]] = [
-    ("10.17.152.51", 26379),
-    ("10.17.151.56", 26379),
-    ("10.17.152.46", 26379),
-]
-MASTER_NAME = "redis_master"
 
 
 class RedisManager:
@@ -53,14 +37,34 @@ class RedisManager:
             return
 
         try:
+            cfg = get_settings().redis
+            sentinel_hosts: list[tuple[str, int]] = []
+            for host_str in cfg.sentinel_hosts:
+                parts = host_str.split(":")
+                host = parts[0]
+                port = int(parts[1]) if len(parts) > 1 else 26379
+                sentinel_hosts.append((host, port))
+
+            sentinel_timeout = cfg.sentinel_socket_timeout
+            pool_kwargs: dict[str, Any] = {
+                "socket_timeout": cfg.socket_timeout,
+                "username": cfg.username or None,
+                "password": cfg.password or None,
+                "db": cfg.db,
+                "decode_responses": True,
+                "protocol": cfg.protocol,
+                "max_connections": cfg.max_connections,
+                "retry_on_timeout": cfg.retry_on_timeout,
+            }
+
             self.sentinel = Sentinel(
-                SENTINEL_HOSTS,
-                socket_timeout=0.5,
-                sentinel_kwargs={"socket_timeout": 0.5},
-                retry_on_timeout=True,
+                sentinel_hosts,
+                socket_timeout=sentinel_timeout,
+                sentinel_kwargs={"socket_timeout": sentinel_timeout},
+                retry_on_timeout=cfg.retry_on_timeout,
             )
-            RedisManager._master = self.sentinel.master_for(MASTER_NAME, **_POOL_KWARGS)
-            RedisManager._slave = self.sentinel.slave_for(MASTER_NAME, **_POOL_KWARGS)
+            RedisManager._master = self.sentinel.master_for(cfg.master_name, **pool_kwargs)
+            RedisManager._slave = self.sentinel.slave_for(cfg.master_name, **pool_kwargs)
             RedisManager._master.ping()
             logger.success("Redis 连接池初始化成功")
         except Exception as exc:
@@ -76,10 +80,34 @@ class RedisManager:
         return RedisManager._slave
 
 
-# ── 模块级单例 — 应用启动时第一次引用时自动初始化 ──────────────────
-redis_mgr = RedisManager()
-redis_conn = redis_mgr.master   # 写操作
-redis_read = redis_mgr.slave    # 读操作（可路由到从节点）
+# ── 模块级引用（初始为 None，由 lifespan 触发初始化）───────────────
+redis_mgr: RedisManager | None = None
+redis_conn: Any = None
+redis_read: Any = None
+
+# ── 发布队列（独立于连接池初始化，可以提前创建）──────────────────
+_publish_queue: queue.Queue = queue.Queue(maxsize=PUBLISH_QUEUE_MAXSIZE)
+_publish_thread: threading.Thread | None = None
+
+
+def init_redis() -> None:
+    """由 FastAPI lifespan 调用，完成 Sentinel 连接池和后台线程初始化。"""
+    global redis_mgr, redis_conn, redis_read, _publish_thread
+
+    if redis_conn is not None:
+        return
+
+    redis_mgr = RedisManager()
+    redis_conn = redis_mgr.master
+    redis_read = redis_mgr.slave
+
+    _publish_thread = threading.Thread(target=_bg_publisher, daemon=True)
+    _publish_thread.start()
+    logger.info("Redis 后台发布线程已启动")
+
+    # 注册服务实例并启动心跳续期
+    register_service()
+    _start_heartbeat()
 
 
 def build_key(domain: str, entity: str, key_id: str) -> str:
@@ -97,21 +125,17 @@ def build_key(domain: str, entity: str, key_id: str) -> str:
 
 
 # ── 异步 Pub/Sub 发布（后台线程消费，不阻塞主业务线程）─────────────
-_publish_queue: queue.Queue = queue.Queue(maxsize=PUBLISH_QUEUE_MAXSIZE)
 
 
 def _bg_publisher() -> None:
     """后台线程：独立长连接消费发布队列。"""
-    conn = redis_mgr.master
+    import app.modules.redis.service as svc
     while True:
         try:
             channel, message = _publish_queue.get()
-            conn.publish(channel, message)
-        except Exception:
-            pass
-
-
-threading.Thread(target=_bg_publisher, daemon=True).start()
+            svc.redis_conn.publish(channel, message)
+        except Exception as exc:
+            logger.warning(f"Redis 发布失败: {exc}")
 
 
 def publish_event(message: str, channel: str = DEFAULT_EVENT_CHANNEL) -> None:
@@ -120,3 +144,113 @@ def publish_event(message: str, channel: str = DEFAULT_EVENT_CHANNEL) -> None:
         _publish_queue.put_nowait((channel, message))
     except queue.Full:
         logger.warning("Redis 发布队列已满，消息已丢弃")
+
+
+# ── 服务注册心跳续期 ──────────────────────────────────────────────
+
+_heartbeat_thread: threading.Thread | None = None
+_heartbeat_stop = threading.Event()
+
+
+def _heartbeat_loop() -> None:
+    """定时续期服务注册的 TTL，每 10 分钟执行一次。"""
+    while not _heartbeat_stop.is_set():
+        _heartbeat_stop.wait(timeout=600)  # 10 分钟
+        if _heartbeat_stop.is_set():
+            break
+        try:
+            import app.modules.redis.service as svc
+            cfg = get_settings()
+            host = _get_local_ip()
+            port = cfg.app.port
+            service_name = cfg.app.service_name
+            instance_id = f"{service_name}@{host}:{port}"
+            ttl_sec = 600  # 10 分钟
+
+            svc.redis_conn.expire(f"{SERVICE_REGISTRY_KEY}:{instance_id}", ttl_sec)
+        except Exception:
+            pass  # 心跳失败下次重试
+
+
+def _start_heartbeat() -> None:
+    """启动后台心跳线程。"""
+    global _heartbeat_thread
+    if _heartbeat_thread is not None:
+        return
+    _heartbeat_stop.clear()
+    _heartbeat_thread = threading.Thread(target=_heartbeat_loop, daemon=True)
+    _heartbeat_thread.start()
+    logger.info("Redis 服务心跳线程已启动")
+
+
+def stop_heartbeat() -> None:
+    """停止后台心跳线程。"""
+    _heartbeat_stop.set()
+
+
+# ── 服务注册/发现（将本服务实例信息上报到 Redis）───────────────────
+
+SERVICE_REGISTRY_KEY = f"{KEY_NAMESPACE}:service_registry"
+
+
+def _get_local_ip() -> str:
+    """获取本机内网 IP（优先取非 loopback 地址）。"""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.settimeout(0.5)
+        s.connect(("10.0.0.1", 80))  # 不需要真正可达
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return "127.0.0.1"
+
+
+def register_service() -> None:
+    """向 Redis 注册本服务实例信息，供其他服务发现。"""
+    if redis_conn is None:
+        logger.warning("Redis 未初始化，跳过服务注册")
+        return
+
+    cfg = get_settings()
+    host = _get_local_ip()
+    port = cfg.app.port
+    service_name = cfg.app.service_name
+    instance_id = f"{service_name}@{host}:{port}"
+    ttl_sec = 600  # 10 分钟过期，由定时心跳续期
+
+    info = {
+        "service_name": service_name,
+        "host": host,
+        "port": port,
+        "instance_id": instance_id,
+        "status": "UP",
+    }
+
+    try:
+        redis_conn.setex(
+            f"{SERVICE_REGISTRY_KEY}:{instance_id}",
+            ttl_sec,
+            json.dumps(info),
+        )
+        logger.success(f"服务实例已注册到 Redis: {instance_id}")
+    except Exception as exc:
+        logger.warning(f"服务注册到 Redis 失败: {exc}")
+
+
+def unregister_service() -> None:
+    """从 Redis 注销本服务实例。"""
+    if redis_conn is None:
+        return
+
+    cfg = get_settings()
+    host = _get_local_ip()
+    port = cfg.app.port
+    service_name = cfg.app.service_name
+    instance_id = f"{service_name}@{host}:{port}"
+
+    try:
+        redis_conn.delete(f"{SERVICE_REGISTRY_KEY}:{instance_id}")
+        logger.info(f"服务实例已从 Redis 注销: {instance_id}")
+    except Exception as exc:
+        logger.warning(f"服务从 Redis 注销失败: {exc}")

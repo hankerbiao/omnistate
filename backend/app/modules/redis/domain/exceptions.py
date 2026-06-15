@@ -7,7 +7,7 @@ class RedisConnectionError(AppError):
     """Redis 连接失败。"""
 
     def __init__(self, message: str = "Redis 连接失败"):
-        super().__init__(message=message, code=500)
+        super().__init__(message=message, code=503)
 
 
 class RedisOperationError(AppError):

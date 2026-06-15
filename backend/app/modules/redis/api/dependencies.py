@@ -7,9 +7,9 @@ from fastapi import Depends
 
 async def get_redis_service() -> Any:
     """获取 Redis 服务（注入点预留）。"""
-    from app.modules.redis.service import redis_conn
+    import app.modules.redis.service as redis_service
 
-    return redis_conn
+    return redis_service.redis_conn
 
 
 RedisServiceDep = Annotated[Any, Depends(get_redis_service)]

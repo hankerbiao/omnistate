@@ -16,7 +16,7 @@ LOG_DIR="$PROJECT_ROOT/logs"
 LOG_FILE="$LOG_DIR/server.log"
 APP_MODULE="app.main:app"
 HOST="0.0.0.0"
-PORT="8000"
+PORT="8801"
 UVICORN_BIN="$(command -v uvicorn)"
 
 # 颜色输出
@@ -72,7 +72,8 @@ cmd_start() {
 
     mkdir -p "$LOG_DIR"
 
-    # 后台启动 uvicorn
+    # 后台启动 uvicorn，端口通过 DML_APP_PORT 环境变量暴露给应用
+    export DML_APP_PORT="$PORT"
     nohup "$UVICORN_BIN" "$APP_MODULE" \
         --host "$HOST" \
         --port "$PORT" \

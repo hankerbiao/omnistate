@@ -47,9 +47,20 @@ async def lifespan(app: FastAPI):
         await ConfigService.init_default_configs()
         log.success("系统默认配置初始化完成")
 
+        # 初始化 Redis 连接池
+        from app.modules.redis.service import init_redis
+        init_redis()
+        log.success("Redis 连接池初始化完成")
+
         yield
     finally:
         log.info("FastAPI 服务已关闭")
+
+        # 注销 Redis 服务注册并停止心跳
+        from app.modules.redis.service import unregister_service, stop_heartbeat
+        stop_heartbeat()
+        unregister_service()
+        log.info("Redis 服务注册已注销")
 
         # Phase 6: 关闭应用级基础设施
         log.info("正在关闭应用级基础设施...")
