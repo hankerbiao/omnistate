@@ -6,7 +6,9 @@ import pytest
 from httpx import AsyncClient
 
 from tests.integration.conftest import TestDataRegistry
-from tests.integration.utils.helpers import create_requirement_data, create_transition_request, post_work_item
+from tests.integration.utils.helpers import (
+    create_requirement_data, create_test_case_data, create_transition_request, post_work_item, unique_id,
+)
 
 
 @pytest.mark.asyncio
@@ -83,15 +85,30 @@ async def test_dev_cannot_approve(
     assert resp.status_code in (400, 403), f"Expected 400/403, got {resp.status_code}"
 
 
-@pytest.mark.skip(reason="TESTER role has work_items:write permission in current RBAC config. Adjust test or RBAC if needed.")
 @pytest.mark.asyncio
-async def test_tester_cannot_create_requirement(client_tester: AsyncClient):
-    """7.3 - TESTER cannot create requirement (needs TPM)."""
-    resp = await client_tester.post(
-        "/api/v1/work-items/",
-        json=create_requirement_data(),
+async def test_tester_cannot_approve_requirement(
+    client_tester: AsyncClient,
+    client_reviewer: AsyncClient,
+    test_data_registry: TestDataRegistry,
+):
+    """7.3 - TESTER cannot approve requirement (needs REVIEWER)."""
+    # Create and advance requirement to PENDING_REVIEW
+    resp = await post_work_item(
+        client_tester, test_data_registry, create_requirement_data()
     )
-    assert resp.status_code == 403, f"Expected 403, got {resp.status_code}"
+    item_id = resp.json()["data"]["item_id"]
+
+    await client_tester.post(
+        f"/api/v1/work-items/{item_id}/transition",
+        json=create_transition_request("SUBMIT", {"target_owner_id": "test_admin", "priority": "HIGH"}),
+    )
+
+    # TESTER tries to approve (should be REVIEWER)
+    resp = await client_tester.post(
+        f"/api/v1/work-items/{item_id}/transition",
+        json=create_transition_request("APPROVE"),
+    )
+    assert resp.status_code in (400, 403), f"Expected 400/403, got {resp.status_code}"
 
 
 @pytest.mark.asyncio
@@ -143,22 +160,22 @@ async def test_cannot_modify_others_requirement(
     assert resp.status_code == 403, f"Expected 403, got {resp.status_code}"
 
 
-@pytest.mark.skip(reason="Blocked by API field inconsistency: item_id != req_id, see docs/review/field-naming-inconsistency.md")
 @pytest.mark.asyncio
-async def test_admin_can_do_anything(client_admin: AsyncClient, client_tester: AsyncClient):
+async def test_admin_can_do_anything(client_admin: AsyncClient, client_tester: AsyncClient, test_data_registry):
     """7.8 - ADMIN can perform operations restricted to other roles."""
     # ADMIN can create requirement (normally requires TPM)
     resp = await client_admin.post(
-        "/api/v1/work-items/",
-        json=create_requirement_data(),
+        "/api/v1/requirements",
+        json={"title": f"Admin Req {unique_id()}"},
     )
     assert resp.status_code == 201, f"Admin create failed: {resp.text}"
 
     # ADMIN can create test case (normally requires DEV)
-    req_id = resp.json()["data"]["item_id"]
+    req_id = resp.json()["data"]["req_id"]
+    test_data_registry.register_requirement(req_id)
     resp = await client_admin.post(
         "/api/v1/test-cases",
-        json={"type_code": "TEST_CASE", "title": "Admin Case", "priority": "HIGH", "ref_req_id": req_id},
+        json=create_test_case_data(ref_req_id=req_id),
     )
     assert resp.status_code == 201, f"Admin create case failed: {resp.text}"
 

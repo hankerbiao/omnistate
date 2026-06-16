@@ -3,7 +3,8 @@
 Tests the complete lifecycle of a test case from creation through all state transitions:
 DEVELOPING (initial on create) → SUBMIT_REVIEW → PENDING_REVIEW → APPROVE → DONE
 
-Legacy DRAFT → ASSIGN → ASSIGNED → START_WRITE paths remain in workflow config for old data.
+Tests use POST /api/v1/requirements to create requirements (gets req_id),
+and POST /api/v1/work-items/ to create workflow items (gets item_id for transitions).
 """
 import pytest
 from httpx import AsyncClient
@@ -11,21 +12,17 @@ from httpx import AsyncClient
 from tests.integration.utils.helpers import create_test_case_data, create_transition_request, unique_id
 
 
-@pytest.mark.skip(reason="Blocked by API field inconsistency: item_id != req_id, see docs/review/field-naming-inconsistency.md")
 @pytest.mark.asyncio
-async def test_create_test_case(client_admin: AsyncClient):
+async def test_create_test_case(client_admin: AsyncClient, test_data_registry):
     """5.1 - ADMIN creates test case in DEVELOPING state."""
-    # First create a requirement to link
+    # Create requirement via /api/v1/requirements to get a valid req_id
     req_resp = await client_admin.post(
-        "/api/v1/work-items/",
-        json={
-            "type_code": "REQUIREMENT",
-            "title": f"Test Requirement for Cases {unique_id()}",
-            "content": "Content",
-        },
+        "/api/v1/requirements",
+        json={"title": f"Test Requirement for Cases {unique_id()}"},
     )
     assert req_resp.status_code == 201
-    req_id = req_resp.json()["data"]["item_id"]
+    req_id = req_resp.json()["data"]["req_id"]
+    test_data_registry.register_requirement(req_id)
 
     resp = await client_admin.post(
         "/api/v1/test-cases",
@@ -48,32 +45,42 @@ async def test_unauthorized_create_test_case(client_no_role: AsyncClient):
     assert resp.status_code in (401, 403), f"Expected 401/403, got {resp.status_code}"
 
 
-@pytest.mark.skip(reason="Blocked by API field inconsistency: item_id != req_id, see docs/review/field-naming-inconsistency.md")
 @pytest.mark.asyncio
-async def test_testcase_full_lifecycle(client_admin: AsyncClient):
+async def test_testcase_full_lifecycle(client_admin: AsyncClient, test_data_registry):
     """5.3-5.8 - Test full test case lifecycle through all states."""
-    # Create requirement first
+    # Create requirement via /api/v1/requirements to get a valid req_id
     req_resp = await client_admin.post(
+        "/api/v1/requirements",
+        json={"title": f"Test Requirement for Lifecycle {unique_id()}"},
+    )
+    assert req_resp.status_code == 201
+    req_id = req_resp.json()["data"]["req_id"]
+    test_data_registry.register_requirement(req_id)
+
+    # Also create a work item for the requirement so we can transition it
+    wi_resp = await client_admin.post(
         "/api/v1/work-items/",
         json={
             "type_code": "REQUIREMENT",
-            "title": f"Test Requirement for Lifecycle {unique_id()}",
+            "title": f"Test Requirement WI for Lifecycle {unique_id()}",
             "content": "Content",
         },
     )
-    req_id = req_resp.json()["data"]["item_id"]
+    assert wi_resp.status_code == 201
+    item_id = wi_resp.json()["data"]["item_id"]
+    test_data_registry.register_work_item(item_id)
 
-    # Submit requirement to make it assignable
+    # Submit requirement to advance its state
     await client_admin.post(
-        f"/api/v1/work-items/{req_id}/transition",
+        f"/api/v1/work-items/{item_id}/transition",
         json=create_transition_request("SUBMIT"),
     )
     await client_admin.post(
-        f"/api/v1/work-items/{req_id}/transition",
+        f"/api/v1/work-items/{item_id}/transition",
         json=create_transition_request("APPROVE"),
     )
 
-    # Create test case
+    # Create test case linked to the requirement
     resp = await client_admin.post(
         "/api/v1/test-cases",
         json=create_test_case_data(ref_req_id=req_id),
@@ -100,28 +107,38 @@ async def test_testcase_full_lifecycle(client_admin: AsyncClient):
     return case_id
 
 
-@pytest.mark.skip(reason="Blocked by API field inconsistency: item_id != req_id, see docs/review/field-naming-inconsistency.md")
 @pytest.mark.asyncio
-async def test_testcase_reject_path(client_admin: AsyncClient):
+async def test_testcase_reject_path(client_admin: AsyncClient, test_data_registry):
     """5.7 - PENDING_REVIEW → REJECT → DEVELOPING (rejection path)."""
-    # Create requirement first
+    # Create requirement via /api/v1/requirements
     req_resp = await client_admin.post(
+        "/api/v1/requirements",
+        json={"title": f"Test Requirement for Reject {unique_id()}"},
+    )
+    assert req_resp.status_code == 201
+    req_id = req_resp.json()["data"]["req_id"]
+    test_data_registry.register_requirement(req_id)
+
+    # Create and transition work item for the requirement
+    wi_resp = await client_admin.post(
         "/api/v1/work-items/",
         json={
             "type_code": "REQUIREMENT",
-            "title": f"Test Requirement for Reject {unique_id()}",
+            "title": f"Test Requirement WI for Reject {unique_id()}",
             "content": "Content",
         },
     )
-    req_id = req_resp.json()["data"]["item_id"]
+    assert wi_resp.status_code == 201
+    item_id = wi_resp.json()["data"]["item_id"]
+    test_data_registry.register_work_item(item_id)
 
     # Submit requirement
     await client_admin.post(
-        f"/api/v1/work-items/{req_id}/transition",
+        f"/api/v1/work-items/{item_id}/transition",
         json=create_transition_request("SUBMIT"),
     )
     await client_admin.post(
-        f"/api/v1/work-items/{req_id}/transition",
+        f"/api/v1/work-items/{item_id}/transition",
         json=create_transition_request("APPROVE"),
     )
 
@@ -146,18 +163,28 @@ async def test_testcase_reject_path(client_admin: AsyncClient):
     assert resp.json()["data"]["to_state"] == "DEVELOPING"
 
 
-@pytest.mark.skip(reason="Blocked by API field inconsistency: item_id != req_id, see docs/review/field-naming-inconsistency.md")
 @pytest.mark.asyncio
-async def test_terminal_state_cannot_transition(client_admin: AsyncClient):
+async def test_terminal_state_cannot_transition(client_admin: AsyncClient, test_data_registry):
     """5.8 - Terminal DONE state cannot transition."""
-    # Create requirement and test case quickly to DONE state
+    # Create requirement via /api/v1/requirements
     req_resp = await client_admin.post(
-        "/api/v1/work-items/",
-        json={"type_code": "REQUIREMENT", "title": "Req for Done Test", "content": "Content"},
+        "/api/v1/requirements",
+        json={"title": "Req for Done Test", "description": "test"},
     )
-    req_id = req_resp.json()["data"]["item_id"]
-    await client_admin.post(f"/api/v1/work-items/{req_id}/transition", json=create_transition_request("SUBMIT"))
-    await client_admin.post(f"/api/v1/work-items/{req_id}/transition", json=create_transition_request("APPROVE"))
+    assert req_resp.status_code == 201
+    req_id = req_resp.json()["data"]["req_id"]
+    test_data_registry.register_requirement(req_id)
+
+    # Create and transition work item for the requirement
+    wi_resp = await client_admin.post(
+        "/api/v1/work-items/",
+        json={"type_code": "REQUIREMENT", "title": "Req WI for Done Test", "content": "Content"},
+    )
+    assert wi_resp.status_code == 201
+    item_id = wi_resp.json()["data"]["item_id"]
+    test_data_registry.register_work_item(item_id)
+    await client_admin.post(f"/api/v1/work-items/{item_id}/transition", json=create_transition_request("SUBMIT"))
+    await client_admin.post(f"/api/v1/work-items/{item_id}/transition", json=create_transition_request("APPROVE"))
 
     resp = await client_admin.post(
         "/api/v1/test-cases",
@@ -183,16 +210,28 @@ async def test_terminal_state_cannot_transition(client_admin: AsyncClient):
     assert resp.status_code == 400, f"Expected 400, got {resp.status_code}"
 
 
-@pytest.mark.skip(reason="Blocked by API field inconsistency: item_id != req_id, see docs/review/field-naming-inconsistency.md")
 @pytest.mark.asyncio
-async def test_get_testcase_logs(client_admin: AsyncClient):
+async def test_get_testcase_logs(client_admin: AsyncClient, test_data_registry):
     """5.9 - Get test case transition logs."""
-    # Create requirement and test case
+    # Create requirement via /api/v1/requirements
     req_resp = await client_admin.post(
-        "/api/v1/work-items/",
-        json={"type_code": "REQUIREMENT", "title": "Req for Logs Test", "content": "Content"},
+        "/api/v1/requirements",
+        json={"title": "Req for Logs Test", "description": "test"},
     )
-    req_id = req_resp.json()["data"]["item_id"]
+    assert req_resp.status_code == 201
+    req_id = req_resp.json()["data"]["req_id"]
+    test_data_registry.register_requirement(req_id)
+
+    # Create work item for the requirement
+    wi_resp = await client_admin.post(
+        "/api/v1/work-items/",
+        json={"type_code": "REQUIREMENT", "title": "Req WI for Logs Test", "content": "Content"},
+    )
+    assert wi_resp.status_code == 201
+    item_id = wi_resp.json()["data"]["item_id"]
+    test_data_registry.register_work_item(item_id)
+    await client_admin.post(f"/api/v1/work-items/{item_id}/transition", json=create_transition_request("SUBMIT"))
+    await client_admin.post(f"/api/v1/work-items/{item_id}/transition", json=create_transition_request("APPROVE"))
 
     resp = await client_admin.post(
         "/api/v1/test-cases",
