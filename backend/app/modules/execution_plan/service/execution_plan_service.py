@@ -602,22 +602,41 @@ class ExecutionPlanService(BaseService):
         item = await self._get_item_by_id_or_raise(item_id)
 
         if item.ref_type == "auto":
-            if not item.execution_task_id:
-                raise ValueError("自动化条目没有关联的执行任务，无法重新执行")
-            year = datetime.now().year
-            seq = await sequence_service.next(f"execution_task:{year}")
-            new_task_id = f"ET-{year}-{str(seq).zfill(6)}"
-            data = await self._task_command_service.rerun_task(
-                source_task_id=item.execution_task_id,
-                new_task_id=new_task_id,
-                actor_id=actor_id,
-                request={},
-            )
-            item.execution_task_id = new_task_id
+            if item.execution_task_id:
+                # 有旧任务：基于快照 rerun
+                year = datetime.now().year
+                seq = await sequence_service.next(f"execution_task:{year}")
+                new_task_id = f"ET-{year}-{str(seq).zfill(6)}"
+                data = await self._task_command_service.rerun_task(
+                    source_task_id=item.execution_task_id,
+                    new_task_id=new_task_id,
+                    actor_id=actor_id,
+                    request={},
+                )
+                item.execution_task_id = new_task_id
+            else:
+                # 无旧任务：重新下发（直接 dispatch）
+                if not request:
+                    request = PlanItemRerunRequest()
+                dispatch_req = PlanItemDispatchRequest(
+                    agent_id=request.agent_id,
+                    project_tag=request.project_tag,
+                    pytest_options=request.pytest_options,
+                    timeout=request.timeout,
+                )
+                data = await self.dispatch_item(
+                    item_id=item_id,
+                    request=dispatch_req,
+                    actor_id=actor_id,
+                    sequence_service=sequence_service,
+                )
+            # 如果已归档，清除归档标记
+            if item.archived_at:
+                item.archived_at = None
             item.status = PlanItemStatus.RUNNING.value
             await item.save()
             await self._recalculate_plan_progress(item.plan_id)
-            logger.info(f"[RERUN] auto item={item_id} new_task={new_task_id} actor={actor_id}")
+            logger.info(f"[RERUN] auto item={item_id} new_task={item.execution_task_id} actor={actor_id}")
             return data
 
         elif item.ref_type == "manual":

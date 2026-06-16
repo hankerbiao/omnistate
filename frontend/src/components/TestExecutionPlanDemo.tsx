@@ -513,6 +513,11 @@ export default function TestExecutionPlanDemo() {
     const item = rerunConfirm;
     setRerunConfirm(null);
     try {
+      // 如果已归档，先取消归档
+      if ((item as any).archived_at) {
+        try { await api.unarchiveItem(item.item_id); } catch { /* ignore */ }
+        setArchivedItems(prev => prev.filter((i: any) => i.item_id !== item.item_id));
+      }
       await api.rerunPlanItem(item.item_id);
       // 刷新当前计划详情
       if (activePlanId) {
@@ -788,6 +793,7 @@ export default function TestExecutionPlanDemo() {
         items={archivedItems}
         onClose={() => setShowArchive(false)}
         onUnarchive={handleUnarchive}
+        onRerunItem={handleRerunItem}
       />
 
       {/* ── Result modal ── */}
@@ -1911,8 +1917,8 @@ function DateRangePicker({ startDate, endDate, onChange }: {
 //  ArchivedModal — 已归档条目
 // ═══════════════════════════════════════════════════════════════════
 
-function ArchivedModal({ open, loading, items, onClose, onUnarchive }: {
-  open: boolean; loading: boolean; items: any[]; onClose: () => void; onUnarchive: (itemId: string) => void;
+function ArchivedModal({ open, loading, items, onClose, onUnarchive, onRerunItem }: {
+  open: boolean; loading: boolean; items: any[]; onClose: () => void; onUnarchive: (itemId: string) => void; onRerunItem?: (item: any) => void;
 }) {
   if (!open) return null;
   const doneCount = items.filter((i: any) => i.status === 'done').length;
@@ -1968,6 +1974,14 @@ function ArchivedModal({ open, loading, items, onClose, onUnarchive }: {
                   }}>
                   取回
                 </button>
+                {item.status === 'fail' && onRerunItem && (
+                  <button onClick={() => onRerunItem(item)}
+                    style={{ padding: '3px 10px', fontSize: 10, border: '1px solid #f8514940', borderRadius: 4, cursor: 'pointer',
+                      background: 'rgba(248,81,73,0.06)', color: '#f85149', fontWeight: 500, flexShrink: 0,
+                    }}>
+                    重新执行
+                  </button>
+                )}
               </div>
             ))
           )}
