@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.modules.execution.application.worker_presence import get_kafka_worker_agent_id
 from app.modules.execution.repository.models import ExecutionAgentDoc
@@ -111,8 +111,8 @@ async def _check_worker_heartbeat() -> HealthCheckResult:
         return HealthCheckResult.fail(f"agent '{agent_id}' 从未上报心跳")
 
     ttl = agent.heartbeat_ttl_seconds or 30
-    last_heartbeat = _to_naive_utc(agent.last_heartbeat_at)
-    elapsed = (datetime.utcnow() - last_heartbeat).total_seconds()
+    last_heartbeat = agent.last_heartbeat_at.replace(tzinfo=None) if agent.last_heartbeat_at.tzinfo else agent.last_heartbeat_at
+    elapsed = (datetime.now(timezone.utc).replace(tzinfo=None) - last_heartbeat).total_seconds()
     if elapsed > ttl * HEARTBEAT_EXPIRY_MULTIPLIER:
         return HealthCheckResult.fail(
             f"agent '{agent_id}' 心跳已过期 "
@@ -120,10 +120,3 @@ async def _check_worker_heartbeat() -> HealthCheckResult:
         )
 
     return HealthCheckResult.ok(f"agent '{agent_id}' 心跳正常 ({elapsed:.0f}s 前)")
-
-
-def _to_naive_utc(value: datetime) -> datetime:
-    """统一把 datetime 转换为 naive UTC，便于和 datetime.utcnow() 相减。"""
-    if value.tzinfo is None:
-        return value
-    return value.replace(tzinfo=None)

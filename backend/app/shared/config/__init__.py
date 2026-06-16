@@ -13,8 +13,6 @@ from app.shared.config.settings import (
     MongoDBConfig,
     RabbitMQConfig,
     Settings,
-    TerminalConfig,
-    TmmsConfig,
     get_settings,
     load_yaml_config,
 )
@@ -29,8 +27,6 @@ __all__ = [
     "MongoDBConfig",
     "RabbitMQConfig",
     "Settings",
-    "TerminalConfig",
-    "TmmsConfig",
     "get_settings",
     "load_yaml_config",
 ]

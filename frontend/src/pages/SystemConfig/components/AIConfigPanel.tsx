@@ -1,23 +1,20 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { api } from '../../../services/api';
-import type { AIConfig, TestConnectionResponse } from '../../../types';
-
-const defaultAIConfig: AIConfig = {
-  base_url: 'http://localhost:11434/v1',
-  model: 'qwen2.5:latest',
-  api_key: '',
-  temperature: 0.7,
-  max_tokens: 4096,
-  timeout: 60,
-  enabled: true,
-};
+import type { SystemConfig, TestConnectionResponse } from '../../../types';
 
 interface AIConfigPanelProps {
   onClose?: () => void;
 }
 
+/**
+ * AI 配置面板 — 动态表单
+ *
+ * 所有可配置字段由后端 GET /system-configs?category=ai 动态提供，
+ * 前端根据 config_type/is_encrypted 自动选择表单控件。
+ * 后端增减 AI 配置字段时，前端无需修改。
+ */
 const AIConfigPanel: React.FC<AIConfigPanelProps> = ({ onClose }) => {
-  const [config, setConfig] = useState<AIConfig>({ ...defaultAIConfig });
+  const [configs, setConfigs] = useState<SystemConfig[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -26,26 +23,13 @@ const AIConfigPanel: React.FC<AIConfigPanelProps> = ({ onClose }) => {
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
 
-  // 加载当前配置
+  // 加载当前 AI 配置
   const loadConfig = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const res = await api.getSystemConfigs({ category: 'ai', active_only: true });
-      const configs = res.data?.items || [];
-      const newConfig = { ...defaultAIConfig };
-      configs.forEach((c: any) => {
-        switch (c.config_key) {
-          case 'ai.base_url': newConfig.base_url = c.config_value; break;
-          case 'ai.model': newConfig.model = c.config_value; break;
-          case 'ai.api_key': newConfig.api_key = c.config_value; break;
-          case 'ai.temperature': newConfig.temperature = parseFloat(c.config_value) || 0.7; break;
-          case 'ai.max_tokens': newConfig.max_tokens = parseInt(c.config_value) || 4096; break;
-          case 'ai.timeout': newConfig.timeout = parseInt(c.config_value) || 60; break;
-          case 'ai.enabled': newConfig.enabled = c.config_value === 'true'; break;
-        }
-      });
-      setConfig(newConfig);
+      setConfigs(res.data?.items || []);
     } catch (err: any) {
       setError('加载配置失败: ' + (err.message || '未知错误'));
     } finally {
@@ -55,53 +39,131 @@ const AIConfigPanel: React.FC<AIConfigPanelProps> = ({ onClose }) => {
 
   useEffect(() => { loadConfig(); }, [loadConfig]);
 
-  const handleChange = (field: keyof AIConfig, value: any) => {
-    setConfig(prev => ({ ...prev, [field]: value }));
+  // 按基础/高级分组
+  const { basicConfigs, advancedConfigs } = useMemo(() => {
+    const basic: SystemConfig[] = [];
+    const advanced: SystemConfig[] = [];
+    for (const cfg of configs) {
+      // ai.base_url / ai.model / ai.api_key 为基础参数，其余为高级参数
+      if (cfg.config_key === 'ai.base_url' || cfg.config_key === 'ai.model' || cfg.config_key === 'ai.api_key') {
+        basic.push(cfg);
+      } else {
+        advanced.push(cfg);
+      }
+    }
+    return { basicConfigs: basic, advancedConfigs: advanced };
+  }, [configs]);
+
+  // 获取指定 key 的值（字符串形式）
+  const getValue = (key: string): string => {
+    return configs.find(c => c.config_key === key)?.config_value ?? '';
+  };
+
+  // 更新单个字段
+  const handleChange = (configKey: string, value: string) => {
+    setConfigs(prev => prev.map(c =>
+      c.config_key === configKey ? { ...c, config_value: value } : c
+    ));
     setTestResult(null);
     setSuccessMsg(null);
   };
 
+  // 渲染单个配置字段的表单控件
+  const renderField = (cfg: SystemConfig) => {
+    const value = cfg.config_value;
+    const type = cfg.config_type;
+
+    if (type === 'boolean') {
+      return (
+        <label className="checkbox-label" key={cfg.config_key}>
+          <input
+            type="checkbox"
+            checked={value === 'true'}
+            onChange={e => handleChange(cfg.config_key, String(e.target.checked))}
+          />
+          <span>{cfg.description}</span>
+        </label>
+      );
+    }
+
+    const isNumber = type === 'integer' || type === 'float';
+    return (
+      <div className="form-field" key={cfg.config_key}>
+        <label className="form-field__label">{cfg.description}</label>
+        <input
+          type={cfg.is_encrypted ? 'password' : isNumber ? 'number' : 'text'}
+          className="form-input"
+          value={value}
+          onChange={e => handleChange(cfg.config_key, e.target.value)}
+          placeholder={cfg.description}
+          min={isNumber ? 0 : undefined}
+          step={type === 'float' ? 0.1 : undefined}
+        />
+      </div>
+    );
+  };
+
+  // 前端轻量验证
   const validateConfig = (): string[] => {
     const errors: string[] = [];
-    if (!config.base_url) errors.push('基础URL不能为空');
-    else if (!config.base_url.startsWith('http://') && !config.base_url.startsWith('https://'))
-      errors.push('URL必须以http://或https://开头');
-    if (!config.model) errors.push('模型名称不能为空');
-    if (config.temperature < 0 || config.temperature > 2) errors.push('温度参数必须在0-2之间');
-    if (config.max_tokens < 1) errors.push('最大Token不能小于1');
-    if (config.timeout < 1 || config.timeout > 600) errors.push('超时时间必须在1-600秒之间');
+    for (const cfg of configs) {
+      const key = cfg.config_key;
+      const value = cfg.config_value;
+
+      if (key === 'ai.base_url') {
+        if (!value) errors.push('基础URL不能为空');
+        else if (!value.startsWith('http://') && !value.startsWith('https://'))
+          errors.push('URL必须以http://或https://开头');
+      } else if (key === 'ai.model') {
+        if (!value) errors.push('模型名称不能为空');
+      } else if (key === 'ai.temperature') {
+        const v = parseFloat(value);
+        if (isNaN(v) || v < 0 || v > 2) errors.push('温度参数必须在0-2之间');
+      } else if (key === 'ai.max_tokens') {
+        const v = parseInt(value);
+        if (isNaN(v) || v < 1) errors.push('最大Token不能小于1');
+      } else if (key === 'ai.timeout') {
+        const v = parseInt(value);
+        if (isNaN(v) || v < 1 || v > 600) errors.push('超时时间必须在1-600秒之间');
+      }
+    }
     return errors;
   };
 
+  // 测试 AI 连接
   const handleTest = async () => {
     const errors = validateConfig();
     if (errors.length > 0) { setError(errors.join('; ')); return; }
-    setTesting(true); setError(null); setTestResult(null);
+    setTesting(true);
+    setError(null);
+    setTestResult(null);
     try {
       const res = await api.testAIConnection({
-        base_url: config.base_url, model: config.model, api_key: config.api_key || undefined,
+        base_url: getValue('ai.base_url'),
+        model: getValue('ai.model'),
+        api_key: getValue('ai.api_key') || undefined,
       });
       setTestResult(res.data);
     } catch (err: any) {
       setError('连接测试失败: ' + (err.message || '未知错误'));
-    } finally { setTesting(false); }
+    } finally {
+      setTesting(false);
+    }
   };
 
+  // 保存配置
   const handleSave = async () => {
     const errors = validateConfig();
     if (errors.length > 0) { setError(errors.join('; ')); return; }
-    setSaving(true); setError(null); setSuccessMsg(null);
+    setSaving(true);
+    setError(null);
+    setSuccessMsg(null);
     try {
       await api.batchUpdateSystemConfigs({
-        items: [
-          { config_key: 'ai.base_url', config_value: config.base_url },
-          { config_key: 'ai.model', config_value: config.model },
-          { config_key: 'ai.api_key', config_value: config.api_key },
-          { config_key: 'ai.temperature', config_value: String(config.temperature) },
-          { config_key: 'ai.max_tokens', config_value: String(config.max_tokens) },
-          { config_key: 'ai.timeout', config_value: String(config.timeout) },
-          { config_key: 'ai.enabled', config_value: String(config.enabled) },
-        ],
+        items: configs.map(c => ({
+          config_key: c.config_key,
+          config_value: c.config_value,
+        })),
         remark: '从前端更新LLM配置',
       });
       setSuccessMsg('配置保存成功！');
@@ -109,13 +171,17 @@ const AIConfigPanel: React.FC<AIConfigPanelProps> = ({ onClose }) => {
       onClose?.();
     } catch (err: any) {
       setError('保存配置失败: ' + (err.message || '未知错误'));
-    } finally { setSaving(false); }
+    } finally {
+      setSaving(false);
+    }
   };
 
+  // 重置为默认值（从后端重新加载）
   const handleReset = async () => {
     if (!window.confirm('确定重置为默认配置吗？')) return;
-    setConfig({ ...defaultAIConfig });
-    setTestResult(null); setSuccessMsg(null);
+    setTestResult(null);
+    setSuccessMsg(null);
+    await loadConfig();
   };
 
   if (loading) return <div className="loading-spinner" />;
@@ -144,101 +210,31 @@ const AIConfigPanel: React.FC<AIConfigPanelProps> = ({ onClose }) => {
 
       <div className="ai-config-form">
         {/* 基础参数：URL、模型、密钥 */}
-        <div className="form-field">
-          <label className="form-field__label">基础 URL *</label>
-          <input
-            type="text" className="form-input"
-            value={config.base_url}
-            onChange={e => handleChange('base_url', e.target.value)}
-            placeholder="http://localhost:11434/v1"
-          />
-          <span className="form-hint">Ollama: http://localhost:11434/v1</span>
-        </div>
-
-        <div className="form-row">
-          <div className="form-field form-field--half">
-            <label className="form-field__label">模型名称 *</label>
-            <input
-              type="text" className="form-input"
-              value={config.model}
-              onChange={e => handleChange('model', e.target.value)}
-              placeholder="qwen2.5:latest"
-            />
+        {basicConfigs.length > 0 && (
+          <div className="ai-config-basic">
+            {basicConfigs.map(renderField)}
           </div>
-
-          <div className="form-field form-field--half">
-            <label className="form-field__label">API 密钥</label>
-            <input
-              type="password" className="form-input"
-              value={config.api_key}
-              onChange={e => handleChange('api_key', e.target.value)}
-              placeholder="（Ollama 无需密钥）"
-            />
-          </div>
-        </div>
+        )}
 
         {/* 高级参数（可折叠） */}
-        <div className="ai-config-advanced">
-          <button
-            type="button"
-            className="ai-config-advanced__toggle"
-            onClick={() => setShowAdvanced(!showAdvanced)}
-          >
-            <span className={`ai-config-advanced__arrow ${showAdvanced ? 'open' : ''}`}>▶</span>
-            高级参数
-          </button>
+        {advancedConfigs.length > 0 && (
+          <div className="ai-config-advanced">
+            <button
+              type="button"
+              className="ai-config-advanced__toggle"
+              onClick={() => setShowAdvanced(!showAdvanced)}
+            >
+              <span className={`ai-config-advanced__arrow ${showAdvanced ? 'open' : ''}`}>▶</span>
+              高级参数
+            </button>
 
-          {showAdvanced && (
-            <div className="ai-config-advanced__content">
-              <div className="form-row">
-                <div className="form-field form-field--half">
-                  <label className="form-field__label">温度参数</label>
-                  <input
-                    type="number" className="form-input"
-                    value={config.temperature}
-                    onChange={e => handleChange('temperature', parseFloat(e.target.value))}
-                    min={0} max={2} step={0.1}
-                  />
-                  <span className="form-hint">0-2，越高越随机</span>
-                </div>
-
-                <div className="form-field form-field--half">
-                  <label className="form-field__label">最大 Token</label>
-                  <input
-                    type="number" className="form-input"
-                    value={config.max_tokens}
-                    onChange={e => handleChange('max_tokens', parseInt(e.target.value))}
-                    min={1}
-                  />
-                  <span className="form-hint">单次生成上限</span>
-                </div>
+            {showAdvanced && (
+              <div className="ai-config-advanced__content">
+                {advancedConfigs.map(renderField)}
               </div>
-
-              <div className="form-row">
-                <div className="form-field form-field--half">
-                  <label className="form-field__label">超时时间（秒）</label>
-                  <input
-                    type="number" className="form-input"
-                    value={config.timeout}
-                    onChange={e => handleChange('timeout', parseInt(e.target.value))}
-                    min={1} max={600}
-                  />
-                </div>
-
-                <div className="form-field form-field--half" style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 8 }}>
-                  <label className="checkbox-label">
-                    <input
-                      type="checkbox"
-                      checked={config.enabled}
-                      onChange={e => handleChange('enabled', e.target.checked)}
-                    />
-                    <span>启用 AI 分析</span>
-                  </label>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        )}
       </div>
 
       {testResult && (

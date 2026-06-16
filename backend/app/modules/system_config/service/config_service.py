@@ -2,14 +2,17 @@
 系统配置服务层
 
 提供配置的 CRUD、热加载、缓存和 AI 连接测试功能
+
+配置唯一入口原则：
+- 运行时可热修改的配置（ai.*, system.*）存储在 MongoDB system_configs 集合
+- 需要重启生效的基础设施配置（execution.*, jwt.*, logging.*, app.*）存储在 config.yaml
+- 系统配置 API 不会修改 config.yaml，避免运行时 YAML 写入导致的配置漂移
 """
 import asyncio
 import json
 import time
 from datetime import datetime
 from typing import Any, Optional
-
-import yaml
 
 from app.modules.system_config.repository.models import SystemConfigDoc, SystemConfigHistoryDoc
 from app.modules.system_config.schemas import AIConfig
@@ -18,13 +21,15 @@ from app.shared.core.logger import log
 
 # ── 辅助函数 ─────────────────────────────────────────────
 
-def _cfg(key: str, value: str, type: str, cat: str, desc: str, **kw) -> dict:
-    """构建配置项字典，减少 DEFAULT_CONFIGS 的重复代码"""
+def _cfg(key: str, value: str, type: str, cat: str, desc: str) -> dict:
+    """构建配置项字典，减少 DEFAULT_CONFIGS 的重复代码
+
+    注意：所有配置项均存储在 MongoDB 中。
+    需要重启生效的基础设施配置（execution.*, jwt.*, logging.*, app.*）
+    定义在 config.yaml 中，不在此处重复定义。
+    """
     return {"config_key": key, "config_value": value, "config_type": type,
-            "category": cat, "description": desc, "needs_restart": False, **kw}
-
-
-YAML_SECTIONS = {"app", "mongodb", "rabbitmq", "kafka", "minio", "jwt", "execution", "tmms", "terminal", "logging"}
+            "category": cat, "description": desc}
 
 
 class ConfigCache:
@@ -68,75 +73,19 @@ class ConfigService:
     """系统配置服务"""
 
     # 预置配置项
-    # needs_restart=True 表示修改后需要重启服务才能生效
+    # 仅包含运行时可热修改的配置（AI 配置 + 系统展示配置）。
+    # 需要重启的基础设施配置（execution.*, jwt.*, logging.*, app.*）统一在 config.yaml 中管理。
     DEFAULT_CONFIGS = [
         # AI 配置
         _cfg("ai.base_url", "http://localhost:11434/v1", "string", "ai", "LLM API基础URL"),
         _cfg("ai.model", "qwen2.5:latest", "string", "ai", "LLM模型名称"),
-        _cfg("ai.api_key", "", "string", "ai", "API密钥（如需要）", is_encrypted=True),
+        _cfg("ai.api_key", "", "string", "ai", "API密钥（如需要）"),
         _cfg("ai.enabled", "true", "boolean", "ai", "是否启用AI分析"),
         _cfg("ai.temperature", "0.7", "float", "ai", "生成温度参数"),
         _cfg("ai.max_tokens", "2048", "integer", "ai", "最大生成token数"),
         _cfg("ai.timeout", "60", "integer", "ai", "请求超时时间(秒)"),
         _cfg("ai.max_cases", "100", "integer", "ai", "单次AI分析最大用例数"),
-        # 系统配置
-        _cfg("system.site_name", "DML测试平台", "string", "system", "站点名称"),
-        _cfg("system.max_upload_size", "10485760", "integer", "system", "最大上传文件大小(字节)"),
-        _cfg("system.allowed_file_types", ".pdf,.txt,.json", "string", "system", "允许上传的文件类型"),
-        # config.yaml 可迁移的配置（保存后自动从 yaml 删除）
-        _cfg("app.debug", "false", "boolean", "system", "调试模式开关", needs_restart=True),
-        _cfg("app.dev_bypass_auth", "false", "boolean", "system", "开发免认证（跳过 JWT）", needs_restart=True),
-        _cfg("execution.default_repo_url", "", "string", "system", "默认仓库地址", needs_restart=True),
-        _cfg("execution.default_branch", "master", "string", "system", "默认分支", needs_restart=True),
-        _cfg("jwt.expire_minutes", "480", "integer", "system", "JWT Token 有效期（分钟）", needs_restart=True),
-        _cfg("logging.console_level", "DEBUG", "string", "system", "日志级别（DEBUG/INFO/WARNING/ERROR）", needs_restart=True),
-        _cfg("tmms.api_base_url", "", "string", "system", "TMMS 外部系统 API 地址", needs_restart=True),
     ]
-
-    @staticmethod
-    def get_needs_restart(config_key: str) -> bool:
-        """判断配置项是否需要重启才能生效"""
-        for c in ConfigService.DEFAULT_CONFIGS:
-            if c["config_key"] == config_key:
-                return c.get("needs_restart", False)
-        return False
-
-    @staticmethod
-    def _find_yaml_path(config_key: str) -> Optional[list[str]]:
-        """将 'execution.default_repo_url' 转为 yaml 路径 ['execution','default_repo_url']"""
-        parts = config_key.split(".")
-        return parts if parts[0] in YAML_SECTIONS else None
-
-    @staticmethod
-    def _remove_from_yaml(config_key: str) -> bool:
-        """从 config.yaml 中删除指定配置项（保存到数据库后同步清理）"""
-        yaml_path = ConfigService._find_yaml_path(config_key)
-        if not yaml_path:
-            return False
-
-        from app.shared.config.settings import get_config_path
-        config_path = get_config_path()
-        if not config_path.exists():
-            return False
-
-        try:
-            with open(config_path, "r", encoding="utf-8") as f:
-                data = yaml.safe_load(f) or {}
-
-            # 沿路径导航到父节点，删除叶子 key
-            obj = data
-            for part in yaml_path[:-1]:
-                obj = obj.get(part, {})
-            if yaml_path[-1] in obj:
-                del obj[yaml_path[-1]]
-                with open(config_path, "w", encoding="utf-8") as f:
-                    yaml.dump(data, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
-                log.info(f"Removed {config_key} from {config_path}")
-                return True
-            return False
-        except Exception as e:
-            log.warning(f"Failed to remove {config_key} from config.yaml: {e}")
-            return False
 
     @staticmethod
     async def get_config(key: str, default: Any = None) -> Any:
@@ -178,7 +127,6 @@ class ConfigService:
 
         await (doc.save() if doc.id else doc.insert())
         await ConfigCache.invalidate(key)
-        ConfigService._remove_from_yaml(key)
         return doc
 
     @staticmethod
@@ -282,45 +230,27 @@ class ConfigService:
         )
         return docs
 
+    # 需要重启生效的配置前缀
+    RESTART_REQUIRED_PREFIXES = ("execution.", "jwt.", "logging.", "app.")
+
     @staticmethod
-    def _try_read_yaml_value(config_key: str) -> Optional[str]:
-        """尝试从 config.yaml 读取配置项的当前值"""
-        from app.shared.config.settings import get_settings
-        try:
-            settings = get_settings()
-            parts = config_key.split(".")
-            if len(parts) == 2:
-                section, key = parts
-                obj = getattr(settings, section, None)
-                if obj:
-                    value = getattr(obj, key, None)
-                    if value is not None:
-                        return str(value)
-            return None
-        except Exception:
-            return None
+    def get_needs_restart(config_key: str) -> bool:
+        """判断配置修改后是否需要重启生效"""
+        return config_key.startswith(ConfigService.RESTART_REQUIRED_PREFIXES)
 
     @staticmethod
     async def init_default_configs() -> None:
         """初始化默认配置（仅创建缺失的）。
 
-        对于 YAML_SECTIONS 中的配置项，优先从 config.yaml 读取当前值；
-        其他配置项使用硬编码默认值。
-        确保系统配置（MongoDB）与 config.yaml 初始值一致。
+        所有配置项使用硬编码默认值。
+        需要重启的基础设施配置由 config.yaml 管理，不在此处初始化。
         """
         for config in ConfigService.DEFAULT_CONFIGS:
             existing = await SystemConfigDoc.find_one(SystemConfigDoc.config_key == config["config_key"])
             if not existing:
-                # 从 config.yaml 读取实际值
-                yaml_value = ConfigService._try_read_yaml_value(config["config_key"])
-                if yaml_value is not None:
-                    config["config_value"] = yaml_value
                 doc = SystemConfigDoc(**config)
                 await doc.insert()
-                log.info(
-                    f"Initialized config: {config['config_key']} = {config['config_value']}"
-                    f"{' (from config.yaml)' if yaml_value is not None else ''}"
-                )
+                log.info(f"Initialized config: {config['config_key']} = {config['config_value']}")
 
     @staticmethod
     async def _save_history(

@@ -170,37 +170,21 @@ async def ensure_no_active_duplicate(dedup_key: str, excluded_task_id: str | Non
 def _get_system_config_sync(key: str) -> str | None:
     """同步读取系统配置值（用于非 async 上下文）。
 
-    使用已有的 Beanie 连接（通过 asyncio.run_coroutine_threadsafe），
-    避免每次创建新的 MongoDB 连接。
+    通过 ConfigService 的同步回退机制读取 MongoDB 中的配置。
+    execution.default_repo_url/branch 以系统配置页面设置为准。
     """
     try:
-        import asyncio
-        from app.modules.system_config.repository.models import SystemConfigDoc
-        from beanie.odm.utils.duplicate_key_error import get_exception
-
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            future = asyncio.run_coroutine_threadsafe(
-                _async_get_config(key), loop
-            )
-            return future.result(timeout=5)
-        else:
-            return asyncio.run(_async_get_config(key))
+        from app.shared.config import get_settings
+        settings = get_settings()
+        if key == "execution.default_repo_url":
+            return settings.execution.default_repo_url
+        if key == "execution.default_branch":
+            return settings.execution.default_branch
+        return None
     except Exception as e:
         from app.shared.core.logger import log
         log.warning(f"Failed to read system config '{key}': {e}")
         return None
-
-
-async def _async_get_config(key: str) -> str | None:
-    """异步读取系统配置值（供 _get_system_config_sync 调用）"""
-    doc = await SystemConfigDoc.find_one(
-        SystemConfigDoc.config_key == key,
-        SystemConfigDoc.is_active == True,
-    )
-    if doc and doc.config_value:
-        return str(doc.config_value)
-    return None
 
 
 def build_rerun_command_from_payload(
@@ -348,11 +332,6 @@ def _validate_case_collection_lengths(command: DispatchExecutionTaskCommand) -> 
 
 
 def _apply_defaults(command: DispatchExecutionTaskCommand) -> None:
-    from app.shared.config import get_settings
-    from app.modules.system_config.service.config_service import ConfigService
-    import asyncio
-
-    execution_cfg = get_settings().execution
     command.dispatch_channel = "RABBITMQ"
     if isinstance(command.repo_url, str) and not command.repo_url.strip():
         command.repo_url = None
@@ -361,13 +340,11 @@ def _apply_defaults(command: DispatchExecutionTaskCommand) -> None:
     # git detached HEAD 状态会返回 "HEAD"，视为未配置，走系统默认分支
     if command.branch == "HEAD":
         command.branch = None
-    # repo_url/branch：以系统配置（MongoDB）为准，config.yaml 作为最终兜底
+    # repo_url/branch：以系统配置（MongoDB）为准
     if command.repo_url is None:
-        mongo_repo_url = _get_system_config_sync("execution.default_repo_url")
-        command.repo_url = mongo_repo_url or execution_cfg.default_repo_url
+        command.repo_url = _get_system_config_sync("execution.default_repo_url")
     if command.branch is None:
-        mongo_branch = _get_system_config_sync("execution.default_branch")
-        command.branch = mongo_branch or execution_cfg.default_branch
+        command.branch = _get_system_config_sync("execution.default_branch")
     if command.category is None:
         command.category = ""
     if command.project_tag is None:

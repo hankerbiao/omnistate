@@ -418,47 +418,7 @@ export default function TestExecutionPlanDemo() {
   }, [activePlanId]);
 
   // 终止运行任务：删除执行任务 + 重置条目为待执行状态（可重新下发）
-  const handleTerminateItem = useCallback(async (planId: string, itemId: string, executionTaskId?: string) => {
-    try {
-      const executionTaskIdToUse = executionTaskId
-        || [...editingItems, ...activePlanItems].find(i => i.item_id === itemId)?.execution_task_id;
-      if (executionTaskIdToUse) {
-        try { await api.deleteTask(executionTaskIdToUse); } catch { /* ignore */ }
-      }
-      // 重置为待执行状态，不清除 assignee，可重新下发
-      await api.updatePlanItem(planId, itemId, { status: 'pending' });
-      if (showOverview) fetchOverview();
-      if (activePlanId) {
-        const res = await api.getPlanDetail(activePlanId);
-        const d = res.data as Record<string, unknown> | undefined;
-        setActivePlanItems((d?.items as PlanItemSummary[]) || []);
-      }
-    } catch (err) {
-      console.error('终止失败:', err);
-    }
-  }, [activePlanId, showOverview, fetchOverview, activePlanItems, editingItems]);
-
-  // 删除计划条目（同时清理关联的执行任务）
-  const handleDeleteItem = useCallback(async (planId: string, itemId: string) => {
-    try {
-      const item = [...editingItems, ...activePlanItems].find(i => i.item_id === itemId);
-      if (item?.execution_task_id) {
-        try { await api.deleteTask(item.execution_task_id); } catch { /* ignore */ }
-      }
-      await api.deletePlanItem(planId, itemId);
-      if (showOverview) fetchOverview();
-      if (activePlanId) {
-        const res = await api.getPlanDetail(activePlanId);
-        const d = res.data as Record<string, unknown> | undefined;
-        setActivePlanItems((d?.items as PlanItemSummary[]) || []);
-      }
-    } catch (err) {
-      console.error('删除失败:', err);
-    }
-  }, [activePlanId, showOverview, fetchOverview, activePlanItems, editingItems]);
-
-  // 取消自动化条目的执行：保留条目，仅删除关联任务并恢复 pending 状态
-  const handleCancelExecution = useCallback(async (itemId: string) => {
+  const handleTerminateItem = useCallback(async (_planId: string, itemId: string) => {
     try {
       await api.cancelExecution(itemId);
       if (showOverview) fetchOverview();
@@ -468,7 +428,23 @@ export default function TestExecutionPlanDemo() {
         setActivePlanItems((d?.items as PlanItemSummary[]) || []);
       }
     } catch (err) {
-      console.error('取消执行失败:', err);
+      console.error('终止失败:', err);
+    }
+  }, [activePlanId, showOverview, fetchOverview]);
+
+  // 删除计划条目（同时清理关联的执行任务）
+  const handleDeleteItem = useCallback(async (planId: string, itemId: string) => {
+    try {
+      await api.cancelExecution(itemId);
+      await api.deletePlanItem(planId, itemId);
+      if (showOverview) fetchOverview();
+      if (activePlanId) {
+        const res = await api.getPlanDetail(activePlanId);
+        const d = res.data as Record<string, unknown> | undefined;
+        setActivePlanItems((d?.items as PlanItemSummary[]) || []);
+      }
+    } catch (err) {
+      console.error('删除失败:', err);
     }
   }, [activePlanId, showOverview, fetchOverview]);
 
@@ -708,7 +684,7 @@ export default function TestExecutionPlanDemo() {
             users={users}
             onViewResult={handleViewResult}
             onDeleteItem={handleTerminateItem}  // 概览中删除 = 终止（删执行任务，保留用例）
-            onCancelExecution={handleCancelExecution}
+            onCancelExecution={(itemId: string) => handleTerminateItem('', itemId)}
           />
         ) : (
           <>

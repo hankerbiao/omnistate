@@ -51,12 +51,9 @@ class KafkaDeadLetterPublisher:
         """注入 Kafka producer，复用 consumer runner 启动时维护的生产者实例。"""
         self._producer_manager = producer_manager
 
-    def publish(self, message: DeadLetterMessage) -> bool:
-        """发布死信消息。
-
-        Headers 中附带 source_topic 和错误类型，方便下游按来源 topic 或失败类型过滤。
-        """
-        success = self._producer_manager.send_dead_letter(
+    async def publish(self, message: DeadLetterMessage) -> bool:
+        """发布死信消息。"""
+        success = await self._producer_manager.send_dead_letter(
             message_key=message.key or "unknown",
             payload=message.to_dict(),
             headers=[

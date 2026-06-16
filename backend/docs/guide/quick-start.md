@@ -8,6 +8,7 @@
 
 - 工作流状态机
 - 测试需求与测试用例
+- 执行计划编排（手工/自动化用例）
 - 执行任务编排
 - RBAC 鉴权
 
@@ -16,9 +17,11 @@
 ## 目录怎么读
 
 - `app/main.py`
-  服务入口，负责 Mongo、Beanie、基础设施初始化
+  服务入口，负责 Mongo、Beanie、基础设施初始化、Kafka 健康检查
 - `app/modules/*`
   业务模块
+- `app/workers/*`
+  独立工作进程（如 Kafka Worker）
 - `app/shared/*`
   跨模块共用能力
 - `app/configs/*`
@@ -32,7 +35,8 @@
 
 - `workflow` 是底层业务流转基础设施
 - `test_specs` 是需求与用例定义层，依赖 `workflow`
-- `execution` 是执行编排层，依赖 `test_specs`
+- `execution` 是自动化执行任务编排层，依赖 `test_specs`
+- `execution_plan` 是执行计划编排层（含自动化/手工用例），依赖 `execution` 和 `test_specs`
 - `auth` 为所有模块提供鉴权能力
 
 不要把它理解成“很多独立小服务”，它目前仍是一个统一的 FastAPI 单体后端。

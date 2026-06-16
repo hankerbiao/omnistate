@@ -13,9 +13,6 @@ app:
   port: 8000
   cors_origins:
     - "http://localhost:3000"
-  # 开发模式免认证配置（生产环境务必设为 false）
-  dev_bypass_auth: false  # 设为 true 时跳过 JWT 验证，方便前端调试
-  dev_user_id: "dev_admin"  # 免认证时使用的默认用户 ID（需在数据库中存在）
 
 # =============================================================================
 # MongoDB 配置
@@ -101,28 +98,9 @@ jwt:
 # =============================================================================
 execution:
   scheduler_interval_sec: 60
-  default_repo_url: ""
-  default_branch: "master"
   kafka_worker_agent_id: "execution-kafka-worker"
   kafka_worker_heartbeat_ttl_sec: 30
   kafka_worker_heartbeat_interval_sec: 10
-
-# =============================================================================
-# TMMS 外部系统配置
-# =============================================================================
-tmms:
-  api_base_url: "http://tmms.internal/api/v1"
-  api_timeout_sec: 30
-  api_token: ""
-
-# =============================================================================
-# 终端配置
-# =============================================================================
-terminal:
-  shell: "/bin/zsh"
-  workdir: ""
-  idle_timeout_sec: 1800
-  max_sessions_per_user: 1
 
 # =============================================================================
 # 日志配置

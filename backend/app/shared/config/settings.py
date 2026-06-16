@@ -48,9 +48,6 @@ class AppConfig(BaseModel):
     port: int = 8000
     service_name: str = "dmlv4-backend"
     cors_origins: list[str] = Field(default_factory=lambda: ["*"])
-    # 开发模式免认证配置
-    dev_bypass_auth: bool = False  # 设为 true 时跳过 JWT 验证
-    dev_user_id: str = "dev_admin"  # 免认证时使用的默认用户 ID
 
 
 class MongoDBConfig(BaseModel):
@@ -150,28 +147,12 @@ class ExecutionConfig(BaseModel):
     """任务执行配置。"""
 
     scheduler_interval_sec: int = 60
+    default_repo_url: str = ""
+    default_branch: str = "master"
     kafka_worker_agent_id: str = "execution-kafka-worker"
     kafka_worker_heartbeat_ttl_sec: int = 30
     kafka_worker_heartbeat_interval_sec: int = 10
-    default_repo_url: str = ""
-    default_branch: str = "master"
 
-
-class TmmsConfig(BaseModel):
-    """TMMS 外部系统配置。"""
-
-    api_base_url: str = "http://tmms.internal/api/v1"
-    api_timeout_sec: int = 30
-    api_token: str = ""
-
-
-class TerminalConfig(BaseModel):
-    """终端配置。"""
-
-    shell: str = "/bin/zsh"
-    workdir: str = ""
-    idle_timeout_sec: int = 1800
-    max_sessions_per_user: int = 1
 
 
 class LoggingRetentionConfig(BaseModel):
@@ -234,8 +215,6 @@ class Settings(BaseModel):
     minio: MinIOConfig = Field(default_factory=MinIOConfig)
     jwt: JWTConfig = Field(default_factory=JWTConfig)
     execution: ExecutionConfig = Field(default_factory=ExecutionConfig)
-    tmms: TmmsConfig = Field(default_factory=TmmsConfig)
-    terminal: TerminalConfig = Field(default_factory=TerminalConfig)
     redis: RedisConfig = Field(default_factory=RedisConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
 

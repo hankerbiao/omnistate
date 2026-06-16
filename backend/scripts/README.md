@@ -151,9 +151,6 @@ python scripts/mock/generate_mock_test_cases.py --url http://10.17.154.252:8000
 # 指定登录用户
 python scripts/mock/generate_mock_test_cases.py --user admin --password 'Admin@123'
 
-# 免 token 模式（需后端开启 dev_bypass_auth）
-python scripts/mock/generate_mock_test_cases.py --no-auth
-
 # 关联到指定需求
 python scripts/mock/generate_mock_test_cases.py --req-id TR-2026-00001
 
@@ -170,7 +167,6 @@ python scripts/mock/generate_mock_test_cases.py --dry-run
 | `--count` | 全部 | 创建条数 |
 | `--req-id` | 第一个需求 | 关联的需求 ID |
 | `--dry-run` | False | 只预览不创建 |
-| `--no-auth` | False | 免 token 模式 |
 
 ---
 

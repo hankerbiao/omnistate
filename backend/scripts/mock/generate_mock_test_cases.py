@@ -9,7 +9,6 @@
   python scripts/generate_mock_test_cases.py                              # 默认参数创建全部用例
   python scripts/generate_mock_test_cases.py --count 5                    # 只创建 5 条
   python scripts/generate_mock_test_cases.py --user admin --password xxx  # 指定用户登录
-  python scripts/generate_mock_test_cases.py --no-auth                    # 免 token 模式（需后端 dev_bypass_auth=true）
   python scripts/generate_mock_test_cases.py --url http://localhost:8000 --req-id TR-2026-00001
 
 依赖:
@@ -199,7 +198,6 @@ def main():
             "示例:\n"
             "  %(prog)s                                          # 默认参数创建全部用例\n"
             "  %(prog)s --count 5                                # 只创建 5 条\n"
-            "  %(prog)s --no-auth                                # 免 token 模式（dev_bypass_auth=true）\n"
             "  %(prog)s --user admin --password xxx              # 指定用户登录\n"
             "  %(prog)s --url http://10.17.154.252:8000          # 指定后端地址\n"
             "  %(prog)s --req-id TR-2026-00001                   # 关联到指定需求\n"
@@ -209,8 +207,6 @@ def main():
     parser.add_argument("--url", default="http://localhost:8000", help="后端 API 地址 (默认: http://localhost:8000)")
     parser.add_argument("--user", default="test_admin", help="登录用户 ID (默认: test_admin)")
     parser.add_argument("--password", default="Admin@123", help="登录密码 (默认: Admin@123)")
-    parser.add_argument("--no-auth", action="store_true",
-                        help="免 token 模式，不登录直接请求（需后端 config.yaml 中 dev_bypass_auth: true）")
     parser.add_argument("--count", type=int, default=None, help="创建条数 (默认: 全部模板)")
     parser.add_argument("--req-id", help="关联的需求 req_id (默认: 使用第一个找到的需求)")
     parser.add_argument("--dry-run", action="store_true", help="只预览不创建")
@@ -220,18 +216,14 @@ def main():
     client = httpx.Client(timeout=60, base_url=base_url)
 
     try:
-        # ---- 步骤 1: 登录 / 免认证 ----
+        # ---- 步骤 1: 登录 ----
         print("=" * 60)
         print(f"  dmlv4 模拟测试用例生成器")
         print("=" * 60)
 
-        if args.no_auth:
-            print(f"\n[1/3] 免 token 模式 (需后端 dev_bypass_auth=true)")
-            print(f"  后端地址: {base_url}")
-        else:
-            print(f"\n[1/3] 登录 {base_url} ...")
-            token = login(client, base_url, args.user, args.password)
-            client.headers["Authorization"] = f"Bearer {token}"
+        print(f"\n[1/3] 登录 {base_url} ...")
+        token = login(client, base_url, args.user, args.password)
+        client.headers["Authorization"] = f"Bearer {token}"
 
         # ---- 步骤 2: 获取需求 ----
         print(f"\n[2/3] 获取需求列表 ...")

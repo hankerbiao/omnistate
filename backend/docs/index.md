@@ -15,6 +15,7 @@
 - [快速开始](./guide/quick-start.md)
 - [本地开发](./guide/local-development.md)
 - [模块实现](./modules/workflow/index.md)
+- [执行计划](./modules/execution_plan/index.md)
 - [通用约定](./reference/conventions.md)
 
 ## 一句话说明

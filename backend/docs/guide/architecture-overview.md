@@ -49,7 +49,7 @@ Domain → （不依赖 API、Service、Infrastructure）
 - `execution`
   执行任务编排层，读取 test_specs 的用例与自动化配置（详见 [Execution 模块文档](/modules/execution/)）
 - `execution_plan`
-  手工执行计划与结果回填
+  执行计划编排，管理自动化/手工用例的执行计划、结果回填、重新执行与用例执行统计（详见 [Execution Plan 模块文档](/modules/execution_plan/)）
 - `auth`
   资源级 RBAC 服务
 - `attachments`
@@ -78,9 +78,11 @@ Domain → （不依赖 API、Service、Infrastructure）
 1. 连接 MongoDB
 2. 初始化 Beanie 文档模型（各模块通过 `DOCUMENT_MODELS` 导出在 `repository/models/__init__.py` 中，`app/shared/infrastructure/bootstrap.py` 统一聚合）
 3. 校验 workflow 配置一致性
-4. 初始化应用级基础设施（RabbitMQ、Kafka、执行调度器）
-5. 初始化系统默认配置
-6. 注册异常处理器与 API 路由
+4. **Kafka 健康检查**（检测 Broker 连通性 + Worker 心跳，失败时阻止启动，详见 [Worker 文档](/modules/execution/workers.html#主服务启动时的健康检查)）
+5. 初始化应用级基础设施（RabbitMQ、执行调度器）
+6. 初始化系统默认配置
+7. 初始化 Redis 连接池
+8. 注册异常处理器与 API 路由
 
 对应入口见 `app/main.py`。
 

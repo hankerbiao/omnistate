@@ -1058,10 +1058,6 @@ export interface PlanItemDispatchRequest {
 }
 
 export interface PlanItemRerunRequest {
-  agent_id?: string;
-  project_tag?: string;
-  pytest_options?: Record<string, unknown>;
-  timeout?: number;
   assignee_id?: string;
 }
 
@@ -1120,16 +1116,6 @@ export interface SystemConfig {
   created_at: string;
   updated_at: string;
   updated_by?: string;
-}
-
-export interface AIConfig {
-  base_url: string;
-  model: string;
-  api_key: string;
-  temperature: number;
-  max_tokens: number;
-  timeout: number;
-  enabled: boolean;
 }
 
 export interface TestConnectionRequest {
@@ -1328,4 +1314,34 @@ export interface TaskBizLog {
 export interface TaskTimeline {
   biz_logs: TaskBizLog[];
   events: TaskTimelineEvent[];
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  系统枚举（System Enums）
+// ═══════════════════════════════════════════════════════════════════════
+
+export interface EnumMap {
+  workflow_states: string[];
+  owner_strategies: string[];
+  priority: string[];
+  requirement_category: string[];
+  requirement_source: string[];
+  automation_case_status: string[];
+  manual_case_status: string[];
+  confidentiality: string[];
+  visibility_scope: string[];
+  risk_level: string[];
+  test_category: string[];
+  execution_overall_status: string[];
+  execution_case_status: string[];
+  execution_dispatch_status: string[];
+  execution_schedule_status: string[];
+  execution_consume_status: string[];
+  execution_agent_status: string[];
+  execution_final_statuses: string[];
+  plan_item_status: string[];
+  plan_status: string[];
+  task_to_item_status: Record<string, string>;
+  config_types: string[];
+  config_categories: string[];
 }

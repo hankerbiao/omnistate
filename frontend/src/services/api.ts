@@ -1002,6 +1002,13 @@ class ApiClient {
     });
   }
 
+  /** 获取系统全部枚举值列表 */
+  async getAllEnums(): Promise<ApiResponse<Record<string, unknown>>> {
+    return this.request<Record<string, unknown>>('/enums', {
+      method: 'GET',
+    });
+  }
+
   /** 获取配置历史 */
   async getSystemConfigHistory(configKey?: string): Promise<ApiResponse<ConfigHistory[]>> {
     const query = configKey ? `?config_key=${encodeURIComponent(configKey)}` : '';

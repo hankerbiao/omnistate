@@ -113,31 +113,7 @@ async def get_current_user(
     """解析 JWT 并返回用户信息
 
     返回结构为 dict，包含 id/user_id/username/role_ids 等字段。
-
-    开发模式（app.dev_bypass_auth=true）下跳过认证，返回配置的默认用户。
     """
-    app_settings = get_settings()
-
-    # 开发模式免认证：跳过 JWT 验证，返回模拟用户
-    if app_settings.app.dev_bypass_auth:
-        dev_user_id = app_settings.app.dev_user_id or "dev_admin"
-        user = await UserDoc.find_one(UserDoc.user_id == dev_user_id)
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail=f"dev_user_id '{dev_user_id}' not found. 请先创建该用户或检查配置。",
-            )
-        data = user.model_dump()
-        data["id"] = str(user.id)
-
-        set_operation_context(
-            user_id=str(user.user_id),
-            username=getattr(user, "username", "") or getattr(user, "display_name", ""),
-            role_ids=[str(r) for r in (data.get("role_ids") or [])],
-        )
-
-        return data
-
     # 正式模式：必须提供有效 token
     if credentials is None:
         raise HTTPException(

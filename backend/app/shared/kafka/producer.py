@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -183,25 +184,21 @@ class KafkaProducerManager:
         self.is_running = False
         log.info("Kafka producer manager stopped")
 
-    def _send_message(
+    async def _send_message(
         self,
         topic: str,
         key: str,
         value: str,
         headers: list[tuple[str, bytes]] | None = None,
     ) -> bool:
-        """向指定主题发送消息。
-
-        发送采用同步等待确认的方式：send 返回 future 后调用 get(timeout=10)。
-        这样调用方可以根据 bool 返回值判断消息是否已经被 Kafka 客户端确认。
-        """
+        """向指定主题异步发送消息。"""
         if not self.is_running or self.producer is None:
             log.error("Kafka producer manager is not running")
             return False
 
         try:
             future = self.producer.send(topic=topic, key=key, value=value, headers=headers)
-            future.get(timeout=10)
+            await asyncio.to_thread(future.get, timeout=10)
             return True
         except KafkaTimeoutError:
             log.error(f"Kafka send timeout, topic={topic}, key={key}")
@@ -213,9 +210,9 @@ class KafkaProducerManager:
             log.error(f"Kafka send failed, topic={topic}, key={key}, error={exc}")
             return False
 
-    def send_result(self, result_message: ResultMessage) -> bool:
+    async def send_result(self, result_message: ResultMessage) -> bool:
         """发送任务执行结果消息到结果主题。"""
-        return self._send_message(
+        return await self._send_message(
             topic=self.result_topic,
             key=result_message.task_id,
             value=result_message.to_json(),
@@ -225,17 +222,14 @@ class KafkaProducerManager:
             ],
         )
 
-    def send_dead_letter(
+    async def send_dead_letter(
         self,
         message_key: str,
         payload: dict[str, Any],
         headers: list[tuple[str, bytes]] | None = None,
     ) -> bool:
-        """发送无法正常处理的消息到死信主题。
-
-        死信主题用于保存失败消息的原始上下文，方便后续人工排查或补偿重试。
-        """
-        return self._send_message(
+        """发送无法正常处理的消息到死信主题。"""
+        return await self._send_message(
             topic=self.dead_letter_topic,
             key=message_key,
             value=_json_dumps(payload),

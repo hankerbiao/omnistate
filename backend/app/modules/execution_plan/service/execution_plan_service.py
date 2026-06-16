@@ -338,7 +338,12 @@ class ExecutionPlanService(BaseService):
                 "fail_count": fail_count,
             })
 
-        # 3. 获取运行中的条目（已在内存中，无需再次查询）
+        # 3. 获取运行中的条目并同步状态
+        running_items = [i for i in all_items if i.status == "running"]
+        for item in running_items:
+            if item.ref_type == "auto":
+                await self._sync_auto_item_status(item)
+        # 重新筛选（同步后可能不再是 running）
         running_items = [i for i in all_items if i.status == "running"]
         running_items.sort(key=lambda x: x.updated_at or datetime.min, reverse=True)
 
@@ -519,6 +524,8 @@ class ExecutionPlanService(BaseService):
         item = await self._get_item_by_id_or_raise(item_id)
         if item.ref_type != "auto":
             raise ValueError("仅自动化条目支持计划内下发")
+        if item.status != PlanItemStatus.PENDING.value:
+            raise ValueError(f"仅 pending 状态的条目可下发，当前状态: {item.status}")
         trigger_source = f"execution_plan:{item.plan_id}:{item.item_id}"
         category = request.category or f"{item.plan_id}/{item.item_id}"
         dispatch_request = DispatchTaskRequest(
@@ -594,10 +601,11 @@ class ExecutionPlanService(BaseService):
     ) -> Dict[str, Any]:
         """重新执行计划条目（含可选执行人指派变更）。
 
-        仅重置状态为 pending + 更新 assignee（如果提供），不做自动下发。
-        用户手动点击"执行"按钮后再下发到执行引擎。
+        仅对 fail/done 状态的条目有效，重置为 pending + 更新 assignee（如果提供）。
         """
         item = await self._get_item_by_id_or_raise(item_id)
+        if item.status not in (PlanItemStatus.FAIL.value, PlanItemStatus.DONE.value):
+            raise ValueError(f"仅 fail/done 状态的条目支持重新执行，当前状态: {item.status}")
 
         if request.assignee_id is not None:
             item.assignee_id = request.assignee_id
@@ -613,43 +621,6 @@ class ExecutionPlanService(BaseService):
             f"actor={actor_id}"
         )
         return await self._item_to_response(item)
-
-    async def re_execute_item(
-        self,
-        item_id: str,
-        request: PlanItemDispatchRequest,
-        actor_id: str,
-        sequence_service: SequenceIdService,
-    ) -> Dict[str, Any]:
-        """重新执行计划条目，不覆盖原有结果历史。
-
-        对 auto 条目：重置状态为 pending，清除 execution_task_id 后重新下发。
-                    旧任务记录通过 trigger_source 可追溯。
-        对 manual 条目：重置状态为 pending，不清除 result_id（旧结果保留可查）。
-                    用户重新回填时 submit_result 会自动覆盖。
-        """
-        item = await self._get_item_by_id_or_raise(item_id)
-
-        if item.ref_type == "auto":
-            item.status = PlanItemStatus.PENDING.value
-            item.execution_task_id = None
-            await item.save()
-            await self._recalculate_plan_progress(item.plan_id)
-            return await self.dispatch_item(
-                item_id=item_id,
-                request=request,
-                actor_id=actor_id,
-                sequence_service=sequence_service,
-            )
-
-        elif item.ref_type == "manual":
-            item.status = PlanItemStatus.PENDING.value
-            await item.save()
-            await self._recalculate_plan_progress(item.plan_id)
-            return {"item_id": item_id, "status": "pending", "ref_type": "manual"}
-
-        else:
-            raise ValueError(f"不支持的条目类型: {item.ref_type}")
 
     async def batch_dispatch(
         self,
@@ -755,13 +726,12 @@ class ExecutionPlanService(BaseService):
             ExecutionPlanItemDoc.is_deleted == False,
         ).to_list()
         item_count = len(items)
-        # 修复：同时统计 done + fail，两者都是终态，缺一则计划未完成
-        completed_count = sum(
-            1 for item in items if item.status in (PlanItemStatus.DONE, PlanItemStatus.FAIL)
-        )
+        done_count = sum(1 for item in items if item.status == PlanItemStatus.DONE.value)
+        fail_count = sum(1 for item in items if item.status == PlanItemStatus.FAIL.value)
+        completed_count = done_count + fail_count
         progress = round(completed_count / item_count * 100) if item_count else 0
         plan_doc.item_count = item_count
-        plan_doc.done_count = completed_count
+        plan_doc.done_count = done_count
         plan_doc.progress_percent = progress
         if item_count > 0 and completed_count == item_count and plan_doc.status == "active":
             plan_doc.status = "done"

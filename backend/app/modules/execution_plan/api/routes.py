@@ -300,36 +300,6 @@ async def batch_dispatch_items(
         handle_service_error(exc)
 
 
-@router.post(
-    "/items/{item_id}/re-execute",
-    response_model=APIResponse[Dict[str, Any]],
-    summary="重新执行计划条目（不覆盖原有结果历史）",
-)
-async def re_execute_item(
-    item_id: str,
-    request: PlanItemDispatchRequest,
-    service: ExecutionPlanServiceDep,
-    sequence_service: SequenceIdServiceDep,
-    current_user: Dict[str, Any] = Depends(get_current_user),
-):
-    """重置条目状态后重新执行。
-
-    - auto 条目：重置为 pending，重新下发到执行引擎
-    - manual 条目：重置为 pending，等待用户重新回填
-    """
-    try:
-        actor_id = _get_user_id(current_user)
-        result = await service.re_execute_item(
-            item_id=item_id,
-            request=request,
-            actor_id=actor_id,
-            sequence_service=sequence_service,
-        )
-        return APIResponse(data=result)
-    except Exception as exc:
-        handle_service_error(exc)
-
-
 # ═══════════════════════════════════════════════════════════════════════
 #  计划 CRUD
 # ═══════════════════════════════════════════════════════════════════════

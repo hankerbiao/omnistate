@@ -3,7 +3,6 @@ app:
   port: 8000
   cors_origins:
   - '*'
-  dev_user_id: dev_admin
 mongodb:
   uri: mongodb://10.17.154.252:27019?replicaSet=rs0
   db_name: workflow_db2
@@ -54,22 +53,16 @@ minio:
 jwt:
   secret_key: fa5922eb48724ba4a4ff3ea16872f0c1aeb294b2c2322fb942fc7148c23fe5dc
   algorithm: HS256
+  expire_minutes: 480
   issuer: tcm-backend
   audience: tcm-frontend
 execution:
   scheduler_interval_sec: 60
   default_repo_url: http://10.17.55.151:6600/litaiqing/redfish_case_repo.git
+  default_branch: master
   kafka_worker_agent_id: execution-kafka-worker
   kafka_worker_heartbeat_ttl_sec: 30
   kafka_worker_heartbeat_interval_sec: 10
-tmms:
-  api_timeout_sec: 30
-  api_token: ''
-terminal:
-  shell: /bin/zsh
-  workdir: ''
-  idle_timeout_sec: 1800
-  max_sessions_per_user: 1
 redis:
   sentinel_hosts:
   - 10.17.152.51:26379
@@ -82,6 +75,7 @@ redis:
   socket_timeout: 2
   max_connections: 100
 logging:
+  console_level: DEBUG
   log_dir: logs
   retention:
     info_days: 7

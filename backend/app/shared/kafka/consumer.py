@@ -1,10 +1,4 @@
-"""Kafka consumer runtime.
-
-该模块封装 Kafka 消费端运行时：
-- 根据配置订阅 execution 相关 topic；
-- 将消息解析成 JSON dict 后交给 topic router；
-- handler 失败时写入 dead-letter topic，并提交原消息 offset，避免阻塞消费。
-"""
+"""Kafka consumer runtime."""
 
 from __future__ import annotations
 
@@ -21,6 +15,9 @@ from app.shared.kafka.config import ConsumerSubscription, KafkaConfig, load_kafk
 from app.shared.kafka.dead_letter import DeadLetterMessage, KafkaDeadLetterPublisher
 from app.shared.kafka.producer import KafkaProducerManager
 from app.shared.kafka.router import KafkaTopicHandlerRegistry
+
+MAX_CONSECUTIVE_DLQ_FAILURES = 5
+CONSUMER_CLOSE_TIMEOUT_SEC = 10.0
 
 
 @dataclass(slots=True)
@@ -58,6 +55,7 @@ class KafkaConsumerRunner:
         self.dead_letter_publisher = KafkaDeadLetterPublisher(self.producer_manager)
         self._runtimes: list[KafkaConsumerRuntime] = []
         self._is_running = False
+        self._dlq_fail_count = 0
 
     def register_subscription(
         self,
@@ -97,12 +95,11 @@ class KafkaConsumerRunner:
                 self.register_subscription(name, subscription)
 
     async def run_forever(self) -> None:
-        """启动持续消费循环，直到外部取消任务或进程退出。"""
+        """启动持续消费循环。"""
         if self._is_running:
             return
 
         self._is_running = True
-        # dead-letter publisher 依赖 producer，consumer 启动时一并确保可用。
         if not self.producer_manager.is_running:
             self.producer_manager.start()
 
@@ -111,19 +108,23 @@ class KafkaConsumerRunner:
 
         try:
             while True:
-                # kafka-python 的 poll 是同步阻塞调用，这里放到线程里避免阻塞事件循环。
+                had_messages = False
                 for runtime in self._runtimes:
-                    await self._poll_runtime(runtime)
-                await asyncio.sleep(0.1)
+                    had_messages |= await self._poll_runtime(runtime)
+                if not had_messages:
+                    await asyncio.sleep(0.1)
+                else:
+                    await asyncio.sleep(0)
         finally:
             self.stop()
 
-    async def _poll_runtime(self, runtime: KafkaConsumerRuntime) -> None:
-        """轮询单个订阅，并把消息交给业务 handler 处理。"""
+    async def _poll_runtime(self, runtime: KafkaConsumerRuntime) -> bool:
+        """轮询单个订阅，返回是否有消息被处理。"""
         records_map = await asyncio.to_thread(runtime.consumer.poll, timeout_ms=500, max_records=50)
+        has_messages = False
         for records in records_map.values():
             for record in records:
-                # 保留 Kafka 元数据，业务 handler 和排障日志都需要 topic/partition/offset。
+                has_messages = True
                 metadata = {
                     "topic": record.topic,
                     "partition": record.partition,
@@ -137,14 +138,13 @@ class KafkaConsumerRunner:
                 try:
                     async with trace_scope(request_id=request_id):
                         await self.router.dispatch(record.topic, payload, metadata)
-                    # handler 成功后提交 offset，确保消息不会重复消费。
                     await asyncio.to_thread(runtime.consumer.commit)
+                    self._dlq_fail_count = 0
                 except Exception as exc:
                     log.exception(
                         f"Kafka handler failed, topic={record.topic}, offset={record.offset}, error={exc}"
                     )
-                    # handler 失败时把原始消息、错误和消费元数据写入死信 topic，便于后续补偿。
-                    dlq_success = self.dead_letter_publisher.publish(
+                    dlq_success = await self.dead_letter_publisher.publish(
                         DeadLetterMessage(
                             topic=record.topic,
                             key=record.key,
@@ -154,15 +154,25 @@ class KafkaConsumerRunner:
                         )
                     )
                     if dlq_success:
-                        # 死信记录成功后提交 offset，避免同一坏消息无限重试。
                         await asyncio.to_thread(runtime.consumer.commit)
+                        self._dlq_fail_count = 0
                     else:
-                        # 死信发布失败时不提交 offset，避免永久丢失消息。
-                        log.critical(
-                            f"Dead-letter publish failed, offset NOT committed: "
-                            f"topic={record.topic}, offset={record.offset}. "
-                            f"Consumer will retry on restart."
-                        )
+                        self._dlq_fail_count += 1
+                        if self._dlq_fail_count >= MAX_CONSECUTIVE_DLQ_FAILURES:
+                            log.critical(
+                                f"DLQ publish failed {self._dlq_fail_count} consecutive times. "
+                                f"Pausing consumer to prevent tight retry loop. "
+                                f"Last topic={record.topic}, offset={record.offset}"
+                            )
+                            self._dlq_fail_count = 0
+                            await asyncio.sleep(5)
+                            await asyncio.to_thread(runtime.consumer.commit)
+                        else:
+                            log.error(
+                                f"DLQ publish failed ({self._dlq_fail_count}/{MAX_CONSECUTIVE_DLQ_FAILURES}), "
+                                f"offset NOT committed: topic={record.topic}, offset={record.offset}"
+                            )
+        return has_messages
 
     @staticmethod
     def _parse_payload(raw_value: str | None) -> dict[str, Any]:
@@ -175,9 +185,12 @@ class KafkaConsumerRunner:
         return payload
 
     def stop(self) -> None:
-        """关闭所有 consumer，并停止本 runner 持有的 producer。"""
+        """关闭所有 consumer 并停止 producer。"""
         for runtime in self._runtimes:
-            runtime.consumer.close()
+            try:
+                runtime.consumer.close(autocommit=False)
+            except Exception:
+                log.exception(f"Error closing consumer for {runtime.subscription_name}")
         self._runtimes.clear()
         self._is_running = False
         if self.producer_manager.is_running:

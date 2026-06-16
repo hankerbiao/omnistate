@@ -29,12 +29,6 @@ EXECUTION_KAFKA_WORKER_AGENT_ID: str = _settings.execution.kafka_worker_agent_id
 EXECUTION_KAFKA_WORKER_HEARTBEAT_TTL_SEC: int = _settings.execution.kafka_worker_heartbeat_ttl_sec
 EXECUTION_KAFKA_WORKER_HEARTBEAT_INTERVAL_SEC: int = _settings.execution.kafka_worker_heartbeat_interval_sec
 
-# 终端配置
-TERMINAL_SHELL: str = _settings.terminal.shell
-TERMINAL_WORKDIR: str = _settings.terminal.workdir
-TERMINAL_IDLE_TIMEOUT_SEC: int = _settings.terminal.idle_timeout_sec
-TERMINAL_MAX_SESSIONS_PER_USER: int = _settings.terminal.max_sessions_per_user
-
 # 日志配置
 LOG_CONSOLE_LEVEL: str = _settings.logging.console_level
 LOG_DIR: str = _settings.logging.log_dir
@@ -60,10 +54,6 @@ class Settings:
     EXECUTION_KAFKA_WORKER_AGENT_ID = EXECUTION_KAFKA_WORKER_AGENT_ID
     EXECUTION_KAFKA_WORKER_HEARTBEAT_TTL_SEC = EXECUTION_KAFKA_WORKER_HEARTBEAT_TTL_SEC
     EXECUTION_KAFKA_WORKER_HEARTBEAT_INTERVAL_SEC = EXECUTION_KAFKA_WORKER_HEARTBEAT_INTERVAL_SEC
-    TERMINAL_SHELL = TERMINAL_SHELL
-    TERMINAL_WORKDIR = TERMINAL_WORKDIR
-    TERMINAL_IDLE_TIMEOUT_SEC = TERMINAL_IDLE_TIMEOUT_SEC
-    TERMINAL_MAX_SESSIONS_PER_USER = TERMINAL_MAX_SESSIONS_PER_USER
 
 
 settings = Settings()
