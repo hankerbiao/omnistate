@@ -1062,6 +1062,12 @@ export interface PlanItemRerunRequest {
   assignee_id?: string;
 }
 
+export interface PlanItemDispatchConfig {
+  schedule_type: string;
+  planned_at?: string;
+  parameters?: Record<string, unknown>;
+}
+
 export interface BatchDispatchPlanItemsRequest {
   item_ids: string[];
   agent_id?: string;

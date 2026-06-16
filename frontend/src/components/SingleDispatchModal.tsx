@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { api } from '../services/api';
-import type { PlanItemDispatchRequest, AutomationConfigField } from '../types';
+import type { PlanItemDispatchRequest, PlanItemDispatchConfig, AutomationConfigField } from '../types';
 
 /** 将字符串值按字段 type 转换为对应类型 */
 function convertParamValue(val: string, field: AutomationConfigField): unknown {
@@ -22,6 +22,7 @@ interface Props {
   itemId: string;
   caseId: string;
   caseTitle: string;
+  dispatchConfig?: PlanItemDispatchConfig | null;
   onClose: () => void;
   onSuccess: () => void;
 }
@@ -29,7 +30,7 @@ interface Props {
 type Strategy = 'immediate' | 'scheduled';
 
 const SingleDispatchModal: React.FC<Props> = ({
-  open, itemId, caseId, caseTitle, onClose, onSuccess,
+  open, itemId, caseId, caseTitle, dispatchConfig, onClose, onSuccess,
 }) => {
   const [strategy, setStrategy] = useState<Strategy>('immediate');
   const [plannedAt, setPlannedAt] = useState('');
@@ -53,6 +54,8 @@ const SingleDispatchModal: React.FC<Props> = ({
     setError(null);
     setAutoCase(null);
     setParamValues({});
+    setStrategy('immediate');
+    setPlannedAt('');
     api.listAutomationTestCases({ limit: 200 })
       .then(res => {
         const found = (res.data || []).find((tc: any) => tc.auto_case_id === caseId);
@@ -63,19 +66,31 @@ const SingleDispatchModal: React.FC<Props> = ({
             timeout: found.report_meta?.timeout,
             param_spec: found.param_spec,
           });
-          // Init default values from param_spec
+          // Init default values from param_spec, then override with saved config
+          const init: Record<string, string> = {};
           if (found.param_spec) {
-            const init: Record<string, string> = {};
             for (const p of found.param_spec) {
               init[p.name] = p.default != null ? String(p.default) : '';
             }
-            setParamValues(init);
           }
+          if (dispatchConfig) {
+            if (dispatchConfig.schedule_type === 'SCHEDULED') {
+              setStrategy('scheduled');
+              if (dispatchConfig.planned_at) setPlannedAt(dispatchConfig.planned_at.slice(0, 16));
+            }
+            if (dispatchConfig.parameters && found.param_spec) {
+              for (const p of found.param_spec) {
+                const saved = dispatchConfig.parameters[p.name];
+                if (saved != null) init[p.name] = String(saved);
+              }
+            }
+          }
+          setParamValues(init);
         }
       })
       .catch(() => setError('获取用例详情失败'))
       .finally(() => setLoadingCase(false));
-  }, [open, caseId]);
+  }, [open, caseId, dispatchConfig]);
 
   const resetForm = () => {
     setStrategy('immediate');

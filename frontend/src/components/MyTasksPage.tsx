@@ -14,7 +14,6 @@ import PageToolbar, { StatPill } from './ui/PageToolbar';
 import PlanTaskTable from './PlanTaskTable';
 import ResultBackfillModal from './ResultBackfillModal';
 import SingleDispatchModal from './SingleDispatchModal';
-import DispatchWorkflow from './DispatchWorkflow';
 import { transformApiItem, groupBadgeStyle, myTasksStyles, type PlanTask, type PlanTaskResult } from './myTasksTypes';
 import CreateTestCaseForm from './CreateTestCaseForm';
 
@@ -36,12 +35,10 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
 
   // Single dispatch modal state
   const [dispatchModal, setDispatchModal] = useState<{
-    open: boolean; itemId: string; caseId: string; caseTitle: string;
+    open: boolean; itemId: string; caseId: string; caseTitle: string; dispatchConfig?: PlanTask['dispatchConfig'];
   }>({ open: false, itemId: '', caseId: '', caseTitle: '' });
 
   // Batch dispatch modal state
-  const [batchOpen, setBatchOpen] = useState(false);
-
   // 自动化执行记录 — 是否展示
   const [showExecRecords, setShowExecRecords] = useState(false);
   // 自动化执行记录 — 展开的任务详情
@@ -91,11 +88,6 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
     // 始终保持数据就绪，UI 状态 (showExecRecords) 单独控制渲染，避免反复切请求。
     enabled: !!userId,
   });
-
-  const autoTasksForDispatch = useMemo(
-    () => planTasks.filter(t => t.type === 'auto' && t.status !== 'done'),
-    [planTasks],
-  );
 
   // ── 按四种类型归类工作流事项 ──
 
@@ -276,11 +268,12 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
       itemId: task.id,
       caseId: task.caseId,
       caseTitle: task.caseTitle,
+      dispatchConfig: task.dispatchConfig,
     });
   }, []);
 
   const handleCloseDispatchModal = useCallback(() => {
-    setDispatchModal({ open: false, itemId: '', caseId: '', caseTitle: '' });
+    setDispatchModal({ open: false, itemId: '', caseId: '', caseTitle: '', dispatchConfig: undefined });
   }, []);
 
   const handleDispatchSuccess = useCallback(() => {
@@ -292,14 +285,6 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
     // 刷新列表
     queryClient.invalidateQueries({ queryKey: queryKeys.planItems.my(userId) });
   }, [queryClient, userId, dispatchModal]);
-
-  const handleOpenBatchDispatch = useCallback(() => {
-    setBatchOpen(true);
-  }, []);
-
-  const handleCloseBatchDispatch = useCallback(() => {
-    setBatchOpen(false);
-  }, []);
 
   const handleEditTestCase = useCallback(async (item: WorkItem) => {
     if (!item.case_id) {
@@ -313,43 +298,6 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
       setMutationError('获取测试用例详情失败');
     }
   }, []);
-
-  // ── React Query: Batch dispatch mutation ──
-
-  const batchDispatchMutation = useMutation({
-    mutationFn: async (caseIds: string[]) => {
-      const currentTasks = queryClient.getQueryData<PlanTask[]>(queryKeys.planItems.my(userId)) || [];
-      const itemIds = currentTasks
-        .filter(t => caseIds.includes(t.caseId))
-        .map(t => t.id);
-
-      if (itemIds.length === 0) return;
-
-      await api.batchDispatchPlanItems({ item_ids: itemIds });
-    },
-    onMutate: async (caseIds) => {
-      await queryClient.cancelQueries({ queryKey: queryKeys.planItems.my(userId) });
-      const previousPlanTasks = queryClient.getQueryData<PlanTask[]>(queryKeys.planItems.my(userId));
-      // 乐观更新
-      queryClient.setQueryData<PlanTask[]>(queryKeys.planItems.my(userId), old =>
-        old?.map(t => caseIds.includes(t.caseId) ? { ...t, status: 'running' } : t)
-      );
-      return { previousPlanTasks };
-    },
-    onError: (err, caseIds, context) => {
-      if (context?.previousPlanTasks) {
-        queryClient.setQueryData(queryKeys.planItems.my(userId), context.previousPlanTasks);
-      }
-      setMutationError(getErrorMessage(err, '批量下发失败'));
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.planItems.my(userId) });
-    },
-  });
-
-  const handleBatchSubmit = useCallback((caseIds: string[]) => {
-    batchDispatchMutation.mutate(caseIds);
-  }, [batchDispatchMutation]);
 
   // ── 自动化执行记录 ──
 
@@ -444,11 +392,11 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
             <PlanTaskTable
               planTasks={planTasks}
               isDemo={false}
-              hasAutoCasesForDispatch={autoTasksForDispatch.length > 0}
+              hasAutoCasesForDispatch={false}
               onStatusUpdate={updatePlanTaskStatusWithArchive}
               onOpenResultModal={handleOpenResultModal}
               onOpenDispatchModal={handleOpenDispatchModal}
-              onBatchDispatch={handleOpenBatchDispatch}
+              onBatchDispatch={() => {}}
             />
           )}
 
@@ -785,20 +733,9 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
         itemId={dispatchModal.itemId}
         caseId={dispatchModal.caseId}
         caseTitle={dispatchModal.caseTitle}
+        dispatchConfig={dispatchModal.dispatchConfig}
         onClose={handleCloseDispatchModal}
         onSuccess={handleDispatchSuccess}
-      />
-
-      {/* ════════════════════════════════════════════════════════ */}
-      {/*  Dispatch Workflow (2-step: DUT select → Configure)   */}
-      {/* ════════════════════════════════════════════════════════ */}
-      <DispatchWorkflow
-        open={batchOpen}
-        autoTasks={autoTasksForDispatch}
-        onClose={handleCloseBatchDispatch}
-        onFinish={(caseIds) => {
-          handleBatchSubmit(caseIds);
-        }}
       />
 
       {/* ════════════════════════════════════════════════════════ */}

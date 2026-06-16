@@ -119,6 +119,8 @@ dev = [
     "debugpy>=1.8.0",
     "matplotlib>=3.10.3",
     "pydeps>=3.0.6",
+    "pytest>=9.1.0",
+    "pytest-asyncio>=1.4.0",
 ]
 
 

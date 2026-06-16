@@ -5,7 +5,6 @@ from app.modules.system_config.schemas.config import (
     BatchUpdateResponse,
     ConfigHistoryResponse,
     SystemConfigBase,
-    SystemConfigCreate,
     SystemConfigListResponse,
     SystemConfigResponse,
     SystemConfigUpdate,
@@ -15,7 +14,6 @@ from app.modules.system_config.schemas.config import (
 
 __all__ = [
     "SystemConfigBase",
-    "SystemConfigCreate",
     "SystemConfigUpdate",
     "SystemConfigResponse",
     "SystemConfigListResponse",

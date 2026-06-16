@@ -6,6 +6,8 @@ from typing import Any, List, Optional
 
 from beanie import Document, Insert, Save, before_event
 from pydantic import Field
+
+from app.modules.execution_plan.schemas.execution_plan import DispatchConfig
 from pymongo import ASCENDING, DESCENDING, IndexModel
 
 
@@ -55,6 +57,7 @@ class ExecutionPlanItemDoc(Document):
     status: str = Field(default="pending", description="pending|running|done|fail")
     order_no: int = Field(default=0, description="排序")
     execution_task_id: Optional[str] = Field(None, description="关联自动化任务 ID")
+    dispatch_config: Optional[DispatchConfig] = Field(None, description="用户下发的执行参数")
     result_id: Optional[str] = Field(None, description="关联手工结果 ID")
     archived_at: Optional[datetime] = Field(None, description="归档时间，null=未归档")
     is_deleted: bool = Field(default=False)

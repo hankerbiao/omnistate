@@ -22,6 +22,7 @@ from app.modules.execution_plan.repository.models import (
 )
 from app.modules.execution_plan.schemas.execution_plan import (
     BatchDispatchRequest,
+    DispatchConfig,
     PlanItemDispatchRequest,
     PlanItemRerunRequest,
     SubmitManualResultRequest,
@@ -555,6 +556,12 @@ class ExecutionPlanService(BaseService):
         task_id = data.get("task_id", "?")
         item.execution_task_id = task_id
         item.status = PlanItemStatus.RUNNING.value
+        # 保存用户输入的调度参数，供重新下发时预填
+        item.dispatch_config = DispatchConfig(
+            schedule_type=request.schedule_type,
+            planned_at=request.planned_at,
+            parameters=dict(request.parameters),
+        )
         await item.save()
         await self._recalculate_plan_progress(item.plan_id)
         logger.info(f"[DISPATCH] item={item_id} task={task_id} actor={actor_id}")
@@ -697,6 +704,7 @@ class ExecutionPlanService(BaseService):
             "execution_task_id": item.execution_task_id,
             "result": result_payload,
             "archived_at": item.archived_at.isoformat() if item.archived_at else None,
+            "dispatch_config": item.dispatch_config.model_dump() if item.dispatch_config else None,
             "created_at": item.created_at.isoformat() if item.created_at else None,
             "updated_at": item.updated_at.isoformat() if item.updated_at else None,
         }

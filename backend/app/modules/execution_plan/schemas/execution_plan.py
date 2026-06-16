@@ -94,6 +94,20 @@ class PlanItemDispatchRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class DispatchConfig(BaseModel):
+    """用户下发的执行参数，持久化到计划条目，供重新下发复用。
+
+    只保存用户实际输入/选择的参数，只读字段（repo_url, branch, timeout）
+    不在此保存，每次下发时从自动化用例定义实时读取。
+    """
+
+    schedule_type: str = "IMMEDIATE"
+    planned_at: Optional[datetime] = None
+    parameters: Dict[str, Any] = Field(default_factory=dict)
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class PlanItemRerunRequest(BaseModel):
     """计划内条目重新执行参数。"""
 

@@ -1,5 +1,5 @@
 import type React from 'react';
-import type { PlanTaskItemResponse } from '../types';
+import type { PlanTaskItemResponse, PlanItemDispatchConfig } from '../types';
 
 // ═══════════════════════════════════════════════════════════════════════
 //  Type Definitions
@@ -30,6 +30,7 @@ export interface PlanTask {
   assignee: string;
   status: 'pending' | 'running' | 'done' | 'fail';
   result?: PlanTaskResult;
+  dispatchConfig?: PlanItemDispatchConfig | null;
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -65,6 +66,7 @@ export function transformApiItem(item: PlanTaskItemResponse): PlanTask {
     assignee: item.assignee_id ?? '',
     status: item.status as PlanTask['status'],
     result,
+    dispatchConfig: item.dispatch_config,
   };
 }
 
