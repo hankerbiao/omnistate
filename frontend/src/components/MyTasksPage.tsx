@@ -42,6 +42,8 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
   // Batch dispatch modal state
   const [batchOpen, setBatchOpen] = useState(false);
 
+  // 自动化执行记录 — 是否展示
+  const [showExecRecords, setShowExecRecords] = useState(false);
   // 自动化执行记录 — 展开的任务详情
   const [expandedExecTaskId, setExpandedExecTaskId] = useState<string | null>(null);
 
@@ -86,6 +88,7 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
   } = useQuery({
     queryKey: queryKeys.executionTasks.my(userId),
     queryFn: async () => (await api.listMyExecutionTasks(userId, 20)).data || [],
+    // 始终保持数据就绪，UI 状态 (showExecRecords) 单独控制渲染，避免反复切请求。
     enabled: !!userId,
   });
 
@@ -122,12 +125,6 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
 
     const result: TaskCategoryGroup[] = [];
 
-    if (planTasks.length > 0) {
-      result.push({
-        key: 'plan_task', label: '测试任务执行', typeLabel: '执行', color: '#39d0d6',
-        items: [],
-      });
-    }
     if (reviewItems.length > 0) {
       result.push({
         key: 'review', label: '审核相关', typeLabel: '审核', color: '#f0883e',
@@ -395,9 +392,18 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
           </>
         )}
         actions={(
-          <button type="button" className="btn btn--secondary btn--sm" onClick={handleRefreshAll} disabled={workItemsLoading || planItemsLoading}>
-            刷新
-          </button>
+          <>
+            <button
+              type="button"
+              className={`btn btn--sm ${showExecRecords ? 'btn--primary' : 'btn--secondary'}`}
+              onClick={() => setShowExecRecords(v => !v)}
+            >
+              {showExecRecords ? '隐藏' : '显示'}自动化执行记录
+            </button>
+            <button type="button" className="btn btn--secondary btn--sm" onClick={handleRefreshAll} disabled={workItemsLoading || planItemsLoading}>
+              刷新
+            </button>
+          </>
         )}
       />
 
@@ -447,7 +453,7 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
           )}
 
           {/* ── 自动化执行记录 ── */}
-          {execTasks.length > 0 && (
+          {showExecRecords && execTasks.length > 0 && (
             <div style={myTasksStyles.group}>
               <div style={myTasksStyles.groupHeader}>
                 <span style={groupBadgeStyle({ bg: 'rgba(57,208,214,0.1)', color: '#39d0d6' })}>
@@ -531,6 +537,13 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
                   );
                 })}
               </div>
+            </div>
+          )}
+
+          {/* ── 自动化执行记录空状态 ── */}
+          {showExecRecords && execTasks.length === 0 && !execTasksLoading && (
+            <div className="empty-state" style={{ padding: '24px 0' }}>
+              <p className="empty-state__text">暂无自动化执行记录</p>
             </div>
           )}
 

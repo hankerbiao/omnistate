@@ -12,6 +12,7 @@ from app.shared.core.logger import log
 from app.shared.core.mongo_client import set_mongo_client
 from app.shared.infrastructure import initialize_infrastructure, shutdown_infrastructure
 from app.shared.infrastructure.bootstrap import initialize_beanie, validate_workflow_consistency
+from app.shared.kafka.health import check_kafka_health
 from app.shared.middleware import RequestLoggingMiddleware
 
 
@@ -34,6 +35,18 @@ async def lifespan(app: FastAPI):
         log.success("Beanie ODM 初始化完成")
         await validate_workflow_consistency()
         log.success("Workflow 配置一致性校验通过")
+
+        # Kafka 健康检查：确保 Kafka Broker 可达且 Kafka Worker 在线
+        log.info("正在检查 Kafka 基础设施健康状态...")
+        kafka_result = await check_kafka_health()
+        if not kafka_result.healthy:
+            log.error(
+                f"Kafka 基础设施不健康: {kafka_result.detail}\n"
+                f"请确保 Kafka Broker 和 Kafka Worker 进程已就绪，"
+                f"启动 Kafka Worker: python -m app.workers.kafka_worker_main"
+            )
+            raise RuntimeError(f"Kafka 基础设施不健康: {kafka_result.detail}")
+        log.success(f"Kafka 基础设施健康检查通过 ({kafka_result.detail})")
 
         log.success("FastAPI 服务启动完成")
 

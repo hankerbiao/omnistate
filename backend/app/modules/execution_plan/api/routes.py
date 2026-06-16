@@ -255,20 +255,20 @@ async def rerun_plan_item(
     item_id: str,
     request: PlanItemRerunRequest,
     service: ExecutionPlanServiceDep,
-    sequence_service: SequenceIdServiceDep,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
-    """重新执行计划条目。
+    """重新执行计划条目（支持可选执行人变更）。
 
-    自动化用例：基于原 execution task 快照创建新任务，关联新 task_id。
-    手工用例：清空旧结果，将状态重置为 pending。
+    对所有条目：仅重置状态为 pending，不自动下发到执行引擎。
+    - 自动化条目：同时清空 execution_task_id 关联。
+    - 如果提供 assignee_id，会先更新执行人再重置状态。
+    - 用户需手动点击"执行"按钮触发实际下发。
     """
     try:
         actor_id = _get_user_id(current_user)
         result = await service.rerun_item(
             item_id=item_id,
             actor_id=actor_id,
-            sequence_service=sequence_service,
             request=request,
         )
         return APIResponse(data=result)

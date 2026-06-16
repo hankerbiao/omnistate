@@ -23,6 +23,7 @@ from app.modules.execution_plan.repository.models import (
 from app.modules.execution_plan.schemas.execution_plan import (
     BatchDispatchRequest,
     PlanItemDispatchRequest,
+    PlanItemRerunRequest,
     SubmitManualResultRequest,
 )
 from app.modules.test_specs.repository.models import AutomationTestCaseDoc, TestCaseDoc
@@ -583,6 +584,34 @@ class ExecutionPlanService(BaseService):
         await item.save()
         await self._recalculate_plan_progress(item.plan_id)
         logger.info(f"[CANCEL] item={item_id} status reset to pending, actor={actor_id}")
+        return await self._item_to_response(item)
+
+    async def rerun_item(
+        self,
+        item_id: str,
+        request: PlanItemRerunRequest,
+        actor_id: str,
+    ) -> Dict[str, Any]:
+        """重新执行计划条目（含可选执行人指派变更）。
+
+        仅重置状态为 pending + 更新 assignee（如果提供），不做自动下发。
+        用户手动点击"执行"按钮后再下发到执行引擎。
+        """
+        item = await self._get_item_by_id_or_raise(item_id)
+
+        if request.assignee_id is not None:
+            item.assignee_id = request.assignee_id
+
+        item.status = PlanItemStatus.PENDING.value
+        if item.ref_type == "auto":
+            item.execution_task_id = None
+        await item.save()
+        await self._recalculate_plan_progress(item.plan_id)
+        logger.info(
+            f"[RERUN] item={item_id} ref_type={item.ref_type} "
+            f"status=reset->pending assignee={request.assignee_id or 'unchanged'} "
+            f"actor={actor_id}"
+        )
         return await self._item_to_response(item)
 
     async def re_execute_item(

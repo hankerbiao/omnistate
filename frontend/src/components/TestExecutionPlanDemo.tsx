@@ -17,6 +17,13 @@ import type { UserResponse } from '../types';
 import TimelineView from './TimelineView';
 
 // ═══════════════════════════════════════════════════════════════════
+//  Constants
+// ═══════════════════════════════════════════════════════════════════
+
+// 允许"重新执行"的条目状态：失败可重跑是常规需求；已完成也可以重跑以重新生成执行记录。
+const RERUNNABLE_STATUSES: ReadonlyArray<string> = ['fail', 'done'];
+
+// ═══════════════════════════════════════════════════════════════════
 //  Types
 // ═══════════════════════════════════════════════════════════════════
 
@@ -508,7 +515,7 @@ export default function TestExecutionPlanDemo() {
     setRerunConfirm(item);
   }, []);
 
-  const confirmRerun = useCallback(async () => {
+  const confirmRerun = useCallback(async (assigneeId: string) => {
     if (!rerunConfirm) return;
     const item = rerunConfirm;
     setRerunConfirm(null);
@@ -518,7 +525,7 @@ export default function TestExecutionPlanDemo() {
         try { await api.unarchiveItem(item.item_id); } catch { /* ignore */ }
         setArchivedItems(prev => prev.filter((i: any) => i.item_id !== item.item_id));
       }
-      await api.rerunPlanItem(item.item_id);
+      await api.rerunPlanItem(item.item_id, { assignee_id: assigneeId || undefined });
       // 刷新当前计划详情
       if (activePlanId) {
         const res = await api.getPlanDetail(activePlanId);
@@ -811,6 +818,7 @@ export default function TestExecutionPlanDemo() {
       {rerunConfirm && (
         <RerunConfirmModal
           item={rerunConfirm}
+          users={users}
           onConfirm={confirmRerun}
           onClose={() => setRerunConfirm(null)}
         />
@@ -1158,7 +1166,7 @@ function StatusCard({ item, isEditing, onRemoveItem, users, onViewResult, onReru
             结果
           </button>
         )}
-        {item.status === 'fail' && onRerunItem && (
+        {RERUNNABLE_STATUSES.includes(item.status) && onRerunItem && (
           <button type="button" onClick={(e) => { e.stopPropagation(); onRerunItem(item); }}
             style={{
               fontSize: 9, padding: '1px 6px', borderRadius: 4,
@@ -1435,7 +1443,7 @@ function DataTable({ items, isEditing, onRemoveItem, users, onViewResult, onReru
                   ) : (
                     <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>-</span>
                   )}
-                  {item.status === 'fail' && onRerunItem && (
+                  {RERUNNABLE_STATUSES.includes(item.status) && onRerunItem && (
                     <button type="button" onClick={(e) => { e.stopPropagation(); onRerunItem(item); }}
                       style={{ fontSize: 10, padding: '2px 10px', borderRadius: 4, marginLeft: 4,
                         border: '1px solid #f8514940', color: '#f85149',
@@ -1974,7 +1982,7 @@ function ArchivedModal({ open, loading, items, onClose, onUnarchive, onRerunItem
                   }}>
                   取回
                 </button>
-                {item.status === 'fail' && onRerunItem && (
+                {RERUNNABLE_STATUSES.includes(item.status) && onRerunItem && (
                   <button onClick={() => onRerunItem(item)}
                     style={{ padding: '3px 10px', fontSize: 10, border: '1px solid #f8514940', borderRadius: 4, cursor: 'pointer',
                       background: 'rgba(248,81,73,0.06)', color: '#f85149', fontWeight: 500, flexShrink: 0,
@@ -2487,12 +2495,14 @@ function ResultModal({ item, taskData, timelineData, loading, onClose }: {
 //  RerunConfirmModal — 重新执行确认弹窗
 // ═══════════════════════════════════════════════════════════════════
 
-function RerunConfirmModal({ item, onConfirm, onClose }: {
+function RerunConfirmModal({ item, users, onConfirm, onClose }: {
   item: PlanItemSummary;
-  onConfirm: () => void;
+  users: UserResponse[];
+  onConfirm: (assigneeId: string) => void;
   onClose: () => void;
 }) {
   const isAuto = item.ref_type === 'auto';
+  const [selectedAssigneeId, setSelectedAssigneeId] = useState(item.assignee_id || '');
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'var(--overlay-bg)', backdropFilter: 'blur(2px)', zIndex: 2100, display: 'flex', justifyContent: 'center', alignItems: 'center' }}
@@ -2509,14 +2519,32 @@ function RerunConfirmModal({ item, onConfirm, onClose }: {
         </div>
         <div style={{ padding: '12px 20px', fontSize: 12, color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
           {isAuto ? (
-            <span>将基于原执行任务快照创建新任务，关联的旧任务不会被删除。新任务将自动下发执行。</span>
+            <span>将重置为"待执行"状态并清除旧执行记录。请在状态变为待执行后，手动点击"执行"按钮下发。</span>
           ) : (
             <span>将重置为"待执行"状态，旧结果将被清除。您可以重新提交执行结果。</span>
           )}
         </div>
+        <div style={{ padding: '0 20px 12px' }}>
+          <label style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4, display: 'block' }}>
+            指派给：
+          </label>
+          <select
+            className="form-input form-select"
+            value={selectedAssigneeId}
+            onChange={e => setSelectedAssigneeId(e.target.value)}
+            style={{ width: '100%', fontSize: 12 }}
+          >
+            <option value="">不指派</option>
+            {users.map(u => (
+              <option key={u.user_id} value={u.user_id}>
+                {u.username} {u.user_id === item.assignee_id ? '(原执行人)' : ''}
+              </option>
+            ))}
+          </select>
+        </div>
         <div style={{ padding: '12px 20px', display: 'flex', justifyContent: 'flex-end', gap: 8, borderTop: '1px solid var(--border-subtle)' }}>
           <button className="btn btn--ghost btn--sm" onClick={onClose} style={{ fontSize: 12 }}>取消</button>
-          <button className="btn btn--primary btn--sm" onClick={onConfirm} style={{ fontSize: 12, background: '#f85149', borderColor: '#f85149' }}>确认执行</button>
+          <button className="btn btn--primary btn--sm" onClick={() => onConfirm(selectedAssigneeId)} style={{ fontSize: 12, background: '#f85149', borderColor: '#f85149' }}>确认执行</button>
         </div>
       </div>
     </div>

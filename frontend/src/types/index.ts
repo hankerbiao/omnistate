@@ -1062,6 +1062,7 @@ export interface PlanItemRerunRequest {
   project_tag?: string;
   pytest_options?: Record<string, unknown>;
   timeout?: number;
+  assignee_id?: string;
 }
 
 export interface BatchDispatchPlanItemsRequest {
