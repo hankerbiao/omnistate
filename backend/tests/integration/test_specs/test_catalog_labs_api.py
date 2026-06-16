@@ -95,10 +95,10 @@ async def test_deactivate_lab_migrates_cases(
 
     case_id = f"TC-CAT-{unique_id()}"
     from pymongo import MongoClient
-    from app.shared.db.config import settings
+    from app.shared.config import get_settings
 
-    client = MongoClient(settings.MONGO_URI)
-    db = client[settings.MONGO_DB_NAME]
+    client = MongoClient(get_settings().mongodb.uri)
+    db = client[get_settings().mongodb.db_name]
     db["test_cases"].insert_one(
         {
             "case_id": case_id,
@@ -151,10 +151,10 @@ async def test_delete_lab_only_when_zero_cases(
 
     case_id = f"TC-BLOCK-{unique_id()}"
     from pymongo import MongoClient
-    from app.shared.db.config import settings
+    from app.shared.config import get_settings
 
-    client = MongoClient(settings.MONGO_URI)
-    db = client[settings.MONGO_DB_NAME]
+    client = MongoClient(get_settings().mongodb.uri)
+    db = client[get_settings().mongodb.db_name]
     db["test_cases"].insert_one(
         {
             "case_id": case_id,

@@ -22,7 +22,7 @@ if str(ROOT) not in sys.path:
 from pymongo import AsyncMongoClient
 from beanie import init_beanie
 
-from app.shared.db.config import settings
+from app.shared.config import get_settings
 from app.shared.core.logger import log
 from app.modules.workflow.repository.models import (
     SysWorkTypeDoc,
@@ -453,7 +453,7 @@ async def main():
     """
     log.info("开始 MongoDB 初始化...")
 
-    client = AsyncMongoClient(settings.MONGO_URI)
+    client = AsyncMongoClient(get_settings().mongodb.uri)
 
     try:
         # 测试连接
@@ -462,7 +462,7 @@ async def main():
 
         # 初始化 Beanie，注册模型
         await init_beanie(
-            database=client[settings.MONGO_DB_NAME],
+            database=client[get_settings().mongodb.db_name],
             document_models=[
                 SysWorkTypeDoc,
                 SysWorkflowStateDoc,

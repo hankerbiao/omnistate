@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app.shared.db.config import settings
+from app.shared.config import get_settings
 from app.modules.auth.repository.models import PermissionDoc, RoleDoc
 
 # (perm_id/code, 显示名称, 权限说明)
@@ -267,10 +267,10 @@ async def init_roles() -> None:
 
 
 async def main() -> None:
-    client = AsyncMongoClient(settings.MONGO_URI)
+    client = AsyncMongoClient(get_settings().mongodb.uri)
     try:
         await init_beanie(
-            database=client[settings.MONGO_DB_NAME],
+            database=client[get_settings().mongodb.db_name],
             document_models=[PermissionDoc, RoleDoc],
         )
         await init_permissions()

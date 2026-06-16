@@ -4,8 +4,8 @@ from typing import Optional
 
 from pymongo import AsyncMongoClient, ReturnDocument
 
+from app.shared.config import get_settings
 from app.shared.core.mongo_client import get_mongo_client
-from app.shared.db.config import settings
 
 
 class SequenceIdService:
@@ -19,7 +19,7 @@ class SequenceIdService:
     async def next(self, key: str, session=None) -> int:
         """获取指定 key 的下一个序号（从 1 开始）。"""
         client = self._client or get_mongo_client()
-        collection = client[settings.MONGO_DB_NAME][self.COUNTERS_COLLECTION]
+        collection = client[get_settings().mongodb.db_name][self.COUNTERS_COLLECTION]
         now = datetime.now(timezone.utc)
         doc = await collection.find_one_and_update(
             {"_id": key},

@@ -29,7 +29,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app.shared.db.config import settings
+from app.shared.config import get_settings
 from app.shared.auth import hash_password
 from app.modules.auth.repository.models import UserDoc, RoleDoc, PermissionDoc
 
@@ -91,10 +91,10 @@ async def main() -> None:
     args = parse_args()
     role_ids = [r.strip() for r in args.roles.split(",") if r.strip()]
 
-    client = AsyncMongoClient(settings.MONGO_URI)
+    client = AsyncMongoClient(get_settings().mongodb.uri)
     try:
         await init_beanie(
-            database=client[settings.MONGO_DB_NAME],
+            database=client[get_settings().mongodb.db_name],
             document_models=[UserDoc, RoleDoc, PermissionDoc],
         )
 

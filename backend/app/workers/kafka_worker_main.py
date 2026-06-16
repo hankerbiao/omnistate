@@ -47,7 +47,7 @@ from app.modules.workflow.repository.models import (
 )
 from app.shared.core.logger import log
 from app.shared.core.mongo_client import set_mongo_client
-from app.shared.db.config import settings
+from app.shared.config import get_settings
 from app.shared.infrastructure import initialize_kafka_producer_only, shutdown_infrastructure
 from app.shared.kafka import KafkaConsumerRunner, KafkaTopicHandlerRegistry, load_kafka_config
 
@@ -102,7 +102,7 @@ async def initialize_worker_runtime() -> None:
     log.info("Initializing Kafka worker runtime (debug=%s)", DEBUG_MODE)
 
     # 连接 MongoDB，并把客户端注入到全局上下文，供事务或底层访问使用。
-    client = AsyncMongoClient(settings.MONGO_URI)
+    client = AsyncMongoClient(get_settings().mongodb.uri)
     await client.admin.command("ping")
     set_mongo_client(client)
     log.info("MongoDB connected (%.0fms)", (time.time() - start_time) * 1000)
@@ -110,7 +110,7 @@ async def initialize_worker_runtime() -> None:
     # 初始化 Beanie ODM，注册 worker 会访问到的全部文档模型。
     beanie_start = time.time()
     await init_beanie(
-        database=client[settings.MONGO_DB_NAME],
+        database=client[get_settings().mongodb.db_name],
         document_models=DOCUMENT_MODELS,
     )
     log.info("Beanie ODM initialized (%.0fms)", (time.time() - beanie_start) * 1000)

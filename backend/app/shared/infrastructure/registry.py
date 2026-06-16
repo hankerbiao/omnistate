@@ -11,7 +11,7 @@ from typing import Any
 
 from app.modules.execution.service.task_scheduler import ExecutionTaskScheduler
 from app.shared.core.logger import log as logger
-from app.shared.db.config import settings
+from app.shared.config import get_settings
 from app.shared.kafka import KafkaProducerManager, load_kafka_config
 from app.shared.rabbitmq import RabbitMQProducerManager, load_rabbitmq_config
 
@@ -235,7 +235,7 @@ class InfrastructureRegistry:
             return None
 
     async def _run_execution_scheduler_loop(self) -> None:
-        interval = max(int(settings.EXECUTION_SCHEDULER_INTERVAL_SEC), 1)
+        interval = max(int(get_settings().execution.scheduler_interval_sec), 1)
         while True:
             try:
                 # 周期性派发到期任务，失败后继续下一轮，不中断整个进程。

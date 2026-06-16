@@ -15,9 +15,9 @@ Before running tests, ensure test_admin user exists in MongoDB (recommended: cd 
         salt = secrets.token_hex(16)
         pwd_hash = hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), 100000).hex()
         return salt, pwd_hash
-    from app.shared.db.config import settings
-    client = MongoClient(settings.MONGO_URI)
-    db = client[settings.MONGO_DB_NAME]
+    from app.shared.config import get_settings
+    client = MongoClient(get_settings().mongodb.uri)
+    db = client[get_settings().mongodb.db_name]
     db['users'].delete_one({'user_id': 'test_admin'})
     salt, pwd_hash = hash_password('Admin@123')
     db['users'].insert_one({
@@ -45,7 +45,7 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
 from app.main import app
-from app.shared.db.config import settings
+from app.shared.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -109,8 +109,8 @@ class TestDataRegistry:
         from bson import ObjectId
         from pymongo import MongoClient
 
-        client = MongoClient(settings.MONGO_URI)
-        db = client[settings.MONGO_DB_NAME]
+        client = MongoClient(get_settings().mongodb.uri)
+        db = client[get_settings().mongodb.db_name]
 
         def _warn(entity: str, entity_id: str, exc: Exception) -> None:
             logger.warning("Failed to cleanup %s %s: %s", entity, entity_id, exc)

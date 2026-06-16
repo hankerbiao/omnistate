@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from app.modules.execution.application.constants import AgentStatus
 from app.modules.execution.repository.models import ExecutionAgentDoc
 from app.shared.core.logger import log
-from app.shared.db.config import settings
+from app.shared.config import get_settings
 
 
 def _detect_local_ip() -> str:
@@ -23,16 +23,16 @@ def _detect_local_ip() -> str:
 
 
 def get_kafka_worker_agent_id() -> str:
-    return settings.EXECUTION_KAFKA_WORKER_AGENT_ID
+    return get_settings().execution.kafka_worker_agent_id
 
 
 def get_kafka_worker_heartbeat_ttl_seconds() -> int:
-    return max(int(settings.EXECUTION_KAFKA_WORKER_HEARTBEAT_TTL_SEC), 5)
+    return max(int(get_settings().execution.kafka_worker_heartbeat_ttl_sec), 5)
 
 
 def get_kafka_worker_heartbeat_interval_seconds() -> int:
     ttl_seconds = get_kafka_worker_heartbeat_ttl_seconds()
-    configured_interval = max(int(settings.EXECUTION_KAFKA_WORKER_HEARTBEAT_INTERVAL_SEC), 1)
+    configured_interval = max(int(get_settings().execution.kafka_worker_heartbeat_interval_sec), 1)
     return min(configured_interval, max(ttl_seconds // 3, 1))
 
 

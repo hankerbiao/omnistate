@@ -23,7 +23,7 @@ if str(ROOT) not in sys.path:
 from beanie import init_beanie
 from pymongo import AsyncMongoClient
 
-from app.shared.db.config import settings
+from app.shared.config import get_settings
 from app.shared.auth import hash_password
 from app.modules.auth.repository.models import UserDoc, RoleDoc, PermissionDoc
 
@@ -165,10 +165,10 @@ async def main():
     print("  测试用户初始化")
     print("=" * 50)
 
-    client = AsyncMongoClient(settings.MONGO_URI)
+    client = AsyncMongoClient(get_settings().mongodb.uri)
     try:
         await init_beanie(
-            database=client[settings.MONGO_DB_NAME],
+            database=client[get_settings().mongodb.db_name],
             document_models=[UserDoc, RoleDoc, PermissionDoc],
         )
 

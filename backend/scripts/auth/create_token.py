@@ -26,7 +26,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app.shared.db.config import settings
+from app.shared.config import get_settings
 from app.shared.auth.jwt_auth import create_access_token
 from app.modules.auth.repository.models import UserDoc
 
@@ -77,10 +77,10 @@ async def main() -> None:
     args = parse_args()
 
     # 连接 MongoDB 并初始化 Beanie
-    client = AsyncMongoClient(settings.MONGO_URI)
+    client = AsyncMongoClient(get_settings().mongodb.uri)
     try:
         await init_beanie(
-            database=client[settings.MONGO_DB_NAME],
+            database=client[get_settings().mongodb.db_name],
             document_models=[UserDoc],
         )
 

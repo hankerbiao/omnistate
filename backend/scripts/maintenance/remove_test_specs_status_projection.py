@@ -7,7 +7,7 @@ from typing import Any
 
 from pymongo import AsyncMongoClient
 
-from app.shared.db.config import settings
+from app.shared.config import get_settings
 
 
 TEST_REQUIREMENTS = "test_requirements"
@@ -58,9 +58,9 @@ async def _load_docs(db: Any, collection: str, fields: dict[str, int]) -> list[d
 
 
 async def inspect_status_projection() -> dict[str, Any]:
-    client = AsyncMongoClient(settings.MONGO_URI)
+    client = AsyncMongoClient(get_settings().mongodb.uri)
     try:
-        db = client[settings.MONGO_DB_NAME]
+        db = client[get_settings().mongodb.db_name]
 
         requirement_indexes = await db[TEST_REQUIREMENTS].index_information()
         test_case_indexes = await db[TEST_CASES].index_information()
@@ -86,9 +86,9 @@ async def inspect_status_projection() -> dict[str, Any]:
 
 
 async def apply_status_projection_cleanup() -> dict[str, Any]:
-    client = AsyncMongoClient(settings.MONGO_URI)
+    client = AsyncMongoClient(get_settings().mongodb.uri)
     try:
-        db = client[settings.MONGO_DB_NAME]
+        db = client[get_settings().mongodb.db_name]
         before = await inspect_status_projection()
 
         for collection, names in before["status_indexes"].items():

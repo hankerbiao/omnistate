@@ -7,7 +7,7 @@ from app.shared.api.middleware.debug_http import DebugHttpLoggingMiddleware
 from app.shared.api.errors.handlers import setup_exception_handlers
 from app.shared.api.main import api_router
 from app.shared.api.routes import health_router
-from app.shared.db.config import settings
+from app.shared.config import get_settings
 from app.shared.core.logger import log
 from app.shared.core.mongo_client import set_mongo_client
 from app.shared.infrastructure import initialize_infrastructure, shutdown_infrastructure
@@ -21,7 +21,7 @@ async def lifespan(app: FastAPI):
     # 应用生命周期钩子：统一管理 Mongo 连接和 Beanie 初始化
     log.info("正在连接 MongoDB...")
 
-    client = AsyncMongoClient(settings.MONGO_URI)
+    client = AsyncMongoClient(get_settings().mongodb.uri)
 
     try:
         await client.admin.command('ping')
@@ -31,7 +31,7 @@ async def lifespan(app: FastAPI):
         set_mongo_client(client)
 
         # 初始化 Beanie ODM，注册所有文档模型并确保索引
-        await initialize_beanie(client[settings.MONGO_DB_NAME])
+        await initialize_beanie(client[get_settings().mongodb.db_name])
         log.success("Beanie ODM 初始化完成")
         await validate_workflow_consistency()
         log.success("Workflow 配置一致性校验通过")
@@ -98,7 +98,7 @@ app = FastAPI(
 # CORS 与中间件、错误处理和业务路由都在这里统一挂载
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
+    allow_origins=get_settings().app.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -107,7 +107,7 @@ app.add_middleware(
 app.add_middleware(RequestLoggingMiddleware)
 
 # 调试模式的 HTTP 详细日志中间件（仅 debug 模式开启）
-if settings.APP_DEBUG:
+if get_settings().app.debug:
     app.add_middleware(DebugHttpLoggingMiddleware)
 
 setup_exception_handlers(app)
