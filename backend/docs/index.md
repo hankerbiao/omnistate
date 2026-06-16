@@ -17,6 +17,9 @@
 - [模块实现](./modules/workflow/index.md)
 - [执行计划](./modules/execution_plan/index.md)
 - [通用约定](./reference/conventions.md)
+- [设计文档](./design/design-global-config.md)
+- [认证与授权](./guide/authentication.md)
+- [架构总览](./architecture/overview.md)
 
 ## 一句话说明
 
