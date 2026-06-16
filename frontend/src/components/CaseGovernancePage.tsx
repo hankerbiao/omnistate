@@ -10,7 +10,6 @@ import type {
   TestCaseResponse,
   AutomationTestCaseResponse,
   GovernanceStats,
-  BatchUpdateCasesRequest,
   CatalogLab,
 } from '../types';
 
@@ -49,14 +48,8 @@ const CaseGovernancePage: React.FC = () => {
   const [page, setPage] = useState(0);
   const pageSize = 50;
 
-  // ── 批量选择 ──
+  // ── 复选框选择 ──
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-
-  // ── 批量操作面板 ──
-  const [batchLabId, setBatchLabId] = useState('');
-  const [batchCatalogPath, setBatchCatalogPath] = useState('');
-  const [batchTagInput, setBatchTagInput] = useState('');
-  const [batchTagMode, setBatchTagMode] = useState<'add' | 'remove'>('add');
 
   // ── 关联弹窗 ──
   const [linkModalCase, setLinkModalCase] = useState<TestCaseResponse | null>(null);
@@ -98,18 +91,6 @@ const CaseGovernancePage: React.FC = () => {
   //  Mutations
   // ═══════════════════════════════════════════════════════════════════
 
-  const batchMutation = useMutation({
-    mutationFn: (req: BatchUpdateCasesRequest) => api.batchUpdateCases(req).then(r => r.data),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['governance-stats'] });
-      qc.invalidateQueries({ queryKey: ['governance-cases'] });
-      setSelectedIds(new Set());
-      setBatchLabId('');
-      setBatchCatalogPath('');
-      setBatchTagInput('');
-    },
-  });
-
   const unlinkMutation = useMutation({
     mutationFn: (caseId: string) => api.unlinkAutomationCase(caseId),
     onSuccess: () => {
@@ -146,19 +127,6 @@ const CaseGovernancePage: React.FC = () => {
     const allSelected = allIds.every(id => selectedIds.has(id));
     setSelectedIds(allSelected ? new Set() : new Set(allIds));
   }, [casesQuery.data, selectedIds]);
-
-  const handleBatchApply = useCallback(() => {
-    if (selectedIds.size === 0) return;
-    const req: BatchUpdateCasesRequest = { case_ids: [...selectedIds] };
-    if (batchLabId) req.lab_id = batchLabId;
-    if (batchCatalogPath) req.catalog_path = batchCatalogPath.split('/').filter(Boolean);
-    const tags = batchTagInput.split(',').map(t => t.trim()).filter(Boolean);
-    if (tags.length > 0) {
-      if (batchTagMode === 'add') req.tags_add = tags;
-      else req.tags_remove = tags;
-    }
-    batchMutation.mutate(req);
-  }, [selectedIds, batchLabId, batchCatalogPath, batchTagInput, batchTagMode, batchMutation]);
 
   // ═══════════════════════════════════════════════════════════════════
   //  渲染
@@ -219,7 +187,7 @@ const CaseGovernancePage: React.FC = () => {
       {/* ── 用例表格 ── */}
       <div style={{
         border: '1px solid var(--border-default, #d1d5db)', borderRadius: 8,
-        overflow: 'hidden', marginBottom: selectedIds.size > 0 ? 100 : 0,
+        overflow: 'hidden', marginBottom: 0,
       }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
@@ -248,6 +216,7 @@ const CaseGovernancePage: React.FC = () => {
                 onLink={() => setLinkModalCase(c)}
                 onUnlink={() => unlinkMutation.mutate(c.case_id)}
                 labs={labs}
+                activeMissing={activeMissing}
               />
             ))}
           </tbody>
@@ -260,52 +229,6 @@ const CaseGovernancePage: React.FC = () => {
         <span style={{ fontSize: 13, lineHeight: '32px', color: 'var(--text-secondary, #6b7280)' }}>第 {page + 1} 页</span>
         <button disabled={cases.length < pageSize} onClick={() => setPage(p => p + 1)} style={pageBtnStyle}>下一页</button>
       </div>
-
-      {/* ── 批量操作面板 ── */}
-      {selectedIds.size > 0 && (
-        <div style={{
-          position: 'fixed', bottom: 0, left: 0, right: 0,
-          background: 'var(--bg-primary, #fff)', borderTop: '1px solid var(--border-default, #d1d5db)',
-          padding: '12px 24px', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap',
-          boxShadow: '0 -2px 8px rgba(0,0,0,0.08)', zIndex: 50,
-        }}>
-          <span style={{ fontSize: 13, fontWeight: 500 }}>已选 {selectedIds.size} 项</span>
-          <select value={batchLabId} onChange={e => setBatchLabId(e.target.value)} style={inputStyle}>
-            <option value="">设置 Lab...</option>
-            {labs.map(l => <option key={l.lab_id} value={l.lab_id}>{l.name}</option>)}
-          </select>
-          <input
-            type="text" placeholder="目录路径 (如: bios/boot)" value={batchCatalogPath}
-            onChange={e => setBatchCatalogPath(e.target.value)} style={{ ...inputStyle, width: 160 }}
-          />
-          <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-            <select value={batchTagMode} onChange={e => setBatchTagMode(e.target.value as 'add' | 'remove')} style={{ ...inputStyle, width: 70 }}>
-              <option value="add">添加</option>
-              <option value="remove">移除</option>
-            </select>
-            <input
-              type="text" placeholder="Tag (逗号分隔)" value={batchTagInput}
-              onChange={e => setBatchTagInput(e.target.value)} style={{ ...inputStyle, width: 140 }}
-            />
-          </div>
-          <button
-            onClick={handleBatchApply}
-            disabled={batchMutation.isPending}
-            style={{
-              padding: '6px 16px', borderRadius: 6, border: 'none',
-              background: '#2563eb', color: '#fff', fontSize: 13, cursor: 'pointer',
-              opacity: batchMutation.isPending ? 0.6 : 1,
-            }}
-          >
-            {batchMutation.isPending ? '提交中...' : '应用'}
-          </button>
-          {batchMutation.data && (
-            <span style={{ fontSize: 12, color: batchMutation.data.failed_count > 0 ? '#f0883e' : '#3fb950' }}>
-              成功 {batchMutation.data.updated_count}{batchMutation.data.failed_count > 0 ? ` / 失败 ${batchMutation.data.failed_count}` : ''}
-            </span>
-          )}
-        </div>
-      )}
 
       {/* ── 关联弹窗 ── */}
       {linkModalCase && (
@@ -381,11 +304,116 @@ const CaseRow: React.FC<{
   onLink: () => void;
   onUnlink: () => void;
   labs: CatalogLab[];
-}> = ({ testCase: c, selected, onToggle, onLink, onUnlink, labs }) => {
+  activeMissing: MissingFieldKey | null;
+}> = ({ testCase: c, selected, onToggle, onLink, onUnlink, labs, activeMissing }) => {
+  const qc = useQueryClient();
   const labName = labs.find(l => l.lab_id === c.lab_id)?.name || c.lab_name || '';
   const hasLab = !!c.lab_id;
   const hasCatalog = !!(c.catalog_path && c.catalog_path.length > 0);
   const hasTags = !!(c.tags && c.tags.length > 0);
+
+  // 行内编辑状态
+  const [editing, setEditing] = useState<'lab_id' | 'catalog_path' | 'tags' | null>(null);
+  const [editValue, setEditValue] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const startEdit = (field: 'lab_id' | 'catalog_path' | 'tags') => {
+    if (field === 'lab_id') {
+      setEditing('lab_id');
+      setEditValue(c.lab_id || '');
+    } else if (field === 'catalog_path') {
+      setEditing('catalog_path');
+      setEditValue((c.catalog_path || []).join('/'));
+    } else {
+      setEditing('tags');
+      setEditValue((c.tags || []).join(', '));
+    }
+  };
+
+  const cancelEdit = () => {
+    setEditing(null);
+    setEditValue('');
+  };
+
+  const saveEdit = async () => {
+    if (!editing) return;
+    setSaving(true);
+    try {
+      const payload: Record<string, unknown> = {};
+      if (editing === 'lab_id') {
+        payload.lab_id = editValue;
+      } else if (editing === 'catalog_path') {
+        payload.catalog_path = editValue.split('/').filter(Boolean);
+      } else if (editing === 'tags') {
+        payload.tags = editValue.split(',').map(t => t.trim()).filter(Boolean);
+      }
+      await api.updateTestCase(c.case_id, payload as any);
+      qc.invalidateQueries({ queryKey: ['governance-stats'] });
+      qc.invalidateQueries({ queryKey: ['governance-cases'] });
+      cancelEdit();
+    } catch {
+      // ignore
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // 渲染行内编辑控件
+  const renderInlineEdit = () => {
+    if (!editing) return null;
+
+    const input = editing === 'lab_id' ? (
+      <select
+        className="form-input form-select"
+        value={editValue}
+        onChange={e => setEditValue(e.target.value)}
+        style={{ width: 120, fontSize: 11, padding: '2px 4px' }}
+        autoFocus
+      >
+        <option value="">选择 Lab...</option>
+        {labs.map(l => <option key={l.lab_id} value={l.lab_id}>{l.name}</option>)}
+      </select>
+    ) : (
+      <input
+        type="text"
+        value={editValue}
+        onChange={e => setEditValue(e.target.value)}
+        placeholder={editing === 'catalog_path' ? 'bios/boot' : 'tag1, tag2'}
+        style={{ width: 100, fontSize: 11, padding: '2px 4px', border: '1px solid var(--border-default, #d1d5db)', borderRadius: 4 }}
+        autoFocus
+      />
+    );
+
+    return (
+      <span style={{ display: 'inline-flex', gap: 3, alignItems: 'center' }}>
+        {input}
+        <button onClick={saveEdit} disabled={saving || !editValue.trim()} style={{ ...actionBtnStyle, fontSize: 11, padding: '2px 6px' }}>
+          {saving ? '...' : '确定'}
+        </button>
+        <button onClick={cancelEdit} style={{ ...actionBtnStyle, fontSize: 11, padding: '2px 6px', color: '#8b949e' }}>取消</button>
+      </span>
+    );
+  };
+
+  // 根据当前筛选的缺失类型，渲染对应的操作按钮
+  const renderAction = () => {
+    if (editing) return renderInlineEdit();
+
+    if (activeMissing === 'lab_id' && !hasLab) {
+      return <button onClick={() => startEdit('lab_id')} style={actionBtnStyle}>设置 Lab</button>;
+    }
+    if (activeMissing === 'catalog_path' && !hasCatalog) {
+      return <button onClick={() => startEdit('catalog_path')} style={actionBtnStyle}>设置目录</button>;
+    }
+    if (activeMissing === 'tags' && !hasTags) {
+      return <button onClick={() => startEdit('tags')} style={actionBtnStyle}>添加 Tag</button>;
+    }
+    // 默认显示自动化关联/取消关联
+    if (!c.automation_case_ref) {
+      return <button onClick={onLink} style={actionBtnStyle}>关联</button>;
+    }
+    return <button onClick={onUnlink} style={{ ...actionBtnStyle, color: '#f85149' }}>取消关联</button>;
+  };
 
   return (
     <tr style={{ borderBottom: '1px solid var(--border-default, #d1d5db)' }}>
@@ -417,13 +445,7 @@ const CaseRow: React.FC<{
         <CompletenessDot ok={!!c.automation_case_ref} />
         <span style={{ fontSize: 12 }}>{c.automation_case_ref ? c.automation_case_ref.auto_case_id : '—'}</span>
       </td>
-      <td style={tdStyle}>
-        {!c.automation_case_ref ? (
-          <button onClick={onLink} style={actionBtnStyle}>关联</button>
-        ) : (
-          <button onClick={onUnlink} style={{ ...actionBtnStyle, color: '#f85149' }}>取消关联</button>
-        )}
-      </td>
+      <td style={tdStyle}>{renderAction()}</td>
     </tr>
   );
 };

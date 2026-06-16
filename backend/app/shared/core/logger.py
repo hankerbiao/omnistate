@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import sys
@@ -37,7 +38,7 @@ PASSWORD_REPLACEMENT = r'\1=******'
 # =============================================================================
 # 日志目录
 # =============================================================================
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))))
 DEFAULT_LOG_DIR = os.path.join(BASE_DIR, "logs")
 
 
@@ -130,6 +131,12 @@ def _merge_execution_extra() -> dict[str, str]:
         }
 
 
+def _enrich_record(record: dict) -> None:
+    """向 record.extra 注入追踪上下文和执行上下文。"""
+    for key, value in {**_get_trace_extra(), **_merge_execution_extra()}.items():
+        record["extra"].setdefault(key, value)
+
+
 def _truncate_json_value(value: Any, max_chars: int = 2048) -> Any:
     """截断过大的 extra 字段值。"""
     if value is None or isinstance(value, (bool, int, float)):
@@ -174,10 +181,7 @@ def _console_format(record: dict) -> str:
 
     可调用 format 不会自动补换行，模板末尾必须包含 \\n。
     """
-    trace_extra = _get_trace_extra()
-    exec_extra = _merge_execution_extra()
-    for key, value in {**trace_extra, **exec_extra}.items():
-        record["extra"].setdefault(key, value)
+    _enrich_record(record)
     record["extra"]["request_id"] = _console_id(record["extra"].get("request_id", "-"))
     record["extra"]["user_id"] = _console_id(record["extra"].get("user_id", "-"))
     record["message"] = _mask_sensitive_data(str(record["message"]))
@@ -189,16 +193,10 @@ def _console_format(record: dict) -> str:
 # =============================================================================
 def _json_format(record: dict) -> str:
     """JSON Lines 格式化：每条日志输出为一行 JSON。"""
-    import json
-    from time import time
-
-    trace_extra = _get_trace_extra()
-    exec_extra = _merge_execution_extra()
-    for key, value in {**trace_extra, **exec_extra}.items():
-        record["extra"].setdefault(key, value)
+    _enrich_record(record)
 
     log_entry: dict[str, Any] = {
-        "timestamp": record.get("time", time()),
+        "timestamp": record.get("time", None),
         "level": record["level"].name,
         "module": record.get("name", ""),
         "function": record.get("function", ""),

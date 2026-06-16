@@ -255,6 +255,7 @@ export default function TestExecutionPlanDemo() {
     taskData: any;
     timelineData: any;
     loading: boolean;
+    error?: string;
   } | null>(null);
 
   // ── Rerun confirm ──
@@ -472,6 +473,16 @@ export default function TestExecutionPlanDemo() {
           api.getTaskStatus(item.execution_task_id),
           api.getTaskTimeline(item.execution_task_id).catch(() => null),
         ]);
+        if (!statusRes.data) {
+          setResultModal(prev => prev ? {
+            ...prev,
+            taskData: null,
+            timelineData: null,
+            loading: false,
+            error: '该任务尚未执行或执行记录已清除',
+          } : null);
+          return;
+        }
         setResultModal(prev => prev ? {
           ...prev,
           taskData: statusRes.data,
@@ -479,7 +490,12 @@ export default function TestExecutionPlanDemo() {
           loading: false,
         } : null);
       } catch {
-        setResultModal(prev => prev ? { ...prev, taskData: { error: true }, loading: false } : null);
+        setResultModal(prev => prev ? {
+          ...prev,
+          taskData: null,
+          loading: false,
+          error: '该任务尚未执行或执行记录已清除',
+        } : null);
       }
     } else {
       // 手工用例 — 直接展示 item.result
@@ -786,6 +802,7 @@ export default function TestExecutionPlanDemo() {
           taskData={resultModal.taskData}
           timelineData={resultModal.timelineData}
           loading={resultModal.loading}
+          error={resultModal.error}
           onClose={() => setResultModal(null)}
         />
       )}
@@ -2143,13 +2160,30 @@ function OverviewView({ data, loading, onRefresh, onSelectPlan, users, onViewRes
 //  ResultModal — 用例执行结果查看
 // ═══════════════════════════════════════════════════════════════════
 
-function ResultModal({ item, taskData, timelineData, loading, onClose }: {
+function ResultModal({ item, taskData, timelineData, loading, error, onClose }: {
   item: PlanItemSummary;
   taskData: any;
   timelineData: any;
   loading: boolean;
+  error?: string;
   onClose: () => void;
 }) {
+  if (error) {
+    return (
+      <div style={{ position: 'fixed', inset: 0, background: 'var(--overlay-bg)', backdropFilter: 'blur(2px)', zIndex: 2000, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+        <div style={{ background: 'var(--surface-primary)', borderRadius: 12, width: 400, maxWidth: '90vw', overflow: 'hidden', boxShadow: '0 8px 32px rgba(0,0,0,0.3)' }}>
+          <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: 14, fontWeight: 600 }}>执行结果</span>
+            <button type="button" onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, color: 'var(--text-tertiary)' }}>×</button>
+          </div>
+          <div style={{ padding: '40px 20px', textAlign: 'center' }}>
+            <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{error}</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const caseSummary = taskData?.cases?.find((c: any) => c.auto_case_id === item.case_id);
   const r = caseSummary?.result_data;
   const isManual = !item.execution_task_id;
