@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../services/api';
 import { queryKeys } from '../providers/queryKeys';
 import { getErrorMessage } from '../utils/errors';
-import type { WorkItem, TestCaseResponse, RequirementResponse } from '../types';
+import type { WorkItem, TestCaseResponse, RequirementResponse, ExecutionTask } from '../types';
 import { WorkflowPanel, WorkflowActionToolbar } from './workflow';
 import {
   getStateLabel,
@@ -42,6 +42,9 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
   // Batch dispatch modal state
   const [batchOpen, setBatchOpen] = useState(false);
 
+  // 自动化执行记录 — 展开的任务详情
+  const [expandedExecTaskId, setExpandedExecTaskId] = useState<string | null>(null);
+
   // Edit test case modal state (for testcase_dev items in DEVELOPING state)
   const [editingTestCase, setEditingTestCase] = useState<TestCaseResponse | null>(null);
 
@@ -72,6 +75,17 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
   } = useQuery({
     queryKey: queryKeys.planItems.my(userId),
     queryFn: async () => (await api.listMyPlanItems(userId)).data?.map(transformApiItem) || [],
+    enabled: !!userId,
+  });
+
+  // ── React Query: 自动化执行记录 ──
+
+  const {
+    data: execTasks = [],
+    isLoading: execTasksLoading,
+  } = useQuery({
+    queryKey: queryKeys.executionTasks.my(userId),
+    queryFn: async () => (await api.listMyExecutionTasks(userId, 20)).data || [],
     enabled: !!userId,
   });
 
@@ -140,6 +154,7 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
   const handleRefreshAll = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: queryKeys.workItems.my(userId) });
     queryClient.invalidateQueries({ queryKey: queryKeys.planItems.my(userId) });
+    queryClient.invalidateQueries({ queryKey: queryKeys.executionTasks.my(userId) });
   }, [queryClient, userId]);
 
   // ── Workflow item handlers ──
@@ -339,6 +354,24 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
     batchDispatchMutation.mutate(caseIds);
   }, [batchDispatchMutation]);
 
+  // ── 自动化执行记录 ──
+
+  const EXEC_STATUS_STYLE: Record<string, { bg: string; color: string; label: string }> = {
+    QUEUED: { bg: 'rgba(210,153,34,0.12)', color: '#d29922', label: '排队中' },
+    RUNNING: { bg: 'rgba(63,185,80,0.12)', color: '#3fb950', label: '执行中' },
+    PASSED: { bg: 'rgba(63,185,80,0.12)', color: '#3fb950', label: '通过' },
+    FAILED: { bg: 'rgba(248,81,73,0.12)', color: '#f85149', label: '失败' },
+    SKIPPED: { bg: 'rgba(139,148,158,0.12)', color: '#8b949e', label: '跳过' },
+    CANCELLED: { bg: 'rgba(139,148,158,0.12)', color: '#8b949e', label: '已取消' },
+  };
+
+  const getExecStatusStyle = (status: string) =>
+    EXEC_STATUS_STYLE[status] || { bg: 'rgba(139,148,158,0.12)', color: '#8b949e', label: status };
+
+  const toggleExecTaskExpand = useCallback((taskId: string) => {
+    setExpandedExecTaskId(prev => prev === taskId ? null : taskId);
+  }, []);
+
   // ── Pending count for stats ──
   const pendingCount = useMemo(() => {
     const workflowPending = workItems.filter(
@@ -391,9 +424,9 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
         </div>
       )}
 
-      {workItemsLoading && planItemsLoading ? (
+      {workItemsLoading && planItemsLoading && execTasksLoading ? (
         <div className="loading-overlay"><div className="loading-spinner" /></div>
-      ) : workItems.length === 0 && planTasks.length === 0 ? (
+      ) : workItems.length === 0 && planTasks.length === 0 && execTasks.length === 0 ? (
         <div className="empty-state">
           <div className="empty-state__icon">✅</div>
           <p className="empty-state__text">暂无待处理的任务</p>
@@ -411,6 +444,94 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
               onOpenDispatchModal={handleOpenDispatchModal}
               onBatchDispatch={handleOpenBatchDispatch}
             />
+          )}
+
+          {/* ── 自动化执行记录 ── */}
+          {execTasks.length > 0 && (
+            <div style={myTasksStyles.group}>
+              <div style={myTasksStyles.groupHeader}>
+                <span style={groupBadgeStyle({ bg: 'rgba(57,208,214,0.1)', color: '#39d0d6' })}>
+                  自动化执行记录
+                </span>
+                <span style={myTasksStyles.groupCount}>{execTasks.length} 项</span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                {execTasks.map(task => {
+                  const statusMeta = getExecStatusStyle(task.overall_status);
+                  const isExpanded = expandedExecTaskId === task.task_id;
+                  return (
+                    <div key={task.task_id}>
+                      <div onClick={() => toggleExecTaskExpand(task.task_id)}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px',
+                          borderBottom: '0.5px solid var(--border-subtle)',
+                          cursor: 'pointer', fontSize: 13, transition: 'background 0.1s',
+                          background: isExpanded
+                            ? 'color-mix(in srgb, var(--accent-primary) 4%, transparent)'
+                            : undefined,
+                        }}
+                      >
+                        <span style={{
+                          fontSize: 9, color: isExpanded ? 'var(--accent-primary)' : 'var(--text-tertiary)',
+                          transition: 'transform 0.15s', transform: isExpanded ? 'rotate(90deg)' : 'none',
+                          flexShrink: 0,
+                        }}>▶</span>
+                        <span style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--text-tertiary)', flexShrink: 0 }}>
+                          {task.task_id}
+                        </span>
+                        <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 500 }}>
+                          {task.cases?.map(c => c.title).filter(Boolean).join(', ') || task.task_id}
+                        </span>
+                        <span style={{
+                          fontSize: 10, padding: '2px 8px', borderRadius: 4,
+                          background: statusMeta.bg, color: statusMeta.color, fontWeight: 600, flexShrink: 0,
+                        }}>
+                          {statusMeta.label}
+                        </span>
+                        <span style={{ fontSize: 10, color: 'var(--text-tertiary)', flexShrink: 0 }}>
+                          {task.created_at ? new Date(task.created_at).toLocaleString('zh-CN', {
+                            month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+                          }) : '-'}
+                        </span>
+                      </div>
+                      {isExpanded && (
+                        <div style={{
+                          padding: '10px 12px 12px 28px', borderBottom: '0.5px solid var(--border-subtle)',
+                          background: 'var(--bg-primary)', fontSize: 12, color: 'var(--text-secondary)',
+                        }}>
+                          {task.cases && task.cases.length > 0 ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                              {task.cases.map((c, i) => {
+                                const caseStatus = getExecStatusStyle(c.status);
+                                return (
+                                  <div key={c.case_id || i} style={{
+                                    display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px',
+                                    background: 'var(--surface-secondary)', borderRadius: 6,
+                                  }}>
+                                    <span style={{ fontFamily: 'monospace', fontSize: 10, color: 'var(--text-tertiary)' }}>
+                                      {c.auto_case_id || c.case_id}
+                                    </span>
+                                    <span style={{ flex: 1 }}>{c.title || '-'}</span>
+                                    <span style={{
+                                      fontSize: 10, padding: '1px 6px', borderRadius: 3,
+                                      background: caseStatus.bg, color: caseStatus.color, fontWeight: 600,
+                                    }}>
+                                      {caseStatus.label}
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <div style={{ color: 'var(--text-tertiary)', fontStyle: 'italic' }}>无用例明细</div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           )}
 
           {/* ── Workflow items by category ── */}

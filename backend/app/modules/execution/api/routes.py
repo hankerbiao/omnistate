@@ -296,6 +296,22 @@ async def list_tasks(
 
 
 @router.get(
+    "/tasks/my",
+    response_model=APIResponse[list[ExecutionTaskListItem]],
+    summary="查询当前用户的自动化执行记录",
+)
+async def list_my_tasks(
+        service: ExecutionTaskQueryServiceDep,
+        current_user=Depends(get_current_user),
+        limit: int = Query(20, ge=1, le=100, description="返回条数上限"),
+):
+    """查询当前用户发起的自动化任务执行记录。"""
+    user_id = current_user.get("user_id") or current_user.get("id") or ""
+    data = await service.list_user_tasks(user_id, limit=limit)
+    return APIResponse(data=data)
+
+
+@router.get(
     "/tasks/{task_id}/biz-logs",
     response_model=APIResponse[list[dict]],
     summary="查询任务业务轨迹日志",

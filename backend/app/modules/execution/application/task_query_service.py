@@ -30,9 +30,26 @@ class ExecutionTaskQueryService:
             .sort("-created_at")
             .to_list()
         )
-        serialized_tasks = [self._serialize_task_doc(task_doc) for task_doc in docs]
+        return await self._serialize_tasks_with_cases(docs)
+
+    async def list_user_tasks(self, user_id: str, limit: int = 20) -> List[Dict[str, Any]]:
+        """列出指定用户创建的执行任务（最近 N 条）。"""
+        docs = await (
+            ExecutionTaskDoc.find({
+                "created_by": user_id,
+                "is_deleted": False,
+            })
+            .sort("-created_at")
+            .limit(limit)
+            .to_list()
+        )
+        return await self._serialize_tasks_with_cases(docs)
+
+    @staticmethod
+    async def _serialize_tasks_with_cases(docs: List[ExecutionTaskDoc]) -> List[Dict[str, Any]]:
+        serialized_tasks = [ExecutionTaskSerializer.serialize_task_doc(task_doc) for task_doc in docs]
         task_ids = [task_doc.task_id for task_doc in docs]
-        cases_by_task = await self._load_task_case_map(task_ids)
+        cases_by_task = await ExecutionTaskSerializer.load_task_case_map(task_ids)
 
         for task_item in serialized_tasks:
             task_item["cases"] = cases_by_task.get(task_item["task_id"], [])

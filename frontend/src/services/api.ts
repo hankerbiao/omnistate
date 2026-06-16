@@ -441,6 +441,12 @@ class ApiClient {
     });
   }
 
+  async listMyExecutionTasks(userId: string, limit: number = 20): Promise<ApiResponse<ExecutionTask[]>> {
+    return this.request<ExecutionTask[]>(`/execution/tasks/my?created_by=${userId}&limit=${limit}`, {
+      method: 'GET',
+    });
+  }
+
   async getTaskStatus(taskId: string): Promise<ApiResponse<TaskStatus>> {
     return this.request<TaskStatus>(`/execution/tasks/${taskId}/status`, {
       method: 'GET',
