@@ -33,7 +33,7 @@ def _doc_to_response(doc) -> SystemConfigResponse:
         description=doc.description,
         is_encrypted=doc.is_encrypted,
         is_active=doc.is_active,
-        needs_restart=ConfigService.get_needs_restart(doc.config_key),
+        needs_restart=False,
         created_at=doc.created_at,
         updated_at=doc.updated_at,
         updated_by=doc.updated_by,

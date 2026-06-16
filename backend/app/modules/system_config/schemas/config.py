@@ -106,12 +106,16 @@ class ConfigHistoryResponse(BaseModel):
 
 
 class AIConfig(BaseModel):
-    """AI配置完整结构"""
+    """AI配置完整结构
 
-    base_url: str = "http://localhost:11434/v1"
-    model: str = "qwen2.5:latest"
+    默认值全部设为空/零，由 ConfigService.get_ai_config() 从 MongoDB 或 DEFAULT_CONFIGS 填充。
+    避免与 DEFAULT_CONFIGS 不一致导致隐藏 bug。
+    """
+
+    base_url: str = ""
+    model: str = ""
     api_key: str = ""
     enabled: bool = True
-    temperature: float = 0.7
-    max_tokens: int = 4096
-    timeout: int = 60
+    temperature: float = 0.0
+    max_tokens: int = 0
+    timeout: int = 0

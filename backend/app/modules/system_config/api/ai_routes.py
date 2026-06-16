@@ -2,6 +2,7 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from app.modules.system_config.constants.ai import POLISH_SYSTEM_PROMPT
 from app.modules.system_config.service.config_service import ConfigService
 from app.shared.api.schemas.base import APIResponse
 from app.shared.core.logger import log
@@ -15,16 +16,6 @@ class PolishRequest(BaseModel):
 
 class PolishResponse(BaseModel):
     polished: str
-
-
-POLISH_SYSTEM_PROMPT = """你是一个专业的中文技术文档润色助手。你的任务是对用户输入的文本进行润色，使其：
-1. 表达更专业、清晰
-2. 语法正确，用词准确
-3. 保持原意不变，不添加原文没有的信息
-4. 适合用于测试需求文档/测试用例的编写
-5. 如果原文已经很好了，可以不做改动直接返回
-
-直接返回润色后的文本，不要加任何解释、前缀或引号。"""
 
 
 @router.post("/polish", response_model=APIResponse[PolishResponse])

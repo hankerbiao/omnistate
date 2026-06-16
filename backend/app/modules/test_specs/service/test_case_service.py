@@ -563,8 +563,6 @@ class TestCaseService(BaseService):
 
         total_auto = await AutomationTestCaseDoc.find({"is_deleted": False}).count()
 
-        total_auto = await AutomationTestCaseDoc.find({"is_deleted": False}).count()
-
         return {
             "total_manual": total_manual,
             "total_auto": total_auto,

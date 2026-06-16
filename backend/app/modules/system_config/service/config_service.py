@@ -71,9 +71,6 @@ class ConfigService:
     # 默认配置查找表（用于 set_config 创建新文档时填充元信息）
     _DEFAULTS_MAP: dict[str, dict[str, str]] = {c["config_key"]: c for c in DEFAULT_CONFIGS}
 
-    # 需要重启生效的配置前缀
-    RESTART_REQUIRED_PREFIXES = ("execution.", "jwt.", "logging.", "app.")
-
     # 值类型解析器
     _PARSERS: dict[str, Any] = {
         "integer": int,
@@ -201,11 +198,6 @@ class ConfigService:
     async def reload_config(key: Optional[str] = None) -> None:
         """热加载配置（清除缓存）"""
         await ConfigCache.invalidate(key)
-
-    @staticmethod
-    def get_needs_restart(config_key: str) -> bool:
-        """判断配置修改后是否需要重启生效"""
-        return config_key.startswith(ConfigService.RESTART_REQUIRED_PREFIXES)
 
     @staticmethod
     async def init_default_configs() -> None:
