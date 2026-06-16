@@ -20,12 +20,6 @@ class SystemConfigBase(BaseModel):
     needs_restart: bool = Field(default=False, description="修改后是否需要重启生效")
 
 
-class SystemConfigCreate(SystemConfigBase):
-    """创建配置请求"""
-
-    pass
-
-
 class SystemConfigUpdate(BaseModel):
     """更新配置请求"""
 

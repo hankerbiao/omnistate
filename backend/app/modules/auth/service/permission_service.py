@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from app.modules.auth.repository.models import PermissionDoc, RoleDoc
+from app.modules.auth.repository.models import PermissionDoc, RoleDoc, UserDoc
 from app.modules.auth.service.exceptions import PermissionNotFoundError
 from app.modules.auth.service.support import AuthServiceSupport
 
@@ -42,4 +42,7 @@ class PermissionService(AuthServiceSupport):
         role_count = await RoleDoc.find({"permission_ids": perm_id}).count()
         if role_count > 0:
             raise ValueError(f"cannot delete permission: {role_count} role(s) are using this permission")
+        user_count = await UserDoc.find({"extra_permission_ids": perm_id}).count()
+        if user_count > 0:
+            raise ValueError(f"cannot delete permission: {user_count} user(s) have this as extra permission")
         await doc.delete()

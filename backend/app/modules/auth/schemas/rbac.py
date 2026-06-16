@@ -85,6 +85,7 @@ class UserResponse(BaseModel):
     email: Optional[str] = Field(default=None, description="邮箱地址")
     role_ids: List[str] = Field(..., description="角色 ID 列表")
     extra_permission_ids: List[str] = Field(default_factory=list, description="用户独立额外权限 ID 列表")
+    allowed_nav_views: List[str] = Field(default_factory=list, description="用户级导航视图覆盖")
     status: str = Field(..., description="用户状态")
     created_at: datetime = Field(..., description="创建时间")
     updated_at: datetime = Field(..., description="更新时间")

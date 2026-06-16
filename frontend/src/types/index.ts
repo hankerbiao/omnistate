@@ -83,6 +83,7 @@ export interface UserResponse {
   email?: string;
   role_ids: string[];
   extra_permission_ids?: string[];
+  allowed_nav_views?: string[];
   status: string;
   created_at: string;
   updated_at: string;

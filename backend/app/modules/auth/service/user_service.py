@@ -8,7 +8,7 @@ from app.modules.auth.repository.models import UserDoc
 from app.modules.auth.service.exceptions import UserNotFoundError
 from app.modules.auth.service.support import AuthServiceSupport
 from app.shared.auth import hash_password, verify_password
-from app.shared.auth.jwt_auth import get_permissions_by_ids, get_permissions_by_role_ids
+from app.shared.auth.jwt_auth import get_permissions_by_ids, get_permissions_by_role_ids, is_admin_role
 
 
 class UserService(AuthServiceSupport):
@@ -21,6 +21,7 @@ class UserService(AuthServiceSupport):
         if existing:
             raise ValueError("user_id already exists")
         await self._ensure_roles_exist(data.get("role_ids", []))
+        await self._ensure_permissions_exist(data.get("extra_permission_ids", []))
         salt, pwd_hash = hash_password(data["password"])
         payload = dict(data)
         payload["password_salt"] = salt
@@ -113,11 +114,11 @@ class UserService(AuthServiceSupport):
         if user_id == current_user_id:
             raise ValueError("cannot delete yourself")
         # 检查是否是最后一个 ADMIN
-        admin_users = await UserDoc.find({"role_ids": "ADMIN"}).count()
-        if admin_users <= 1 and "ADMIN" in (doc.role_ids or []):
+        admin_users = await UserDoc.find({"role_ids": {"$regex": "ADMIN", "$options": "i"}}).count()
+        if admin_users <= 1 and is_admin_role(doc.role_ids or []):
             # 检查当前用户是否是 ADMIN，如果不是，禁止删除最后一个 ADMIN
             current_user = await UserDoc.find_one(UserDoc.user_id == current_user_id)
-            if current_user and "ADMIN" not in (current_user.role_ids or []):
+            if current_user and not is_admin_role(current_user.role_ids or []):
                 raise ValueError("cannot delete the last admin user")
         # 软删除：设置状态为 DISABLED
         doc.status = "DISABLED"
