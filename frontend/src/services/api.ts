@@ -1,4 +1,4 @@
-import type { LoginRequest, LoginResponse, ApiResponse, CreateRequirementRequest, RequirementResponse, ListRequirementsParams, CreateTestCaseRequest, UpdateTestCaseRequest, TestCaseResponse, TestCaseChangeLogListResponse, ListTestCasesParams, CatalogLab, CreateCatalogLabRequest, UpdateCatalogLabRequest, CatalogTreeResponse, DispatchTaskRequest, DispatchTaskResponse, ExecutionAgent, AgentCleanupOfflineResponse, ListAgentsParams, CreateAutomationTestCaseRequest, AutomationTestCaseResponse, ListAutomationTestCasesParams, ExecutionTask, ListTasksParams, TaskStatus, RerunTaskRequest, AttachmentInfo, WorkflowTransitionRequest, WorkflowTransitionResponse, WorkflowTransitionsResponse, WorkflowTransitionLog, RoleResponse, PermissionResponse, CreateRoleRequest, UpdateRoleRequest, UpdateRolePermissionsRequest, CurrentUserPermissionsResponse, UserResponse, CreateUserRequest, UpdateUserRequest, UpdateUserRolesRequest, UpdateUserPasswordRequest, ListUsersParams, NavigationPageResponse, UserNavigationResponse, UpdateUserNavigationRequest, WorkItem, LineageGraphResponse, CommentListResponse, CreateCommentRequest, TestCaseComment, PlanTaskItemResponse, SubmitManualResultRequest, PlanItemDispatchRequest, BatchDispatchPlanItemsRequest, CreatePlanRequest, AddPlanItemsRequest, BatchUpdateAssigneeRequest, UserEffectivePermissionsResponse, UpdateUserExtraPermissionsRequest, SystemConfigListResponse, SystemConfig, BatchUpdateConfigRequest, TestConnectionRequest, TestConnectionResponse, ConfigHistory, ExecutionStatsResponse, CollectionResponse, CollectionListItem, CreateCollectionRequest, UpdateCollectionRequest, AddCasesRequest, RemoveCasesRequest, CollectionAnalysisResult, TaskTimeline } from '../types';
+import type { LoginRequest, LoginResponse, ApiResponse, CreateRequirementRequest, RequirementResponse, ListRequirementsParams, CreateTestCaseRequest, UpdateTestCaseRequest, TestCaseResponse, TestCaseChangeLogListResponse, ListTestCasesParams, CatalogLab, CreateCatalogLabRequest, UpdateCatalogLabRequest, CatalogTreeResponse, DispatchTaskRequest, DispatchTaskResponse, ExecutionAgent, AgentCleanupOfflineResponse, ListAgentsParams, CreateAutomationTestCaseRequest, AutomationTestCaseResponse, ListAutomationTestCasesParams, ExecutionTask, ListTasksParams, TaskStatus, RerunTaskRequest, AttachmentInfo, WorkflowTransitionRequest, WorkflowTransitionResponse, WorkflowTransitionsResponse, WorkflowTransitionLog, RoleResponse, PermissionResponse, CreateRoleRequest, UpdateRoleRequest, UpdateRolePermissionsRequest, CurrentUserPermissionsResponse, UserResponse, CreateUserRequest, UpdateUserRequest, UpdateUserRolesRequest, UpdateUserPasswordRequest, ListUsersParams, NavigationPageResponse, UserNavigationResponse, UpdateUserNavigationRequest, WorkItem, LineageGraphResponse, CommentListResponse, CreateCommentRequest, TestCaseComment, PlanTaskItemResponse, SubmitManualResultRequest, PlanItemDispatchRequest, PlanItemRerunRequest, BatchDispatchPlanItemsRequest, CreatePlanRequest, AddPlanItemsRequest, BatchUpdateAssigneeRequest, UserEffectivePermissionsResponse, UpdateUserExtraPermissionsRequest, SystemConfigListResponse, SystemConfig, BatchUpdateConfigRequest, TestConnectionRequest, TestConnectionResponse, ConfigHistory, ExecutionStatsResponse, CollectionResponse, CollectionListItem, CreateCollectionRequest, UpdateCollectionRequest, AddCasesRequest, RemoveCasesRequest, CollectionAnalysisResult, TaskTimeline } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
 
@@ -459,6 +459,13 @@ class ApiClient {
     });
   }
 
+  /** 取消计划内自动化条目的执行：删除关联任务，恢复状态为 pending */
+  async cancelExecution(itemId: string): Promise<ApiResponse<any>> {
+    return this.request<any>(`/execution-plans/items/${itemId}/cancel-execution`, {
+      method: 'POST',
+    });
+  }
+
   // Role and Permission APIs
   async listRoles(): Promise<ApiResponse<RoleResponse[]>> {
     return this.request<RoleResponse[]>('/auth/roles', {
@@ -799,6 +806,17 @@ class ApiClient {
     data: PlanItemDispatchRequest,
   ): Promise<ApiResponse<Record<string, unknown>>> {
     return this.request<Record<string, unknown>>(`/execution-plans/items/${itemId}/dispatch`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  /** 重新执行计划条目（自动化为 rerun task，手工为重置为 pending） */
+  async rerunPlanItem(
+    itemId: string,
+    data: PlanItemRerunRequest = {},
+  ): Promise<ApiResponse<Record<string, unknown>>> {
+    return this.request<Record<string, unknown>>(`/execution-plans/items/${itemId}/rerun`, {
       method: 'POST',
       body: JSON.stringify(data),
     });

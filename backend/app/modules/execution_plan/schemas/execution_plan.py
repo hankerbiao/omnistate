@@ -94,6 +94,17 @@ class PlanItemDispatchRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class PlanItemRerunRequest(BaseModel):
+    """计划内条目重新执行参数。"""
+
+    agent_id: Optional[str] = None
+    project_tag: Optional[str] = None
+    pytest_options: Dict[str, Any] = Field(default_factory=dict)
+    timeout: Optional[int] = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class BatchDispatchRequest(BaseModel):
     item_ids: List[str] = Field(default_factory=list)
     agent_id: Optional[str] = None

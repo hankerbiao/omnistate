@@ -16,6 +16,7 @@ from app.modules.execution_plan.schemas.execution_plan import (
     BatchUpdateAssigneeRequest,
     CreatePlanRequest,
     PlanItemDispatchRequest,
+    PlanItemRerunRequest,
     SubmitManualResultRequest,
     UpdatePlanItemRequest,
     UpdatePlanRequest,
@@ -216,6 +217,59 @@ async def dispatch_single_item(
             request=request,
             actor_id=actor_id,
             sequence_service=sequence_service,
+        )
+        return APIResponse(data=result)
+    except Exception as exc:
+        handle_service_error(exc)
+
+
+@router.post(
+    "/items/{item_id}/cancel-execution",
+    response_model=APIResponse[Dict[str, Any]],
+    summary="取消自动化条目的执行",
+)
+async def cancel_item_execution(
+    item_id: str,
+    service: ExecutionPlanServiceDep,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """取消计划内自动化条目的执行：删除关联任务，恢复状态为 pending。"""
+    try:
+        actor_id = _get_user_id(current_user)
+        result = await service.cancel_execution(
+            item_id=item_id,
+            actor_id=actor_id,
+        )
+        return APIResponse(data=result)
+    except Exception as exc:
+        handle_service_error(exc)
+
+
+@router.post(
+    "/items/{item_id}/rerun",
+    response_model=APIResponse[Dict[str, Any]],
+    status_code=201,
+    summary="重新执行计划条目",
+)
+async def rerun_plan_item(
+    item_id: str,
+    request: PlanItemRerunRequest,
+    service: ExecutionPlanServiceDep,
+    sequence_service: SequenceIdServiceDep,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """重新执行计划条目。
+
+    自动化用例：基于原 execution task 快照创建新任务，关联新 task_id。
+    手工用例：清空旧结果，将状态重置为 pending。
+    """
+    try:
+        actor_id = _get_user_id(current_user)
+        result = await service.rerun_item(
+            item_id=item_id,
+            actor_id=actor_id,
+            sequence_service=sequence_service,
+            request=request,
         )
         return APIResponse(data=result)
     except Exception as exc:

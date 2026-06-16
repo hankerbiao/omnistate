@@ -24,6 +24,7 @@ from app.modules.execution_plan.repository.models import (
 from app.modules.execution_plan.schemas.execution_plan import (
     BatchDispatchRequest,
     PlanItemDispatchRequest,
+    PlanItemRerunRequest,
     SubmitManualResultRequest,
 )
 from app.modules.test_specs.repository.models import AutomationTestCaseDoc, TestCaseDoc
@@ -552,6 +553,93 @@ class ExecutionPlanService(BaseService):
         await self._recalculate_plan_progress(item.plan_id)
         logger.info(f"[DISPATCH] item={item_id} task={task_id} actor={actor_id}")
         return data
+
+    async def cancel_execution(
+        self,
+        item_id: str,
+        actor_id: str,
+    ) -> Dict[str, Any]:
+        """取消计划条目的自动化执行。
+
+        删除关联的执行任务，将条目状态恢复为 pending，清空 execution_task_id。
+        """
+        item = await self._get_item_by_id_or_raise(item_id)
+        if item.ref_type != "auto":
+            raise ValueError("仅自动化条目支持取消执行")
+        if not item.execution_task_id:
+            raise ValueError("该条目没有关联的执行任务，无需取消")
+
+        # 删除关联的执行任务（逻辑删除）
+        task_doc = await ExecutionTaskDoc.find_one(
+            ExecutionTaskDoc.task_id == item.execution_task_id,
+            ExecutionTaskDoc.is_deleted == False,
+        )
+        if task_doc:
+            task_doc.is_deleted = True
+            await task_doc.save()
+            logger.info(f"[CANCEL] task {item.execution_task_id} deleted (soft) for item {item_id}")
+
+        # 恢复条目状态
+        item.execution_task_id = None
+        item.status = PlanItemStatus.PENDING.value
+        await item.save()
+        await self._recalculate_plan_progress(item.plan_id)
+        logger.info(f"[CANCEL] item={item_id} status reset to pending, actor={actor_id}")
+        return await self._item_to_response(item)
+
+    async def rerun_item(
+        self,
+        item_id: str,
+        actor_id: str,
+        sequence_service: SequenceIdService,
+        request: Optional[PlanItemRerunRequest] = None,
+    ) -> Dict[str, Any]:
+        """重新执行计划条目。
+
+        自动化用例：基于原 execution task 快照创建新任务（rerun），关联新 task_id。
+        手工用例：清空 result_id，将状态重置为 pending。
+        """
+        item = await self._get_item_by_id_or_raise(item_id)
+
+        if item.ref_type == "auto":
+            if not item.execution_task_id:
+                raise ValueError("自动化条目没有关联的执行任务，无法重新执行")
+            year = datetime.now().year
+            seq = await sequence_service.next(f"execution_task:{year}")
+            new_task_id = f"ET-{year}-{str(seq).zfill(6)}"
+            data = await self._task_command_service.rerun_task(
+                source_task_id=item.execution_task_id,
+                new_task_id=new_task_id,
+                actor_id=actor_id,
+                request={},
+            )
+            item.execution_task_id = new_task_id
+            item.status = PlanItemStatus.RUNNING.value
+            await item.save()
+            await self._recalculate_plan_progress(item.plan_id)
+            logger.info(f"[RERUN] auto item={item_id} new_task={new_task_id} actor={actor_id}")
+            return data
+
+        elif item.ref_type == "manual":
+            # 逻辑删除旧结果
+            if item.result_id:
+                existing = await ManualExecutionResultDoc.find_one(
+                    ManualExecutionResultDoc.result_id == item.result_id,
+                    ManualExecutionResultDoc.is_deleted == False,
+                )
+                if existing:
+                    existing.is_deleted = True
+                    await existing.save()
+                    logger.debug(f"[RERUN] manual: soft-deleted previous result_id={item.result_id}")
+            item.result_id = None
+            item.status = PlanItemStatus.PENDING.value
+            await item.save()
+            await self._recalculate_plan_progress(item.plan_id)
+            logger.info(f"[RERUN] manual item={item_id} status reset to pending, actor={actor_id}")
+            return await self._item_to_response(item)
+
+        else:
+            raise ValueError(f"不支持的条目类型: {item.ref_type}")
 
     async def batch_dispatch(
         self,

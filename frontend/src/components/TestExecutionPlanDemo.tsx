@@ -250,6 +250,9 @@ export default function TestExecutionPlanDemo() {
     loading: boolean;
   } | null>(null);
 
+  // ── Rerun confirm ──
+  const [rerunConfirm, setRerunConfirm] = useState<PlanItemSummary | null>(null);
+
   // ══════════════════════════════════════════════════
   //  Actions
   // ══════════════════════════════════════════════════
@@ -447,6 +450,21 @@ export default function TestExecutionPlanDemo() {
     }
   }, [activePlanId, showOverview, fetchOverview, activePlanItems, editingItems]);
 
+  // 取消自动化条目的执行：保留条目，仅删除关联任务并恢复 pending 状态
+  const handleCancelExecution = useCallback(async (itemId: string) => {
+    try {
+      await api.cancelExecution(itemId);
+      if (showOverview) fetchOverview();
+      if (activePlanId) {
+        const res = await api.getPlanDetail(activePlanId);
+        const d = res.data as Record<string, unknown> | undefined;
+        setActivePlanItems((d?.items as PlanItemSummary[]) || []);
+      }
+    } catch (err) {
+      console.error('取消执行失败:', err);
+    }
+  }, [activePlanId, showOverview, fetchOverview]);
+
   // 删除整个执行计划
   const handleDeletePlan = useCallback(async (planId: string) => {
     if (!window.confirm('确定要删除该执行计划及其所有条目？此操作不可撤销。')) return;
@@ -485,6 +503,28 @@ export default function TestExecutionPlanDemo() {
       setResultModal({ item, taskData: { manualResult: item.result }, loading: false });
     }
   }, []);
+
+  const handleRerunItem = useCallback(async (item: PlanItemSummary) => {
+    setRerunConfirm(item);
+  }, []);
+
+  const confirmRerun = useCallback(async () => {
+    if (!rerunConfirm) return;
+    const item = rerunConfirm;
+    setRerunConfirm(null);
+    try {
+      await api.rerunPlanItem(item.item_id);
+      // 刷新当前计划详情
+      if (activePlanId) {
+        const res = await api.getPlanDetail(activePlanId);
+        const d = res.data as Record<string, unknown> | undefined;
+        setActivePlanItems((d?.items as PlanItemSummary[]) || []);
+      }
+      if (showOverview) fetchOverview();
+    } catch (err) {
+      console.error('重新执行失败:', err);
+    }
+  }, [rerunConfirm, activePlanId, showOverview, fetchOverview]);
 
   const resetWizard = () => {
     setWizardStep(1);
@@ -656,6 +696,7 @@ export default function TestExecutionPlanDemo() {
             users={users}
             onViewResult={handleViewResult}
             onDeleteItem={handleTerminateItem}  // 概览中删除 = 终止（删执行任务，保留用例）
+            onCancelExecution={handleCancelExecution}
           />
         ) : (
           <>
@@ -697,6 +738,7 @@ export default function TestExecutionPlanDemo() {
               onShowAddCases={() => setShowAddCases(true)}
               users={users}
               onViewResult={handleViewResult}
+              onRerunItem={handleRerunItem}
               onBatchAssign={handleBatchAssign}
               onTerminateItem={handleTerminateItem}
               onDeleteItem={handleDeleteItem}
@@ -756,6 +798,15 @@ export default function TestExecutionPlanDemo() {
           timelineData={resultModal.timelineData}
           loading={resultModal.loading}
           onClose={() => setResultModal(null)}
+        />
+      )}
+
+      {/* ── Rerun confirm modal ── */}
+      {rerunConfirm && (
+        <RerunConfirmModal
+          item={rerunConfirm}
+          onConfirm={confirmRerun}
+          onClose={() => setRerunConfirm(null)}
         />
       )}
     </div>
@@ -835,7 +886,7 @@ function PlanSidebar({ plans, activePlanId, loading, searchQuery, onSelect }: {
 //  PlanDetailView — 右侧计划详情 + 视图切换
 // ═══════════════════════════════════════════════════════════════════
 
-function PlanDetailView({ plan, items, viewMode, onViewModeChange, isEditing, onStartEditing, onCancelEditing, onSaveEditing, onRemoveItem, saving, onShowAddCases, users, onViewResult, onBatchAssign, onTerminateItem, onDeleteItem, onDeletePlan, onUpdateItemAssignee }: {
+function PlanDetailView({ plan, items, viewMode, onViewModeChange, isEditing, onStartEditing, onCancelEditing, onSaveEditing, onRemoveItem, saving, onShowAddCases, users, onViewResult, onRerunItem, onBatchAssign, onTerminateItem, onDeleteItem, onDeletePlan, onUpdateItemAssignee }: {
   plan: PlanSummary;
   items: PlanItemSummary[];
   viewMode: ViewMode;
@@ -848,6 +899,7 @@ function PlanDetailView({ plan, items, viewMode, onViewModeChange, isEditing, on
   saving: boolean;
   onShowAddCases: () => void;
   users: UserResponse[];
+  onRerunItem?: (item: PlanItemSummary) => void;
   onViewResult?: (item: PlanItemSummary) => void;
   onBatchAssign?: (itemIds: string[], assigneeId: string) => void;
   onTerminateItem?: (planId: string, itemId: string) => void;
@@ -954,11 +1006,11 @@ function PlanDetailView({ plan, items, viewMode, onViewModeChange, isEditing, on
             )}
           </div>
         ) : viewMode === 'statusBoard' ? (
-          <StatusBoard items={items} isEditing={isEditing} onRemoveItem={onRemoveItem} users={users} onViewResult={onViewResult} onTerminateItem={onTerminateItem} onDeleteItem={onDeleteItem} onUpdateItemAssignee={onUpdateItemAssignee} />
+          <StatusBoard items={items} isEditing={isEditing} onRemoveItem={onRemoveItem} users={users} onViewResult={onViewResult} onRerunItem={onRerunItem} onTerminateItem={onTerminateItem} onDeleteItem={onDeleteItem} onUpdateItemAssignee={onUpdateItemAssignee} />
         ) : viewMode === 'componentView' ? (
           <ComponentBoard items={items} isEditing={isEditing} onRemoveItem={onRemoveItem} users={users} onViewResult={onViewResult} />
         ) : (
-          <DataTable items={items} isEditing={isEditing} onRemoveItem={onRemoveItem} users={users} onViewResult={onViewResult} onBatchAssign={onBatchAssign} onTerminateItem={onTerminateItem} onDeleteItem={onDeleteItem} onUpdateItemAssignee={onUpdateItemAssignee} />
+          <DataTable items={items} isEditing={isEditing} onRemoveItem={onRemoveItem} users={users} onViewResult={onViewResult} onRerunItem={onRerunItem} onBatchAssign={onBatchAssign} onTerminateItem={onTerminateItem} onDeleteItem={onDeleteItem} onUpdateItemAssignee={onUpdateItemAssignee} />
         )}
       </div>
     </div>
@@ -969,12 +1021,13 @@ function PlanDetailView({ plan, items, viewMode, onViewModeChange, isEditing, on
 //  StatusBoard — 按执行状态分栏看板
 // ═══════════════════════════════════════════════════════════════════
 
-function StatusBoard({ items, isEditing, onRemoveItem, users, onViewResult, onTerminateItem, onDeleteItem, onUpdateItemAssignee }: {
+function StatusBoard({ items, isEditing, onRemoveItem, users, onViewResult, onRerunItem, onTerminateItem, onDeleteItem, onUpdateItemAssignee }: {
   items: PlanItemSummary[];
   isEditing?: boolean;
   onRemoveItem?: (itemId: string) => void;
   users: UserResponse[];
   onViewResult?: (item: PlanItemSummary) => void;
+  onRerunItem?: (item: PlanItemSummary) => void;
   onTerminateItem?: (planId: string, itemId: string) => void;
   onDeleteItem?: (planId: string, itemId: string) => void;
   onUpdateItemAssignee?: (itemId: string, assigneeId: string) => void;
@@ -1009,7 +1062,7 @@ function StatusBoard({ items, isEditing, onRemoveItem, users, onViewResult, onTe
                 <div style={{ padding: 12, textAlign: 'center', fontSize: 11, color: 'var(--text-tertiary)', border: '1px dashed var(--border-subtle)', borderRadius: 8 }}>-</div>
               )}
               {caseItems.map(item => (
-                <StatusCard key={item.item_id} item={item} isEditing={isEditing} onRemoveItem={onRemoveItem} users={users} onViewResult={onViewResult} onTerminateItem={onTerminateItem} onDeleteItem={onDeleteItem} onUpdateItemAssignee={onUpdateItemAssignee} />
+                <StatusCard key={item.item_id} item={item} isEditing={isEditing} onRemoveItem={onRemoveItem} users={users} onViewResult={onViewResult} onRerunItem={onRerunItem} onTerminateItem={onTerminateItem} onDeleteItem={onDeleteItem} onUpdateItemAssignee={onUpdateItemAssignee} />
               ))}
             </div>
           </div>
@@ -1019,12 +1072,13 @@ function StatusBoard({ items, isEditing, onRemoveItem, users, onViewResult, onTe
   );
 }
 
-function StatusCard({ item, isEditing, onRemoveItem, users, onViewResult, onTerminateItem, onDeleteItem, onUpdateItemAssignee }: {
+function StatusCard({ item, isEditing, onRemoveItem, users, onViewResult, onRerunItem, onTerminateItem, onDeleteItem, onUpdateItemAssignee }: {
   item: PlanItemSummary;
   isEditing?: boolean;
   onRemoveItem?: (itemId: string) => void;
   users: UserResponse[];
   onViewResult?: (item: PlanItemSummary) => void;
+  onRerunItem?: (item: PlanItemSummary) => void;
   onTerminateItem?: (planId: string, itemId: string) => void;
   onDeleteItem?: (planId: string, itemId: string) => void;
   onUpdateItemAssignee?: (itemId: string, assigneeId: string) => void;
@@ -1098,6 +1152,16 @@ function StatusCard({ item, isEditing, onRemoveItem, users, onViewResult, onTerm
             结果
           </button>
         )}
+        {item.status === 'fail' && onRerunItem && (
+          <button type="button" onClick={(e) => { e.stopPropagation(); onRerunItem(item); }}
+            style={{
+              fontSize: 9, padding: '1px 6px', borderRadius: 4,
+              border: '1px solid #f8514940', color: '#f85149',
+              background: 'rgba(248,81,73,0.06)', cursor: 'pointer',
+            }}>
+            重新执行
+          </button>
+        )}
       </div>
       {/* ── 时间信息 ── */}
       {item.updated_at && (
@@ -1155,12 +1219,13 @@ function ComponentBoard({ items, isEditing, onRemoveItem, users, onViewResult }:
 //  DataTable — 表格视图（支持批量指派执行人）
 // ═══════════════════════════════════════════════════════════════════
 
-function DataTable({ items, isEditing, onRemoveItem, users, onViewResult, onBatchAssign, onTerminateItem, onDeleteItem, onUpdateItemAssignee }: {
+function DataTable({ items, isEditing, onRemoveItem, users, onViewResult, onRerunItem, onBatchAssign, onTerminateItem, onDeleteItem, onUpdateItemAssignee }: {
   items: PlanItemSummary[];
   isEditing?: boolean;
   onRemoveItem?: (itemId: string) => void;
   users: UserResponse[];
   onViewResult?: (item: PlanItemSummary) => void;
+  onRerunItem?: (item: PlanItemSummary) => void;
   onBatchAssign?: (itemIds: string[], assigneeId: string) => void;
   onTerminateItem?: (planId: string, itemId: string) => void;
   onDeleteItem?: (planId: string, itemId: string) => void;
@@ -1363,6 +1428,14 @@ function DataTable({ items, isEditing, onRemoveItem, users, onViewResult, onBatc
                     </button>
                   ) : (
                     <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>-</span>
+                  )}
+                  {item.status === 'fail' && onRerunItem && (
+                    <button type="button" onClick={(e) => { e.stopPropagation(); onRerunItem(item); }}
+                      style={{ fontSize: 10, padding: '2px 10px', borderRadius: 4, marginLeft: 4,
+                        border: '1px solid #f8514940', color: '#f85149',
+                        background: 'rgba(248,81,73,0.06)', cursor: 'pointer' }}>
+                      重新执行
+                    </button>
                   )}
                 </td>
                 {isEditing && onRemoveItem && (
@@ -1908,7 +1981,7 @@ function ArchivedModal({ open, loading, items, onClose, onUnarchive }: {
 //  OverviewView — 运行总览
 // ═══════════════════════════════════════════════════════════════════
 
-function OverviewView({ data, loading, onRefresh, onSelectPlan, users, onViewResult, onTerminateItem, onDeleteItem }: {
+function OverviewView({ data, loading, onRefresh, onSelectPlan, users, onViewResult, onTerminateItem, onDeleteItem, onCancelExecution }: {
   data: Record<string, any> | null;
   loading: boolean;
   onRefresh: () => void;
@@ -1916,6 +1989,7 @@ function OverviewView({ data, loading, onRefresh, onSelectPlan, users, onViewRes
   users: UserResponse[];
   onViewResult?: (item: PlanItemSummary) => void;
   onDeleteItem?: (planId: string, itemId: string, executionTaskId?: string) => void;
+  onCancelExecution?: (itemId: string) => void;
 }) {
   const plans = (data?.plans as any[]) || [];
   const runningItems = (data?.running_items as any[]) || [];
@@ -2048,8 +2122,8 @@ function OverviewView({ data, loading, onRefresh, onSelectPlan, users, onViewRes
                       )}
                     </td>
                     <td style={{ padding: '6px 10px', textAlign: 'center' }}>
-                      {onDeleteItem && (
-                        <button type="button" onClick={(e) => { e.stopPropagation(); onDeleteItem(item.plan_id, item.item_id, item.execution_task_id); }}
+                      {onCancelExecution && (
+                        <button type="button" onClick={(e) => { e.stopPropagation(); onCancelExecution(item.item_id); }}
                           style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, border: '1px solid var(--border-subtle)',
                             background: 'transparent', color: '#d29922', cursor: 'pointer' }}>
                           取消执行
@@ -2405,6 +2479,46 @@ function ResultModal({ item, taskData, timelineData, loading, onClose }: {
               )}
             </div>
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  RerunConfirmModal — 重新执行确认弹窗
+// ═══════════════════════════════════════════════════════════════════
+
+function RerunConfirmModal({ item, onConfirm, onClose }: {
+  item: PlanItemSummary;
+  onConfirm: () => void;
+  onClose: () => void;
+}) {
+  const isAuto = item.ref_type === 'auto';
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'var(--overlay-bg)', backdropFilter: 'blur(2px)', zIndex: 2100, display: 'flex', justifyContent: 'center', alignItems: 'center' }}
+      onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{
+        background: 'var(--surface-primary)', borderRadius: 12, width: 440, maxWidth: '90vw',
+        padding: 0, boxShadow: '0 25px 80px rgba(0,0,0,0.3)', border: '1px solid var(--border-default)',
+      }}>
+        <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border-subtle)' }}>
+          <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>确认重新执行</div>
+          <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+            确定要重新执行用例 <strong>{item.case_title}</strong> 吗？
+          </div>
+        </div>
+        <div style={{ padding: '12px 20px', fontSize: 12, color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
+          {isAuto ? (
+            <span>将基于原执行任务快照创建新任务，关联的旧任务不会被删除。新任务将自动下发执行。</span>
+          ) : (
+            <span>将重置为"待执行"状态，旧结果将被清除。您可以重新提交执行结果。</span>
+          )}
+        </div>
+        <div style={{ padding: '12px 20px', display: 'flex', justifyContent: 'flex-end', gap: 8, borderTop: '1px solid var(--border-subtle)' }}>
+          <button className="btn btn--ghost btn--sm" onClick={onClose} style={{ fontSize: 12 }}>取消</button>
+          <button className="btn btn--primary btn--sm" onClick={onConfirm} style={{ fontSize: 12, background: '#f85149', borderColor: '#f85149' }}>确认执行</button>
         </div>
       </div>
     </div>

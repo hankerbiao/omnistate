@@ -1057,6 +1057,13 @@ export interface PlanItemDispatchRequest {
   config?: Record<string, unknown>;
 }
 
+export interface PlanItemRerunRequest {
+  agent_id?: string;
+  project_tag?: string;
+  pytest_options?: Record<string, unknown>;
+  timeout?: number;
+}
+
 export interface BatchDispatchPlanItemsRequest {
   item_ids: string[];
   agent_id?: string;
