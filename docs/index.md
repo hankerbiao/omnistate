@@ -11,7 +11,7 @@ hero:
       link: /guide/getting-started
     - theme: alt
       text: Architecture
-      link: /architecture
+      link: /architecture/overview
 
 features:
   - title: Workflow
@@ -40,8 +40,7 @@ python -m app.main
 ## Reading Guide
 
 - [开始使用](/guide/getting-started)
-- [后端架构说明](/architecture)
+- [后端架构说明](/architecture/overview)
 - [认证与授权](/guide/authentication)
-- [WebSocket 远程终端](/guide/websocket-terminal)
 - [需求与用例管理](/guide/test-requirements-cases)
 - [执行编排](/guide/test-execution)

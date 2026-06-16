@@ -1,5 +1,9 @@
 # 全局配置系统设计文档
 
+> **注意**: 本文档为早期设计稿，包含 SQL schema 描述。实际实现使用 MongoDB + Beanie ODM，
+> 文档模型见 `app/modules/system_config/repository/models/__init__.py`。
+> 设计思路已落地，具体实现以代码为准。
+
 ## 1. 系统概述
 
 ### 1.1 目标

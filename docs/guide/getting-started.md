@@ -45,10 +45,6 @@ python scripts/init/init_rbac.py
 
 该脚本会初始化默认权限和默认角色。
 
-注意：
-
-- 当前脚本中的默认角色包含对 `assets:read` 的引用，但仓库中没有对应后端模块实现；这不影响已实现模块的启动和使用，但说明 RBAC 默认数据仍有待进一步清理。
-
 ### 4.3 创建管理员用户
 
 `scripts/init/create_user.py` 不是无参脚本，必须带参数执行。
@@ -144,8 +140,7 @@ curl http://localhost:8000/health
 
 ## 9. 下一步
 
-- 阅读 [后端架构说明](/architecture)
+- 阅读 [后端架构说明](/architecture/overview)
 - 阅读 [认证与授权](/guide/authentication)
-- 阅读 [WebSocket 远程终端](/guide/websocket-terminal)
 - 阅读 [需求与用例管理](/guide/test-requirements-cases)
 - 阅读 [执行编排](/guide/test-execution)

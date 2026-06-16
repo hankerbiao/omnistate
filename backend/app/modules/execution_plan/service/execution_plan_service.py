@@ -246,9 +246,12 @@ class ExecutionPlanService(BaseService):
         for doc in docs:
             try:
                 await self._sync_auto_item_status(doc)
+            except Exception as exc:
+                logger.warning(f"[items] 同步条目状态失败 {doc.item_id}: {exc}")
+            try:
                 results.append(await self._item_to_response(doc, _plan_title=plan_map.get(doc.plan_id, "")))
             except Exception as exc:
-                logger.warning(f"跳过异常计划条目 {doc.item_id}: {exc}")
+                logger.warning(f"[items] 序列化条目失败 {doc.item_id}: {exc}")
                 continue
         return results
 
@@ -384,20 +387,30 @@ class ExecutionPlanService(BaseService):
         for doc in docs:
             try:
                 await self._sync_auto_item_status(doc)
+            except Exception as exc:
+                logger.warning(f"[items] 同步条目状态失败 {doc.item_id}: {exc}")
+            try:
                 results.append(await self._item_to_response(doc, _plan_title=plan_map.get(doc.plan_id, "")))
             except Exception as exc:
-                logger.warning(f"跳过异常计划条目 {doc.item_id}: {exc}")
+                logger.warning(f"[items] 序列化条目失败 {doc.item_id}: {exc}")
                 continue
         return results
 
     async def archive_item(self, item_id: str, actor_id: str) -> None:
         item = await self._get_item_by_id_or_raise(item_id)
+        # 仅允许条目执行人或管理员归档
+        if item.assignee_id and item.assignee_id != actor_id:
+            if not await self._is_admin_user(actor_id):
+                raise ValueError("只能归档分配给自己的条目")
         item.archived_at = datetime.now(timezone.utc)
         await item.save()
         await self._recalculate_plan_progress(item.plan_id)
 
-    async def unarchive_item(self, item_id: str) -> None:
+    async def unarchive_item(self, item_id: str, actor_id: str) -> None:
         item = await self._get_item_by_id_or_raise(item_id)
+        if item.assignee_id and item.assignee_id != actor_id:
+            if not await self._is_admin_user(actor_id):
+                raise ValueError("只能取消归档分配给自己的条目")
         item.archived_at = None
         await item.save()
         await self._recalculate_plan_progress(item.plan_id)
@@ -732,6 +745,7 @@ class ExecutionPlanService(BaseService):
         items = await ExecutionPlanItemDoc.find(
             ExecutionPlanItemDoc.plan_id == plan_id,
             ExecutionPlanItemDoc.is_deleted == False,
+            ExecutionPlanItemDoc.archived_at == None,
         ).to_list()
         item_count = len(items)
         done_count = sum(1 for item in items if item.status == PlanItemStatus.DONE.value)
@@ -813,6 +827,18 @@ class ExecutionPlanService(BaseService):
         if not doc:
             raise ItemNotFoundError(item_id)
         return doc
+
+    @staticmethod
+    async def _is_admin_user(user_id: str) -> bool:
+        """判断用户是否拥有 ADMIN 角色。"""
+        from app.modules.auth.repository.models import UserDoc
+        user = await UserDoc.find_one(UserDoc.user_id == user_id)
+        if not user:
+            return False
+        return any(
+            rid.strip().upper().replace("ROLE_", "") == "ADMIN"
+            for rid in (user.role_ids or [])
+        )
 
     @staticmethod
     async def _batch_load_plan_titles(plan_ids: set[str]) -> Dict[str, str]:

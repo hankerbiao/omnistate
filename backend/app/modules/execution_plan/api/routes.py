@@ -519,7 +519,8 @@ async def unarchive_item(
 ):
     """将计划条目从收纳箱移回待处理。"""
     try:
-        await service.unarchive_item(item_id=item_id)
+        actor_id = _get_user_id(current_user)
+        await service.unarchive_item(item_id=item_id, actor_id=actor_id)
         return APIResponse(data={"item_id": item_id, "archived": False})
     except Exception as exc:
         handle_service_error(exc)

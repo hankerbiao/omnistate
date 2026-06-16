@@ -53,7 +53,6 @@ dmlv4/
 说明：
 
 - `backend/app/modules/assets` 当前不存在，不应作为已交付模块写入公开架构文档。
-- `backend/app/shared/api/main.py` 目前仍引用了 `assets_router`，但该实现不在当前仓库中；本文档不将其视为可用后端能力。
 
 ## 4. 分层约束
 

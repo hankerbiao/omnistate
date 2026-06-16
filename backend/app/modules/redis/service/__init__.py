@@ -161,13 +161,10 @@ def _heartbeat_loop() -> None:
         try:
             import app.modules.redis.service as svc
             cfg = get_settings()
-            host = _get_local_ip()
-            port = cfg.app.port
             service_name = cfg.app.service_name
-            instance_id = f"{service_name}@{host}:{port}"
             ttl_sec = 600  # 10 分钟
 
-            svc.redis_conn.expire(f"{SERVICE_REGISTRY_KEY}:{instance_id}", ttl_sec)
+            svc.redis_conn.expire(f"{SERVICE_REGISTRY_KEY}:{service_name}", ttl_sec)
         except Exception:
             pass  # 心跳失败下次重试
 
@@ -213,9 +210,9 @@ def register_service() -> None:
         return
 
     cfg = get_settings()
+    service_name = cfg.app.service_name
     host = _get_local_ip()
     port = cfg.app.port
-    service_name = cfg.app.service_name
     instance_id = f"{service_name}@{host}:{port}"
     ttl_sec = 600  # 10 分钟过期，由定时心跳续期
 
@@ -229,11 +226,11 @@ def register_service() -> None:
 
     try:
         redis_conn.setex(
-            f"{SERVICE_REGISTRY_KEY}:{instance_id}",
+            f"{SERVICE_REGISTRY_KEY}:{service_name}",
             ttl_sec,
             json.dumps(info),
         )
-        logger.success(f"服务实例已注册到 Redis: {instance_id}")
+        logger.success(f"服务实例已注册到 Redis: {service_name}")
     except Exception as exc:
         logger.warning(f"服务注册到 Redis 失败: {exc}")
 
@@ -244,13 +241,10 @@ def unregister_service() -> None:
         return
 
     cfg = get_settings()
-    host = _get_local_ip()
-    port = cfg.app.port
     service_name = cfg.app.service_name
-    instance_id = f"{service_name}@{host}:{port}"
 
     try:
-        redis_conn.delete(f"{SERVICE_REGISTRY_KEY}:{instance_id}")
-        logger.info(f"服务实例已从 Redis 注销: {instance_id}")
+        redis_conn.delete(f"{SERVICE_REGISTRY_KEY}:{service_name}")
+        logger.info(f"服务实例已从 Redis 注销: {service_name}")
     except Exception as exc:
         logger.warning(f"服务从 Redis 注销失败: {exc}")
