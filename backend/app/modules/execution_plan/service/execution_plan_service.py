@@ -195,6 +195,34 @@ class ExecutionPlanService(BaseService):
         await item.save()
         await self._recalculate_plan_progress(plan_id)
         logger.debug(f"[ITEM] update_item plan={plan_id} item={item_id} updates={updates}")
+        # 如果 assignee_id 有变更，记录审计日志
+        if "assignee_id" in updates:
+            await self._log_assignee_change(
+                item=item, action="REASSIGN", operator_id="",
+                old_value=data.get("_old_assignee_id"),
+                new_value=updates["assignee_id"],
+            )
+        return await self._item_to_response(item)
+
+    async def reassign_item(
+        self,
+        item_id: str,
+        assignee_id: str,
+        operator_id: str,
+        remark: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """改派计划条目执行人，并记录审计日志。"""
+        item = await self._get_item_by_id_or_raise(item_id)
+        old = item.assignee_id
+        if old == assignee_id:
+            return await self._item_to_response(item)
+        item.assignee_id = assignee_id
+        await item.save()
+        await self._log_assignee_change(
+            item=item, action="REASSIGN", operator_id=operator_id,
+            old_value=old, new_value=assignee_id, remark=remark,
+        )
+        logger.info(f"[REASSIGN] item={item_id} {old} -> {assignee_id} by {operator_id}")
         return await self._item_to_response(item)
 
     async def batch_update_assignee(
@@ -758,6 +786,27 @@ class ExecutionPlanService(BaseService):
         if item_count > 0 and completed_count == item_count and plan_doc.status == "active":
             plan_doc.status = "done"
         await plan_doc.save()
+
+    @staticmethod
+    async def _log_assignee_change(
+        item: ExecutionPlanItemDoc,
+        action: str,
+        operator_id: str,
+        old_value: Optional[str] = None,
+        new_value: Optional[str] = None,
+        remark: Optional[str] = None,
+    ) -> None:
+        """记录执行人变更审计日志。"""
+        from app.modules.execution_plan.repository.models import ExecutionPlanChangeLogDoc
+        await ExecutionPlanChangeLogDoc(
+            item_id=item.item_id,
+            plan_id=item.plan_id,
+            action=action,
+            operator_id=operator_id,
+            old_value=old_value,
+            new_value=new_value,
+            remark=remark,
+        ).insert()
 
     async def _resolve_case_snapshot(self, ref_type: str, case_id: str) -> Dict[str, Any]:
         if ref_type == "manual":

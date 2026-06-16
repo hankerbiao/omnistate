@@ -32,7 +32,10 @@ from app.modules.test_specs.service._service_support import (
     load_workflow_states_for_entities,
     workflow_aware_soft_delete,
 )
-from app.modules.test_specs.service._workflow_status_support import enrich_projected_status
+from app.modules.test_specs.service._workflow_status_support import (
+    DEFAULT_PROJECTED_STATUS,
+    enrich_projected_status,
+)
 from app.modules.test_specs.service.catalog_service import CatalogService
 from app.modules.workflow.application import WorkflowItemGateway
 from app.modules.workflow.repository.models.enums import WorkItemState
@@ -234,7 +237,7 @@ class TestCaseService(BaseService):
                 doc for doc in docs
                 if (
                     workflow_states.get(doc.case_id) == status
-                    or (doc.case_id not in workflow_states and status == "未开始")
+                    or (doc.case_id not in workflow_states and status == DEFAULT_PROJECTED_STATUS)
                 )
             ]
             docs = filtered_docs[offset:offset + limit]
@@ -373,7 +376,7 @@ class TestCaseService(BaseService):
                 {"is_deleted": False},
             )
             if old_auto:
-                old_auto.linked_manual_case_id = ""
+                old_auto.linked_manual_case_id = None
                 await old_auto.save()
 
         # 建立双向关联
@@ -588,7 +591,7 @@ class TestCaseService(BaseService):
         if not auto_doc:
             raise KeyError("no linked automation test case found")
 
-        auto_doc.linked_manual_case_id = ""
+        auto_doc.linked_manual_case_id = None
         case_doc.linked_auto_case_id = None
         await auto_doc.save()
         await case_doc.save()

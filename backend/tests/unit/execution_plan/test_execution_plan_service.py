@@ -564,7 +564,7 @@ class TestArchiveItem:
             archived_at=datetime.now(timezone.utc),
         )
         item.save()
-        await service.unarchive_item(item_id="EPI-UNARCHIVE")
+        await service.unarchive_item(item_id="EPI-UNARCHIVE", actor_id="actor1")
         updated = _FakeItemDoc.store["EPI-UNARCHIVE"]
         assert updated.archived_at is None
 

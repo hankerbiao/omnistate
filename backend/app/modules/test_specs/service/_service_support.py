@@ -132,6 +132,9 @@ async def create_with_workflow_transaction(
             if existing:
                 raise ValueError(duplicate_error_message)
 
+            # 先验证 payload 合法性，再创建 workflow item，避免 orphan
+            doc = doc_cls(**payload)
+
             workflow_item = await workflow_gateway.create_work_item(
                 **workflow_item_factory(payload),
                 session=session,
@@ -148,7 +151,6 @@ async def create_with_workflow_transaction(
                             setattr(work_item_doc, doc_field, payload[payload_key])
                     await work_item_doc.save(session=session)
 
-            doc = doc_cls(**payload)
             await doc.insert(session=session)
 
             result = enrich_result(doc)

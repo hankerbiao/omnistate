@@ -58,7 +58,7 @@ class AutomationTestCaseDoc(Document):
     __test__ = False
 
     auto_case_id: str = Field(..., description="平台自动化用例业务 ID")
-    linked_manual_case_id: str = Field(default="", description="关联的平台手工测试用例 ID（空字符串=未关联）")
+    linked_manual_case_id: Optional[str] = Field(default=None, description="关联的平台手工测试用例 ID（null=未关联）")
     name: str = Field(..., description="自动化用例名称")
     description: Optional[str] = Field(None, description="自动化用例描述")
     status: str = Field(default="ACTIVE", description="状态（ACTIVE/DEPRECATED）")

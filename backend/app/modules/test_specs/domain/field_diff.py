@@ -33,7 +33,6 @@ TRACKED_FIELDS = frozenset({
     "deprecation_reason",
     "steps",
     "cleanup_steps",
-    "is_deleted",
 })
 
 IGNORED_DERIVED_FIELDS = frozenset({
@@ -41,6 +40,7 @@ IGNORED_DERIVED_FIELDS = frozenset({
     "id",
     "workflow_item_id",
     "status",
+    "is_deleted",
     "created_at",
     "updated_at",
     "lab_name",

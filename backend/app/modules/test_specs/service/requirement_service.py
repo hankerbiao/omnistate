@@ -23,6 +23,7 @@ from app.modules.test_specs.service._service_support import (
     workflow_aware_soft_delete,
 )
 from app.modules.test_specs.service._workflow_status_support import (
+    DEFAULT_PROJECTED_STATUS,
     enrich_projected_status,
     get_workflow_details,
 )
@@ -197,7 +198,7 @@ class RequirementService(BaseService):
             filtered_docs = [
                 doc for doc in docs
                 if workflow_details.get(doc.req_id, {}).get("status") == status
-                or (doc.req_id not in workflow_details and status == "未开始")
+                or (doc.req_id not in workflow_details and status == DEFAULT_PROJECTED_STATUS)
             ]
             docs = filtered_docs[offset:offset + limit]
         else:

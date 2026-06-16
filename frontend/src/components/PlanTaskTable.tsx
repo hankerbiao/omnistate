@@ -17,6 +17,8 @@ interface PlanTaskTableProps {
   onOpenDispatchModal: (task: PlanTask) => void;
   /** 打开批量下发弹窗 */
   onBatchDispatch: () => void;
+  /** 打开改派弹窗 */
+  onReassign?: (task: PlanTask) => void;
 }
 
 /**
@@ -31,6 +33,7 @@ const PlanTaskTable: React.FC<PlanTaskTableProps> = ({
   onOpenResultModal,
   onOpenDispatchModal,
   onBatchDispatch,
+  onReassign,
 }) => {
   const handleRowClick = useCallback((task: PlanTask) => {
     if (task.type === 'manual') {
@@ -165,6 +168,18 @@ const PlanTaskTable: React.FC<PlanTaskTableProps> = ({
                           }}
                         >
                           回填
+                        </button>
+                      )}
+                      {onReassign && (
+                        <button
+                          onClick={() => onReassign(task)}
+                          style={{
+                            padding: '2px 6px', fontSize: 9, border: '1px solid var(--border-subtle)',
+                            borderRadius: 3, cursor: 'pointer', marginLeft: 4,
+                            background: 'var(--surface-secondary)', color: 'var(--text-secondary)',
+                          }}
+                        >
+                          改派
                         </button>
                       )}
                     </div>

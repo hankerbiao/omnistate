@@ -79,6 +79,8 @@ const AgentList: React.FC<AgentListProps> = () => {
 
   useEffect(() => {
     fetchAgents();
+    const interval = setInterval(fetchAgents, 15000); // 每 15 秒刷新
+    return () => clearInterval(interval);
   }, [fetchAgents]);
 
   const onlineCount = agents.filter(a => a.is_online).length;

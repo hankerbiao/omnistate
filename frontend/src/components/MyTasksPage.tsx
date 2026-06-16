@@ -14,6 +14,9 @@ import PageToolbar, { StatPill } from './ui/PageToolbar';
 import PlanTaskTable from './PlanTaskTable';
 import ResultBackfillModal from './ResultBackfillModal';
 import SingleDispatchModal from './SingleDispatchModal';
+import ReassignModal from './ReassignModal';
+import ExecRecordsModal from './ExecRecordsModal';
+import ExecResultModal from './ExecResultModal';
 import { transformApiItem, groupBadgeStyle, myTasksStyles, type PlanTask, type PlanTaskResult } from './myTasksTypes';
 import CreateTestCaseForm from './CreateTestCaseForm';
 
@@ -39,10 +42,14 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
   }>({ open: false, itemId: '', caseId: '', caseTitle: '' });
 
   // Batch dispatch modal state
-  // 自动化执行记录 — 是否展示
-  const [showExecRecords, setShowExecRecords] = useState(false);
-  // 自动化执行记录 — 展开的任务详情
-  const [expandedExecTaskId, setExpandedExecTaskId] = useState<string | null>(null);
+  // 自动化执行记录 — 弹窗
+  const [execRecordsOpen, setExecRecordsOpen] = useState(false);
+
+  // ── 改派弹窗 ──
+  const [reassignTask, setReassignTask] = useState<PlanTask | null>(null);
+  const [reassignUserId, setReassignUserId] = useState('');
+  const [users, setUsers] = useState<Array<{ user_id: string; username: string }>>([]);
+  const [usersLoading, setUsersLoading] = useState(false);
 
   // Edit test case modal state (for testcase_dev items in DEVELOPING state)
   const [editingTestCase, setEditingTestCase] = useState<TestCaseResponse | null>(null);
@@ -225,6 +232,56 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
     setResultModalTask(task);
   }, []);
 
+  // ── 改派 ──
+  const handleOpenReassign = useCallback(async (task: PlanTask) => {
+    setReassignTask(task);
+    setReassignUserId('');
+    setUsersLoading(true);
+    try {
+      const res = await api.listUsers({ limit: 200 });
+      setUsers((res.data || []).map((u: any) => ({ user_id: u.user_id, username: u.username })));
+    } catch {
+      setUsers([]);
+    } finally {
+      setUsersLoading(false);
+    }
+  }, []);
+
+  const handleConfirmReassign = useCallback(async () => {
+    if (!reassignTask || !reassignUserId) return;
+    try {
+      await api.reassignPlanItem(reassignTask.id, reassignUserId);
+      queryClient.invalidateQueries({ queryKey: queryKeys.planItems.my(userId) });
+      setReassignTask(null);
+    } catch {
+      // ignore
+    }
+  }, [reassignTask, reassignUserId, queryClient, userId]);
+
+  // ── 自动化执行记录 — 结果弹窗 ──
+  const [execResultTaskId, setExecResultTaskId] = useState<string | null>(null);
+  const [execResultData, setExecResultData] = useState<any>(null);
+  const [execResultLoading, setExecResultLoading] = useState(false);
+
+  const handleOpenExecResult = useCallback(async (taskId: string) => {
+    setExecResultTaskId(taskId);
+    setExecResultLoading(true);
+    setExecResultData(null);
+    try {
+      const res = await api.getTaskStatus(taskId);
+      setExecResultData(res.data);
+    } catch {
+      setExecResultData({ error: true });
+    } finally {
+      setExecResultLoading(false);
+    }
+  }, []);
+
+  const handleCloseExecResult = useCallback(() => {
+    setExecResultTaskId(null);
+    setExecResultData(null);
+  }, []);
+
   const handleCloseResultModal = useCallback(() => {
     setResultModalTask(null);
   }, []);
@@ -299,24 +356,6 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
     }
   }, []);
 
-  // ── 自动化执行记录 ──
-
-  const EXEC_STATUS_STYLE: Record<string, { bg: string; color: string; label: string }> = {
-    QUEUED: { bg: 'rgba(210,153,34,0.12)', color: '#d29922', label: '排队中' },
-    RUNNING: { bg: 'rgba(63,185,80,0.12)', color: '#3fb950', label: '执行中' },
-    PASSED: { bg: 'rgba(63,185,80,0.12)', color: '#3fb950', label: '通过' },
-    FAILED: { bg: 'rgba(248,81,73,0.12)', color: '#f85149', label: '失败' },
-    SKIPPED: { bg: 'rgba(139,148,158,0.12)', color: '#8b949e', label: '跳过' },
-    CANCELLED: { bg: 'rgba(139,148,158,0.12)', color: '#8b949e', label: '已取消' },
-  };
-
-  const getExecStatusStyle = (status: string) =>
-    EXEC_STATUS_STYLE[status] || { bg: 'rgba(139,148,158,0.12)', color: '#8b949e', label: status };
-
-  const toggleExecTaskExpand = useCallback((taskId: string) => {
-    setExpandedExecTaskId(prev => prev === taskId ? null : taskId);
-  }, []);
-
   // ── Pending count for stats ──
   const pendingCount = useMemo(() => {
     const workflowPending = workItems.filter(
@@ -343,10 +382,10 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
           <>
             <button
               type="button"
-              className={`btn btn--sm ${showExecRecords ? 'btn--primary' : 'btn--secondary'}`}
-              onClick={() => setShowExecRecords(v => !v)}
+              className={`btn btn--sm ${execRecordsOpen ? 'btn--primary' : 'btn--secondary'}`}
+              onClick={() => setExecRecordsOpen(v => !v)}
             >
-              {showExecRecords ? '隐藏' : '显示'}自动化执行记录
+              自动化执行记录
             </button>
             <button type="button" className="btn btn--secondary btn--sm" onClick={handleRefreshAll} disabled={workItemsLoading || planItemsLoading}>
               刷新
@@ -397,102 +436,17 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
               onOpenResultModal={handleOpenResultModal}
               onOpenDispatchModal={handleOpenDispatchModal}
               onBatchDispatch={() => {}}
+              onReassign={handleOpenReassign}
             />
           )}
 
-          {/* ── 自动化执行记录 ── */}
-          {showExecRecords && execTasks.length > 0 && (
-            <div style={myTasksStyles.group}>
-              <div style={myTasksStyles.groupHeader}>
-                <span style={groupBadgeStyle({ bg: 'rgba(57,208,214,0.1)', color: '#39d0d6' })}>
-                  自动化执行记录
-                </span>
-                <span style={myTasksStyles.groupCount}>{execTasks.length} 项</span>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                {execTasks.map(task => {
-                  const statusMeta = getExecStatusStyle(task.overall_status);
-                  const isExpanded = expandedExecTaskId === task.task_id;
-                  return (
-                    <div key={task.task_id}>
-                      <div onClick={() => toggleExecTaskExpand(task.task_id)}
-                        style={{
-                          display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px',
-                          borderBottom: '0.5px solid var(--border-subtle)',
-                          cursor: 'pointer', fontSize: 13, transition: 'background 0.1s',
-                          background: isExpanded
-                            ? 'color-mix(in srgb, var(--accent-primary) 4%, transparent)'
-                            : undefined,
-                        }}
-                      >
-                        <span style={{
-                          fontSize: 9, color: isExpanded ? 'var(--accent-primary)' : 'var(--text-tertiary)',
-                          transition: 'transform 0.15s', transform: isExpanded ? 'rotate(90deg)' : 'none',
-                          flexShrink: 0,
-                        }}>▶</span>
-                        <span style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--text-tertiary)', flexShrink: 0 }}>
-                          {task.task_id}
-                        </span>
-                        <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 500 }}>
-                          {task.cases?.map(c => c.title).filter(Boolean).join(', ') || task.task_id}
-                        </span>
-                        <span style={{
-                          fontSize: 10, padding: '2px 8px', borderRadius: 4,
-                          background: statusMeta.bg, color: statusMeta.color, fontWeight: 600, flexShrink: 0,
-                        }}>
-                          {statusMeta.label}
-                        </span>
-                        <span style={{ fontSize: 10, color: 'var(--text-tertiary)', flexShrink: 0 }}>
-                          {task.created_at ? new Date(task.created_at).toLocaleString('zh-CN', {
-                            month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
-                          }) : '-'}
-                        </span>
-                      </div>
-                      {isExpanded && (
-                        <div style={{
-                          padding: '10px 12px 12px 28px', borderBottom: '0.5px solid var(--border-subtle)',
-                          background: 'var(--bg-primary)', fontSize: 12, color: 'var(--text-secondary)',
-                        }}>
-                          {task.cases && task.cases.length > 0 ? (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                              {task.cases.map((c, i) => {
-                                const caseStatus = getExecStatusStyle(c.status);
-                                return (
-                                  <div key={c.case_id || i} style={{
-                                    display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px',
-                                    background: 'var(--surface-secondary)', borderRadius: 6,
-                                  }}>
-                                    <span style={{ fontFamily: 'monospace', fontSize: 10, color: 'var(--text-tertiary)' }}>
-                                      {c.auto_case_id || c.case_id}
-                                    </span>
-                                    <span style={{ flex: 1 }}>{c.title || '-'}</span>
-                                    <span style={{
-                                      fontSize: 10, padding: '1px 6px', borderRadius: 3,
-                                      background: caseStatus.bg, color: caseStatus.color, fontWeight: 600,
-                                    }}>
-                                      {caseStatus.label}
-                                    </span>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          ) : (
-                            <div style={{ color: 'var(--text-tertiary)', fontStyle: 'italic' }}>无用例明细</div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* ── 自动化执行记录空状态 ── */}
-          {showExecRecords && execTasks.length === 0 && !execTasksLoading && (
-            <div className="empty-state" style={{ padding: '24px 0' }}>
-              <p className="empty-state__text">暂无自动化执行记录</p>
-            </div>
+          {/* ── 自动化执行记录弹窗 ── */}
+          {execRecordsOpen && (
+            <ExecRecordsModal
+              tasks={execTasks}
+              onViewResult={handleOpenExecResult}
+              onClose={() => setExecRecordsOpen(false)}
+            />
           )}
 
           {/* ── Workflow items by category ── */}
@@ -724,6 +678,30 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
         onClose={handleCloseResultModal}
         onSubmit={handleSubmitResult}
       />
+
+      {/* ── 改派弹窗 ── */}
+      {reassignTask && (
+        <ReassignModal
+          task={reassignTask}
+          users={users}
+          loading={usersLoading}
+          currentUserId={userId}
+          selectedUserId={reassignUserId}
+          onSelectUser={setReassignUserId}
+          onConfirm={handleConfirmReassign}
+          onClose={() => setReassignTask(null)}
+        />
+      )}
+
+      {/* ── 自动化执行结果弹窗 ── */}
+      {execResultTaskId && (
+        <ExecResultModal
+          taskId={execResultTaskId}
+          loading={execResultLoading}
+          data={execResultData}
+          onClose={handleCloseExecResult}
+        />
+      )}
 
       {/* ════════════════════════════════════════════════════════ */}
       {/*  Single Dispatch Modal                                 */}

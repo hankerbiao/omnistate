@@ -472,6 +472,14 @@ class ApiClient {
     });
   }
 
+  /** 改派计划条目执行人 */
+  async reassignPlanItem(itemId: string, assigneeId: string, remark?: string): Promise<ApiResponse<Record<string, unknown>>> {
+    return this.request<Record<string, unknown>>(`/execution-plans/items/${encodeURIComponent(itemId)}/reassign`, {
+      method: 'POST',
+      body: JSON.stringify({ assignee_id: assigneeId, remark }),
+    });
+  }
+
   // Role and Permission APIs
   async listRoles(): Promise<ApiResponse<RoleResponse[]>> {
     return this.request<RoleResponse[]>('/auth/roles', {

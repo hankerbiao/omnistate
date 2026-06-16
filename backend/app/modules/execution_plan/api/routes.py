@@ -17,12 +17,13 @@ from app.modules.execution_plan.schemas.execution_plan import (
     CreatePlanRequest,
     PlanItemDispatchRequest,
     PlanItemRerunRequest,
+    ReassignRequest,
     SubmitManualResultRequest,
     UpdatePlanItemRequest,
     UpdatePlanRequest,
 )
 from app.shared.api.schemas.base import APIResponse
-from app.shared.auth import get_current_user
+from app.shared.auth import get_current_user, require_permission
 
 router = APIRouter(prefix="/execution-plans", tags=["ExecutionPlan"])
 
@@ -296,6 +297,32 @@ async def batch_dispatch_items(
             sequence_service=sequence_service,
         )
         return APIResponse(data=results)
+    except Exception as exc:
+        handle_service_error(exc)
+
+
+@router.post(
+    "/items/{item_id}/reassign",
+    response_model=APIResponse[Dict[str, Any]],
+    summary="改派计划条目执行人",
+    dependencies=[Depends(require_permission("execution_plans:write"))],
+)
+async def reassign_plan_item(
+    item_id: str,
+    request: ReassignRequest,
+    service: ExecutionPlanServiceDep,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """改派计划条目到其他执行人，操作会记录审计日志。"""
+    try:
+        actor_id = _get_user_id(current_user)
+        result = await service.reassign_item(
+            item_id=item_id,
+            assignee_id=request.assignee_id,
+            operator_id=actor_id,
+            remark=request.remark,
+        )
+        return APIResponse(data=result)
     except Exception as exc:
         handle_service_error(exc)
 

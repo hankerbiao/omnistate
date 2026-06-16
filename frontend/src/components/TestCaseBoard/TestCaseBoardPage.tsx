@@ -142,9 +142,9 @@ export default function TestCaseBoardPage() {
     setDeleting(true);
     try {
       if (deleteTarget.type === 'manual') {
-        await api.deleteTestCase(deleteTarget.id);
+        await api.deleteTestCase(deleteTarget.caseId);
       } else {
-        await api.deleteAutomationTestCase(deleteTarget.id);
+        await api.deleteAutomationTestCase(deleteTarget.caseId);
       }
       setDeleteTarget(null);
       await fetchAll();

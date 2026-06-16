@@ -137,3 +137,12 @@ class BatchUpdateAssigneeRequest(BaseModel):
     assignee_id: Optional[str] = Field(None, description="执行人user_id，null表示取消指派")
 
     model_config = ConfigDict(extra="forbid")
+
+
+class ReassignRequest(BaseModel):
+    """改派计划条目执行人请求。"""
+
+    assignee_id: str = Field(..., description="新执行人 user_id")
+    remark: Optional[str] = Field(None, description="改派备注")
+
+    model_config = ConfigDict(extra="forbid")

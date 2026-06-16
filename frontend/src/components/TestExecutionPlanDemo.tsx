@@ -124,17 +124,50 @@ export default function TestExecutionPlanDemo() {
   const [overviewLoading, setOverviewLoading] = useState(false);
 
   // ── Test cases & collections (from real API) ──
-  const [testCases, setTestCases] = useState<Record<string, { case_id: string; title: string; type: string; priority: string }>>({});
+  const [testCases, setTestCases] = useState<Record<string, { case_id: string; title: string; type: string; priority: string; created_at: string }>>({});
   const [collections, setCollections] = useState<{ collection_id: string; name: string; description?: string | null; case_count: number }[]>([]);
+  const [casesLoading, setCasesLoading] = useState(false);
 
-  // Build caseMap from real test cases
+  // Load test cases lazily when creating/editing a plan
+  const loadCases = useCallback(async () => {
+    if (Object.keys(testCases).length > 0 || casesLoading) return;
+    setCasesLoading(true);
+    try {
+      const [manualRes, autoRes] = await Promise.all([
+        api.listTestCases({ limit: 200 }),
+        api.listAutomationTestCases({ limit: 200 }),
+      ]);
+      const map: Record<string, { case_id: string; title: string; type: string; priority: string; created_at: string }> = {};
+      for (const tc of (manualRes.data || [])) {
+        map[tc.case_id] = {
+          case_id: tc.case_id, title: tc.title, type: 'manual',
+          priority: tc.priority || 'P3', created_at: tc.created_at || '',
+        };
+      }
+      for (const atc of (autoRes.data || [])) {
+        map[atc.auto_case_id] = {
+          case_id: atc.auto_case_id, title: atc.name, type: 'auto',
+          priority: 'P3', created_at: atc.created_at || '',
+        };
+      }
+      setTestCases(map);
+    } catch {
+      setTestCases({});
+    } finally {
+      setCasesLoading(false);
+    }
+  }, [testCases, casesLoading]);
+
+  // Build caseMap from real test cases, sorted by created_at desc
   const caseMap = useMemo(() => new Map(
-    Object.values(testCases).map(tc => [tc.case_id, {
-      id: tc.case_id,
-      title: tc.title,
-      type: (tc.type === 'auto' ? 'auto' : 'manual') as 'auto' | 'manual',
-      priority: tc.priority,
-    }]),
+    Object.values(testCases)
+      .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
+      .map(tc => [tc.case_id, {
+        id: tc.case_id,
+        title: tc.title,
+        type: (tc.type === 'auto' ? 'auto' : 'manual') as 'auto' | 'manual',
+        priority: tc.priority,
+      }]),
   ), [testCases]);
 
   // ── Wizard ──
@@ -194,7 +227,7 @@ export default function TestExecutionPlanDemo() {
     if (showOverview) fetchOverview();
   }, [showOverview, fetchOverview]);
 
-  // ── Fetch users, test cases, and collections ──
+  // ── Fetch users and collections on mount ──
   useEffect(() => {
     api.listUsers({ limit: 200 })
       .then(res => setUsers(res.data || []))
@@ -204,22 +237,6 @@ export default function TestExecutionPlanDemo() {
           if (u.data) setUsers([u.data]);
         }).catch(() => setUsers([]));
       });
-
-    const manualPromise = api.listTestCases({ limit: 200 });
-    const autoPromise = api.listAutomationTestCases({ limit: 200 });
-
-    Promise.all([manualPromise, autoPromise])
-      .then(([manualRes, autoRes]) => {
-        const map: Record<string, { case_id: string; title: string; type: string; priority: string }> = {};
-        for (const tc of (manualRes.data || [])) {
-          map[tc.case_id] = { case_id: tc.case_id, title: tc.title, type: 'manual', priority: tc.priority || 'P3' };
-        }
-        for (const atc of (autoRes.data || [])) {
-          map[atc.auto_case_id] = { case_id: atc.auto_case_id, title: atc.name, type: 'auto', priority: 'P3' };
-        }
-        setTestCases(map);
-      })
-      .catch(() => setTestCases({}));
 
     api.listCollections()
       .then(res => setCollections(res.data || []))
@@ -628,7 +645,7 @@ export default function TestExecutionPlanDemo() {
             归档记录{archivedItems.length > 0 ? ` (${archivedItems.length})` : ''}
           </button>
           <button className="btn btn--primary btn--sm"
-            onClick={() => { resetWizard(); setShowWizard(true); }}
+            onClick={() => { resetWizard(); setShowWizard(true); loadCases(); }}
             style={{ padding: '6px 16px', fontSize: 13 }}>
             + 新建计划
           </button>
@@ -739,7 +756,7 @@ export default function TestExecutionPlanDemo() {
               onSaveEditing={saveEditing}
               onRemoveItem={removeEditingItem}
               saving={saving}
-              onShowAddCases={() => setShowAddCases(true)}
+              onShowAddCases={() => { setShowAddCases(true); loadCases(); }}
               users={users}
               onViewResult={handleViewResult}
               onRerunItem={handleRerunItem}
@@ -784,6 +801,7 @@ export default function TestExecutionPlanDemo() {
           users={users}
           collections={collections}
           caseMap={caseMap}
+          casesLoading={casesLoading}
         />
       )}
       <ArchivedModal
@@ -1665,16 +1683,25 @@ function AddCasesModal({ editingItems, selectedAddCaseIds, onToggle, onClose, on
 //  CreatePlanWizard — 新建计划向导
 // ═══════════════════════════════════════════════════════════════════
 
-function CreatePlanWizard({ wizardStep, onStepChange, newPlan, onNewPlanChange, caseSearch, onCaseSearchChange, submittingPlan, onCreatePlan, onClose, onToggleCase, onToggleCollection, onSetAssignment, users, collections, caseMap }: {
+function CreatePlanWizard({ wizardStep, onStepChange, newPlan, onNewPlanChange, caseSearch, onCaseSearchChange, submittingPlan, onCreatePlan, onClose, onToggleCase, onToggleCollection, onSetAssignment, users, collections, caseMap, casesLoading }: {
   wizardStep: number; onStepChange: (s: number) => void;
   newPlan: any; onNewPlanChange: (p: any) => void;
   caseSearch: string; onCaseSearchChange: (s: string) => void;
   submittingPlan: boolean; onCreatePlan: () => void; onClose: () => void;
   onToggleCase: (cid: string) => void; onToggleCollection: (col: any) => void;
   onSetAssignment: (caseId: string, value: string) => void;
-  users: UserResponse[]; collections: any[]; caseMap: Map<string, any>;
+  users: UserResponse[]; collections: any[]; caseMap: Map<string, any>; casesLoading: boolean;
 }) {
   const stepLabels = ['基本信息', '选择用例', '分配执行人', '排期确认'];
+
+  // Compute filtered cases based on search
+  const q = caseSearch.trim().toLowerCase();
+  const matchedCollections = q
+    ? collections.filter((col: any) => col.name?.toLowerCase().includes(q) || (col.description || '').toLowerCase().includes(q))
+    : collections;
+  const allCases = Array.from(caseMap.values());
+  const matchedCases = q ? allCases.filter((tc: any) => tc.id.includes(q) || tc.title.toLowerCase().includes(q)) : allCases;
+
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000 }}>
       <div onClick={e => e.stopPropagation()} style={{
@@ -1736,58 +1763,50 @@ function CreatePlanWizard({ wizardStep, onStepChange, newPlan, onNewPlanChange, 
               </div>
               <input className="form-input" value={caseSearch} onChange={e => onCaseSearchChange(e.target.value)}
                 placeholder="搜索用例名称、ID 或预置用例集..." style={{ width: '100%', fontSize: 12, padding: '6px 10px', marginBottom: 10, boxSizing: 'border-box' }} />
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                {(() => {
-                  const q = caseSearch.trim().toLowerCase();
-                  const matchedCollections = q
-                    ? collections.filter((col: any) => col.name?.toLowerCase().includes(q) || (col.description || '').toLowerCase().includes(q))
-                    : collections;
-                  const allCases = Array.from(caseMap.values());
-                  const matchedCases = q ? allCases.filter((tc: any) => tc.id.includes(q) || tc.title.toLowerCase().includes(q)) : allCases;
-                  return (
-                    <>
-                      {matchedCollections.map((col: any) => {
-                        return (
-                          <label key={col.collection_id} onClick={() => onToggleCollection(col)}
-                            style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 6, cursor: 'pointer',
-                              border: '1px solid var(--border-subtle)',
-                              background: 'var(--bg-primary)',
-                              marginBottom: 2,
-                            }}>
-                            <div style={{ flex: 1 }}>
-                              <div style={{ fontSize: 12, fontWeight: 500 }}>{col.name}</div>
-                              {col.description && <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 1 }}>{col.description}</div>}
-                            </div>
-                            <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>{(col.case_count || 0) + (col.auto_case_count || 0)} 个用例</span>
-                          </label>
-                        );
-                      })}
-                      {matchedCases.map((tc: any) => {
-                        const sel = newPlan.selectedCases.includes(tc.id);
-                        return (
-                          <label key={tc.id} onClick={() => onToggleCase(tc.id)}
-                            style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 6, cursor: 'pointer',
-                              border: sel ? '1px solid var(--accent-primary)' : '1px solid var(--border-subtle)',
-                              background: sel ? 'color-mix(in srgb, var(--accent-primary) 6%, transparent)' : 'var(--bg-primary)',
-                            }}>
-                            <input type="checkbox" checked={sel} onChange={() => {}} style={{ accentColor: 'var(--accent-primary)' }} />
-                            <span style={{ fontSize: 10, fontFamily: 'monospace', color: 'var(--text-tertiary)', minWidth: 50 }}>{tc.id}</span>
-                            <span style={{ flex: 1, fontSize: 12, fontWeight: sel ? 600 : 400 }}>{tc.title}</span>
-                            <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4,
-                              background: tc.type === 'auto' ? 'rgba(57,208,214,0.12)' : 'rgba(163,113,247,0.12)',
-                              color: tc.type === 'auto' ? '#39d0d6' : '#a371f7', fontWeight: 600,
-                            }}>{tc.type === 'auto' ? 'AUTO' : 'MANUAL'}</span>
-                            {tc.priority && <span style={{ fontSize: 10, color: PRIORITY_COLORS[tc.priority] || '#8b949e', fontWeight: 600 }}>{tc.priority}</span>}
-                          </label>
-                        );
-                      })}
-                      {matchedCollections.length === 0 && matchedCases.length === 0 && (
-                        <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 12 }}>无匹配的用例或集合</div>
-                      )}
-                    </>
-                  );
-                })()}
-              </div>
+              {casesLoading ? (
+                <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 13 }}>加载用例中...</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  {matchedCollections.map((col: any) => {
+                    return (
+                      <label key={col.collection_id} onClick={() => onToggleCollection(col)}
+                        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 6, cursor: 'pointer',
+                          border: '1px solid var(--border-subtle)',
+                          background: 'var(--bg-primary)',
+                          marginBottom: 2,
+                        }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 12, fontWeight: 500 }}>{col.name}</div>
+                          {col.description && <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 1 }}>{col.description}</div>}
+                        </div>
+                        <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>{(col.case_count || 0) + (col.auto_case_count || 0)} 个用例</span>
+                      </label>
+                    );
+                  })}
+                  {matchedCases.map((tc: any) => {
+                    const sel = newPlan.selectedCases.includes(tc.id);
+                    return (
+                      <label key={tc.id} onClick={() => onToggleCase(tc.id)}
+                        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 6, cursor: 'pointer',
+                          border: sel ? '1px solid var(--accent-primary)' : '1px solid var(--border-subtle)',
+                          background: sel ? 'color-mix(in srgb, var(--accent-primary) 6%, transparent)' : 'var(--bg-primary)',
+                        }}>
+                        <input type="checkbox" checked={sel} onChange={() => {}} style={{ accentColor: 'var(--accent-primary)' }} />
+                        <span style={{ fontSize: 10, fontFamily: 'monospace', color: 'var(--text-tertiary)', minWidth: 50 }}>{tc.id}</span>
+                        <span style={{ flex: 1, fontSize: 12, fontWeight: sel ? 600 : 400 }}>{tc.title}</span>
+                        <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4,
+                          background: tc.type === 'auto' ? 'rgba(57,208,214,0.12)' : 'rgba(163,113,247,0.12)',
+                          color: tc.type === 'auto' ? '#39d0d6' : '#a371f7', fontWeight: 600,
+                        }}>{tc.type === 'auto' ? 'AUTO' : 'MANUAL'}</span>
+                        {tc.priority && <span style={{ fontSize: 10, color: PRIORITY_COLORS[tc.priority] || '#8b949e', fontWeight: 600 }}>{tc.priority}</span>}
+                      </label>
+                    );
+                  })}
+                  {matchedCollections.length === 0 && matchedCases.length === 0 && (
+                    <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 12 }}>无匹配的用例或集合</div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
