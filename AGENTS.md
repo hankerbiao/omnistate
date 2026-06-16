@@ -9,7 +9,9 @@ This file provides guidance for agentic coding agents operating in the DML V4 re
 #### Development Server
 ```bash
 cd backend
-python -m app.main                    # Start FastAPI server (port 8000)
+./server.sh start                    # Start FastAPI server (port 8801, background daemon)
+# Or run in foreground:
+.venv/bin/python -m app.main         # Start FastAPI server (port 8000, foreground)
 ```
 
 #### Database Initialization

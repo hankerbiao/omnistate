@@ -1,6 +1,6 @@
 import React, { useCallback } from 'react';
 import type { PlanTask } from './myTasksTypes';
-import { COMPONENT_COLORS, STATUS_COLORS, TH, TD } from './myTasksTypes';
+import { STATUS_COLORS, TH, TD } from './myTasksTypes';
 
 interface PlanTaskTableProps {
   /** 当前展示的计划任务列表 */
@@ -72,19 +72,16 @@ const PlanTaskTable: React.FC<PlanTaskTableProps> = ({
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
           <thead>
             <tr>
-              <th style={{ ...TH, width: 44 }}>状态</th>
-              <th style={TH}>ID</th>
+              <th style={{ ...TH, width: 32 }}>状态</th>
+              <th style={{ ...TH, width: 100 }}>ID</th>
               <th style={TH}>名称</th>
-              <th style={{ ...TH, width: 48 }}>类型</th>
-              <th style={{ ...TH, width: 80 }}>组件</th>
-              <th style={{ ...TH, width: 100 }}>计划</th>
-              <th style={{ ...TH, width: 60 }}>状态</th>
-              <th style={{ ...TH, width: 140 }}>操作</th>
+              <th style={{ ...TH, width: 120 }}>计划</th>
+              <th style={{ ...TH, width: 56 }}>状态</th>
+              <th style={{ ...TH, width: 160 }}>操作</th>
             </tr>
           </thead>
           <tbody>
             {planTasks.map(task => {
-              const compColor = COMPONENT_COLORS[task.component] || '#8b949e';
               return (
                 <tr
                   key={task.id}
@@ -103,39 +100,21 @@ const PlanTaskTable: React.FC<PlanTaskTableProps> = ({
                   {/* ID */}
                   <td style={{
                     ...TD, fontFamily: 'monospace', color: 'var(--text-tertiary)', fontSize: 11,
+                    maxWidth: 100, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                   }}>
                     {task.caseId}
                   </td>
                   {/* Title */}
                   <td style={{
                     ...TD, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap', maxWidth: 200,
+                    whiteSpace: 'nowrap', maxWidth: 220,
                   }}>
                     {task.caseTitle}
-                  </td>
-                  {/* Type */}
-                  <td style={TD}>
-                    <span style={{
-                      fontSize: 10, padding: '1px 6px', borderRadius: 4,
-                      background: task.type === 'auto' ? 'rgba(57,208,214,0.12)' : 'rgba(163,113,247,0.12)',
-                      color: task.type === 'auto' ? '#39d0d6' : '#a371f7', fontWeight: 600,
-                    }}>
-                      {task.type === 'auto' ? '⚡' : '📋'}
-                    </span>
-                  </td>
-                  {/* Component */}
-                  <td style={TD}>
-                    <span style={{
-                      fontSize: 11, padding: '1px 6px', borderRadius: 4,
-                      background: `${compColor}18`, color: compColor, fontWeight: 500,
-                    }}>
-                      {task.component}
-                    </span>
                   </td>
                   {/* Plan */}
                   <td style={{
                     ...TD, fontSize: 11, color: 'var(--text-tertiary)',
-                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 100,
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 180,
                   }}>
                     {task.planTitle}
                   </td>

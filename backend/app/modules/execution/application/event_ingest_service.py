@@ -75,16 +75,6 @@ class ExecutionEventIngestService:
             phase=event.phase,
             offset=metadata.get("offset"),
         )
-        existing = await ExecutionEventDoc.find_one({"event_id": event.event_id})
-        if existing is not None:
-            elog(
-                "debug",
-                ExecutionNode.EVENT_INGEST,
-                "skipping duplicate execution event",
-                outcome="skipped",
-            )
-            return False
-
         event_time = event.timestamp.astimezone(timezone.utc)
         task_doc = await ExecutionTaskDoc.find_one({"task_id": event.task_id, "is_deleted": False})
         if task_doc is None:
@@ -103,7 +93,8 @@ class ExecutionEventIngestService:
             )
             return False
 
-        # 先归档再更新当前态。用 try/except 处理并发重复插入。
+        # 幂等保证：依赖 event_id 唯一索引。并发重复事件会抛 DuplicateKeyError，
+        # 其他异常（如网络错误）则向上传播。
         try:
             await self._archive_event(
                 topic=topic,
@@ -112,14 +103,18 @@ class ExecutionEventIngestService:
                 processed=True,
                 process_error=None,
             )
-        except Exception:
-            elog(
-                "warning",
-                ExecutionNode.EVENT_INGEST,
-                "duplicate event_id detected during insert",
-                outcome="skipped",
-            )
-            return False
+        except Exception as e:
+            from pymongo.errors import DuplicateKeyError
+            if isinstance(e, DuplicateKeyError):
+                elog(
+                    "debug",
+                    ExecutionNode.EVENT_INGEST,
+                    "duplicate event_id detected, skipping",
+                    outcome="skipped",
+                    event_id=event.event_id,
+                )
+                return False
+            raise
 
         case_doc = None
         if event.case_id:

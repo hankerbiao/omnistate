@@ -283,14 +283,44 @@ class ConfigService:
         return docs
 
     @staticmethod
+    def _try_read_yaml_value(config_key: str) -> Optional[str]:
+        """尝试从 config.yaml 读取配置项的当前值"""
+        from app.shared.config.settings import get_settings
+        try:
+            settings = get_settings()
+            parts = config_key.split(".")
+            if len(parts) == 2:
+                section, key = parts
+                obj = getattr(settings, section, None)
+                if obj:
+                    value = getattr(obj, key, None)
+                    if value is not None:
+                        return str(value)
+            return None
+        except Exception:
+            return None
+
+    @staticmethod
     async def init_default_configs() -> None:
-        """初始化默认配置（仅创建缺失的）"""
+        """初始化默认配置（仅创建缺失的）。
+
+        对于 YAML_SECTIONS 中的配置项，优先从 config.yaml 读取当前值；
+        其他配置项使用硬编码默认值。
+        确保系统配置（MongoDB）与 config.yaml 初始值一致。
+        """
         for config in ConfigService.DEFAULT_CONFIGS:
             existing = await SystemConfigDoc.find_one(SystemConfigDoc.config_key == config["config_key"])
             if not existing:
+                # 从 config.yaml 读取实际值
+                yaml_value = ConfigService._try_read_yaml_value(config["config_key"])
+                if yaml_value is not None:
+                    config["config_value"] = yaml_value
                 doc = SystemConfigDoc(**config)
                 await doc.insert()
-                log.info(f"Initialized config: {config['config_key']}")
+                log.info(
+                    f"Initialized config: {config['config_key']} = {config['config_value']}"
+                    f"{' (from config.yaml)' if yaml_value is not None else ''}"
+                )
 
     @staticmethod
     async def _save_history(

@@ -1,7 +1,6 @@
 """执行计划应用服务。"""
 from __future__ import annotations
 
-import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -24,7 +23,6 @@ from app.modules.execution_plan.repository.models import (
 from app.modules.execution_plan.schemas.execution_plan import (
     BatchDispatchRequest,
     PlanItemDispatchRequest,
-    PlanItemRerunRequest,
     SubmitManualResultRequest,
 )
 from app.modules.test_specs.repository.models import AutomationTestCaseDoc, TestCaseDoc
@@ -587,75 +585,39 @@ class ExecutionPlanService(BaseService):
         logger.info(f"[CANCEL] item={item_id} status reset to pending, actor={actor_id}")
         return await self._item_to_response(item)
 
-    async def rerun_item(
+    async def re_execute_item(
         self,
         item_id: str,
+        request: PlanItemDispatchRequest,
         actor_id: str,
         sequence_service: SequenceIdService,
-        request: Optional[PlanItemRerunRequest] = None,
     ) -> Dict[str, Any]:
-        """重新执行计划条目。
+        """重新执行计划条目，不覆盖原有结果历史。
 
-        自动化用例：基于原 execution task 快照创建新任务（rerun），关联新 task_id。
-        手工用例：清空 result_id，将状态重置为 pending。
+        对 auto 条目：重置状态为 pending，清除 execution_task_id 后重新下发。
+                    旧任务记录通过 trigger_source 可追溯。
+        对 manual 条目：重置状态为 pending，不清除 result_id（旧结果保留可查）。
+                    用户重新回填时 submit_result 会自动覆盖。
         """
         item = await self._get_item_by_id_or_raise(item_id)
 
         if item.ref_type == "auto":
-            if item.execution_task_id:
-                # 有旧任务：基于快照 rerun
-                year = datetime.now().year
-                seq = await sequence_service.next(f"execution_task:{year}")
-                new_task_id = f"ET-{year}-{str(seq).zfill(6)}"
-                data = await self._task_command_service.rerun_task(
-                    source_task_id=item.execution_task_id,
-                    new_task_id=new_task_id,
-                    actor_id=actor_id,
-                    request={},
-                )
-                item.execution_task_id = new_task_id
-            else:
-                # 无旧任务：重新下发（直接 dispatch）
-                if not request:
-                    request = PlanItemRerunRequest()
-                dispatch_req = PlanItemDispatchRequest(
-                    agent_id=request.agent_id,
-                    project_tag=request.project_tag,
-                    pytest_options=request.pytest_options,
-                    timeout=request.timeout,
-                )
-                data = await self.dispatch_item(
-                    item_id=item_id,
-                    request=dispatch_req,
-                    actor_id=actor_id,
-                    sequence_service=sequence_service,
-                )
-            # 如果已归档，清除归档标记
-            if item.archived_at:
-                item.archived_at = None
-            item.status = PlanItemStatus.RUNNING.value
+            item.status = PlanItemStatus.PENDING.value
+            item.execution_task_id = None
             await item.save()
             await self._recalculate_plan_progress(item.plan_id)
-            logger.info(f"[RERUN] auto item={item_id} new_task={item.execution_task_id} actor={actor_id}")
-            return data
+            return await self.dispatch_item(
+                item_id=item_id,
+                request=request,
+                actor_id=actor_id,
+                sequence_service=sequence_service,
+            )
 
         elif item.ref_type == "manual":
-            # 逻辑删除旧结果
-            if item.result_id:
-                existing = await ManualExecutionResultDoc.find_one(
-                    ManualExecutionResultDoc.result_id == item.result_id,
-                    ManualExecutionResultDoc.is_deleted == False,
-                )
-                if existing:
-                    existing.is_deleted = True
-                    await existing.save()
-                    logger.debug(f"[RERUN] manual: soft-deleted previous result_id={item.result_id}")
-            item.result_id = None
             item.status = PlanItemStatus.PENDING.value
             await item.save()
             await self._recalculate_plan_progress(item.plan_id)
-            logger.info(f"[RERUN] manual item={item_id} status reset to pending, actor={actor_id}")
-            return await self._item_to_response(item)
+            return {"item_id": item_id, "status": "pending", "ref_type": "manual"}
 
         else:
             raise ValueError(f"不支持的条目类型: {item.ref_type}")
@@ -742,8 +704,6 @@ class ExecutionPlanService(BaseService):
     async def _sync_auto_item_status(self, item: ExecutionPlanItemDoc) -> None:
         if item.ref_type != "auto" or not item.execution_task_id:
             return
-        if item.status in {PlanItemStatus.DONE.value, PlanItemStatus.FAIL.value} and item.result_id:
-            return
         task_doc = await ExecutionTaskDoc.find_one(
             ExecutionTaskDoc.task_id == item.execution_task_id,
             ExecutionTaskDoc.is_deleted == False,
@@ -766,12 +726,15 @@ class ExecutionPlanService(BaseService):
             ExecutionPlanItemDoc.is_deleted == False,
         ).to_list()
         item_count = len(items)
-        done_count = sum(1 for item in items if item.status == "done")
-        progress = round(done_count / item_count * 100) if item_count else 0
+        # 修复：同时统计 done + fail，两者都是终态，缺一则计划未完成
+        completed_count = sum(
+            1 for item in items if item.status in (PlanItemStatus.DONE, PlanItemStatus.FAIL)
+        )
+        progress = round(completed_count / item_count * 100) if item_count else 0
         plan_doc.item_count = item_count
-        plan_doc.done_count = done_count
+        plan_doc.done_count = completed_count
         plan_doc.progress_percent = progress
-        if item_count > 0 and done_count == item_count and plan_doc.status == "active":
+        if item_count > 0 and completed_count == item_count and plan_doc.status == "active":
             plan_doc.status = "done"
         await plan_doc.save()
 
