@@ -89,7 +89,7 @@ const CaseGovernancePage: React.FC = () => {
 
   // 关联弹窗：查找可关联的自动用例
   const autoCasesQuery = useQuery({
-    queryKey: ['auto-cases-for-link', linkSearch],
+    queryKey: ['auto-cases-for-link'],
     queryFn: () => api.listAutomationTestCases({ limit: 30 }).then(r => r.data),
     enabled: !!linkModalCase,
   });
@@ -334,13 +334,19 @@ const StatsBar: React.FC<{
   activeMissing: MissingFieldKey | null;
   onMissingClick: (key: MissingFieldKey | null) => void;
 }> = ({ stats, isLoading, activeMissing, onMissingClick }) => {
-  const cards = stats ? [
-    { key: 'total_manual' as const, label: '手工用例', value: stats.total_manual, clickable: false },
-    { key: 'total_auto' as const, label: '自动用例', value: stats.total_auto, clickable: false },
-    { key: 'missing_lab' as const, label: '缺 Lab', value: stats.missing_lab, clickable: true },
-    { key: 'missing_catalog' as const, label: '缺目录', value: stats.missing_catalog, clickable: true },
-    { key: 'missing_tags' as const, label: '缺 Tag', value: stats.missing_tags, clickable: true },
-    { key: 'unlinked_auto' as const, label: '未关联自动化', value: stats.unlinked_auto, clickable: true },
+  const cards: {
+    key: string;
+    label: string;
+    value: number;
+    clickable: boolean;
+    missingKey?: MissingFieldKey;
+  }[] = stats ? [
+    { key: 'total_manual', label: '手工用例', value: stats.total_manual, clickable: false },
+    { key: 'total_auto', label: '自动用例', value: stats.total_auto, clickable: false },
+    { key: 'missing_lab', label: '缺 Lab', value: stats.missing_lab, clickable: true, missingKey: 'lab_id' },
+    { key: 'missing_catalog', label: '缺目录', value: stats.missing_catalog, clickable: true, missingKey: 'catalog_path' },
+    { key: 'missing_tags', label: '缺 Tag', value: stats.missing_tags, clickable: true, missingKey: 'tags' },
+    { key: 'unlinked_auto', label: '未关联自动化', value: stats.unlinked_auto, clickable: true, missingKey: 'auto_link' },
   ] : [];
 
   return (
@@ -352,12 +358,11 @@ const StatsBar: React.FC<{
       ) : cards.map(card => (
         <div
           key={card.key}
-          onClick={() => card.clickable ? onMissingClick(activeMissing === card.key ? null : card.key) : undefined}
+          onClick={() => card.clickable && card.missingKey ? onMissingClick(activeMissing === card.missingKey ? null : card.missingKey) : undefined}
           style={{
             ...statCardStyle,
             cursor: card.clickable ? 'pointer' : 'default',
-            border: activeMissing === card.key ? `2px solid ${STAT_COLORS[card.key]}` : '1px solid var(--border-default, #d1d5db)',
-            borderColor: activeMissing === card.key ? STAT_COLORS[card.key] : undefined,
+            border: card.clickable && card.missingKey && activeMissing === card.missingKey ? `2px solid ${STAT_COLORS[card.key]}` : '1px solid var(--border-default, #d1d5db)',
           }}
         >
           <div style={{ fontSize: 11, color: 'var(--text-secondary, #6b7280)', marginBottom: 4 }}>{card.label}</div>
@@ -391,22 +396,22 @@ const CaseRow: React.FC<{
       </td>
       <td style={tdStyle}>
         <CompletenessDot ok={hasLab} />
-        {hasLab ? <span style={{ fontSize: 12 }}>{labName}</span> : <span style={{ fontSize: 12, color: '#f0883e' }}>缺失</span>}
+        {hasLab ? <span style={{ fontSize: 12 }}>{labName}</span> : <span style={{ fontSize: 12, color: STAT_COLORS.missing_lab }}>缺失</span>}
       </td>
       <td style={tdStyle}>
         <CompletenessDot ok={hasCatalog} />
-        {hasCatalog ? <span style={{ fontSize: 12 }}>{c.catalog_path?.join(' / ')}</span> : <span style={{ fontSize: 12, color: '#d29922' }}>缺失</span>}
+        {hasCatalog ? <span style={{ fontSize: 12 }}>{c.catalog_path?.join(' / ')}</span> : <span style={{ fontSize: 12, color: STAT_COLORS.missing_catalog }}>缺失</span>}
       </td>
       <td style={tdStyle}>
         <CompletenessDot ok={hasTags} />
         {hasTags ? (
           <span style={{ fontSize: 11 }}>
             {c.tags!.slice(0, 2).map(t => (
-              <span key={t} style={{ display: 'inline-block', padding: '1px 6px', borderRadius: 8, background: '#bc8cff20', color: '#bc8cff', marginRight: 3 }}>{t}</span>
+              <span key={t} style={{ display: 'inline-block', padding: '1px 6px', borderRadius: 8, background: `${STAT_COLORS.missing_tags}20`, color: STAT_COLORS.missing_tags, marginRight: 3 }}>{t}</span>
             ))}
             {c.tags!.length > 2 && <span style={{ color: 'var(--text-secondary, #6b7280)' }}>+{c.tags!.length - 2}</span>}
           </span>
-        ) : <span style={{ fontSize: 12, color: '#bc8cff' }}>缺失</span>}
+        ) : <span style={{ fontSize: 12, color: STAT_COLORS.missing_tags }}>缺失</span>}
       </td>
       <td style={tdStyle}>
         <CompletenessDot ok={!!c.automation_case_ref} />
