@@ -809,6 +809,7 @@ export default function TestExecutionPlanDemo() {
           collections={collections}
           caseMap={caseMap}
           casesLoading={casesLoading}
+          currentUserId={currentUserId}
         />
       )}
       <ArchivedModal
@@ -1690,14 +1691,14 @@ function AddCasesModal({ editingItems, selectedAddCaseIds, onToggle, onClose, on
 //  CreatePlanWizard — 新建计划向导
 // ═══════════════════════════════════════════════════════════════════
 
-function CreatePlanWizard({ wizardStep, onStepChange, newPlan, onNewPlanChange, caseSearch, onCaseSearchChange, submittingPlan, onCreatePlan, onClose, onToggleCase, onToggleCollection, onSetAssignment, users, collections, caseMap, casesLoading }: {
+function CreatePlanWizard({ wizardStep, onStepChange, newPlan, onNewPlanChange, caseSearch, onCaseSearchChange, submittingPlan, onCreatePlan, onClose, onToggleCase, onToggleCollection, onSetAssignment, users, collections, caseMap, casesLoading, currentUserId }: {
   wizardStep: number; onStepChange: (s: number) => void;
   newPlan: any; onNewPlanChange: (p: any) => void;
   caseSearch: string; onCaseSearchChange: (s: string) => void;
   submittingPlan: boolean; onCreatePlan: () => void; onClose: () => void;
   onToggleCase: (cid: string) => void; onToggleCollection: (col: any) => void;
   onSetAssignment: (caseId: string, value: string) => void;
-  users: UserResponse[]; collections: any[]; caseMap: Map<string, any>; casesLoading: boolean;
+  users: UserResponse[]; collections: any[]; caseMap: Map<string, any>; casesLoading: boolean; currentUserId: string;
 }) {
   const stepLabels = ['基本信息', '选择用例', '分配执行人', '排期确认'];
 
