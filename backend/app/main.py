@@ -36,17 +36,18 @@ async def lifespan(app: FastAPI):
         await validate_workflow_consistency()
         log.success("Workflow 配置一致性校验通过")
 
-        # Kafka 健康检查：确保 Kafka Broker 可达且 Kafka Worker 在线
-        log.info("正在检查 Kafka 基础设施健康状态...")
+        # Kafka 基础设施检查（不阻塞启动）：Worker 心跳过期仅警告
+        log.info("正在检查 Kafka 基础设施状态...")
         kafka_result = await check_kafka_health()
         if not kafka_result.healthy:
-            log.error(
+            log.warning(
                 f"Kafka 基础设施不健康: {kafka_result.detail}\n"
-                f"请确保 Kafka Broker 和 Kafka Worker 进程已就绪，"
-                f"启动 Kafka Worker: python -m app.workers.kafka_worker_main"
+                f"自动化执行结果将无法自动入库。仍可正常使用用例管理等其他功能。\n"
+                f"如需执行自动化测试，请先启动 Kafka Worker: "
+                f"python -m app.workers.kafka_worker_main"
             )
-            raise RuntimeError(f"Kafka 基础设施不健康: {kafka_result.detail}")
-        log.success(f"Kafka 基础设施健康检查通过 ({kafka_result.detail})")
+        else:
+            log.success(f"Kafka 基础设施健康检查通过 ({kafka_result.detail})")
 
         log.success("FastAPI 服务启动完成")
 
