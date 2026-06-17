@@ -614,6 +614,7 @@ class ExecutionPlanService(BaseService):
             request=dispatch_request,
             actor_id=actor_id,
             sequence_service=sequence_service,
+            skip_dedup=True,
         )
         task_id = data.get("task_id", "?")
         item.execution_task_id = task_id

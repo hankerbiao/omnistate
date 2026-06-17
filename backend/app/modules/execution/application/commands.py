@@ -45,3 +45,4 @@ class DispatchExecutionTaskCommand:
 
     is_proxy: bool = True  # 是否为代理命令，默认为 False
     nc_pypi: str = 'http://10.32.12.28:8080/simple'
+    skip_dedup: bool = False  # 计划下发时跳过业务去重（计划条目已有唯一性保障）

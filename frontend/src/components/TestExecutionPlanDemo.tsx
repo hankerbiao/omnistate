@@ -124,6 +124,9 @@ export default function TestExecutionPlanDemo() {
   const [overviewData, setOverviewData] = useState<Record<string, any> | null>(null);
   const [overviewLoading, setOverviewLoading] = useState(false);
 
+  // ── Refresh ──
+  const [refreshDetail, setRefreshDetail] = useState(0);
+
   // ── Test cases & collections (from real API) ──
   const [testCases, setTestCases] = useState<Record<string, { case_id: string; title: string; type: string; priority: string; created_at: string }>>({});
   const [collections, setCollections] = useState<{ collection_id: string; name: string; description?: string | null; case_count: number }[]>([]);
@@ -211,6 +214,12 @@ export default function TestExecutionPlanDemo() {
 
   useEffect(() => { void fetchPlans(); }, [fetchPlans]);
 
+  // ── Handle refresh ──
+  const handleRefresh = useCallback(() => {
+    fetchPlans();
+    setRefreshDetail(v => v + 1);
+  }, [fetchPlans]);
+
   // ── Fetch overview data ──
   const fetchOverview = useCallback(async () => {
     setOverviewLoading(true);
@@ -271,7 +280,7 @@ export default function TestExecutionPlanDemo() {
       })
       .catch(() => setActivePlanItems([]))
       .finally(() => setDetailLoading(false));
-  }, [activePlanId]);
+  }, [activePlanId, refreshDetail]);
 
   // ── Result viewer ──
   const [resultModal, setResultModal] = useState<{
@@ -460,13 +469,19 @@ export default function TestExecutionPlanDemo() {
   // 删除计划条目（同时清理关联的执行任务）
   const handleDeleteItem = useCallback(async (planId: string, itemId: string) => {
     try {
-      await api.cancelExecution(itemId);
+      try { await api.cancelExecution(itemId); } catch { /* 没有执行任务，忽略 */ }
       await api.deletePlanItem(planId, itemId);
       if (showOverview) fetchOverview();
       if (activePlanId) {
         const res = await api.getPlanDetail(activePlanId);
         const d = res.data as Record<string, unknown> | undefined;
         setActivePlanItems((d?.items as PlanItemSummary[]) || []);
+        // 同步更新侧边栏计数
+        setPlans(prev => prev.map(p => {
+          if (p.plan_id !== activePlanId) return p;
+          const items = (d?.items as PlanItemSummary[]) || [];
+          return { ...p, item_count: items.length, done_count: items.filter(i => i.status === 'done').length };
+        }));
       }
     } catch (err) {
       console.error('删除失败:', err);
@@ -650,6 +665,11 @@ export default function TestExecutionPlanDemo() {
           <button className="btn btn--ghost btn--sm" onClick={openArchive}
             style={{ fontSize: 12, padding: '6px 12px' }}>
             归档记录{archivedItems.length > 0 ? ` (${archivedItems.length})` : ''}
+          </button>
+          <button className="btn btn--ghost btn--sm" onClick={handleRefresh}
+            disabled={loading || detailLoading}
+            style={{ fontSize: 12, padding: '6px 12px' }}>
+            刷新
           </button>
           <button className="btn btn--primary btn--sm"
             onClick={() => { resetWizard(); setShowWizard(true); loadCases(); }}

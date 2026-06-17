@@ -31,7 +31,7 @@ class ExecutionTaskDispatchCoordinator:
         self._case_coordinator = case_coordinator or ExecutionTaskCaseCoordinator()
 
     @staticmethod
-    def build_case_dispatch_command(
+    async def build_case_dispatch_command(
         task_doc: ExecutionTaskDoc,
         case_ids: List[str],
         auto_case_ids: List[str],
@@ -68,7 +68,7 @@ class ExecutionTaskDispatchCoordinator:
             pytest_options=request_payload.get("pytest_options"),
             timeout=request_payload.get("timeout"),
         )
-        initialize_command(command)
+        await initialize_command(command)
         return command
 
     async def build_task_dispatch_command(
@@ -83,7 +83,7 @@ class ExecutionTaskDispatchCoordinator:
             case_configs,
             case_payloads,
         ) = await self._case_coordinator.resolve_task_case_pairs(task_doc)
-        return self.build_case_dispatch_command(
+        return await self.build_case_dispatch_command(
             task_doc,
             case_ids,
             auto_case_ids,

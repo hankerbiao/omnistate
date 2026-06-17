@@ -59,7 +59,7 @@ jwt:
 execution:
   scheduler_interval_sec: 60
   default_repo_url: http://10.17.55.151:6600/litaiqing/redfish_case_repo.git
-  default_branch: master
+
   kafka_worker_agent_id: execution-kafka-worker
   kafka_worker_heartbeat_ttl_sec: 30
   kafka_worker_heartbeat_interval_sec: 10

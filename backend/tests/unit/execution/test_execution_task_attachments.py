@@ -90,7 +90,7 @@ def test_enrich_for_dispatch_rejects_missing_attachment(monkeypatch) -> None:
         asyncio.run(AttachmentService().enrich_for_dispatch(["missing"]))
 
 
-def test_dispatch_task_data_refreshes_file_param_urls(monkeypatch) -> None:
+async def test_dispatch_task_data_refreshes_file_param_urls(monkeypatch) -> None:
     monkeypatch.setattr("app.shared.minio.get_minio_client", lambda: _FakeMinioClient())
 
     command = DispatchExecutionTaskCommand(
@@ -115,7 +115,7 @@ def test_dispatch_task_data_refreshes_file_param_urls(monkeypatch) -> None:
         }],
     )
 
-    initialize_command(command)
+    await initialize_command(command)
     payload = build_dispatch_task_data(command)
     data = payload["data"]
 

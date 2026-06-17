@@ -14,7 +14,7 @@ from app.shared.auth.jwt_auth import get_permissions_by_ids, get_permissions_by_
 class UserService(AuthServiceSupport):
     """User CRUD, authentication, and permission aggregation."""
 
-    _USER_UPDATABLE_FIELDS = {"username", "email", "status", "itcode"}
+    _USER_UPDATABLE_FIELDS = {"username", "email", "status", "itcode", "subscribe_notifications"}
 
     async def create_user(self, data: Dict[str, Any]) -> Dict[str, Any]:
         existing = await UserDoc.find_one(UserDoc.user_id == data["user_id"])

@@ -167,27 +167,23 @@ async def ensure_no_active_duplicate(dedup_key: str, excluded_task_id: str | Non
         )
 
 
-def _get_system_config_sync(key: str) -> str | None:
-    """同步读取系统配置值（用于非 async 上下文）。
+async def _get_system_config_from_db(key: str) -> str | None:
+    """异步读取系统配置值（从 MongoDB）。
 
-    通过 ConfigService 的同步回退机制读取 MongoDB 中的配置。
-    execution.default_repo_url/branch 以系统配置页面设置为准。
+    通过 ConfigService 读取 MongoDB system_configs 集合中的配置。
+    execution.default_repo_url / execution.default_branch 以系统配置页面设置为准。
     """
     try:
-        from app.shared.config import get_settings
-        settings = get_settings()
-        if key == "execution.default_repo_url":
-            return settings.execution.default_repo_url
-        if key == "execution.default_branch":
-            return settings.execution.default_branch
-        return None
+        from app.modules.system_config.service import ConfigService
+        value = await ConfigService.get_config(key)
+        return str(value) if value is not None else None
     except Exception as e:
         from app.shared.core.logger import log
         log.warning(f"Failed to read system config '{key}': {e}")
         return None
 
 
-def build_rerun_command_from_payload(
+async def build_rerun_command_from_payload(
     source_task_doc: Any,
     request: RerunTaskRequest,
     new_task_id: str,
@@ -235,7 +231,7 @@ def build_rerun_command_from_payload(
         timeout=request.timeout if request.timeout is not None else payload.get("timeout"),
         attachments=[],
     )
-    initialize_command(command)
+    await initialize_command(command)
     return command
 
 
@@ -298,14 +294,14 @@ def apply_task_command_to_doc(
     )
 
 
-def initialize_command(command: DispatchExecutionTaskCommand) -> None:
+async def initialize_command(command: DispatchExecutionTaskCommand) -> None:
     """初始化命令的默认值和派生字段。
 
     替代原 Command.__post_init__ 的副作用操作。
     """
     _initialize_case_collections(command)
     _validate_case_collection_lengths(command)
-    _apply_defaults(command)
+    await _apply_defaults(command)
     _initialize_dispatch_targets(command)
 
 
@@ -331,7 +327,7 @@ def _validate_case_collection_lengths(command: DispatchExecutionTaskCommand) -> 
         raise ValueError("case_payloads length must match case_ids length")
 
 
-def _apply_defaults(command: DispatchExecutionTaskCommand) -> None:
+async def _apply_defaults(command: DispatchExecutionTaskCommand) -> None:
     command.dispatch_channel = "RABBITMQ"
     if isinstance(command.repo_url, str) and not command.repo_url.strip():
         command.repo_url = None
@@ -340,11 +336,10 @@ def _apply_defaults(command: DispatchExecutionTaskCommand) -> None:
     # git detached HEAD 状态会返回 "HEAD"，视为未配置，走系统默认分支
     if command.branch == "HEAD":
         command.branch = None
-    # repo_url/branch：以系统配置（MongoDB）为准
     if command.repo_url is None:
-        command.repo_url = _get_system_config_sync("execution.default_repo_url")
+        command.repo_url = await _get_system_config_from_db("execution.default_repo_url")
     if command.branch is None:
-        command.branch = _get_system_config_sync("execution.default_branch")
+        command.branch = await _get_system_config_from_db("execution.default_branch")
     if command.category is None:
         command.category = ""
     if command.project_tag is None:

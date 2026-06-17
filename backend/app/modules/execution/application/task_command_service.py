@@ -51,6 +51,7 @@ class ExecutionTaskCommandService:
         request: DispatchTaskRequest,
         actor_id: str,
         sequence_service: SequenceIdService,
+        skip_dedup: bool = False,
     ) -> Dict[str, Any]:
         """根据接口请求构造命令并创建执行任务。"""
         request_case_payload = [
@@ -127,8 +128,9 @@ class ExecutionTaskCommandService:
             pytest_options=request.pytest_options,
             timeout=request.timeout,
             attachments=[],
+            skip_dedup=skip_dedup,
         )
-        initialize_command(command)
+        await initialize_command(command)
 
         async with execution_scope(task_id=task_id, agent_id=request.agent_id, node=ExecutionNode.TASK_CREATE.value):
             data = await self._dispatch_service.create_task_from_command(command, actor_id=actor_id)
@@ -190,7 +192,7 @@ class ExecutionTaskCommandService:
         dispatch_bindings = await self._case_resolver.resolve_case_dispatch_bindings_by_auto_case_ids(
             auto_case_ids
         )
-        command = build_rerun_command_from_payload(
+        command = await build_rerun_command_from_payload(
             source_task_doc=source_task_doc,
             request=request,
             new_task_id=new_task_id,

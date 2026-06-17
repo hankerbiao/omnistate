@@ -30,7 +30,7 @@ class NotificationService:
         user = await UserDoc.find_one(
             UserDoc.user_id == user_id,
         )
-        if not user or not user.itcode:
+        if not user or not user.itcode or not user.subscribe_notifications:
             return False
 
         return await NotificationService._send(user.itcode, title, content)

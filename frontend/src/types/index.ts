@@ -86,6 +86,7 @@ export interface UserResponse {
   allowed_nav_views?: string[];
   status: string;
   itcode?: string;
+  subscribe_notifications?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -105,6 +106,7 @@ export interface UpdateUserRequest {
   email?: string;
   status?: string;
   itcode?: string;
+  subscribe_notifications?: boolean;
 }
 
 export interface UpdateUserRolesRequest {

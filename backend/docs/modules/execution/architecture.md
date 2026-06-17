@@ -68,7 +68,7 @@ sequenceDiagram
 见 `backend/config.yaml` 中 `execution:` 段：
 
 - `scheduler_interval_sec`：定时任务扫描间隔
-- `default_repo_url` / `default_branch`：默认代码仓库
+- `default_repo_url`：默认代码仓库地址
 - `kafka_worker_*`：Kafka Worker 心跳相关
 
 RabbitMQ 连接与队列见 `rabbitmq:` 段。日志相关见 `logging.module_levels.app.modules.execution` 与 [日志与排障](./logging.md)。

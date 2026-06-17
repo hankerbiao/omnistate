@@ -24,6 +24,7 @@ class CreateUserRequest(BaseModel):
     role_ids: List[str] = Field(default_factory=list, description="初始角色 ID 列表")
     status: str = Field(default="ACTIVE", description="用户状态：ACTIVE / INACTIVE")
     itcode: str = Field(default="", description="光圈通知 itcode")
+    subscribe_notifications: bool = Field(default=False, description="是否订阅通知")
 
 
 class UpdateUserRequest(BaseModel):
@@ -33,6 +34,7 @@ class UpdateUserRequest(BaseModel):
     email: Optional[str] = Field(default=None, description="邮箱地址")
     status: Optional[str] = Field(default=None, description="用户状态：ACTIVE / INACTIVE")
     itcode: Optional[str] = Field(default=None, description="光圈通知 itcode")
+    subscribe_notifications: Optional[bool] = Field(default=None, description="是否订阅通知")
 
 
 class UpdateUserRolesRequest(BaseModel):
@@ -90,6 +92,7 @@ class UserResponse(BaseModel):
     allowed_nav_views: List[str] = Field(default_factory=list, description="用户级导航视图覆盖")
     status: str = Field(..., description="用户状态")
     itcode: str = Field(default="", description="光圈通知 itcode")
+    subscribe_notifications: bool = Field(default=False, description="是否订阅通知")
     created_at: datetime = Field(..., description="创建时间")
     updated_at: datetime = Field(..., description="更新时间")
 

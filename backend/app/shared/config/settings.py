@@ -150,7 +150,6 @@ class ExecutionConfig(BaseModel):
 
     scheduler_interval_sec: int = 60
     default_repo_url: str = ""
-    default_branch: str = "master"
     kafka_worker_agent_id: str = "execution-kafka-worker"
     kafka_worker_heartbeat_ttl_sec: int = 30
     kafka_worker_heartbeat_interval_sec: int = 10

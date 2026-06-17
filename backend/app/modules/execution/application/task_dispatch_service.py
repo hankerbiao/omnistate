@@ -56,7 +56,8 @@ class ExecutionDispatchService:
         command.planned_at = planned_at
         command.dispatch_channel = dispatch_channel
         dedup_key = build_dedup_key(command)
-        await ensure_no_active_duplicate(dedup_key)
+        if not command.skip_dedup:
+            await ensure_no_active_duplicate(dedup_key)
 
         task_doc = ExecutionTaskDoc(
             task_id=command.task_id,

@@ -23,7 +23,7 @@ from app.modules.execution_plan.schemas.execution_plan import (
     UpdatePlanRequest,
 )
 from app.shared.api.schemas.base import APIResponse
-from app.shared.auth import get_current_user, require_permission
+from app.shared.auth import get_current_user
 
 router = APIRouter(prefix="/execution-plans", tags=["ExecutionPlan"])
 
@@ -305,7 +305,6 @@ async def batch_dispatch_items(
     "/items/{item_id}/reassign",
     response_model=APIResponse[Dict[str, Any]],
     summary="改派计划条目执行人",
-    dependencies=[Depends(require_permission("execution_plans:write"))],
 )
 async def reassign_plan_item(
     item_id: str,

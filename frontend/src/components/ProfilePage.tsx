@@ -49,6 +49,7 @@ const ProfilePage: React.FC = () => {
   const [savingItcode, setSavingItcode] = useState(false);
   const [itcodeSuccess, setItcodeSuccess] = useState<string | null>(null);
   const [itcodeError, setItcodeError] = useState<string | null>(null);
+  const [savingSubscription, setSavingSubscription] = useState(false);
 
   const fetchUserData = useCallback(async () => {
     setLoading(true);
@@ -406,6 +407,51 @@ const ProfilePage: React.FC = () => {
                 )}
                 <span style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 2 }}>
                   用于接收光圈通知，请联系管理员获取
+                </span>
+              </div>
+              <div style={styles.infoItem}>
+                <span style={styles.infoLabel}>订阅通知</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                    <div style={{
+                      position: 'relative', width: 40, height: 22, borderRadius: 11,
+                      background: userInfo.subscribe_notifications ? '#3fb950' : 'var(--border-default)',
+                      transition: 'background 0.2s',
+                    }}>
+                      <div style={{
+                        position: 'absolute', top: 2,
+                        left: userInfo.subscribe_notifications ? 20 : 2,
+                        width: 18, height: 18, borderRadius: '50%',
+                        background: '#fff', transition: 'left 0.2s',
+                        boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                      }} />
+                    </div>
+                    <span style={{ fontSize: 13 }}>
+                      {userInfo.subscribe_notifications ? '已订阅' : '未订阅'}
+                    </span>
+                  </label>
+                  <button
+                    className="btn btn--ghost btn--sm"
+                    disabled={savingSubscription}
+                    onClick={async () => {
+                      setSavingSubscription(true);
+                      try {
+                        const newVal = !userInfo.subscribe_notifications;
+                        await api.updateUser(userInfo.user_id, { subscribe_notifications: newVal });
+                        setUserInfo({ ...userInfo, subscribe_notifications: newVal });
+                      } catch (err) {
+                        console.error('订阅操作失败:', err);
+                      } finally {
+                        setSavingSubscription(false);
+                      }
+                    }}
+                    style={{ fontSize: 11, padding: '2px 8px' }}
+                  >
+                    {savingSubscription ? '处理中…' : userInfo.subscribe_notifications ? '取消订阅' : '订阅'}
+                  </button>
+                </div>
+                <span style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 2 }}>
+                  订阅后，任务改派/指派等操作会通过光圈通知您
                 </span>
               </div>
               <div style={styles.infoItem}>
