@@ -106,9 +106,9 @@ class ExecutionAgentService:
         now = datetime.now(timezone.utc)
         ttl_seconds = payload.get("heartbeat_ttl_seconds", 90)
 
+        # 不按 is_deleted 过滤，以便复用软删除的记录（自动通过 $set 恢复）
         agent_doc = await ExecutionAgentDoc.find_one(
             ExecutionAgentDoc.agent_id == agent_id,
-            ExecutionAgentDoc.is_deleted == False,
         ).upsert(
             {"$set": {
                 "hostname": payload["hostname"],
