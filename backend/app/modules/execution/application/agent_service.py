@@ -101,32 +101,27 @@ class ExecutionAgentService:
         return data
 
     async def register_agent(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        """注册代理，或刷新已存在代理的静态信息。
-
-        Args:
-            payload: 代理注册请求体，通常来自
-                `POST /api/v1/execution/agents/register`
-
-        Returns:
-            当前代理的序列化结果，包含运行时推导后的 `status/is_online`
-
-        行为说明：
-            - 若代理不存在，则创建新记录
-            - 若代理已存在，则更新静态信息并顺带刷新心跳
-            - 注册行为会把 `last_heartbeat_at` 直接更新为当前时间，
-              因为注册本身就代表该代理此刻是活跃的
-        """
+        """注册或刷新代理信息（upsert 方式，避免并发重复键错误）。"""
         agent_id = payload["agent_id"]
         now = datetime.now(timezone.utc)
         ttl_seconds = payload.get("heartbeat_ttl_seconds", 90)
 
-        agent_doc = await ExecutionAgentDoc.find_one({
-            "agent_id": agent_id,
-            "is_deleted": False,
-        })
-        if not agent_doc:
-            # 首次注册：直接创建代理记录，并把注册时间和心跳时间初始化为当前时刻。
-            agent_doc = ExecutionAgentDoc(
+        agent_doc = await ExecutionAgentDoc.find_one(
+            ExecutionAgentDoc.agent_id == agent_id,
+            ExecutionAgentDoc.is_deleted == False,
+        ).upsert(
+            {"$set": {
+                "hostname": payload["hostname"],
+                "ip": payload["ip"],
+                "port": payload.get("port"),
+                "base_url": payload.get("base_url"),
+                "region": payload["region"],
+                "status": payload.get("status", AgentStatus.ONLINE),
+                "last_heartbeat_at": now,
+                "heartbeat_ttl_seconds": ttl_seconds,
+                "is_deleted": False,
+            }},
+            on_insert=ExecutionAgentDoc(
                 agent_id=agent_id,
                 hostname=payload["hostname"],
                 ip=payload["ip"],
@@ -137,21 +132,8 @@ class ExecutionAgentService:
                 registered_at=now,
                 last_heartbeat_at=now,
                 heartbeat_ttl_seconds=ttl_seconds,
-            )
-            await agent_doc.insert()
-        else:
-            # 重复注册：视为刷新代理元信息，例如 IP、端口、区域或 base_url 变化。
-            agent_doc.hostname = payload["hostname"]
-            agent_doc.ip = payload["ip"]
-            agent_doc.port = payload.get("port")
-            agent_doc.base_url = payload.get("base_url")
-            agent_doc.region = payload["region"]
-            # 若调用方显式带了 status，则采用新状态；否则保留原状态。
-            agent_doc.status = payload.get("status", agent_doc.status)
-            # 注册也相当于一次活跃声明，因此刷新心跳和 TTL。
-            agent_doc.last_heartbeat_at = now
-            agent_doc.heartbeat_ttl_seconds = ttl_seconds
-            await agent_doc.save()
+            ),
+        )
 
         return self._serialize_agent_doc(agent_doc, now=now)
 

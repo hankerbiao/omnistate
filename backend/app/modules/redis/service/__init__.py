@@ -175,6 +175,7 @@ def _heartbeat_loop() -> None:
                 "instance_id": instance_id,
                 "status": "UP",
             }
+            logger.debug("Redis heartbeat: key={} info={}", f"{SERVICE_REGISTRY_KEY}:{service_name}", info)
             svc.redis_conn.setex(
                 f"{SERVICE_REGISTRY_KEY}:{service_name}",
                 ttl_sec,
@@ -239,6 +240,7 @@ def register_service() -> None:
         "status": "UP",
         "registered_at": int(time.time()),
     }
+    logger.debug("Redis register: key={} info={}", f"{SERVICE_REGISTRY_KEY}:{service_name}", info)
 
     try:
         redis_conn.setex(
