@@ -203,6 +203,7 @@ class RedisConfig(BaseModel):
     protocol: int = 2
     retry_on_timeout: bool = True
     sentinel_socket_timeout: float = 0.5
+    service_port: int = 8801
 
 
 class Settings(BaseModel):

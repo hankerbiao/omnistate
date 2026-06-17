@@ -164,7 +164,7 @@ def _heartbeat_loop() -> None:
             cfg = get_settings()
             service_name = cfg.app.service_name
             host = _get_local_ip()
-            port = cfg.app.port
+            port = cfg.redis.service_port
             instance_id = f"{service_name}@{host}:{port}"
             ttl_sec = 600  # 10 分钟过期，心跳 1 分钟续一次足够
 

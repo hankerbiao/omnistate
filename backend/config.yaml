@@ -74,6 +74,7 @@ redis:
   db: 0
   socket_timeout: 2
   max_connections: 100
+  service_port: 8801
 logging:
   console_level: DEBUG
   log_dir: logs
