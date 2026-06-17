@@ -48,6 +48,8 @@ class AppConfig(BaseModel):
     port: int = 8801
     service_name: str = "dmlv4-backend"
     cors_origins: list[str] = Field(default_factory=lambda: ["*"])
+    dev_bypass_auth: bool = False
+    dev_user_id: str = "dev_admin"
 
 
 class MongoDBConfig(BaseModel):
@@ -203,7 +205,22 @@ class RedisConfig(BaseModel):
     protocol: int = 2
     retry_on_timeout: bool = True
     sentinel_socket_timeout: float = 0.5
-    service_port: int = 8801
+    service_registry_key: str = "dmlv4:service_registry"
+
+
+class GuangQuanConfig(BaseModel):
+    """光圈通知配置。"""
+
+    api_url: str = "http://rdm.cooacloud.com/api/platform/notify/bot"
+    component_name: str = "DML"
+    timeout_sec: int = 5
+
+
+class NotificationConfig(BaseModel):
+    """通知配置。"""
+
+    enabled: bool = False
+    guangquan: GuangQuanConfig = Field(default_factory=GuangQuanConfig)
 
 
 class Settings(BaseModel):
@@ -218,6 +235,7 @@ class Settings(BaseModel):
     execution: ExecutionConfig = Field(default_factory=ExecutionConfig)
     redis: RedisConfig = Field(default_factory=RedisConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
+    notification: NotificationConfig = Field(default_factory=NotificationConfig)
 
 
 # =============================================================================
@@ -255,15 +273,26 @@ def load_yaml_config(config_path: Path | str | None = None) -> dict[str, Any]:
 def get_settings() -> Settings:
     """获取应用配置单例。
 
-    环境变量 `DML_APP_PORT` 会覆盖 config.yaml 中的 `app.port`，
-    确保 server.sh 启动的端口与代码内读取的端口一致。
+    配置加载顺序（后者覆盖前者）：
+    1. config.yaml（基础配置）
+    2. config_dev.yaml（仅 DML_ENV=dev 时加载，覆盖基础配置）
+    3. 环境变量覆盖（如 DML_APP_PORT）
 
     Returns:
         Settings: 应用配置实例
     """
     config_data = load_yaml_config()
 
-    # 环境变量 DML_APP_PORT 优先级高于配置文件，确保启动脚本与代码一致
+    # DML_ENV=dev 时加载 config_dev.yaml，覆盖基础配置
+    env_mode = os.getenv("DML_ENV", "production")
+    if env_mode == "dev":
+        dev_config_path = get_config_path().with_name("config_dev.yaml")
+        if dev_config_path.exists():
+            with open(dev_config_path, "r", encoding="utf-8") as f:
+                dev_data = yaml.safe_load(f) or {}
+            config_data = _deep_merge(config_data, dev_data)
+
+    # 环境变量 DML_APP_PORT 优先级高于配置文件
     env_port = os.getenv("DML_APP_PORT")
     if env_port is not None:
         app_config = config_data.get("app", {})
@@ -271,4 +300,15 @@ def get_settings() -> Settings:
         config_data["app"] = app_config
 
     return Settings(**config_data)
+
+
+def _deep_merge(base: dict, override: dict) -> dict:
+    """递归合并两个 dict，override 的值覆盖 base。"""
+    result = dict(base)
+    for key, value in override.items():
+        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+            result[key] = _deep_merge(result[key], value)
+        else:
+            result[key] = value
+    return result
 

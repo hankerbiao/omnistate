@@ -44,6 +44,11 @@ const ProfilePage: React.FC = () => {
   const [savingEmail, setSavingEmail] = useState(false);
   const [emailSuccess, setEmailSuccess] = useState<string | null>(null);
   const [emailError, setEmailError] = useState<string | null>(null);
+  const [editingItcode, setEditingItcode] = useState(false);
+  const [itcodeDraft, setItcodeDraft] = useState('');
+  const [savingItcode, setSavingItcode] = useState(false);
+  const [itcodeSuccess, setItcodeSuccess] = useState<string | null>(null);
+  const [itcodeError, setItcodeError] = useState<string | null>(null);
 
   const fetchUserData = useCallback(async () => {
     setLoading(true);
@@ -198,6 +203,42 @@ const ProfilePage: React.FC = () => {
     }
   };
 
+  const handleStartEditItcode = () => {
+    setItcodeDraft(userInfo?.itcode || '');
+    setEditingItcode(true);
+    setItcodeError(null);
+    setItcodeSuccess(null);
+  };
+
+  const handleCancelEditItcode = () => {
+    setEditingItcode(false);
+    setItcodeDraft('');
+    setItcodeError(null);
+  };
+
+  const handleSaveItcode = async () => {
+    if (!userInfo) return;
+    const trimmed = itcodeDraft.trim();
+    setSavingItcode(true);
+    setItcodeError(null);
+    setItcodeSuccess(null);
+    try {
+      const res = await api.updateUser(userInfo.user_id, { itcode: trimmed || undefined });
+      if (res.code === 0 || res.code === 200) {
+        setUserInfo({ ...userInfo, itcode: res.data?.itcode || trimmed });
+        setEditingItcode(false);
+        setItcodeSuccess('通知 itcode 已更新');
+        setTimeout(() => setItcodeSuccess(null), 3000);
+      } else {
+        setItcodeError(res.message || '更新 itcode 失败');
+      }
+    } catch {
+      setItcodeError('更新 itcode 失败，请稍后重试');
+    } finally {
+      setSavingItcode(false);
+    }
+  };
+
   if (loading) {
     return (
       <div style={styles.container}>
@@ -308,6 +349,64 @@ const ProfilePage: React.FC = () => {
                 {emailSuccess && (
                   <span style={{ fontSize: 11, color: 'var(--status-success)', marginTop: 2 }}>{emailSuccess}</span>
                 )}
+              </div>
+              <div style={styles.infoItem}>
+                <span style={styles.infoLabel}>光圈通知 itcode</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {editingItcode ? (
+                    <>
+                      <input
+                        className="form-input"
+                        style={{ flex: 1, fontSize: 13, minWidth: 180 }}
+                        value={itcodeDraft}
+                        onChange={e => setItcodeDraft(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') handleSaveItcode(); if (e.key === 'Escape') handleCancelEditItcode(); }}
+                        placeholder="输入 itcode"
+                        autoFocus
+                        disabled={savingItcode}
+                      />
+                      <button
+                        className="btn btn--primary btn--sm"
+                        onClick={handleSaveItcode}
+                        disabled={savingItcode}
+                        style={{ whiteSpace: 'nowrap', fontSize: 12, padding: '5px 12px' }}
+                      >
+                        {savingItcode ? '保存中…' : '保存'}
+                      </button>
+                      <button
+                        className="btn btn--ghost btn--sm"
+                        onClick={handleCancelEditItcode}
+                        disabled={savingItcode}
+                        style={{ whiteSpace: 'nowrap', fontSize: 12, padding: '5px 12px' }}
+                      >
+                        取消
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <span style={styles.infoValue}>{userInfo.itcode || (
+                        <span style={{ color: 'var(--text-tertiary)', fontStyle: 'italic' }}>未设置</span>
+                      )}</span>
+                      <button
+                        className="btn btn--ghost btn--sm"
+                        onClick={handleStartEditItcode}
+                        title="编辑 itcode"
+                        style={{ fontSize: 11, padding: '2px 8px', lineHeight: 1.4 }}
+                      >
+                        ✏️ 编辑
+                      </button>
+                    </>
+                  )}
+                </div>
+                {itcodeError && (
+                  <span style={{ fontSize: 11, color: 'var(--status-error)', marginTop: 2 }}>{itcodeError}</span>
+                )}
+                {itcodeSuccess && (
+                  <span style={{ fontSize: 11, color: 'var(--status-success)', marginTop: 2 }}>{itcodeSuccess}</span>
+                )}
+                <span style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 2 }}>
+                  用于接收光圈通知，请联系管理员获取
+                </span>
               </div>
               <div style={styles.infoItem}>
                 <span style={styles.infoLabel}>状态</span>

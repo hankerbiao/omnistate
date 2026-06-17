@@ -30,6 +30,7 @@ class UserDoc(Document):
     # 用户级导航可见页面覆盖（为空时按角色/权限默认）
     allowed_nav_views: List[str] = Field(default_factory=list, description="用户允许访问的导航页面")
     status: str = Field(default="ACTIVE", description="用户状态")
+    itcode: str = Field(default="", description="光圈通知 itcode")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="创建时间")
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="更新时间")
 

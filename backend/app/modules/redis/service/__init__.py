@@ -164,7 +164,7 @@ def _heartbeat_loop() -> None:
             cfg = get_settings()
             service_name = cfg.app.service_name
             host = _get_local_ip()
-            port = cfg.redis.service_port
+            port = cfg.app.port
             instance_id = f"{service_name}@{host}:{port}"
             ttl_sec = 600  # 10 分钟过期，心跳 1 分钟续一次足够
 
@@ -203,7 +203,7 @@ def stop_heartbeat() -> None:
 
 # ── 服务注册/发现（将本服务实例信息上报到 Redis）───────────────────
 
-SERVICE_REGISTRY_KEY = f"{KEY_NAMESPACE}:service_registry"
+SERVICE_REGISTRY_KEY: str = get_settings().redis.service_registry_key
 
 
 def _get_local_ip() -> str:

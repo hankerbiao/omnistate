@@ -17,9 +17,9 @@ rabbitmq:
   connection_attempts: 3
   retry_delay: 2.0
   ssl_enabled: false
-  task_queue: dml_task_queue
+  task_queue: test_dml_task_queue
   task_exchange: ''
-  task_routing_key: dml_task_queue
+  task_routing_key: test_dml_task_queue
   prefetch_count: 10
 kafka:
   bootstrap_servers:
@@ -27,9 +27,9 @@ kafka:
   client_id: dmlv4-shard
   result_topic: dmlv4.results
   dead_letter_topic: dmlv4.deadletter
-  test_events_topic: dml-test-event
+  test_events_topic: test_dml-test-event
   execution_result_group_id: dmlv4-execution-result-consumers
-  test_events_group_id: dmlv4-test-events-consumers
+  test_events_group_id: test_dmlv4-test-events-consumers
   producer_options:
     acks: all
     retries: 3
@@ -74,7 +74,7 @@ redis:
   db: 0
   socket_timeout: 2
   max_connections: 100
-  service_registry_key: dmlv4:service_registry
+  service_registry_key: test_dmlv4:service_registry
 logging:
   console_level: DEBUG
   log_dir: logs
@@ -88,10 +88,3 @@ logging:
   slow_query_threshold_ms: 200
   module_levels:
     app.modules.execution: DEBUG
-
-notification:
-  enabled: true
-  guangquan:
-    api_url: "http://rdm.cooacloud.com/api/platform/notify/bot"
-    component_name: "DML"
-    timeout_sec: 5

@@ -41,6 +41,11 @@ find_pid() {
     pgrep -f "uvicorn.*${APP_MODULE}.*${PORT}" 2>/dev/null | head -1
 }
 
+# 查找 Kafka Worker 进程 PID
+find_kafka_worker_pid() {
+    pgrep -f "kafka_worker_main" 2>/dev/null | head -1
+}
+
 read_pid() {
     if [[ -f "$PID_FILE" ]]; then
         cat "$PID_FILE"
@@ -67,6 +72,14 @@ cmd_status() {
         error "Server is not running"
         return 1
     fi
+
+    local worker_pid
+    worker_pid=$(find_kafka_worker_pid)
+    if [[ -n "$worker_pid" ]]; then
+        info "Kafka Worker is running (PID: $worker_pid)"
+    else
+        warn "Kafka Worker is not running — 执行结果将无法自动入库"
+    fi
 }
 
 cmd_start() {
@@ -79,8 +92,7 @@ cmd_start() {
 
     mkdir -p "$LOG_DIR"
 
-    # 后台启动 uvicorn，端口通过 DML_APP_PORT 环境变量暴露给应用
-    export DML_APP_PORT="$PORT"
+    # 后台启动 uvicorn
     nohup "$PYTHON_BIN" -m uvicorn "$APP_MODULE" \
         --host "$HOST" \
         --port "$PORT" \
@@ -98,6 +110,14 @@ cmd_start() {
         echo "    tail -n 20 $LOG_FILE"
         rm -f "$PID_FILE"
         exit 1
+    fi
+
+    # 检查 Kafka Worker 是否在运行
+    local worker_pid
+    worker_pid=$(find_kafka_worker_pid)
+    if [[ -z "$worker_pid" ]]; then
+        warn "Kafka Worker 未启动 — 执行结果将无法自动入库"
+        warn "启动命令: $PYTHON_BIN -m app.workers.kafka_worker_main"
     fi
 }
 
@@ -140,6 +160,11 @@ cmd_restart() {
     cmd_start
 }
 
+cmd_dev() {
+    info "Starting server in DEV mode (DML_ENV=dev)..."
+    DML_ENV=dev cmd_start
+}
+
 main() {
     local action="${1:-}"
     case "$action" in
@@ -152,14 +177,18 @@ main() {
         restart)
             cmd_restart
             ;;
+        dev)
+            cmd_dev
+            ;;
         status)
             cmd_status
             ;;
         *)
-            echo "Usage: $(basename "$0") {start|stop|restart|status}"
+            echo "Usage: $(basename "$0") {start|stop|restart|dev|status}"
             echo ""
             echo "Commands:"
-            echo "  start     Start the server (daemon mode)"
+            echo "  start     Start the server (daemon mode, production)"
+            echo "  dev       Start the server in DEV mode (DML_ENV=dev)"
             echo "  stop      Stop the server"
             echo "  restart   Restart the server"
             echo "  status    Show server status"

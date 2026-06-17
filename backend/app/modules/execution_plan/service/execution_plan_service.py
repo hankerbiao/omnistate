@@ -1,6 +1,7 @@
 """执行计划应用服务。"""
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -27,6 +28,7 @@ from app.modules.execution_plan.schemas.execution_plan import (
     PlanItemRerunRequest,
     SubmitManualResultRequest,
 )
+from app.modules.notification.service import NotificationService
 from app.modules.test_specs.repository.models import AutomationTestCaseDoc, TestCaseDoc
 from app.shared.service import BaseService, SequenceIdService
 from app.shared.core.logger import log as logger
@@ -223,6 +225,15 @@ class ExecutionPlanService(BaseService):
             old_value=old, new_value=assignee_id, remark=remark,
         )
         logger.info(f"[REASSIGN] item={item_id} {old} -> {assignee_id} by {operator_id}")
+
+        # 通知被指派人
+        plan_title = await self._get_plan_title(item.plan_id)
+        asyncio.ensure_future(NotificationService.notify_by_user_id(
+            user_id=assignee_id,
+            title="执行任务改派",
+            content=f"计划「{plan_title}」中的用例「{item.case_title}」已改派给您执行",
+        ))
+
         return await self._item_to_response(item)
 
     async def batch_update_assignee(
@@ -245,6 +256,16 @@ class ExecutionPlanService(BaseService):
         await self._recalculate_plan_progress(plan_id)
         updated = result.modified_count
         logger.debug(f"[ITEM] batch_update_assignee plan={plan_id} count={updated} assignee={assignee_id}")
+
+        # 通知被指派人
+        if assignee_id and updated > 0:
+            plan_title = await self._get_plan_title(plan_id)
+            asyncio.ensure_future(NotificationService.notify_by_user_id(
+                user_id=assignee_id,
+                title="执行任务指派",
+                content=f"计划「{plan_title}」中有 {updated} 项用例已指派给您执行",
+            ))
+
         return {
             "plan_id": plan_id,
             "updated_count": updated,
@@ -668,6 +689,16 @@ class ExecutionPlanService(BaseService):
             f"status=reset->pending assignee={request.assignee_id or 'unchanged'} "
             f"actor={actor_id}"
         )
+
+        # 通知被指派人
+        if request.assignee_id is not None:
+            plan_title = await self._get_plan_title(item.plan_id)
+            asyncio.ensure_future(NotificationService.notify_by_user_id(
+                user_id=request.assignee_id,
+                title="执行任务重新指派",
+                content=f"计划「{plan_title}」中的用例「{item.case_title}」已重新指派给您执行",
+            ))
+
         return await self._item_to_response(item)
 
     async def batch_dispatch(

@@ -85,6 +85,7 @@ export interface UserResponse {
   extra_permission_ids?: string[];
   allowed_nav_views?: string[];
   status: string;
+  itcode?: string;
   created_at: string;
   updated_at: string;
 }
@@ -96,12 +97,14 @@ export interface CreateUserRequest {
   email?: string;
   role_ids?: string[];
   status?: string;
+  itcode?: string;
 }
 
 export interface UpdateUserRequest {
   username?: string;
   email?: string;
   status?: string;
+  itcode?: string;
 }
 
 export interface UpdateUserRolesRequest {
