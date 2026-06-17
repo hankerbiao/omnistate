@@ -84,7 +84,7 @@ class AutomationTestCaseDoc(Document):
         name = "automation_test_cases"
         indexes = [
             IndexModel([("auto_case_id", ASCENDING)], unique=True),
-            IndexModel([("linked_manual_case_id", ASCENDING)], unique=True, sparse=True),
+            IndexModel([("linked_manual_case_id", ASCENDING)]),
             IndexModel("status"),
             IndexModel("framework"),
             IndexModel("automation_type"),

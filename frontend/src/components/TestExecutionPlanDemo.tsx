@@ -117,6 +117,7 @@ export default function TestExecutionPlanDemo() {
 
   // ── Users (from real API) ──
   const [users, setUsers] = useState<UserResponse[]>([]);
+  const [currentUserId, setCurrentUserId] = useState('');
 
   // ── Overview ──
   const [showOverview, setShowOverview] = useState(false);
@@ -230,11 +231,17 @@ export default function TestExecutionPlanDemo() {
   // ── Fetch users and collections on mount ──
   useEffect(() => {
     api.listUsers({ limit: 200 })
-      .then(res => setUsers(res.data || []))
+      .then(res => {
+        setUsers(res.data || []);
+        setCurrentUserId(res.data?.[0]?.user_id || '');
+      })
       .catch(() => {
         // 权限不足时至少包含当前用户
         api.getCurrentUser().then(u => {
-          if (u.data) setUsers([u.data]);
+          if (u.data) {
+            setUsers([u.data]);
+            setCurrentUserId(u.data.user_id);
+          }
         }).catch(() => setUsers([]));
       });
 
@@ -1828,9 +1835,8 @@ function CreatePlanWizard({ wizardStep, onStepChange, newPlan, onNewPlanChange, 
                         color: tc.type === 'auto' ? '#39d0d6' : '#a371f7', fontWeight: 600,
                       }}>{tc.type === 'auto' ? 'AUTO' : 'MANUAL'}</span>
                       <select className="form-input form-select" style={{ width: 120, fontSize: 11 }}
-                        value={newPlan.assignments[cid]?.assignee || ''}
+                        value={newPlan.assignments[cid]?.assignee || currentUserId}
                         onChange={e => onSetAssignment(cid, e.target.value)}>
-                        <option value="">执行人</option>
                         {users.map(u => <option key={u.user_id} value={u.user_id}>{u.username}</option>)}
                       </select>
                     </div>

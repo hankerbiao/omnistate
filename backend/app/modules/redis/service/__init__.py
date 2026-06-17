@@ -10,6 +10,7 @@ import json
 import queue
 import socket
 import threading
+import time
 from typing import Any
 
 from redis.sentinel import Sentinel
@@ -153,18 +154,32 @@ _heartbeat_stop = threading.Event()
 
 
 def _heartbeat_loop() -> None:
-    """定时续期服务注册的 TTL，每 10 分钟执行一次。"""
+    """每分钟更新一次服务注册信息（含 IP、端口、状态）。"""
     while not _heartbeat_stop.is_set():
-        _heartbeat_stop.wait(timeout=600)  # 10 分钟
+        _heartbeat_stop.wait(timeout=60)  # 1 分钟
         if _heartbeat_stop.is_set():
             break
         try:
             import app.modules.redis.service as svc
             cfg = get_settings()
             service_name = cfg.app.service_name
-            ttl_sec = 600  # 10 分钟
+            host = _get_local_ip()
+            port = cfg.app.port
+            instance_id = f"{service_name}@{host}:{port}"
+            ttl_sec = 600  # 10 分钟过期，心跳 1 分钟续一次足够
 
-            svc.redis_conn.expire(f"{SERVICE_REGISTRY_KEY}:{service_name}", ttl_sec)
+            info = {
+                "service_name": service_name,
+                "host": host,
+                "port": port,
+                "instance_id": instance_id,
+                "status": "UP",
+            }
+            svc.redis_conn.setex(
+                f"{SERVICE_REGISTRY_KEY}:{service_name}",
+                ttl_sec,
+                json.dumps(info),
+            )
         except Exception:
             pass  # 心跳失败下次重试
 
@@ -222,6 +237,7 @@ def register_service() -> None:
         "port": port,
         "instance_id": instance_id,
         "status": "UP",
+        "registered_at": int(time.time()),
     }
 
     try:

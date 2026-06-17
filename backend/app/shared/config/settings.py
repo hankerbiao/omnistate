@@ -45,7 +45,7 @@ class AppConfig(BaseModel):
 
     debug: bool = False
     host: str = "0.0.0.0"
-    port: int = 8000
+    port: int = 8801
     service_name: str = "dmlv4-backend"
     cors_origins: list[str] = Field(default_factory=lambda: ["*"])
 
