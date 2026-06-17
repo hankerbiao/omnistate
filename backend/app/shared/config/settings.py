@@ -93,7 +93,6 @@ class KafkaProducerOptions(BaseModel):
     retries: int = 3
     batch_size: int = 16384
     linger_ms: int = 10
-    buffer_memory: int = 33554432
 
 
 class KafkaConsumerOptions(BaseModel):

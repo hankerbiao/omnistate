@@ -35,7 +35,6 @@ kafka:
     retries: 3
     batch_size: 16384
     linger_ms: 10
-    buffer_memory: 33554432
   consumer_options:
     auto_offset_reset: earliest
     enable_auto_commit: true
