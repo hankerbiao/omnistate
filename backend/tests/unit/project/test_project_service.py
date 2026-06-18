@@ -35,6 +35,12 @@ def make_doc(**overrides) -> MagicMock:
     doc.name = overrides.get("name", "测试项目")
     doc.description = overrides.get("description", "测试描述")
     doc.status = overrides.get("status", "active")
+    doc.priority = overrides.get("priority", "P2")
+    doc.owner_id = overrides.get("owner_id", None)
+    doc.start_date = overrides.get("start_date", None)
+    doc.end_date = overrides.get("end_date", None)
+    doc.target_version = overrides.get("target_version", None)
+    doc.tags = overrides.get("tags", [])
     doc.created_by = overrides.get("created_by", "test_admin")
     doc.created_at = overrides.get("created_at", datetime.now(timezone.utc))
     doc.updated_at = overrides.get("updated_at", datetime.now(timezone.utc))
@@ -266,10 +272,10 @@ class TestGenerateProjectId:
 
 class TestToProjectResponse:
 
-    def test_convert_doc_to_response(self):
+    async def test_convert_doc_to_response(self):
         """文档应正确转换为 ProjectResponse。"""
         doc = make_doc()
-        response = ProjectService._to_project_response(doc)
+        response = await ProjectService._to_project_response(doc)
 
         assert response.project_id == doc.project_id
         assert response.key == doc.key

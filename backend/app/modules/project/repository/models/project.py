@@ -3,20 +3,27 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Optional
+from typing import List, Optional
 
 from beanie import Document, Indexed
 from pydantic import Field
+from pymongo import IndexModel
 
 
 class ProjectDoc(Document):
     """项目文档模型。"""
 
-    project_id: Indexed(str, unique=True)  # 格式: PRJ-2026-00001
-    key: Indexed(str, unique=True)        # 短标识: "RED-FISH-V3"
-    name: str                              # 显示名称
+    project_id: Indexed(str, unique=True)       # 格式: PRJ-2026-00001
+    key: Indexed(str, unique=True)             # 短标识: "RED-FISH-V3"
+    name: str                                  # 显示名称
     description: Optional[str] = None
-    status: str = "active"              # active | archived
+    status: str = "active"                     # active | archived
+    priority: str = "P2"                       # P0/P1/P2
+    owner_id: Optional[str] = None             # 项目负责人 user_id
+    start_date: Optional[datetime] = None      # 计划开始
+    end_date: Optional[datetime] = None        # 计划结束
+    target_version: Optional[str] = None       # 目标版本
+    tags: List[str] = Field(default_factory=list)
     created_by: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -25,10 +32,12 @@ class ProjectDoc(Document):
     class Settings:
         name = "projects"
         indexes = [
-            "project_id",
-            "key",
-            "status",
-            "is_deleted",
+            IndexModel("project_id", unique=True),
+            IndexModel("key", unique=True),
+            IndexModel("status"),
+            IndexModel("owner_id"),
+            IndexModel("priority"),
+            IndexModel("is_deleted"),
         ]
 
     class Config:
