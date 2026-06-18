@@ -6,6 +6,10 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from app.modules.project.domain.constants import PROJECT_RELATED_MODEL_PATHS, ProjectStatus
+from app.modules.project.domain.exceptions import (
+    ProjectKeyConflictError,
+    ProjectNotFoundError,
+)
 from app.modules.project.repository.models.project import ProjectDoc
 from app.modules.project.schemas.project import (
     AssigneeDistribution,
@@ -35,7 +39,6 @@ def _get_related_models() -> list[type]:
 
 
 async def _resolve_owner(owner_id: Optional[str]) -> Optional[OwnerBrief]:
-    """异步解析负责人信息。"""
     if not owner_id:
         return None
     try:
@@ -48,27 +51,11 @@ async def _resolve_owner(owner_id: Optional[str]) -> Optional[OwnerBrief]:
     return None
 
 
-async def _get_plan_ids_for_project(project_id: str) -> List[str]:
-    """获取项目关联的所有执行计划 ID（通过 ExecutionPlanDoc 关联）。"""
-    try:
-        from app.modules.execution_plan.repository.models import ExecutionPlanDoc
-        plans = await ExecutionPlanDoc.find(
-            {"project_ids": {"$in": [project_id]}, "is_deleted": False}
-        ).to_list()
-        return [p.plan_id for p in plans]
-    except Exception:
-        return []
-
-
 async def _fetch_assignee_distribution(project_id: str) -> List[AssigneeDistribution]:
-    """获取执行计划条目按执行人聚合的分布（通过 plan_ids 关联）。"""
     try:
-        plan_ids = await _get_plan_ids_for_project(project_id)
-        if not plan_ids:
-            return []
         from app.modules.execution_plan.repository.models import ExecutionPlanItemDoc
         pipeline = [
-            {"$match": {"plan_id": {"$in": plan_ids}, "is_deleted": False}},
+            {"$match": {"project_ids": {"$in": [project_id]}, "is_deleted": False}},
             {"$group": {
                 "_id": "$assignee_id",
                 "item_count": {"$sum": 1},
@@ -86,13 +73,65 @@ async def _fetch_assignee_distribution(project_id: str) -> List[AssigneeDistribu
                 progress=round(r["done_count"] / r["item_count"] * 100, 1) if r.get("item_count") else 0.0,
             ) for r in result
         ]
-    except Exception as e:
-        logger.warning(f"Failed to fetch assignee distribution: {e}")
+    except Exception:
         return []
+
+
+# ── 统计查询的辅助函数 ──────────────────────────────────────────────────
+
+def _make_project_filter(project_id: str, extra_filters: Optional[list] = None) -> dict:
+    q: dict = {"project_ids": {"$in": [project_id]}, "is_deleted": False}
+    if extra_filters:
+        q["$and"] = list(extra_filters)
+    return q
+
+
+async def _count_for_project(model, project_id: str, extra_filters: Optional[list] = None) -> int:
+    return await model.find(_make_project_filter(project_id, extra_filters)).count()
+
+
+async def _compute_task_breakdown(task_cls, project_id: str) -> ExecutionTaskBreakdown:
+    total = await _count_for_project(task_cls, project_id)
+    done = await _count_for_project(task_cls, project_id, [{"overall_status": {"$in": ["FINISHED", "SUCCESS", "DONE"]}}])
+    running = await _count_for_project(task_cls, project_id, [{"overall_status": {"$in": ["RUNNING", "DISPATCHED"]}}])
+    failed = await _count_for_project(task_cls, project_id, [{"overall_status": {"$in": ["FAILED", "ERROR"]}}])
+    pending = total - done - running - failed
+    progress = round(done / total * 100, 1) if total > 0 else 0.0
+    return ExecutionTaskBreakdown(total=total, done=done, running=running, failed=failed, pending=pending, progress=progress)
+
+
+async def _compute_pass_rates(project_id: str) -> tuple[StatsBreakdown, StatsBreakdown]:
+    manual = StatsBreakdown()
+    auto = StatsBreakdown()
+    try:
+        from app.modules.execution_plan.repository.models import ExecutionPlanItemDoc
+        items = await ExecutionPlanItemDoc.find(
+            {"project_ids": {"$in": [project_id]}, "is_deleted": False}
+        ).to_list()
+        if items:
+            manual = _make_pass_stats([i for i in items if i.ref_type == "manual"])
+            auto = _make_pass_stats([i for i in items if i.ref_type == "auto"])
+    except Exception:
+        pass
+    return manual, auto
+
+
+def _make_pass_stats(items: list) -> StatsBreakdown:
+    total = len(items)
+    passed = sum(1 for i in items if i.status == "done")
+    failed = sum(1 for i in items if i.status == "fail")
+    rate = round(passed / total * 100, 1) if total > 0 else 0.0
+    return StatsBreakdown(total=total, passed=passed, failed=failed, pass_rate=rate)
+
+
+async def _compute_coverage(test_case_count: int, requirement_count: int) -> float:
+    return round(test_case_count / requirement_count * 100, 1) if requirement_count > 0 else 0.0
 
 
 class ProjectService(BaseService):
     """项目 CRUD 与统计服务。"""
+
+    # ── 响应构造 ──────────────────────────────────────────────────────
 
     @staticmethod
     async def _to_project_response(doc) -> ProjectResponse:
@@ -128,7 +167,6 @@ class ProjectService(BaseService):
         sort_by: str = "created_at",
         sort_order: str = "desc",
     ) -> Dict[str, Any]:
-        """获取项目列表（分页 + 搜索）。"""
         filters: list = [ProjectDoc.is_deleted == False]
 
         if name:
@@ -140,7 +178,6 @@ class ProjectService(BaseService):
 
         sort_field = getattr(ProjectDoc, sort_by, ProjectDoc.created_at)
         sort_direction = -1 if sort_order == "desc" else 1
-
         skip = (page - 1) * page_size
 
         total = await ProjectDoc.find({"$and": filters}).count()
@@ -154,10 +191,7 @@ class ProjectService(BaseService):
 
         items = [await ProjectService._to_project_response(d) for d in docs]
 
-        return {
-            "items": items,
-            "total": total,
-        }
+        return {"items": items, "total": total}
 
     # ── 创建 ──────────────────────────────────────────────────────────
 
@@ -166,12 +200,11 @@ class ProjectService(BaseService):
         data: Dict[str, Any],
         created_by: Optional[str] = None,
     ) -> ProjectDoc:
-        """创建项目。"""
         existing = await ProjectDoc.find_one(
             {"key": data["key"], "is_deleted": False}
         )
         if existing:
-            raise ValueError(f"项目标识已存在: {data['key']}")
+            raise ProjectKeyConflictError(data["key"])
 
         project_id = await ProjectService._generate_project_id()
 
@@ -197,41 +230,20 @@ class ProjectService(BaseService):
 
     @staticmethod
     async def get_project(project_id: str) -> Optional[ProjectDoc]:
-        """获取项目文档。"""
-        return await ProjectDoc.find_one(
-            {"project_id": project_id, "is_deleted": False}
-        )
-
-    @staticmethod
-    async def get_project_detail(project_id: str) -> Optional[ProjectDetailResponse]:
-        """获取项目详情（含统计和负责人信息）。"""
         doc = await ProjectDoc.find_one(
             {"project_id": project_id, "is_deleted": False}
         )
         if not doc:
-            return None
+            raise ProjectNotFoundError(f"项目不存在: {project_id}")
+        return doc
 
+    @staticmethod
+    async def get_project_detail(project_id: str) -> ProjectDetailResponse:
+        doc = await ProjectService.get_project(project_id)
         stats = await ProjectService.get_project_stats(project_id)
-        owner = await _resolve_owner(doc.owner_id)
 
-        return ProjectDetailResponse(
-            project_id=doc.project_id,
-            key=doc.key,
-            name=doc.name,
-            description=doc.description,
-            status=doc.status,
-            priority=doc.priority,
-            owner_id=doc.owner_id,
-            owner=owner,
-            start_date=doc.start_date,
-            end_date=doc.end_date,
-            target_version=doc.target_version,
-            tags=doc.tags or [],
-            created_by=doc.created_by,
-            created_at=doc.created_at,
-            updated_at=doc.updated_at,
-            stats=stats,
-        )
+        response = await ProjectService._to_project_response(doc)
+        return ProjectDetailResponse(**response.model_dump(), stats=stats)
 
     # ── 更新 ──────────────────────────────────────────────────────────
 
@@ -240,19 +252,18 @@ class ProjectService(BaseService):
         project_id: str,
         data: Dict[str, Any],
     ) -> ProjectDoc:
-        """更新项目信息。"""
         doc = await ProjectDoc.find_one(
             {"project_id": project_id, "is_deleted": False}
         )
         if not doc:
-            raise ValueError(f"项目不存在: {project_id}")
+            raise ProjectNotFoundError(f"项目不存在: {project_id}")
 
         if "key" in data and data["key"] != doc.key:
             existing = await ProjectDoc.find_one(
                 {"key": data["key"], "is_deleted": False, "project_id": {"$ne": project_id}}
             )
             if existing:
-                raise ValueError(f"项目标识已存在: {data['key']}")
+                raise ProjectKeyConflictError(data["key"])
 
         allowed_fields = {
             "name", "key", "description", "status",
@@ -269,115 +280,62 @@ class ProjectService(BaseService):
 
     @staticmethod
     async def delete_project(project_id: str) -> None:
-        """软删除项目，并清理所有关联实体的 project_ids。"""
         doc = await ProjectDoc.find_one(
             {"project_id": project_id, "is_deleted": False}
         )
         if not doc:
-            raise ValueError(f"项目不存在: {project_id}")
+            raise ProjectNotFoundError(f"项目不存在: {project_id}")
 
         doc.is_deleted = True
         doc.updated_at = datetime.now(timezone.utc)
         await doc.save()
 
-        collections = _get_related_models()
-        for model in collections:
+        for model in _get_related_models():
             try:
                 await model.find(
                     {"project_ids": project_id, "is_deleted": False}
                 ).update_many({"$pull": {"project_ids": project_id}})
             except Exception as e:
-                logger.warning(
-                    f"Failed to clean project_ids from {model.__name__}: {e}"
-                )
+                logger.warning(f"Failed to clean project_ids from {model.__name__}: {e}")
 
-        logger.info(f"Project deleted: {project_id}, cleaned {len(collections)} collections")
+        logger.info(f"Project deleted: {project_id}")
 
     # ── 统计 ──────────────────────────────────────────────────────────
 
     @staticmethod
     async def get_project_stats(project_id: str) -> ProjectStatsResponse:
-        """获取项目下各类实体聚合统计。"""
-        def _count(model, add_filters: Optional[list] = None):
-            filters = [{"project_ids": {"$in": [project_id]}}, {"is_deleted": False}]
-            if add_filters:
-                filters.extend(add_filters)
-            return model.find({"$and": filters}).count()
-
         related = _get_related_models()
-        test_case_cls = next(m for m in related if m.__name__ == "TestCaseDoc")
-        auto_case_cls = next(m for m in related if m.__name__ == "AutomationTestCaseDoc")
-        req_cls = next(m for m in related if m.__name__ == "TestRequirementDoc")
-        plan_cls = next(m for m in related if m.__name__ == "ExecutionPlanDoc")
-        task_cls = next(m for m in related if m.__name__ == "ExecutionTaskDoc")
-        collection_cls = next(m for m in related if m.__name__ == "TestCaseCollectionDoc")
 
-        # 计数
-        test_case_count = await _count(test_case_cls)
-        auto_case_count = await _count(auto_case_cls)
-        req_count = await _count(req_cls)
-        plan_count = await _count(plan_cls)
+        def _find(name: str):
+            return next(m for m in related if m.__name__ == name)
 
-        # 任务统计
-        task_total = await _count(task_cls)
-        task_done = await _count(task_cls, [{"overall_status": {"$in": ["FINISHED", "SUCCESS", "DONE"]}}])
-        task_running = await _count(task_cls, [{"overall_status": {"$in": ["RUNNING", "DISPATCHED"]}}])
-        task_failed = await _count(task_cls, [{"overall_status": {"$in": ["FAILED", "ERROR"]}}])
-        task_pending = task_total - task_done - task_running - task_failed
-        task_progress = round(task_done / task_total * 100, 1) if task_total > 0 else 0.0
+        tc = _find("TestCaseDoc")
+        ac = _find("AutomationTestCaseDoc")
+        rc = _find("TestRequirementDoc")
+        ec = _find("TestCaseCollectionDoc")
 
-        # 通过率 — 通过 plan_ids 关联查询 ExecutionPlanItemDoc
-        manual_pass = StatsBreakdown()
-        auto_pass = StatsBreakdown()
-        try:
-            plan_ids = await _get_plan_ids_for_project(project_id)
-            if plan_ids:
-                from app.modules.execution_plan.repository.models import ExecutionPlanItemDoc
-                items = await ExecutionPlanItemDoc.find(
-                    {"plan_id": {"$in": plan_ids}, "is_deleted": False}
-                ).to_list()
-                if items:
-                    manual_items = [i for i in items if i.ref_type == "manual"]
-                    auto_items = [i for i in items if i.ref_type == "auto"]
-                    manual_pass = StatsBreakdown(
-                        total=len(manual_items),
-                        passed=sum(1 for i in manual_items if i.status == "done"),
-                        failed=sum(1 for i in manual_items if i.status == "fail"),
-                        pass_rate=round(sum(1 for i in manual_items if i.status == "done") / len(manual_items) * 100, 1) if manual_items else 0.0,
-                    )
-                    auto_pass = StatsBreakdown(
-                        total=len(auto_items),
-                        passed=sum(1 for i in auto_items if i.status == "done"),
-                        failed=sum(1 for i in auto_items if i.status == "fail"),
-                        pass_rate=round(sum(1 for i in auto_items if i.status == "done") / len(auto_items) * 100, 1) if auto_items else 0.0,
-                    )
-        except Exception as e:
-            logger.warning(f"Failed to compute pass rate for project {project_id}: {e}")
+        test_case_count = await _count_for_project(tc, project_id)
+        auto_case_count = await _count_for_project(ac, project_id)
+        requirement_count = await _count_for_project(rc, project_id)
+        plan_count = await _count_for_project(_find("ExecutionPlanDoc"), project_id)
+        collection_count = await _count_for_project(ec, project_id)
 
-        # 覆盖率
-        coverage = round(test_case_count / req_count * 100, 1) if req_count > 0 else 0.0
-
-        # 执行人分布
+        task = await _compute_task_breakdown(_find("ExecutionTaskDoc"), project_id)
+        manual_pass, auto_pass = await _compute_pass_rates(project_id)
+        coverage_rate = await _compute_coverage(test_case_count, requirement_count)
         assignee_dist = await _fetch_assignee_distribution(project_id)
 
         return ProjectStatsResponse(
             test_case_count=test_case_count,
             auto_case_count=auto_case_count,
-            requirement_count=req_count,
+            requirement_count=requirement_count,
             plan_count=plan_count,
-            collection_count=await _count(collection_cls),
-            task=ExecutionTaskBreakdown(
-                total=task_total,
-                done=task_done,
-                running=task_running,
-                failed=task_failed,
-                pending=task_pending,
-                progress=task_progress,
-            ),
-            task_progress=task_progress,
+            collection_count=collection_count,
+            task=task,
+            task_progress=task.progress,
             manual_pass=manual_pass,
             auto_pass=auto_pass,
-            coverage_rate=coverage,
+            coverage_rate=coverage_rate,
             assignee_distribution=assignee_dist,
         )
 
@@ -385,9 +343,9 @@ class ProjectService(BaseService):
 
     @staticmethod
     async def _generate_project_id() -> str:
-        """生成 project_id，格式: PRJ-YYYY-XXXXX。"""
+        from app.modules.project.domain.constants import PROJECT_ID_PREFIX
         year = datetime.now(timezone.utc).year
-        prefix = f"PRJ-{year}-"
+        prefix = f"{PROJECT_ID_PREFIX}-{year}-"
         last = await ProjectDoc.find(
             {"project_id": {"$regex": f"^{prefix}"}},
             sort=[("project_id", -1)],

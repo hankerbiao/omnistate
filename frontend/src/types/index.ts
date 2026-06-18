@@ -1292,15 +1292,51 @@ export interface BatchUpdateResult {
 //  项目（Project）相关
 // ═══════════════════════════════════════════════════════════════════════
 
+export interface OwnerBrief {
+  user_id: string;
+  username: string;
+}
+
 export interface Project {
   project_id: string;
   key: string;
   name: string;
   description?: string | null;
   status: string;
+  priority: string;
+  owner_id?: string | null;
+  owner?: OwnerBrief | null;
+  start_date?: string | null;
+  end_date?: string | null;
+  target_version?: string | null;
+  tags: string[];
   created_by?: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface StatsBreakdown {
+  total: number;
+  passed: number;
+  failed: number;
+  pass_rate: number;
+}
+
+export interface ExecutionTaskBreakdown {
+  total: number;
+  done: number;
+  running: number;
+  failed: number;
+  pending: number;
+  progress: number;
+}
+
+export interface AssigneeDistribution {
+  assignee_id?: string | null;
+  assignee_name: string;
+  item_count: number;
+  done_count: number;
+  progress: number;
 }
 
 export interface ProjectStats {
@@ -1308,10 +1344,13 @@ export interface ProjectStats {
   auto_case_count: number;
   requirement_count: number;
   plan_count: number;
-  task_count: number;
-  task_done_count: number;
-  task_progress: number;
   collection_count: number;
+  task: ExecutionTaskBreakdown;
+  task_progress: number;
+  manual_pass: StatsBreakdown;
+  auto_pass: StatsBreakdown;
+  coverage_rate: number;
+  assignee_distribution: AssigneeDistribution[];
 }
 
 export interface ProjectDetail extends Project {
@@ -1322,6 +1361,12 @@ export interface CreateProjectRequest {
   name: string;
   key: string;
   description?: string | null;
+  priority?: string;
+  owner_id?: string | null;
+  start_date?: string | null;
+  end_date?: string | null;
+  target_version?: string | null;
+  tags?: string[];
 }
 
 export interface UpdateProjectRequest {
@@ -1329,6 +1374,12 @@ export interface UpdateProjectRequest {
   key?: string;
   description?: string | null;
   status?: string;
+  priority?: string;
+  owner_id?: string | null;
+  start_date?: string | null;
+  end_date?: string | null;
+  target_version?: string | null;
+  tags?: string[] | null;
 }
 
 export interface ProjectListResponse {

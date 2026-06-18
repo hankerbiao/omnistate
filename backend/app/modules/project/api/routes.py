@@ -7,7 +7,10 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.modules.project.api.dependencies import ProjectServiceDep
-from app.modules.project.service.project_service import ProjectService
+from app.modules.project.domain.exceptions import (
+    ProjectKeyConflictError,
+    ProjectNotFoundError,
+)
 from app.modules.project.schemas.project import (
     CreateProjectRequest,
     ProjectDetailResponse,
@@ -60,11 +63,11 @@ async def create_project(
             created_by=current_user.get("username"),
         )
         return APIResponse(
-            data=ProjectService._to_project_response(doc),
+            data=await ProjectService._to_project_response(doc),
             message="项目创建成功",
         )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    except ProjectKeyConflictError as e:
+        raise HTTPException(status_code=409, detail=str(e))
 
 
 @router.get("/{project_id}", response_model=APIResponse[ProjectDetailResponse])
@@ -74,10 +77,11 @@ async def get_project(
     current_user=Depends(get_current_user),
 ) -> APIResponse[ProjectDetailResponse]:
     """获取项目详情（含统计）。"""
-    detail = await service.get_project_detail(project_id)
-    if not detail:
-        raise HTTPException(status_code=404, detail=f"项目不存在: {project_id}")
-    return APIResponse(data=detail)
+    try:
+        detail = await service.get_project_detail(project_id)
+        return APIResponse(data=detail)
+    except ProjectNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
 
 @router.put("/{project_id}", response_model=APIResponse[ProjectResponse])
@@ -94,11 +98,13 @@ async def update_project(
             data=data.model_dump(exclude_unset=True),
         )
         return APIResponse(
-            data=ProjectService._to_project_response(doc),
+            data=await ProjectService._to_project_response(doc),
             message="项目更新成功",
         )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    except ProjectNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ProjectKeyConflictError as e:
+        raise HTTPException(status_code=409, detail=str(e))
 
 
 @router.delete("/{project_id}", response_model=APIResponse)
@@ -111,7 +117,7 @@ async def delete_project(
     try:
         await service.delete_project(project_id)
         return APIResponse(message="项目已删除")
-    except ValueError as e:
+    except ProjectNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
 
