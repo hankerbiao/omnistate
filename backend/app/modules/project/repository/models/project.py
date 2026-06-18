@@ -7,7 +7,6 @@ from typing import Optional
 
 from beanie import Document, Indexed
 from pydantic import Field
-from pymongo import IndexModel
 
 
 class ProjectDoc(Document):
@@ -19,17 +18,17 @@ class ProjectDoc(Document):
     description: Optional[str] = None
     status: str = "active"              # active | archived
     created_by: Optional[str] = None
-    created_at: datetime = Field(default_factory=datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     is_deleted: bool = False
 
     class Settings:
         name = "projects"
         indexes = [
-            IndexModel("project_id", unique=True),
-            IndexModel("key", unique=True),
-            IndexModel("status"),
-            IndexModel("is_deleted"),
+            "project_id",
+            "key",
+            "status",
+            "is_deleted",
         ]
 
     class Config:
