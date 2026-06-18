@@ -1,6 +1,6 @@
 """测试执行域数据模型（Beanie ODM）。"""
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from beanie import Document, Insert, Save, before_event
 from pydantic import Field
@@ -56,6 +56,7 @@ class ExecutionTaskDoc(Document):
     last_event_type: Optional[str] = Field(None, description="最近一次 Kafka 事件类型")
     last_event_phase: Optional[str] = Field(None, description="最近一次 Kafka 事件阶段")
     consumed_at: Optional[datetime] = Field(None, description="下游消费者确认消费该任务的时间（UTC）")
+    project_ids: List[str] = Field(default_factory=list, description="关联的项目 ID 列表")
     is_deleted: bool = Field(default=False, description="逻辑删除标记")
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
@@ -85,6 +86,7 @@ class ExecutionTaskDoc(Document):
             IndexModel("overall_status"),
             IndexModel("created_by"),
             IndexModel("is_deleted"),
+            IndexModel("project_ids"),
             IndexModel([("dedup_key", ASCENDING), ("consume_status", ASCENDING)]),
             IndexModel([("schedule_status", ASCENDING), ("planned_at", ASCENDING)]),
             IndexModel([("created_by", ASCENDING), ("created_at", DESCENDING)]),

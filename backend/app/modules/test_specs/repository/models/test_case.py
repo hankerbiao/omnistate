@@ -41,6 +41,7 @@ class TestCaseDoc(Document):
     estimated_duration_sec: Optional[int] = Field(None, description="预估执行耗时(秒)")
     required_env: Dict[str, Any] = Field(default_factory=dict, description="环境要求")
     tags: List[str] = Field(default_factory=list, description="标签")
+    project_ids: List[str] = Field(default_factory=list, description="关联的项目 ID 列表")
     test_category: Optional[str] = Field(None, description="测试分类")
     is_destructive: bool = Field(default=False, description="是否为破坏性测试")
     pre_condition: Optional[str] = Field(None, description="前置条件")
@@ -95,6 +96,7 @@ class TestCaseDoc(Document):
             IndexModel("priority"),
             IndexModel("is_active"),
             IndexModel("is_deleted"),
+            IndexModel("project_ids"),
             IndexModel([("linked_auto_case_id", ASCENDING)], sparse=True),
             IndexModel([("ref_req_id", ASCENDING), ("created_at", DESCENDING)]),
             IndexModel("created_at"),

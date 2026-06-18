@@ -18,6 +18,7 @@ import TestExecutionPlanDemo from './components/TestExecutionPlanDemo'
 import CaseGovernancePage from './components/CaseGovernancePage'
 import LineageViewPage from './components/lineage/LineageViewPage'
 import TestCaseCollectionPage from './components/TestCaseCollectionPage'
+import ProjectsPage from './components/ProjectsPage'
 import SystemConfigPage from './pages/SystemConfig'
 import SearchPage from './pages/SearchPage'
 import type { PageType } from './types/app'
@@ -46,6 +47,8 @@ function AppContent() {
         )
       case 'collections':
         return <TestCaseCollectionPage key={currentUserId} currentUserId={currentUserId} />
+      case 'projects':
+        return <ProjectsPage key={currentUserId} />
       case 'search':
         return <SearchPage key={currentUserId} onNavigate={navigate as (page: string) => void} />
       case 'systemConfig':

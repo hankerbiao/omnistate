@@ -22,6 +22,9 @@ from app.modules.test_case_collection.repository.models import (
 from app.modules.system_config.repository.models import (
     DOCUMENT_MODELS as SYSTEM_CONFIG_DOCUMENT_MODELS,
 )
+from app.modules.project.repository.models import (
+    DOCUMENT_MODELS as PROJECT_DOCUMENT_MODELS,
+)
 from app.shared.core.logger import log
 
 
@@ -36,6 +39,7 @@ def get_document_models() -> list[type[Any]]:
         *EXECUTION_PLAN_DOCUMENT_MODELS,
         *COLLECTION_DOCUMENT_MODELS,
         *SYSTEM_CONFIG_DOCUMENT_MODELS,
+        *PROJECT_DOCUMENT_MODELS,
     ]
 
 

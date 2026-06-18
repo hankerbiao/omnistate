@@ -1289,6 +1289,54 @@ export interface BatchUpdateResult {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+//  项目（Project）相关
+// ═══════════════════════════════════════════════════════════════════════
+
+export interface Project {
+  project_id: string;
+  key: string;
+  name: string;
+  description?: string | null;
+  status: string;
+  created_by?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProjectStats {
+  test_case_count: number;
+  auto_case_count: number;
+  requirement_count: number;
+  plan_count: number;
+  task_count: number;
+  task_done_count: number;
+  task_progress: number;
+  collection_count: number;
+}
+
+export interface ProjectDetail extends Project {
+  stats?: ProjectStats | null;
+}
+
+export interface CreateProjectRequest {
+  name: string;
+  key: string;
+  description?: string | null;
+}
+
+export interface UpdateProjectRequest {
+  name?: string;
+  key?: string;
+  description?: string | null;
+  status?: string;
+}
+
+export interface ProjectListResponse {
+  items: Project[];
+  total: number;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 //  Execution Timeline types
 // ═══════════════════════════════════════════════════════════════════════
 

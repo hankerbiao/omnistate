@@ -71,6 +71,7 @@ class AutomationTestCaseDoc(Document):
     code_snapshot: CodeSnapshotModel = Field(..., description="代码版本快照")
     param_spec: List[ConfigFieldModel] = Field(default_factory=list, description="参数定义")
     tags: List[str] = Field(default_factory=list, description="标签")
+    project_ids: List[str] = Field(default_factory=list, description="关联的项目 ID 列表")
     report_meta: ReportMetaModel = Field(default_factory=ReportMetaModel, description="精简后的上报补充信息")
     is_deleted: bool = Field(default=False, description="逻辑删除标志")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -92,6 +93,7 @@ class AutomationTestCaseDoc(Document):
             IndexModel("script_path"),
             IndexModel("code_snapshot.version"),
             IndexModel("is_deleted"),
+            IndexModel("project_ids"),
             IndexModel([("auto_case_id", ASCENDING), ("updated_at", DESCENDING)]),
             IndexModel("created_at"),
             IndexModel([("tags", ASCENDING), ("created_at", DESCENDING)]),

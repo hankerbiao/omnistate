@@ -18,6 +18,7 @@ const PAGE_TITLES: Record<string, { title: string; description?: string }> = {
   catalogLabs: { title: 'Lab 管理', description: '管理测试用例目录 Lab' },
   testPlanStudioDemo: { title: '执行计划(demo)', description: '重构版执行计划页面' },
   caseGovernance: { title: '用例治理', description: '发现并补全不完整的测试用例' },
+  projects: { title: '项目', description: '管理项目和关联资源' },
   lineageView: { title: '测试血缘', description: '从结果追溯完整测试链路' },
   collections: { title: '预制用例集', description: '管理预制测试用例集' },
   search: { title: '全局搜索', description: '跨模块搜索' },

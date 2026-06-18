@@ -412,7 +412,20 @@ const ProfilePage: React.FC = () => {
               <div style={styles.infoItem}>
                 <span style={styles.infoLabel}>订阅通知</span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}
+                    onClick={async () => {
+                      if (!userInfo || savingSubscription) return;
+                      setSavingSubscription(true);
+                      try {
+                        const newVal = !userInfo.subscribe_notifications;
+                        await api.updateUser(userInfo.user_id, { subscribe_notifications: newVal });
+                        setUserInfo({ ...userInfo, subscribe_notifications: newVal });
+                      } catch (err) {
+                        console.error('订阅操作失败:', err);
+                      } finally {
+                        setSavingSubscription(false);
+                      }
+                    }}>
                     <div style={{
                       position: 'relative', width: 40, height: 22, borderRadius: 11,
                       background: userInfo.subscribe_notifications ? '#3fb950' : 'var(--border-default)',
@@ -430,25 +443,6 @@ const ProfilePage: React.FC = () => {
                       {userInfo.subscribe_notifications ? '已订阅' : '未订阅'}
                     </span>
                   </label>
-                  <button
-                    className="btn btn--ghost btn--sm"
-                    disabled={savingSubscription}
-                    onClick={async () => {
-                      setSavingSubscription(true);
-                      try {
-                        const newVal = !userInfo.subscribe_notifications;
-                        await api.updateUser(userInfo.user_id, { subscribe_notifications: newVal });
-                        setUserInfo({ ...userInfo, subscribe_notifications: newVal });
-                      } catch (err) {
-                        console.error('订阅操作失败:', err);
-                      } finally {
-                        setSavingSubscription(false);
-                      }
-                    }}
-                    style={{ fontSize: 11, padding: '2px 8px' }}
-                  >
-                    {savingSubscription ? '处理中…' : userInfo.subscribe_notifications ? '取消订阅' : '订阅'}
-                  </button>
                 </div>
                 <span style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 2 }}>
                   订阅后，任务改派/指派等操作会通过光圈通知您

@@ -5,7 +5,7 @@
 - MongoDB 持久化文档模型（Document）
 - 对应的 Pydantic 响应模型（用于 API 层返回）
 """
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from datetime import datetime, timezone
 from pydantic import BaseModel, Field, ConfigDict
 from beanie import Document, PydanticObjectId, before_event, Save, Insert
@@ -27,6 +27,7 @@ class BusWorkItemDoc(Document):
     creator_id: str = Field(..., description="创建者用户ID")
     # 冗余字段：避免每次序列化时跨集合查询 req_id
     req_id: Optional[str] = Field(None, description="关联需求编号（冗余自 TestRequirementDoc.req_id）")
+    project_ids: List[str] = Field(default_factory=list, description="关联的项目 ID 列表")
     is_deleted: bool = Field(default=False, description="逻辑删除标志")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -43,6 +44,7 @@ class BusWorkItemDoc(Document):
             IndexModel("current_owner_id"),
             IndexModel("creator_id"),
             IndexModel("is_deleted"),
+            IndexModel("project_ids"),
             IndexModel("created_at"),
             IndexModel(
                 [("title", "text"), ("content", "text")],

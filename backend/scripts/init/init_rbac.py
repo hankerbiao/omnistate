@@ -167,6 +167,21 @@ DEFAULT_PERMISSIONS: list[tuple[str, str, str]] = [
         "导航配置管理",
         "创建、编辑、删除导航页面及可见性配置。",
     ),
+    (
+        "projects:read",
+        "项目查看",
+        "查看项目列表、详情和统计数据。",
+    ),
+    (
+        "projects:write",
+        "项目创建编辑",
+        "创建、编辑项目及修改项目配置。",
+    ),
+    (
+        "projects:delete",
+        "项目删除",
+        "删除项目及其关联数据。",
+    ),
 ]
 
 # 公共权限分组
@@ -177,6 +192,7 @@ _READ = [
     "catalog:labs:read",
     "work_items:read",
     "navigation:read",
+    "projects:read",
 ]
 _WORKFLOW = ["work_items:write", "work_items:transition"]
 _EXEC_READ = ["execution_tasks:read", "execution_agents:read", "execution_plans:read"]
@@ -198,11 +214,12 @@ DEFAULT_ROLES = {
             "catalog:labs:manage",
             "terminal:connect",
             "navigation:write",
+            "projects:write",
         ],
     },
     "REVIEWER": {
         "name": "REVIEWER", "description": "评审者，审核需求和测试用例", "is_system": True,
-        "permission_ids": ["users:read", "requirements:read", "requirements:write", "test_cases:read", "test_cases:write", "work_items:read", *_WORKFLOW, "execution_tasks:read", "navigation:read"],
+        "permission_ids": ["users:read", "requirements:read", "requirements:write", "test_cases:read", "test_cases:write", "work_items:read", *_WORKFLOW, "execution_tasks:read", "navigation:read", "projects:read"],
     },
     "MANUAL_DEV": {
         "name": "MANUAL_DEV", "description": "手动测试开发工程师", "is_system": True,

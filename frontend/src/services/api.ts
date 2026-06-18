@@ -1061,6 +1061,51 @@ class ApiClient {
       { method: 'GET' },
     );
   }
+
+  // ── Project API ──────────────────────────────────────────────────
+
+  /** 获取项目列表 */
+  async listProjects(params?: {
+    name?: string; key?: string; status?: string;
+    page?: number; page_size?: number;
+    sort_by?: string; sort_order?: string;
+  }): Promise<ApiResponse<import('../types').ProjectListResponse>> {
+    const query = new URLSearchParams();
+    if (params?.name) query.set('name', params.name);
+    if (params?.key) query.set('key', params.key);
+    if (params?.status) query.set('status', params.status);
+    if (params?.page) query.set('page', String(params.page));
+    if (params?.page_size) query.set('page_size', String(params.page_size));
+    if (params?.sort_by) query.set('sort_by', params.sort_by);
+    if (params?.sort_order) query.set('sort_order', params.sort_order);
+    const qs = query.toString();
+    return this.request(`/projects${qs ? `?${qs}` : ''}`, { method: 'GET' });
+  }
+
+  /** 创建项目 */
+  async createProject(data: import('../types').CreateProjectRequest): Promise<ApiResponse<import('../types').Project>> {
+    return this.request('/projects', { method: 'POST', body: JSON.stringify(data) });
+  }
+
+  /** 获取项目详情 */
+  async getProject(projectId: string): Promise<ApiResponse<import('../types').ProjectDetail>> {
+    return this.request(`/projects/${encodeURIComponent(projectId)}`, { method: 'GET' });
+  }
+
+  /** 更新项目 */
+  async updateProject(projectId: string, data: import('../types').UpdateProjectRequest): Promise<ApiResponse<import('../types').Project>> {
+    return this.request(`/projects/${encodeURIComponent(projectId)}`, { method: 'PUT', body: JSON.stringify(data) });
+  }
+
+  /** 删除项目 */
+  async deleteProject(projectId: string): Promise<ApiResponse<void>> {
+    return this.request(`/projects/${encodeURIComponent(projectId)}`, { method: 'DELETE' });
+  }
+
+  /** 获取项目统计 */
+  async getProjectStats(projectId: string): Promise<ApiResponse<import('../types').ProjectStats>> {
+    return this.request(`/projects/${encodeURIComponent(projectId)}/stats`, { method: 'GET' });
+  }
 }
 
 export const api = new ApiClient(API_BASE_URL);

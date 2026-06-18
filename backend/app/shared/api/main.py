@@ -23,6 +23,7 @@ from app.modules.system_config.api import router as system_config_router, ai_rou
 from app.modules.ai_analysis.api import router as ai_analysis_router
 from app.modules.redis.api import router as redis_router
 from app.modules.failure_analysis.api import failure_analysis_router
+from app.modules.project.api import router as project_router
 from app.shared.enums import router as enums_router
 api_router = APIRouter()
 
@@ -44,4 +45,5 @@ api_router.include_router(ai_tools_router, prefix="/api/v1", tags=["AITools"])
 api_router.include_router(ai_analysis_router, prefix="/api/v1", tags=["AIAnalysis"])
 api_router.include_router(redis_router, prefix="/api/v1", tags=["Redis"])
 api_router.include_router(failure_analysis_router, prefix="/api/v1", tags=["FailureAnalysis"])
+api_router.include_router(project_router, prefix="/api/v1", tags=["Projects"])
 api_router.include_router(enums_router, prefix="/api/v1", tags=["Enums"])

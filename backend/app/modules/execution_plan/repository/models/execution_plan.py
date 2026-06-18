@@ -25,6 +25,7 @@ class ExecutionPlanDoc(Document):
     item_count: int = Field(default=0, description="条目总数")
     done_count: int = Field(default=0, description="已完成条目数")
     progress_percent: int = Field(default=0, description="进度 0-100")
+    project_ids: List[str] = Field(default_factory=list, description="关联的项目 ID 列表")
     is_deleted: bool = Field(default=False)
     created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -39,6 +40,7 @@ class ExecutionPlanDoc(Document):
             IndexModel("plan_id", unique=True),
             IndexModel([("status", ASCENDING), ("updated_at", DESCENDING)]),
             IndexModel("is_deleted"),
+            IndexModel("project_ids"),
         ]
 
 

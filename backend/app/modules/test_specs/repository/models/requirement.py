@@ -44,6 +44,7 @@ class TestRequirementDoc(Document):
     auto_dev_name: Optional[str] = Field(None, description="自动化开发姓名（冗余）")
     # ─── 既有字段 ──────────────────────────────────────────
     target_components: List[str] = Field(default_factory=list, description="BOM 覆盖范围")
+    project_ids: List[str] = Field(default_factory=list, description="关联的项目 ID 列表")
     firmware_version: Optional[str] = Field(None, description="固件版本（兼容旧数据，新数据请用 baseline_version/target_version）")
     priority: str = Field(default="P1", description="优先级")
     key_parameters: List[Dict[str, str]] = Field(default_factory=list, description="关键参数")
@@ -71,6 +72,7 @@ class TestRequirementDoc(Document):
             IndexModel("manual_dev_id"),
             IndexModel("auto_dev_id"),
             IndexModel("is_deleted"),
+            IndexModel("project_ids"),
             IndexModel("created_at"),
             IndexModel([("tpm_owner_id", ASCENDING), ("created_at", DESCENDING)]),
             IndexModel([("workflow_item_id", ASCENDING), ("is_deleted", ASCENDING)]),
