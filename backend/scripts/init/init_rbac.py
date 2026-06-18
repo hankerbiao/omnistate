@@ -182,6 +182,31 @@ DEFAULT_PERMISSIONS: list[tuple[str, str, str]] = [
         "项目删除",
         "删除项目及其关联数据。",
     ),
+    (
+        "system:config",
+        "系统配置管理",
+        "访问系统配置页面，管理 AI 模型、系统参数等全局配置。",
+    ),
+    (
+        "collections:read",
+        "预制用例集查看",
+        "查看预制测试用例集列表和详情。",
+    ),
+    (
+        "collections:write",
+        "预制用例集管理",
+        "创建、编辑、删除预制测试用例集。",
+    ),
+    (
+        "case_governance:read",
+        "用例治理查看",
+        "访问用例治理页面，发现并补全不完整的测试用例。",
+    ),
+    (
+        "search:global",
+        "全局搜索",
+        "跨模块搜索测试资源（用例、需求、任务等）。",
+    ),
 ]
 
 # 公共权限分组
@@ -193,6 +218,8 @@ _READ = [
     "work_items:read",
     "navigation:read",
     "projects:read",
+    "collections:read",
+    "search:global",
 ]
 _WORKFLOW = ["work_items:write", "work_items:transition"]
 _EXEC_READ = ["execution_tasks:read", "execution_agents:read", "execution_plans:read"]
@@ -215,27 +242,30 @@ DEFAULT_ROLES = {
             "terminal:connect",
             "navigation:write",
             "projects:write",
+            "collections:write",
+            "case_governance:read",
+            "system:config",
         ],
     },
     "REVIEWER": {
         "name": "REVIEWER", "description": "评审者，审核需求和测试用例", "is_system": True,
-        "permission_ids": ["users:read", "requirements:read", "requirements:write", "test_cases:read", "test_cases:write", "work_items:read", *_WORKFLOW, "execution_tasks:read", "navigation:read", "projects:read"],
+        "permission_ids": ["users:read", "requirements:read", "requirements:write", "test_cases:read", "test_cases:write", "work_items:read", *_WORKFLOW, "execution_tasks:read", "navigation:read", "projects:read", "collections:read", "search:global", "case_governance:read"],
     },
     "MANUAL_DEV": {
         "name": "MANUAL_DEV", "description": "手动测试开发工程师", "is_system": True,
-        "permission_ids": ["users:read", "requirements:read", "test_cases:read", "test_cases:write", "work_items:read", *_WORKFLOW, *_EXEC_READ, "navigation:read"],
+        "permission_ids": ["users:read", "requirements:read", "test_cases:read", "test_cases:write", "work_items:read", *_WORKFLOW, *_EXEC_READ, "navigation:read", "collections:read", "search:global"],
     },
     "QA": {
         "name": "QA", "description": "质量保证工程师", "is_system": True,
-        "permission_ids": [*_READ, "requirements:write", "test_cases:write", *_WORKFLOW, *_EXEC_READ, *_EXEC_WRITE],
+        "permission_ids": [*_READ, "requirements:write", "test_cases:write", *_WORKFLOW, *_EXEC_READ, *_EXEC_WRITE, "collections:write", "case_governance:read"],
     },
     "TESTER": {
         "name": "TESTER", "description": "测试执行工程师", "is_system": True,
-        "permission_ids": [*_READ, "test_cases:write", *_WORKFLOW, *_EXEC_READ, "execution_tasks:write", "execution_plans:write", "terminal:connect", "navigation:write"],
+        "permission_ids": [*_READ, "test_cases:write", *_WORKFLOW, *_EXEC_READ, "execution_tasks:write", "execution_plans:write", "terminal:connect", "navigation:write", "case_governance:read"],
     },
     "AUTO_DEV": {
         "name": "AUTO_DEV", "description": "自动化测试开发工程师", "is_system": True,
-        "permission_ids": [_READ[0], "test_cases:read", "test_cases:write", "work_items:read", *_WORKFLOW, *_EXEC_READ, *_EXEC_WRITE, "navigation:read"],
+        "permission_ids": [_READ[0], "test_cases:read", "test_cases:write", "work_items:read", *_WORKFLOW, *_EXEC_READ, *_EXEC_WRITE, "navigation:read", "collections:read", "search:global"],
     },
     "AUTOMATION": {
         "name": "AUTOMATION", "description": "自动化测试运行角色", "is_system": True,

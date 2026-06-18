@@ -21,7 +21,7 @@ class AuthServiceSupport(BaseService):
     """
 
     # 默认导航视图列表，用户登录后默认可见的页面
-    _DEFAULT_NAV_VIEWS = ["req_list", "case_list", "my_tasks"]
+    _DEFAULT_NAV_VIEWS = ["requirements", "testCases", "myTasks"]
 
     @staticmethod
     async def _find_or_raise(model_cls: Type, condition, error_cls: Type[Exception], error_msg: str = "not found"):

@@ -43,34 +43,154 @@ DEFAULT_NAVIGATION_PAGES: List[Dict[str, Any]] = [
     },
     {
         "view": "req_list",
-        "label": "测试需求",
+        "label": "测试需求（旧）",
         "permission": "nav:req_list:view",
         "description": "允许访问测试需求列表页",
         "order": 10,
+        "is_active": False,
+    },
+    {
+        "view": "requirements",
+        "label": "测试用例编写需求",
+        "permission": "requirements:read",
+        "description": "允许访问测试需求页面",
+        "order": 11,
         "is_active": True,
     },
     {
         "view": "case_list",
-        "label": "测试用例",
+        "label": "测试用例（旧）",
         "permission": "nav:case_list:view",
         "description": "允许访问测试用例列表页",
         "order": 20,
+        "is_active": False,
+    },
+    {
+        "view": "testCases",
+        "label": "用例看板",
+        "permission": "test_cases:read",
+        "description": "允许访问用例看板页面",
+        "order": 21,
+        "is_active": True,
+    },
+    {
+        "view": "collections",
+        "label": "预制用例集",
+        "permission": "collections:read",
+        "description": "允许访问预制用例集页面",
+        "order": 22,
+        "is_active": True,
+    },
+    {
+        "view": "projects",
+        "label": "项目",
+        "permission": "projects:read",
+        "description": "允许访问项目页面",
+        "order": 23,
         "is_active": True,
     },
     {
         "view": "my_tasks",
-        "label": "我的任务",
-        "permission": "nav:public",  # 全员默认可访问的公共页面
+        "label": "我的任务（旧）",
+        "permission": "nav:public",
         "description": "允许访问当前用户名下任务列表页",
         "order": 30,
+        "is_active": False,
+    },
+    {
+        "view": "myTasks",
+        "label": "我的任务",
+        "permission": "nav:public",
+        "description": "允许访问当前用户的任务列表",
+        "order": 31,
+        "is_active": True,
+    },
+    {
+        "view": "search",
+        "label": "全局搜索",
+        "permission": "search:global",
+        "description": "允许跨模块搜索测试资源",
+        "order": 32,
+        "is_active": True,
+    },
+    {
+        "view": "agents",
+        "label": "执行代理",
+        "permission": "execution_agents:read",
+        "description": "允许访问执行代理页面",
+        "order": 40,
+        "is_active": True,
+    },
+    {
+        "view": "testPlanStudioDemo",
+        "label": "执行计划",
+        "permission": "execution_plans:read",
+        "description": "允许访问执行计划页面",
+        "order": 41,
+        "is_active": True,
+    },
+    {
+        "view": "caseGovernance",
+        "label": "用例治理",
+        "permission": "case_governance:read",
+        "description": "允许访问用例治理页面",
+        "order": 42,
         "is_active": True,
     },
     {
         "view": "user_mgmt",
-        "label": "用户管理",
+        "label": "用户管理（旧）",
         "permission": "nav:user_mgmt:view",
         "description": "允许访问用户与权限管理页",
-        "order": 40,
+        "order": 50,
+        "is_active": False,
+    },
+    {
+        "view": "users",
+        "label": "用户管理",
+        "permission": "users:read",
+        "description": "允许访问用户管理页面",
+        "order": 51,
+        "is_active": True,
+    },
+    {
+        "view": "roles",
+        "label": "角色管理",
+        "permission": "roles:read",
+        "description": "允许访问角色管理页面",
+        "order": 52,
+        "is_active": True,
+    },
+    {
+        "view": "roleGroup",
+        "label": "用户组管理",
+        "permission": "roles:read",
+        "description": "允许访问用户组管理页面",
+        "order": 53,
+        "is_active": True,
+    },
+    {
+        "view": "permissions",
+        "label": "权限管理",
+        "permission": "permissions:read",
+        "description": "允许访问权限管理页面",
+        "order": 54,
+        "is_active": True,
+    },
+    {
+        "view": "catalogLabs",
+        "label": "Lab 管理",
+        "permission": "catalog:labs:manage",
+        "description": "允许访问 Lab 管理页面",
+        "order": 55,
+        "is_active": True,
+    },
+    {
+        "view": "systemConfig",
+        "label": "系统配置",
+        "permission": "system:config",
+        "description": "允许访问系统配置页面",
+        "order": 56,
         "is_active": True,
     },
 ]
@@ -90,38 +210,28 @@ class NavigationPageService(BaseService):
     _UPDATABLE_FIELDS = {"label", "permission", "description", "order", "is_active"}
 
     async def ensure_default_pages(self) -> None:
-        """确保默认导航页面已存在（惰性初始化）。
+        """确保默认导航页面已存在（兜底初始化）。
 
-        该方法实现了懒加载模式：
-        1. 首先检查数据库中是否已存在未删除的导航页面
-        2. 如果没有，则使用DEFAULT_NAVIGATION_PAGES配置初始化默认页面
-        3. 这个方法在每次查询导航页面时被调用，确保系统始终有默认导航可用
+        对每个默认页面配置执行 upsert：
+        - 已存在的页面：更新 label、permission、is_active 等字段
+        - 不存在的页面：插入新记录
 
         这是系统的兜底机制，确保即使数据库被清空，核心导航功能仍能正常工作。
         """
-        # 查询当前活跃（非删除）的导航页面数量
-        active_count = await NavigationPageDoc.find({"is_deleted": False}).count()
-
-        # 如果已存在活跃页面，直接返回，避免重复初始化
-        if active_count > 0:
-            return
-
-        # 遍历默认页面配置，逐个插入到数据库
         for item in DEFAULT_NAVIGATION_PAGES:
             view = item["view"]
             existing = await NavigationPageDoc.find_one(NavigationPageDoc.view == view)
             if existing:
-                # 如果页面已存在，执行更新操作
                 existing.label = item["label"]
                 existing.permission = item.get("permission")
                 existing.description = item.get("description")
                 existing.order = item.get("order", 0)
                 existing.is_active = bool(item.get("is_active", True))
-                existing.is_deleted = False
+                if existing.is_deleted:
+                    existing.is_deleted = False
                 existing.updated_at = datetime.now(timezone.utc)
                 await existing.save()
             else:
-                # 如果页面不存在，执行插入操作
                 new_doc = NavigationPageDoc(
                     view=view,
                     label=item["label"],
