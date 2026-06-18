@@ -2,7 +2,7 @@
  * DataTable - 表格视图（支持批量指派执行人）
  */
 import { useState } from 'react';
-import type { DataTableProps, ItemStatus, PlanItemSummary } from './types';
+import type { DataTableProps, ItemStatus } from './types';
 
 const STATUS_META: Record<ItemStatus, { label: string; color: string; bg: string }> = {
   pending: { label: '待执行', color: '#8b949e', bg: 'rgba(139,148,158,0.08)' },

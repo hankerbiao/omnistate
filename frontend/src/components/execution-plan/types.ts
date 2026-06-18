@@ -54,9 +54,9 @@ export interface PlanDetailViewProps {
   users: { user_id: string; username: string }[];
   onViewResult: (item: PlanItemSummary, taskData: unknown, timelineData: unknown) => void;
   onRerunItem: (item: PlanItemSummary) => void;
-  onBatchAssign: (assigneeId: string) => void;
-  onTerminateItem: (item: PlanItemSummary) => void;
-  onDeleteItem: (item: PlanItemSummary) => void;
+  onBatchAssign: (itemIds: string[], assigneeId: string) => void;
+  onTerminateItem: (itemId: string) => void;
+  onDeleteItem: (itemId: string) => void;
   onDeletePlan: () => void;
   onUpdateItemAssignee: (itemId: string, assigneeId: string) => void;
 }
@@ -100,9 +100,9 @@ export interface DataTableProps {
   users: { user_id: string; username: string }[];
   onViewResult: (item: PlanItemSummary, taskData: unknown, timelineData: unknown) => void;
   onRerunItem: (item: PlanItemSummary) => void;
-  onBatchAssign: (assigneeId: string) => void;
-  onTerminateItem: (item: PlanItemSummary) => void;
-  onDeleteItem: (item: PlanItemSummary) => void;
+  onBatchAssign: (itemIds: string[], assigneeId: string) => void;
+  onTerminateItem: (itemId: string) => void;
+  onDeleteItem: (itemId: string) => void;
   onUpdateItemAssignee: (itemId: string, assigneeId: string) => void;
 }
 
@@ -135,7 +135,7 @@ export interface CreatePlanWizardProps {
   onCreatePlan: () => void;
   onClose: () => void;
   onToggleCase: (caseId: string) => void;
-  onToggleCollection: (collectionId: string) => void;
+  onToggleCollection: (col: { collection_id: string; name: string }) => void;
   onSetAssignment: (caseId: string, assigneeId: string) => void;
   users: { user_id: string; username: string }[];
   collections: { collection_id: string; name: string; description?: string | null; case_count: number }[];

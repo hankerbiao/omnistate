@@ -8,7 +8,7 @@
  * - 减少 emoji 依赖，使用 badge + 色彩传递语义
  * - 搜索无结果时显示明确空状态
  */
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo } from 'react';
 import { api } from '../../services/api';
 import { useExecutionPlan } from './hooks/useExecutionPlan';
 
@@ -37,6 +37,7 @@ export default function TestExecutionPlan() {
     setActivePlanId, setSearchQuery, setStatusFilter, setViewMode,
     setShowAddCases, setShowArchive, setArchivedItems,
     setShowOverview, setResultModal, setRerunConfirm,
+    setNewPlan, setWizardStep, setCaseSearch, setSubmittingPlan,
     loadCases, fetchPlans, fetchOverview,
   } = useExecutionPlan();
 

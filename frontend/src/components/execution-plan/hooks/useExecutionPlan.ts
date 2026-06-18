@@ -42,7 +42,7 @@ export function useExecutionPlan() {
   const [overviewLoading, setOverviewLoading] = useState(false);
 
   // Refresh
-  const [refreshDetail, setRefreshDetail] = useState(0);
+  const [refreshDetail, _setRefreshDetail] = useState(0);
 
   // Test cases & collections
   const [testCases, setTestCases] = useState<Record<string, { case_id: string; title: string; type: string; priority: string; created_at: string }>>({});
@@ -74,10 +74,10 @@ export function useExecutionPlan() {
   // Rerun confirm
   const [rerunConfirm, setRerunConfirm] = useState<PlanItemSummary | null>(null);
 
-  const activePlan = plans.find((p) => p.plan_id === activePlanId);
+  const _activePlan = plans.find((p) => p.plan_id === activePlanId);
 
   // Filtered plans
-  const filteredPlans = useMemo(() => {
+  const _filteredPlans = useMemo(() => {
     return plans.filter((p) => {
       if (searchQuery && !p.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
       if (statusFilter && p.status !== statusFilter) return false;

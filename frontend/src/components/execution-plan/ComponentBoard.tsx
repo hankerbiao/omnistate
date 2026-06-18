@@ -1,7 +1,7 @@
 /**
  * ComponentBoard - 按组件分栏视图
  */
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import type { ComponentBoardProps, ItemStatus, PlanItemSummary } from './types';
 
 const PRIORITY_COLORS: Record<string, string> = {

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import os
 from typing import Any
 
@@ -9,8 +10,33 @@ from app.shared.infrastructure.document_registry import get_document_models
 from app.shared.core.logger import log
 
 
+# 所有需要注册 Beanie 文档模型的模块路径
+_DOCUMENT_MODULE_PATHS = [
+    "app.modules.workflow.repository.models",
+    "app.modules.test_specs.repository.models",
+    "app.modules.execution.repository.models",
+    "app.modules.auth.repository.models",
+    "app.modules.attachments.repository.models",
+    "app.modules.execution_plan.repository.models",
+    "app.modules.test_case_collection.repository.models",
+    "app.modules.system_config.repository.models",
+    "app.modules.project.repository.models",
+]
+
+
+def _ensure_all_models_imported() -> None:
+    """确保所有模块的 repository/models/__init__.py 被导入，
+    从而触发 register_document_model() 将模型注册到注册表。"""
+    for module_path in _DOCUMENT_MODULE_PATHS:
+        try:
+            importlib.import_module(module_path)
+        except ImportError as e:
+            log.warning(f"Failed to import {module_path}: {e}")
+
+
 def get_document_models_list() -> list[type[Any]]:
     """Return Beanie document models in startup registration order."""
+    _ensure_all_models_imported()
     return get_document_models()
 
 
