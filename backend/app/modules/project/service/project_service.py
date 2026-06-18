@@ -77,8 +77,8 @@ class ProjectService(BaseService):
         skip = (page - 1) * page_size
 
         total = await ProjectDoc.find({"$and": filters}).count()
-        docs = (
-            await ProjectDoc.find({"$and": filters})
+        docs = await (
+            ProjectDoc.find({"$and": filters})
             .sort((sort_field, sort_direction))
             .skip(skip)
             .limit(page_size)
