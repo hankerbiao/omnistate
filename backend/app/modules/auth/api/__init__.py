@@ -6,4 +6,8 @@ AI 友好注释说明：
 """
 from .routes import router
 
+from app.shared.api.router_registry import register_router
+
+register_router(router, prefix="/api/v1", tags=["Auth"])
+
 __all__ = ["router"]

@@ -5,8 +5,10 @@ from typing import Optional, Dict, Any, List
 from datetime import datetime, timezone
 
 from pydantic import BaseModel, Field, ConfigDict
-from beanie import Document, before_event, Save, Insert
+from beanie import Document
 from pymongo import IndexModel, ASCENDING, DESCENDING
+
+from app.shared.core.document_mixins import TimestampedDocumentMixin, SoftDeleteDocumentMixin, ProjectRelatedMixin
 
 
 class ConfigFieldModel(BaseModel):
@@ -53,7 +55,7 @@ class ReportMetaModel(BaseModel):
     timeout: Optional[int] = Field(None, description="默认超时时间（秒）")
 
 
-class AutomationTestCaseDoc(Document):
+class AutomationTestCaseDoc(Document, TimestampedDocumentMixin, SoftDeleteDocumentMixin, ProjectRelatedMixin):
     """自动化测试用例库 - 仅保留最新可执行版本。"""
     __test__ = False
 
@@ -71,19 +73,13 @@ class AutomationTestCaseDoc(Document):
     code_snapshot: CodeSnapshotModel = Field(..., description="代码版本快照")
     param_spec: List[ConfigFieldModel] = Field(default_factory=list, description="参数定义")
     tags: List[str] = Field(default_factory=list, description="标签")
-    project_ids: List[str] = Field(default_factory=list, description="关联的项目 ID 列表")
     report_meta: ReportMetaModel = Field(default_factory=ReportMetaModel, description="精简后的上报补充信息")
-    is_deleted: bool = Field(default=False, description="逻辑删除标志")
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
-    @before_event([Save, Insert])
-    def update_updated_at(self):
-        self.updated_at = datetime.now(timezone.utc)
 
     class Settings:
         name = "automation_test_cases"
         indexes = [
+            *SoftDeleteDocumentMixin.Settings.indexes,
+            *ProjectRelatedMixin.Settings.indexes,
             IndexModel([("auto_case_id", ASCENDING)], unique=True),
             IndexModel([("linked_manual_case_id", ASCENDING)]),
             IndexModel("status"),
@@ -92,8 +88,6 @@ class AutomationTestCaseDoc(Document):
             IndexModel("script_ref.entity_id"),
             IndexModel("script_path"),
             IndexModel("code_snapshot.version"),
-            IndexModel("is_deleted"),
-            IndexModel("project_ids"),
             IndexModel([("auto_case_id", ASCENDING), ("updated_at", DESCENDING)]),
             IndexModel("created_at"),
             IndexModel([("tags", ASCENDING), ("created_at", DESCENDING)]),

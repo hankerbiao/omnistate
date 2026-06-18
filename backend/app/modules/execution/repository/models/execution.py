@@ -2,7 +2,7 @@
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from beanie import Document, Insert, Save, before_event
+from beanie import Document
 from pydantic import Field
 from pymongo import ASCENDING, DESCENDING, IndexModel
 
@@ -14,12 +14,13 @@ from app.modules.execution.application.constants import (
     OverallStatus,
     ScheduleStatus,
 )
+from app.shared.core.document_mixins import TimestampedDocumentMixin, SoftDeleteDocumentMixin, ProjectRelatedMixin
 
 
-class ExecutionTaskDoc(Document):
+class ExecutionTaskDoc(Document, TimestampedDocumentMixin, SoftDeleteDocumentMixin, ProjectRelatedMixin):
     """执行任务主表。
 
-    这是任务“当前态”的主记录，保存调度、下发、消费和整体执行状态，
+    这是任务"当前态"的主记录，保存调度、下发、消费和整体执行状态，
     也保存当前推进到哪一条 case。
     """
 
@@ -56,24 +57,12 @@ class ExecutionTaskDoc(Document):
     last_event_type: Optional[str] = Field(None, description="最近一次 Kafka 事件类型")
     last_event_phase: Optional[str] = Field(None, description="最近一次 Kafka 事件阶段")
     consumed_at: Optional[datetime] = Field(None, description="下游消费者确认消费该任务的时间（UTC）")
-    project_ids: List[str] = Field(default_factory=list, description="关联的项目 ID 列表")
-    is_deleted: bool = Field(default=False, description="逻辑删除标记")
-    created_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
-        description="记录创建时间（UTC）",
-    )
-    updated_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
-        description="记录最近更新时间（UTC）",
-    )
-
-    @before_event([Save, Insert])
-    def update_updated_at(self):
-        self.updated_at = datetime.now(timezone.utc)
 
     class Settings:
         name = "execution_tasks"
         indexes = [
+            *SoftDeleteDocumentMixin.Settings.indexes,
+            *ProjectRelatedMixin.Settings.indexes,
             IndexModel("task_id", unique=True),
             IndexModel("source_task_id"),
             IndexModel("agent_id"),
@@ -85,8 +74,6 @@ class ExecutionTaskDoc(Document):
             IndexModel("consume_status"),
             IndexModel("overall_status"),
             IndexModel("created_by"),
-            IndexModel("is_deleted"),
-            IndexModel("project_ids"),
             IndexModel([("dedup_key", ASCENDING), ("consume_status", ASCENDING)]),
             IndexModel([("schedule_status", ASCENDING), ("planned_at", ASCENDING)]),
             IndexModel([("created_by", ASCENDING), ("created_at", DESCENDING)]),
@@ -96,10 +83,10 @@ class ExecutionTaskDoc(Document):
         ]
 
 
-class ExecutionTaskCaseDoc(Document):
+class ExecutionTaskCaseDoc(Document, TimestampedDocumentMixin):
     """执行任务-用例明细。
 
-    这是任务“当前态”的 case 工作表，保存每条 case 的顺序、即时状态和推进信息，
+    这是任务"当前态"的 case 工作表，保存每条 case 的顺序、即时状态和推进信息，
     供平台串行编排使用。
     """
 
@@ -127,18 +114,6 @@ class ExecutionTaskCaseDoc(Document):
     project_tag: Optional[str] = Field(None, description="项目标签")
     case_title_snapshot: Optional[str] = Field(None, description="用例标题快照")
     result_data: Dict[str, Any] = Field(default_factory=dict, description="当前 case 扩展结果")
-    created_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
-        description="记录创建时间（UTC）",
-    )
-    updated_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
-        description="记录最近更新时间（UTC）",
-    )
-
-    @before_event([Save, Insert])
-    def update_updated_at(self):
-        self.updated_at = datetime.now(timezone.utc)
 
     class Settings:
         name = "execution_task_cases"
@@ -151,7 +126,7 @@ class ExecutionTaskCaseDoc(Document):
         ]
 
 
-class ExecutionAgentDoc(Document):
+class ExecutionAgentDoc(Document, TimestampedDocumentMixin, SoftDeleteDocumentMixin):
     """执行代理注册表。
 
     保存可接收执行任务的 agent 注册信息和心跳状态。
@@ -173,28 +148,15 @@ class ExecutionAgentDoc(Document):
         description="最近一次心跳时间（UTC）",
     )
     heartbeat_ttl_seconds: int = Field(default=90, description="心跳过期阈值（秒）")
-    is_deleted: bool = Field(default=False, description="逻辑删除标记")
-    created_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
-        description="记录创建时间（UTC）",
-    )
-    updated_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
-        description="记录最近更新时间（UTC）",
-    )
-
-    @before_event([Save, Insert])
-    def update_updated_at(self):
-        self.updated_at = datetime.now(timezone.utc)
 
     class Settings:
         name = "execution_agents"
         indexes = [
+            *SoftDeleteDocumentMixin.Settings.indexes,
             IndexModel("agent_id", unique=True),
             IndexModel("status"),
             IndexModel("region"),
             IndexModel("last_heartbeat_at"),
-            IndexModel("is_deleted"),
             IndexModel([("status", ASCENDING), ("last_heartbeat_at", DESCENDING)]),
             IndexModel([("region", ASCENDING), ("status", ASCENDING)]),
         ]

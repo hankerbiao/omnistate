@@ -4,14 +4,15 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, List, Optional
 
-from beanie import Document, Insert, Save, before_event
+from beanie import Document
 from pydantic import Field
 
 from app.modules.execution_plan.schemas.execution_plan import DispatchConfig
+from app.shared.core.document_mixins import TimestampedDocumentMixin, SoftDeleteDocumentMixin, ProjectRelatedMixin
 from pymongo import ASCENDING, DESCENDING, IndexModel
 
 
-class ExecutionPlanDoc(Document):
+class ExecutionPlanDoc(Document, TimestampedDocumentMixin, SoftDeleteDocumentMixin, ProjectRelatedMixin):
     """测试执行计划。"""
 
     plan_id: str = Field(..., description="计划业务 ID")
@@ -25,26 +26,18 @@ class ExecutionPlanDoc(Document):
     item_count: int = Field(default=0, description="条目总数")
     done_count: int = Field(default=0, description="已完成条目数")
     progress_percent: int = Field(default=0, description="进度 0-100")
-    project_ids: List[str] = Field(default_factory=list, description="关联的项目 ID 列表")
-    is_deleted: bool = Field(default=False)
-    created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc))
-
-    @before_event([Save, Insert])
-    def _touch_updated_at(self) -> None:
-        self.updated_at = datetime.now(timezone.utc)
 
     class Settings:
         name = "execution_plans"
         indexes = [
+            *SoftDeleteDocumentMixin.Settings.indexes,
+            *ProjectRelatedMixin.Settings.indexes,
             IndexModel("plan_id", unique=True),
             IndexModel([("status", ASCENDING), ("updated_at", DESCENDING)]),
-            IndexModel("is_deleted"),
-            IndexModel("project_ids"),
         ]
 
 
-class ExecutionPlanItemDoc(Document):
+class ExecutionPlanItemDoc(Document, TimestampedDocumentMixin, SoftDeleteDocumentMixin):
     """计划内单条用例执行项。"""
 
     item_id: str = Field(..., description="计划条目 ID")
@@ -62,26 +55,19 @@ class ExecutionPlanItemDoc(Document):
     dispatch_config: Optional[DispatchConfig] = Field(None, description="用户下发的执行参数")
     result_id: Optional[str] = Field(None, description="关联手工结果 ID")
     archived_at: Optional[datetime] = Field(None, description="归档时间，null=未归档")
-    is_deleted: bool = Field(default=False)
-    created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc))
-
-    @before_event([Save, Insert])
-    def _touch_updated_at(self) -> None:
-        self.updated_at = datetime.now(timezone.utc)
 
     class Settings:
         name = "execution_plan_items"
         indexes = [
+            *SoftDeleteDocumentMixin.Settings.indexes,
             IndexModel("item_id", unique=True),
             IndexModel([("plan_id", ASCENDING), ("order_no", ASCENDING)]),
             IndexModel([("assignee_id", ASCENDING), ("status", ASCENDING), ("updated_at", DESCENDING)]),
             IndexModel("execution_task_id"),
-            IndexModel("is_deleted"),
         ]
 
 
-class ManualExecutionResultDoc(Document):
+class ManualExecutionResultDoc(Document, TimestampedDocumentMixin, SoftDeleteDocumentMixin):
     """手工执行回填结果。"""
 
     result_id: str = Field(..., description="结果 ID")
@@ -100,19 +86,12 @@ class ManualExecutionResultDoc(Document):
     attachments: List[str] = Field(default_factory=list)
     executed_by: str = Field(..., description="执行人 user_id")
     executed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    is_deleted: bool = Field(default=False)
-    created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc))
-
-    @before_event([Save, Insert])
-    def _touch_updated_at(self) -> None:
-        self.updated_at = datetime.now(timezone.utc)
 
     class Settings:
         name = "manual_execution_results"
         indexes = [
+            *SoftDeleteDocumentMixin.Settings.indexes,
             IndexModel("result_id", unique=True),
             IndexModel("item_id"),
             IndexModel([("plan_id", ASCENDING), ("case_id", ASCENDING)]),
-            IndexModel("is_deleted"),
         ]

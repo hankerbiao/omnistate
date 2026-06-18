@@ -8,13 +8,15 @@ AI 友好注释说明：
 from typing import Optional, List
 from datetime import datetime, timezone
 from pydantic import BaseModel, Field, ConfigDict
-from beanie import Document, before_event, Save, Insert
+from beanie import Document
 from pymongo import IndexModel
+
+from app.shared.core.document_mixins import TimestampedDocumentMixin
 
 
 # ========== Beanie 文档模型 ==========
 
-class UserDoc(Document):
+class UserDoc(Document, TimestampedDocumentMixin):
     """用户 - 数据库模型（保存用户与角色绑定信息）"""
     # user_id 是业务主键，避免直接暴露 ObjectId
     user_id: str = Field(..., description="用户唯一 ID")
@@ -32,13 +34,6 @@ class UserDoc(Document):
     status: str = Field(default="ACTIVE", description="用户状态")
     itcode: str = Field(default="", description="光圈通知 itcode")
     subscribe_notifications: bool = Field(default=False, description="是否订阅光圈通知")
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="创建时间")
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="更新时间")
-
-    @before_event([Save, Insert])
-    def update_updated_at(self):
-        # 每次写入前自动刷新更新时间
-        self.updated_at = datetime.now(timezone.utc)
 
     class Settings:
         name = "users"
@@ -50,7 +45,7 @@ class UserDoc(Document):
         ]
 
 
-class RoleDoc(Document):
+class RoleDoc(Document, TimestampedDocumentMixin):
     """角色 - 数据库模型（角色聚合多个权限）"""
     role_id: str = Field(..., description="角色唯一 ID")
     name: str = Field(..., description="角色名称")
@@ -58,12 +53,6 @@ class RoleDoc(Document):
     is_system: bool = Field(default=False, description="是否系统角色（系统角色不可删除）")
     # 角色绑定权限集合
     permission_ids: List[str] = Field(default_factory=list, description="权限 ID 列表")
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="创建时间")
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="更新时间")
-
-    @before_event([Save, Insert])
-    def update_updated_at(self):
-        self.updated_at = datetime.now(timezone.utc)
 
     class Settings:
         name = "roles"
@@ -73,19 +62,13 @@ class RoleDoc(Document):
         ]
 
 
-class PermissionDoc(Document):
+class PermissionDoc(Document, TimestampedDocumentMixin):
     """权限 - 数据库模型（最小授权单元）"""
     perm_id: str = Field(..., description="权限唯一 ID")
     # code 建议格式：资源:动作（例如 requirements:write）
     code: str = Field(..., description="权限编码")
     name: str = Field(..., description="权限名称")
     description: Optional[str] = Field(None, description="权限描述")
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="创建时间")
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="更新时间")
-
-    @before_event([Save, Insert])
-    def update_updated_at(self):
-        self.updated_at = datetime.now(timezone.utc)
 
     class Settings:
         name = "permissions"

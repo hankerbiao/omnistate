@@ -37,6 +37,13 @@ from app.shared.api.schemas.base import APIResponse
 from app.shared.api.schemas.error import ErrorResponse
 from app.shared.context import get_operation_context, get_trace_context, reset_context
 from app.shared.core.logger import log
+from app.shared.domain.exceptions import (
+    AppError,
+    ConflictError,
+    NotFoundError,
+    PermissionDeniedError,
+    ValidationError,
+)
 
 
 async def _make_error_response(status_code: int, exc: Exception) -> JSONResponse:
@@ -52,6 +59,20 @@ async def _make_error_response(status_code: int, exc: Exception) -> JSONResponse
             ),
         ).model_dump(),
     )
+
+
+async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
+    """通用 AppError 处理器，通过异常类型自动推断 HTTP 状态码。"""
+    status_code = status.HTTP_400_BAD_REQUEST
+    if isinstance(exc, NotFoundError):
+        status_code = status.HTTP_404_NOT_FOUND
+    elif isinstance(exc, ConflictError):
+        status_code = status.HTTP_409_CONFLICT
+    elif isinstance(exc, PermissionDeniedError):
+        status_code = status.HTTP_403_FORBIDDEN
+    elif isinstance(exc, ValidationError):
+        status_code = status.HTTP_400_BAD_REQUEST
+    return await _make_error_response(status_code, exc)
 
 
 async def workflow_exception_handler(request: Request, exc: WorkflowError):
@@ -136,5 +157,7 @@ def setup_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(WorkflowError, workflow_exception_handler)
     app.add_exception_handler(TestSpecsError, test_specs_exception_handler)
     app.add_exception_handler(ExecutionPlanError, execution_plan_exception_handler)
+    # 通用 AppError 处理器（覆盖所有继承自 AppError 的模块异常）
+    app.add_exception_handler(AppError, app_error_handler)
     app.add_exception_handler(StarletteHTTPException, http_exception_handler)
     app.add_exception_handler(Exception, generic_exception_handler)

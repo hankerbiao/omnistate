@@ -24,3 +24,8 @@ DOCUMENT_MODELS = [
     ExecutionTaskDoc,
     ExecutionTaskCaseDoc,
 ]
+
+from app.shared.infrastructure.document_registry import register_document_model
+
+for _model in DOCUMENT_MODELS:
+    register_document_model(_model)

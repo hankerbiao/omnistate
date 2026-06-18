@@ -8,13 +8,15 @@
 from typing import Optional, Dict, Any, List
 from datetime import datetime, timezone
 from pydantic import BaseModel, Field, ConfigDict
-from beanie import Document, PydanticObjectId, before_event, Save, Insert
+from beanie import Document, PydanticObjectId
 from pymongo import IndexModel, ASCENDING, DESCENDING
+
+from app.shared.core.document_mixins import TimestampedDocumentMixin, SoftDeleteDocumentMixin, ProjectRelatedMixin
 
 
 # ========== Beanie 文档模型 ==========
 
-class BusWorkItemDoc(Document):
+class BusWorkItemDoc(Document, TimestampedDocumentMixin, SoftDeleteDocumentMixin, ProjectRelatedMixin):
     """业务事项 - 数据库模型（存储任务主体信息）"""
     type_code: str = Field(..., description="事项类型标识")
     title: str = Field(..., description="标题")
@@ -27,24 +29,16 @@ class BusWorkItemDoc(Document):
     creator_id: str = Field(..., description="创建者用户ID")
     # 冗余字段：避免每次序列化时跨集合查询 req_id
     req_id: Optional[str] = Field(None, description="关联需求编号（冗余自 TestRequirementDoc.req_id）")
-    project_ids: List[str] = Field(default_factory=list, description="关联的项目 ID 列表")
-    is_deleted: bool = Field(default=False, description="逻辑删除标志")
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
-    @before_event([Save, Insert])
-    def update_updated_at(self):
-        self.updated_at = datetime.now(timezone.utc)
 
     class Settings:
         name = "bus_work_items"
         indexes = [
+            *SoftDeleteDocumentMixin.Settings.indexes,
+            *ProjectRelatedMixin.Settings.indexes,
             IndexModel("type_code"),
             IndexModel("current_state"),
             IndexModel("current_owner_id"),
             IndexModel("creator_id"),
-            IndexModel("is_deleted"),
-            IndexModel("project_ids"),
             IndexModel("created_at"),
             IndexModel(
                 [("title", "text"), ("content", "text")],
@@ -64,7 +58,7 @@ class BusWorkItemDoc(Document):
         ]
 
 
-class BusFlowLogDoc(Document):
+class BusFlowLogDoc(Document, TimestampedDocumentMixin):
     """流转日志 - 数据库模型（记录每一次状态变更轨迹）"""
     work_item_id: PydanticObjectId = Field(..., description="关联事项ID (ObjectId)")
     from_state: str = Field(..., description="变更前状态")
@@ -72,12 +66,6 @@ class BusFlowLogDoc(Document):
     action: str = Field(..., description="触发动作")
     operator_id: str = Field(..., description="操作人ID")
     payload: Dict[str, Any] = Field(default_factory=dict, description="节点特有表单数据")
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
-    @before_event([Save, Insert])
-    def update_updated_at(self):
-        self.updated_at = datetime.now(timezone.utc)
 
     class Settings:
         name = "bus_flow_logs"

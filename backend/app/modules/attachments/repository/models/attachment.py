@@ -1,11 +1,13 @@
 from datetime import datetime, timezone
 from typing import Optional
 
-from beanie import Document, Insert, Save, before_event
+from beanie import Document
 from pydantic import Field
 
+from app.shared.core.document_mixins import TimestampedDocumentMixin, SoftDeleteDocumentMixin
 
-class AttachmentDoc(Document):
+
+class AttachmentDoc(Document, TimestampedDocumentMixin, SoftDeleteDocumentMixin):
     """附件文档模型"""
 
     file_id: str = Field(description="文件唯一标识")
@@ -17,14 +19,7 @@ class AttachmentDoc(Document):
     sha256: Optional[str] = Field(default=None, description="文件 SHA256 校验和")
     uploaded_by: str = Field(description="上传人ID")
     uploaded_at: datetime = Field(description="上传时间")
-    is_deleted: bool = Field(default=False, description="逻辑删除标记")
     deleted_at: Optional[datetime] = Field(default=None, description="删除时间")
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
-    @before_event([Save, Insert])
-    def update_updated_at(self):
-        self.updated_at = datetime.now(timezone.utc)
 
     class Settings:
         name = "attachments"

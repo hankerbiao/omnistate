@@ -5,12 +5,14 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from beanie import Document, Insert, Save, before_event
+from beanie import Document
 from pydantic import Field
 from pymongo import ASCENDING, DESCENDING, IndexModel
 
+from app.shared.core.document_mixins import TimestampedDocumentMixin
 
-class ExecutionEventDoc(Document):
+
+class ExecutionEventDoc(Document, TimestampedDocumentMixin):
     """Archive raw execution events from Kafka for idempotency and auditing."""
 
     event_id: str = Field(..., description="事件唯一 ID")
@@ -31,12 +33,6 @@ class ExecutionEventDoc(Document):
         default_factory=lambda: datetime.now(timezone.utc),
         description="入库时间（UTC）",
     )
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
-    @before_event([Save, Insert])
-    def update_updated_at(self):
-        self.updated_at = datetime.now(timezone.utc)
 
     class Settings:
         name = "execution_events"

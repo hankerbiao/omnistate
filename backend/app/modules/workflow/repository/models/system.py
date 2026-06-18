@@ -4,22 +4,18 @@
 from typing import List, Dict, Any
 from datetime import datetime, timezone
 from pydantic import BaseModel, Field
-from beanie import Document, before_event, Save, Insert
+from beanie import Document
 from pymongo import IndexModel, ASCENDING
+
+from app.shared.core.document_mixins import TimestampedDocumentMixin
 
 
 # ========== Beanie 文档模型 ==========
 
-class SysWorkTypeDoc(Document):
+class SysWorkTypeDoc(Document, TimestampedDocumentMixin):
     """事项类型 - 数据库模型"""
     code: str = Field(..., description="类型编码（唯一）")
     name: str = Field(..., description="类型名称")
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
-    @before_event([Save, Insert])
-    def update_updated_at(self):
-        self.updated_at = datetime.now(timezone.utc)
 
     class Settings:
         name = "sys_work_types"
@@ -28,17 +24,11 @@ class SysWorkTypeDoc(Document):
         ]
 
 
-class SysWorkflowStateDoc(Document):
+class SysWorkflowStateDoc(Document, TimestampedDocumentMixin):
     """流程状态 - 数据库模型"""
     code: str = Field(..., description="状态编码（唯一）")
     name: str = Field(..., description="状态名称")
     is_end: bool = Field(default=False, description="是否为终点状态")
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
-    @before_event([Save, Insert])
-    def update_updated_at(self):
-        self.updated_at = datetime.now(timezone.utc)
 
     class Settings:
         name = "sys_workflow_states"
@@ -47,7 +37,7 @@ class SysWorkflowStateDoc(Document):
         ]
 
 
-class SysWorkflowConfigDoc(Document):
+class SysWorkflowConfigDoc(Document, TimestampedDocumentMixin):
     """流程配置 - 数据库模型"""
     type_code: str = Field(..., description="事项类型标识")
     from_state: str = Field(..., description="起始状态编码")
@@ -56,12 +46,6 @@ class SysWorkflowConfigDoc(Document):
     target_owner_strategy: str = Field(default="KEEP", description="处理人策略")
     required_fields: List[str] = Field(default_factory=list, description="必填业务字段列表")
     properties: Dict[str, Any] = Field(default_factory=dict, description="扩展属性")
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
-    @before_event([Save, Insert])
-    def update_updated_at(self):
-        self.updated_at = datetime.now(timezone.utc)
 
     class Settings:
         name = "sys_workflow_configs"

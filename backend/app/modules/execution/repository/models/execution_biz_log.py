@@ -5,12 +5,14 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from beanie import Document, Insert, Save, before_event
+from beanie import Document
 from pydantic import Field
 from pymongo import ASCENDING, DESCENDING, IndexModel
 
+from app.shared.core.document_mixins import TimestampedDocumentMixin
 
-class ExecutionBizLogDoc(Document):
+
+class ExecutionBizLogDoc(Document, TimestampedDocumentMixin):
     """平台侧 execution 业务节点时间线（非 Kafka 原始事件）。"""
 
     task_id: str = Field(..., description="任务 ID")
@@ -25,15 +27,6 @@ class ExecutionBizLogDoc(Document):
     request_id: str | None = Field(default=None, description="链路 request_id")
     detail: dict[str, Any] = Field(default_factory=dict, description="附加摘要")
     level: str = Field(default="INFO", description="日志级别")
-    created_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
-        description="记录时间（UTC）",
-    )
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
-    @before_event([Save, Insert])
-    def update_updated_at(self):
-        self.updated_at = datetime.now(timezone.utc)
 
     class Settings:
         name = "execution_biz_logs"

@@ -2,15 +2,20 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import List, Optional
 
 from beanie import Document, Indexed
 from pydantic import Field
 from pymongo import IndexModel
 
+from app.shared.core.document_mixins import (
+    SoftDeleteDocumentMixin,
+    TimestampedDocumentMixin,
+)
 
-class ProjectDoc(Document):
+
+class ProjectDoc(Document, TimestampedDocumentMixin, SoftDeleteDocumentMixin):
     """项目文档模型。"""
 
     project_id: Indexed(str, unique=True)       # 格式: PRJ-2026-00001
@@ -25,9 +30,6 @@ class ProjectDoc(Document):
     target_version: Optional[str] = None       # 目标版本
     tags: List[str] = Field(default_factory=list)
     created_by: Optional[str] = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    is_deleted: bool = False
 
     class Settings:
         name = "projects"
@@ -37,7 +39,7 @@ class ProjectDoc(Document):
             IndexModel("status"),
             IndexModel("owner_id"),
             IndexModel("priority"),
-            IndexModel("is_deleted"),
+            *SoftDeleteDocumentMixin.Settings.indexes,
         ]
 
     class Config:

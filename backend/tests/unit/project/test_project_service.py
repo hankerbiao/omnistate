@@ -21,6 +21,10 @@ if str(ROOT) not in sys.path:
 
 from app.modules.project.service.project_service import ProjectService  # noqa: E402
 from app.modules.project.domain.constants import ProjectStatus  # noqa: E402
+from app.modules.project.domain.exceptions import (  # noqa: E402
+    ProjectKeyConflictError,
+    ProjectNotFoundError,
+)
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -147,7 +151,7 @@ class TestCreateProject:
         MockProjectDoc.find_one = AsyncMock(return_value=MagicMock())
 
         data = {"name": "项目", "key": "EXISTING"}
-        with pytest.raises(ValueError, match="项目标识已存在"):
+        with pytest.raises(ProjectKeyConflictError):
             await ProjectService.create_project(data, created_by="admin")
 
     @patch("app.modules.project.service.project_service.ProjectDoc")
@@ -178,7 +182,7 @@ class TestUpdateProject:
         """更新不存在的项目应抛出 ValueError。"""
         MockProjectDoc.find_one = AsyncMock(return_value=None)
 
-        with pytest.raises(ValueError, match="项目不存在"):
+        with pytest.raises(ProjectNotFoundError):
             await ProjectService.update_project("NONEXIST", {"name": "新名称"})
 
     @patch("app.modules.project.service.project_service.ProjectDoc")
@@ -190,7 +194,7 @@ class TestUpdateProject:
             make_doc(key="TAKEN-KEY"),  # 冲突项目
         ])
 
-        with pytest.raises(ValueError, match="项目标识已存在"):
+        with pytest.raises(ProjectKeyConflictError):
             await ProjectService.update_project("PRJ-2026-00001", {"key": "TAKEN-KEY"})
 
     @patch("app.modules.project.service.project_service.ProjectDoc")
@@ -217,7 +221,7 @@ class TestDeleteProject:
         """删除不存在的项目应抛出 ValueError。"""
         MockProjectDoc.find_one = AsyncMock(return_value=None)
 
-        with pytest.raises(ValueError, match="项目不存在"):
+        with pytest.raises(ProjectNotFoundError):
             await ProjectService.delete_project("NONEXIST")
 
     @patch("app.modules.project.service.project_service.ProjectDoc")

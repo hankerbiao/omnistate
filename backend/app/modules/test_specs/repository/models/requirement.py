@@ -4,8 +4,10 @@
 from typing import Optional, List, Dict, Any
 from datetime import date, datetime, timezone
 from pydantic import BaseModel, Field, ConfigDict
-from beanie import Document, before_event, Save, Insert
+from beanie import Document
 from pymongo import IndexModel, ASCENDING, DESCENDING
+
+from app.shared.core.document_mixins import TimestampedDocumentMixin, SoftDeleteDocumentMixin, ProjectRelatedMixin
 
 
 # ========== 枚举常量 ==========
@@ -21,7 +23,7 @@ REQUIREMENT_SOURCE_CHOICES = (
 
 # ========== Beanie 文档模型 ==========
 
-class TestRequirementDoc(Document):
+class TestRequirementDoc(Document, TimestampedDocumentMixin, SoftDeleteDocumentMixin, ProjectRelatedMixin):
     """测试需求 - 数据库模型
     """
     __test__ = False
@@ -44,7 +46,6 @@ class TestRequirementDoc(Document):
     auto_dev_name: Optional[str] = Field(None, description="自动化开发姓名（冗余）")
     # ─── 既有字段 ──────────────────────────────────────────
     target_components: List[str] = Field(default_factory=list, description="BOM 覆盖范围")
-    project_ids: List[str] = Field(default_factory=list, description="关联的项目 ID 列表")
     firmware_version: Optional[str] = Field(None, description="固件版本（兼容旧数据，新数据请用 baseline_version/target_version）")
     priority: str = Field(default="P1", description="优先级")
     key_parameters: List[Dict[str, str]] = Field(default_factory=list, description="关键参数")
@@ -53,17 +54,12 @@ class TestRequirementDoc(Document):
     manual_dev_id: Optional[str] = Field(None, description="测试用例开发工程师 ID")
     auto_dev_id: Optional[str] = Field(None, description="自动化脚本开发工程师 ID")
     attachments: List[Dict[str, Any]] = Field(default_factory=list, description="附件列表")
-    is_deleted: bool = Field(default=False, description="逻辑删除标志")
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
-    @before_event([Save, Insert])
-    def update_updated_at(self):
-        self.updated_at = datetime.now(timezone.utc)
 
     class Settings:
         name = "test_requirements"
         indexes = [
+            *SoftDeleteDocumentMixin.Settings.indexes,
+            *ProjectRelatedMixin.Settings.indexes,
             IndexModel("req_id", unique=True),
             IndexModel("workflow_item_id"),
             IndexModel("category"),
@@ -71,8 +67,6 @@ class TestRequirementDoc(Document):
             IndexModel("tpm_owner_id"),
             IndexModel("manual_dev_id"),
             IndexModel("auto_dev_id"),
-            IndexModel("is_deleted"),
-            IndexModel("project_ids"),
             IndexModel("created_at"),
             IndexModel([("tpm_owner_id", ASCENDING), ("created_at", DESCENDING)]),
             IndexModel([("workflow_item_id", ASCENDING), ("is_deleted", ASCENDING)]),
