@@ -17,9 +17,9 @@ rabbitmq:
   connection_attempts: 3
   retry_delay: 2.0
   ssl_enabled: false
-  task_queue: test_dml_task_queue
+  task_queue: dml_task_queue_dev
   task_exchange: ''
-  task_routing_key: test_dml_task_queue
+  task_routing_key: dml_task_queue_dev
   prefetch_count: 10
 kafka:
   bootstrap_servers:
@@ -29,7 +29,7 @@ kafka:
   dead_letter_topic: dmlv4.deadletter
   test_events_topic: test_dml-test-event
   execution_result_group_id: dmlv4-execution-result-consumers
-  test_events_group_id: test_dmlv4-test-events-consumers
+  test_events_group_id: dmlv4-test-events-consumers_dev
   producer_options:
     acks: all
     retries: 3
@@ -73,7 +73,7 @@ redis:
   db: 0
   socket_timeout: 2
   max_connections: 100
-  service_registry_key: test_dmlv4:service_registry
+  service_registry_key: dmlv4:service_registry_dev
 logging:
   console_level: DEBUG
   log_dir: logs
