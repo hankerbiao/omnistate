@@ -8,6 +8,8 @@ from fastapi import APIRouter
 from app.shared.api.router_registry import get_registered_routers
 from app.shared.enums import router as enums_router
 
+# 必须先构建一个空的 api_router，因为 main.py 需要导入它
+# 路由在后续的 lifespan 中通过 get_registered_routers() 注册
 api_router = APIRouter()
 
 # 从注册表加载所有模块注册的路由
