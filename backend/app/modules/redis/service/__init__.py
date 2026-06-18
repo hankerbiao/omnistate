@@ -15,8 +15,8 @@ from typing import Any
 
 from redis.sentinel import Sentinel
 
-from app.modules.redis.domain.constants import DEFAULT_EVENT_CHANNEL, KEY_NAMESPACE, PUBLISH_QUEUE_MAXSIZE
-from app.modules.redis.domain.exceptions import RedisConnectionError
+from app.modules.redis.service.constants import DEFAULT_EVENT_CHANNEL, KEY_NAMESPACE, PUBLISH_QUEUE_MAXSIZE
+from app.modules.redis.service.exceptions import RedisConnectionError
 from app.shared.config import get_settings
 from app.shared.core.logger import log as logger
 

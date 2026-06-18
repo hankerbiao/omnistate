@@ -3,7 +3,7 @@
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
-from app.modules.redis.domain.exceptions import RedisConnectionError, RedisOperationError
+from app.modules.redis.service.exceptions import RedisConnectionError, RedisOperationError
 from app.shared.api.schemas.base import APIResponse
 
 
