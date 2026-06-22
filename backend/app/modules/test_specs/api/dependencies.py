@@ -19,6 +19,7 @@ from app.modules.workflow.application import (
     WorkflowQueryService,
 )
 from app.modules.workflow.application.mutation_service import WorkflowMutationService
+from app.modules.workflow.application.notification_hook import WorkflowNotificationHook
 
 
 def get_workflow_query_service() -> WorkflowQueryService:
@@ -108,7 +109,7 @@ def get_workflow_command_service(
     return WorkflowCommandService(
         mutation_service=workflow_mutation_service,
         query_service=workflow_query_service,
-        mutation_hooks=[projection_hook],
+        mutation_hooks=[projection_hook, WorkflowNotificationHook()],
     )
 
 

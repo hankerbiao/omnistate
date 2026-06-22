@@ -76,6 +76,11 @@ async def lifespan(app: FastAPI):
         unregister_service()
         log.info("Redis 服务注册已注销")
 
+        # 刷新所有待处理的延迟通知
+        from app.modules.notification.service import NotificationService
+        await NotificationService.flush_all()
+        log.info("待处理通知已全部发送")
+
         # Phase 6: 关闭应用级基础设施
         log.info("正在关闭应用级基础设施...")
         await shutdown_infrastructure()

@@ -17,6 +17,27 @@ class WorkflowMutationHook(Protocol):
 
     async def after_delete(self, work_item: dict[str, Any]) -> None: ...
 
+    async def after_transition(self, transition_result: dict[str, Any]) -> None:
+        """状态流转完成后触发。
+
+        Args:
+            transition_result: 包含 work_item_id, from_state, to_state,
+                                action, new_owner_id, work_item 等字段。
+
+        当 new_owner_id 与操作人不同时，通常需要发送通知。
+        """
+        ...
+
+    async def after_reassign(self, reassign_result: dict[str, Any]) -> None:
+        """重新分配完成后触发。
+
+        Args:
+            reassign_result: 包含 current_owner_id, title, type_code 等字段。
+
+        当 current_owner_id 与操作人不同时，通常需要发送通知。
+        """
+        ...
+
 
 class WorkflowItemGateway(Protocol):
     """工作项访问网关协议。

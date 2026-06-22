@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -28,6 +29,7 @@ from app.modules.execution_plan.schemas.execution_plan import (
     PlanItemRerunRequest,
     SubmitManualResultRequest,
 )
+from app.modules.notification.constants import NotificationTemplates, NotificationTitles, NotificationTypes
 from app.modules.notification.service import NotificationService
 from app.modules.test_specs.repository.models import AutomationTestCaseDoc, TestCaseDoc
 from app.shared.service import BaseService, SequenceIdService
@@ -148,6 +150,9 @@ class ExecutionPlanService(BaseService):
             ExecutionPlanItemDoc.is_deleted == False,  # noqa: E712
         ).count()
 
+        # 收集 assignee 信息，创建完成后批量发送通知
+        assignee_items: Dict[str, list[str]] = defaultdict(list)
+
         for idx, raw in enumerate(items_data):
             ref_type = str(raw.get("ref_type", "")).strip().lower()
             case_id = str(raw.get("case_id", "")).strip()
@@ -163,21 +168,49 @@ class ExecutionPlanService(BaseService):
             if order_no is None:
                 order_no = existing_count + idx
 
+            assignee_id = raw.get("assignee_id")
+            case_title = snapshot.get("case_title", "")
+
             item_doc = ExecutionPlanItemDoc(
                 item_id=item_id,
                 plan_id=plan_id,
                 ref_type=ref_type,
                 case_id=case_id,
                 manual_case_id=snapshot.get("manual_case_id"),
-                case_title=snapshot.get("case_title", ""),
+                case_title=case_title,
                 component=str(raw.get("component") or snapshot.get("component") or ""),
                 priority=snapshot.get("priority", ""),
-                assignee_id=raw.get("assignee_id"),
+                assignee_id=assignee_id,
                 order_no=int(order_no),
             )
             await item_doc.insert()
 
+            if assignee_id:
+                assignee_items[assignee_id].append(case_title)
+
         await self._recalculate_plan_progress(plan_id)
+
+        # 通知被指派人（按用户聚合消息）
+        if assignee_items:
+            plan_title = await self._get_plan_title(plan_id)
+            for user_id, titles in assignee_items.items():
+                if len(titles) == 1:
+                    content = NotificationTemplates.EXECUTION_ASSIGN_SINGLE.format(
+                        plan_title=plan_title, case_title=titles[0],
+                    )
+                else:
+                    content = NotificationTemplates.EXECUTION_ASSIGN_BATCH.format(
+                        plan_title=plan_title, count=len(titles),
+                    )
+                asyncio.create_task(
+                    NotificationService.notify_by_user_id(
+                        user_id=user_id,
+                        title=NotificationTitles.EXECUTION_ASSIGN,
+                        content=content,
+                        notify_type=NotificationTypes.EXECUTION_TASK_ASSIGN,
+                    )
+                )
+
         return await self.get_plan(plan_id)
 
     async def update_item(
@@ -228,10 +261,13 @@ class ExecutionPlanService(BaseService):
 
         # 通知被指派人
         plan_title = await self._get_plan_title(item.plan_id)
-        asyncio.ensure_future(NotificationService.notify_by_user_id(
+        asyncio.create_task(NotificationService.notify_by_user_id(
             user_id=assignee_id,
-            title="执行任务改派",
-            content=f"计划「{plan_title}」中的用例「{item.case_title}」已改派给您执行",
+            title=NotificationTitles.EXECUTION_REASSIGN,
+            content=NotificationTemplates.EXECUTION_REASSIGN.format(
+                plan_title=plan_title, case_title=item.case_title,
+            ),
+            notify_type=NotificationTypes.EXECUTION_TASK_REASSIGN,
         ))
 
         return await self._item_to_response(item)
@@ -260,10 +296,13 @@ class ExecutionPlanService(BaseService):
         # 通知被指派人
         if assignee_id and updated > 0:
             plan_title = await self._get_plan_title(plan_id)
-            asyncio.ensure_future(NotificationService.notify_by_user_id(
+            asyncio.create_task(NotificationService.notify_by_user_id(
                 user_id=assignee_id,
-                title="执行任务指派",
-                content=f"计划「{plan_title}」中有 {updated} 项用例已指派给您执行",
+                title=NotificationTitles.EXECUTION_ASSIGN,
+                content=NotificationTemplates.EXECUTION_ASSIGN_BATCH.format(
+                    plan_title=plan_title, count=updated,
+                ),
+                notify_type=NotificationTypes.EXECUTION_TASK_ASSIGN,
             ))
 
         return {
@@ -694,10 +733,13 @@ class ExecutionPlanService(BaseService):
         # 通知被指派人
         if request.assignee_id is not None:
             plan_title = await self._get_plan_title(item.plan_id)
-            asyncio.ensure_future(NotificationService.notify_by_user_id(
+            asyncio.create_task(NotificationService.notify_by_user_id(
                 user_id=request.assignee_id,
-                title="执行任务重新指派",
-                content=f"计划「{plan_title}」中的用例「{item.case_title}」已重新指派给您执行",
+                title=NotificationTitles.EXECUTION_RERUN,
+                content=NotificationTemplates.EXECUTION_RERUN.format(
+                    plan_title=plan_title, case_title=item.case_title,
+                ),
+                notify_type=NotificationTypes.EXECUTION_TASK_RERUN,
             ))
 
         return await self._item_to_response(item)

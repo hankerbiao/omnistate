@@ -1,6 +1,7 @@
 app:
   host: 0.0.0.0
   port: 8801
+  service_name: dmlv4-backend
   cors_origins:
   - '*'
 mongodb:
@@ -90,6 +91,8 @@ logging:
 
 notification:
   enabled: true
+  batch_window_seconds: 300
+  max_detail_items: 10
   guangquan:
     api_url: "http://rdm.cooacloud.com/api/platform/notify/bot"
     component_name: "DML"

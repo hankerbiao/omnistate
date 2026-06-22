@@ -46,7 +46,7 @@ class AppConfig(BaseModel):
     debug: bool = False
     host: str = "0.0.0.0"
     port: int = 8801
-    service_name: str = "dmlv4-backend"
+    service_name: str
     cors_origins: list[str] = Field(default_factory=lambda: ["*"])
     dev_bypass_auth: bool = False
     dev_user_id: str = "dev_admin"
@@ -218,6 +218,8 @@ class NotificationConfig(BaseModel):
     """通知配置。"""
 
     enabled: bool = False
+    batch_window_seconds: int = 300
+    max_detail_items: int = 10
     guangquan: GuangQuanConfig = Field(default_factory=GuangQuanConfig)
 
 
@@ -273,7 +275,7 @@ def get_settings() -> Settings:
 
     配置加载顺序（后者覆盖前者）：
     1. config.yaml（基础配置）
-    2. config_dev.yaml（仅 DML_ENV=dev 时加载，覆盖基础配置）
+    2. config_dev.yaml（存在时自动加载，覆盖基础配置，可配置 debug: true 开启调试模式）
     3. 环境变量覆盖（如 DML_APP_PORT）
 
     Returns:
@@ -281,14 +283,12 @@ def get_settings() -> Settings:
     """
     config_data = load_yaml_config()
 
-    # DML_ENV=dev 时加载 config_dev.yaml，覆盖基础配置
-    env_mode = os.getenv("DML_ENV", "production")
-    if env_mode == "dev":
-        dev_config_path = get_config_path().with_name("config_dev.yaml")
-        if dev_config_path.exists():
-            with open(dev_config_path, "r", encoding="utf-8") as f:
-                dev_data = yaml.safe_load(f) or {}
-            config_data = _deep_merge(config_data, dev_data)
+    # 如 config_dev.yaml 存在，则自动加载并覆盖基础配置（dev 模式开关）
+    dev_config_path = get_config_path().with_name("config_dev.yaml")
+    if dev_config_path.exists():
+        with open(dev_config_path, "r", encoding="utf-8") as f:
+            dev_data = yaml.safe_load(f) or {}
+        config_data = _deep_merge(config_data, dev_data)
 
     # 环境变量 DML_APP_PORT 优先级高于配置文件
     env_port = os.getenv("DML_APP_PORT")

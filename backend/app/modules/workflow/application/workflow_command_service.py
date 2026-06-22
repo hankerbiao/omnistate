@@ -65,13 +65,15 @@ class WorkflowCommandService:
         context: OperationContext,
         command: ReassignWorkItemCommand,
     ) -> dict:
-        return await self._mutation_service.reassign_item(
+        result = await self._mutation_service.reassign_item(
             item_id=command.work_item_id,
             operator_id=context.actor_id,
             target_owner_id=command.target_owner_id,
             remark=command.remark,
             actor_role_ids=context.role_ids,
         )
+        await self._run_hook("after_reassign", result)
+        return result
 
     async def delete_work_item(
         self,

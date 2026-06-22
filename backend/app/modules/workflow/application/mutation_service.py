@@ -206,6 +206,7 @@ class WorkflowMutationService:
             "from_state": old_state,
             "to_state": new_state,
             "action": action,
+            "operator_id": operator_id,
             "new_owner_id": new_owner_id,
             "work_item": item_dict,
         }
