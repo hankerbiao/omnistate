@@ -3,9 +3,13 @@
 MongoDB 数据库初始化脚本
 
 功能说明：
-该脚本用于将代码中的配置（configs/*.json）同步到 MongoDB 数据库中。
+该脚本用于将代码中的配置（configs/*.json）同步到 MongoDB 数据库。
+RBAC 权限与角色初始化由 scripts/init/init_rbac.py 独立管理。
 它是幂等的（Idempotent），可以重复运行。
-python backend/app/init_mongodb.py
+
+用法：
+  python app/init_mongodb.py              # 同步 workflow 配置 + 导航定义
+  python scripts/init/init_rbac.py        # 同步 RBAC 权限与角色
 """
 import asyncio
 import json
@@ -29,68 +33,8 @@ from app.modules.workflow.repository.models import (
     SysWorkflowStateDoc,
     SysWorkflowConfigDoc,
 )
-from app.modules.auth.repository.models import (
-    PermissionDoc,
-    RoleDoc,
-    NavigationPageDoc,
-)
+from app.modules.auth.repository.models import NavigationPageDoc
 from app.modules.auth.service.navigation_page_service import DEFAULT_NAVIGATION_PAGES
-
-# =============================================================================
-# RBAC 默认数据
-# =============================================================================
-_DEFAULT_PERMISSIONS: list[tuple[str, str]] = [
-    ("work_items:read", "工作流读取权限"),
-    ("work_items:write", "工作流写入权限"),
-    ("work_items:transition", "工作流流转权限"),
-    ("users:read", "用户读取权限"),
-    ("users:write", "用户写入权限"),
-    ("roles:read", "角色读取权限"),
-    ("roles:write", "角色写入权限"),
-    ("permissions:read", "权限读取权限"),
-    ("permissions:write", "权限写入权限"),
-    ("requirements:read", "需求读取权限"),
-    ("requirements:write", "需求写入权限"),
-    ("test_cases:read", "用例读取权限"),
-    ("test_cases:write", "用例写入权限"),
-    ("execution_agents:read", "执行代理读取权限"),
-    ("execution_agents:write", "执行代理写入权限"),
-    ("execution_tasks:read", "执行任务读取权限"),
-    ("execution_tasks:write", "执行任务写入权限"),
-    ("navigation:read", "导航读取权限"),
-    ("navigation:write", "导航写入权限"),
-]
-
-_ALL_PERM_IDS = [code for code, _ in _DEFAULT_PERMISSIONS]
-
-_DEFAULT_ROLES: dict[str, list[str]] = {
-    # 管理员：拥有全部权限
-    "ADMIN": _ALL_PERM_IDS,
-    # TPM（测试项目经理）：需求和用例管理、流转、执行管理、导航管理
-    "TPM": [
-        "users:read", "requirements:read", "requirements:write",
-        "test_cases:read", "work_items:read", "work_items:transition",
-        "execution_agents:read", "execution_agents:write",
-        "execution_tasks:read", "execution_tasks:write",
-        "navigation:read", "navigation:write",
-    ],
-    # TESTER（测试执行人员）：用例编写和执行
-    "TESTER": [
-        "users:read", "requirements:read",
-        "test_cases:read", "test_cases:write",
-        "work_items:read", "work_items:transition",
-        "execution_agents:read",
-        "execution_tasks:read", "execution_tasks:write",
-        "navigation:read", "navigation:write",
-    ],
-    # AUTOMATION（自动化工程师）：自动化用例开发和执行
-    "AUTOMATION": [
-        "users:read", "test_cases:read", "test_cases:write",
-        "assets:read", "work_items:read",
-        "execution_agents:read", "execution_tasks:read",
-        "navigation:read", "navigation:write",
-    ],
-}
 
 
 def _parse_state_entry(entry: Any) -> Optional[tuple[str, str, Optional[bool]]]:
@@ -369,33 +313,6 @@ async def init_config_data():
     log.success("基础数据初始化完成")
 
 
-async def init_rbac_data():
-    """
-    初始化 RBAC 默认权限与角色。
-
-    权限与角色定义见模块级常量 _DEFAULT_PERMISSIONS、_DEFAULT_ROLES。
-    """
-    log.info("开始初始化 RBAC 权限与角色...")
-
-    # upsert 权限
-    for code, name in _DEFAULT_PERMISSIONS:
-        await _upsert_doc(
-            PermissionDoc, PermissionDoc.perm_id == code,
-            {"code": code, "name": name},
-            PermissionDoc(perm_id=code, code=code, name=name)
-        )
-
-    # upsert 默认角色
-    for role_id, permission_ids in _DEFAULT_ROLES.items():
-        await _upsert_doc(
-            RoleDoc, RoleDoc.role_id == role_id,
-            {"name": role_id, "permission_ids": permission_ids},
-            RoleDoc(role_id=role_id, name=role_id, permission_ids=permission_ids)
-        )
-
-    log.success("RBAC 初始化完成")
-
-
 async def init_navigation_pages():
     """初始化默认导航页面定义。"""
     log.info("开始初始化导航页面定义...")
@@ -429,13 +346,15 @@ async def init_navigation_pages():
 
 async def main():
     """
-    主函数 (Beanie ODM 版本)
+    主函数
 
     功能：
     1. 连接 MongoDB。
     2. 初始化 Beanie ODM。
-    3. 调用 init_config_data 执行同步。
+    3. 同步 workflow 配置 + 导航页面定义。
     4. 优雅关闭连接。
+
+    注意：RBAC 初始化由 scripts/init/init_rbac.py 独立完成。
     """
     log.info("开始 MongoDB 初始化...")
 
@@ -453,8 +372,6 @@ async def main():
                 SysWorkTypeDoc,
                 SysWorkflowStateDoc,
                 SysWorkflowConfigDoc,
-                PermissionDoc,
-                RoleDoc,
                 NavigationPageDoc,
             ]
         )
@@ -462,7 +379,6 @@ async def main():
 
         # 执行核心同步逻辑
         await init_config_data()
-        await init_rbac_data()
         await init_navigation_pages()
 
         log.success("MongoDB 初始化完成!")

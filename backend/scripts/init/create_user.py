@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """创建 RBAC 用户脚本。
 
+前提：必须先执行 scripts/init/init_rbac.py 初始化权限与角色。
+
 用法示例：
-python scripts/create_user.py \
-  --user-id admin \
-  --username 管理员 \
-  --password 'admin123' \
+python scripts/init/create_user.py \
+  --user-id admin001 \
+  --username "系统管理员" \
+  --password 'Admin@123' \
   --roles ADMIN \
   --email admin@example.com
 
@@ -24,33 +26,13 @@ from pathlib import Path
 from beanie import init_beanie
 from pymongo import AsyncMongoClient
 
-# 允许从 scripts 目录直接运行
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from app.shared.config import get_settings
 from app.shared.auth import hash_password
-from app.modules.auth.repository.models import UserDoc, RoleDoc, PermissionDoc
-
-
-DEFAULT_PERMISSIONS = [
-    ("work_items:read", "Workflow read"),
-    ("work_items:write", "Workflow write"),
-    ("work_items:transition", "Workflow transition"),
-    ("users:read", "Users read"),
-    ("users:write", "Users write"),
-    ("roles:read", "Roles read"),
-    ("roles:write", "Roles write"),
-    ("permissions:read", "Permissions read"),
-    ("permissions:write", "Permissions write"),
-    ("requirements:read", "Requirements read"),
-    ("requirements:write", "Requirements write"),
-    ("test_cases:read", "Test cases read"),
-    ("test_cases:write", "Test cases write"),
-    ("navigation:read", "Navigation read"),
-    ("navigation:write", "Navigation write"),
-]
+from app.modules.auth.repository.models import UserDoc, RoleDoc
 
 
 def parse_args() -> argparse.Namespace:
@@ -65,28 +47,6 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-async def bootstrap_admin_role_if_needed(role_ids: list[str]) -> None:
-    """当请求 ADMIN 角色且数据库缺失时，自动初始化默认权限与 ADMIN 角色。"""
-    if "ADMIN" not in role_ids:
-        return
-
-    admin_exists = await RoleDoc.find_one(RoleDoc.role_id == "ADMIN")
-    if admin_exists:
-        return
-
-    for code, name in DEFAULT_PERMISSIONS:
-        await PermissionDoc.find_one(PermissionDoc.perm_id == code).upsert(
-            {"$set": {"code": code, "name": name}},
-            on_insert=PermissionDoc(perm_id=code, code=code, name=name),
-        )
-
-    all_perm_ids = [code for code, _ in DEFAULT_PERMISSIONS]
-    await RoleDoc.find_one(RoleDoc.role_id == "ADMIN").upsert(
-        {"$set": {"name": "ADMIN", "permission_ids": all_perm_ids}},
-        on_insert=RoleDoc(role_id="ADMIN", name="ADMIN", permission_ids=all_perm_ids),
-    )
-
-
 async def main() -> None:
     args = parse_args()
     role_ids = [r.strip() for r in args.roles.split(",") if r.strip()]
@@ -95,17 +55,17 @@ async def main() -> None:
     try:
         await init_beanie(
             database=client[get_settings().mongodb.db_name],
-            document_models=[UserDoc, RoleDoc, PermissionDoc],
+            document_models=[UserDoc, RoleDoc],
         )
-
-        # 需要 ADMIN 但缺失时，自动引导默认 RBAC 数据
-        await bootstrap_admin_role_if_needed(role_ids)
 
         # 角色存在性校验
         if role_ids:
             role_count = await RoleDoc.find({"role_id": {"$in": role_ids}}).count()
             if role_count != len(set(role_ids)):
-                raise RuntimeError(f"角色不存在，无法创建用户: {role_ids}")
+                missing = set(role_ids) - {r.role_id async for r in RoleDoc.find({"role_id": {"$in": role_ids}})}
+                raise RuntimeError(
+                    f"角色不存在: {missing}。请先执行 scripts/init/init_rbac.py 初始化权限与角色。"
+                )
 
         salt, pwd_hash = hash_password(args.password)
         existing = await UserDoc.find_one(UserDoc.user_id == args.user_id)
@@ -135,9 +95,7 @@ async def main() -> None:
         ).insert()
         print(f"用户创建成功: {args.user_id}")
     finally:
-        close_result = client.close()
-        if asyncio.iscoroutine(close_result):
-            await close_result
+        await client.close()
 
 
 if __name__ == "__main__":
