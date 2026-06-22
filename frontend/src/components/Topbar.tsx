@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useTheme } from 'next-themes'
+import { Sun, Moon, Check } from 'lucide-react'
 
 interface SwitchableUser {
   userId: string
@@ -61,8 +62,9 @@ const Topbar: React.FC<TopbarProps> = ({
           className="btn btn--ghost btn--sm"
           onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
           title={resolvedTheme === 'dark' ? '切换到明亮模式' : '切换到暗黑模式'}
+          aria-label="切换主题"
         >
-          {resolvedTheme === 'dark' ? '☀️' : '🌙'}
+          {resolvedTheme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
         </button>
 
         {switchableUsers && switchableUsers.length > 0 && (
@@ -81,7 +83,11 @@ const Topbar: React.FC<TopbarProps> = ({
                 >
                   <span className="topbar__avatar">{user.label.charAt(0)}</span>
                   <span className="topbar__user-chip-label">{user.label}</span>
-                  {isActive && <span className="topbar__user-chip-check" aria-hidden="true">✓</span>}
+                  {isActive && (
+                    <span className="topbar__user-chip-check" aria-hidden="true">
+                      <Check size={12} strokeWidth={3} />
+                    </span>
+                  )}
                 </button>
               )
             })}

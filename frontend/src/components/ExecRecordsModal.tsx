@@ -1,5 +1,6 @@
 import React from 'react';
 import type { ExecutionTask } from '../types';
+import { Dialog, DialogContent } from './ui/dialog';
 
 const EXEC_STATUS_STYLE: Record<string, { bg: string; color: string; label: string }> = {
   QUEUED: { bg: 'rgba(210,153,34,0.12)', color: '#d29922', label: '排队中' },
@@ -20,19 +21,13 @@ const ExecRecordsModal: React.FC<Props> = ({ tasks, onViewResult, onClose }) => 
   const getStyle = (status: string) => EXEC_STATUS_STYLE[status] || { bg: 'rgba(139,148,158,0.12)', color: '#8b949e', label: status };
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000 }}
-      onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{
-        background: 'var(--bg-elevated)', borderRadius: 12, width: 680, maxWidth: '94vw',
-        maxHeight: '80vh', display: 'flex', flexDirection: 'column',
-        boxShadow: '0 30px 80px rgba(0,0,0,0.35)', border: '1px solid var(--border-default)',
-      }}>
+    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="sm:max-w-[680px]" style={{ maxHeight: '80vh', display: 'flex', flexDirection: 'column', padding: 0 }}>
         <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border-subtle)', display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 14, fontWeight: 600 }}>自动化执行记录</div>
             <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{tasks.length} 条记录</div>
           </div>
-          <button onClick={onClose} style={{ fontSize: 20, color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer' }}>×</button>
         </div>
         <div style={{ flex: 1, overflowY: 'auto', padding: '12px 20px', display: 'flex', flexDirection: 'column', gap: 2 }}>
           {tasks.length === 0 ? (
@@ -75,8 +70,8 @@ const ExecRecordsModal: React.FC<Props> = ({ tasks, onViewResult, onClose }) => 
             })
           )}
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 };
 

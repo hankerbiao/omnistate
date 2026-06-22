@@ -1,112 +1,111 @@
-import { createContext, useContext, useState, useCallback, useEffect, useRef, type ReactNode } from 'react';
-import { useAuth } from './AuthProvider';
-import { navSections, getVisibleNavItems, resolveDefaultPage } from '../config/navigation';
-import type { NavItem, NavSection, PageType } from '../types/app';
+import { createContext, useContext, useCallback, useEffect, useRef, type ReactNode } from 'react'
+import { useNavigate, useLocation } from 'react-router-dom'
+import { useAuth } from './AuthProvider'
+import { navSections, getVisibleNavItemsWithIcons, resolveDefaultPage } from '../config/navigation'
+import type { NavItemWithIcon, NavSection, PageType } from '../types/app'
+import { PAGE_ROUTES, ROUTE_TO_PAGE } from '../router/routes'
 
 export interface WorkflowNavigateTarget {
-  page: 'requirements' | 'manualTestCases' | 'myTasks';
-  status?: string;
+  page: 'requirements' | 'manualTestCases' | 'myTasks'
+  status?: string
 }
 
 interface NavigationContextType {
-  currentPage: PageType;
-  navigate: (page: PageType) => void;
-  visibleNavItems: NavItem[];
-  navSections: NavSection[];
-  /** 需求列表过滤器（从工作流导航传递） */
-  requirementsFilter?: string;
-  /** 血缘视图实体类型 */
-  lineageEntityType: string;
-  /** 血缘视图实体 ID */
-  lineageEntityId: string;
-  handleWorkflowNavigate: (target: WorkflowNavigateTarget) => void;
-  handleOpenLineage: (type: string, id: string) => void;
+  currentPage: PageType
+  navigate: (page: PageType) => void
+  visibleNavItems: NavItemWithIcon[]
+  navSections: NavSection[]
+  requirementsFilter?: string
+  lineageEntityType: string
+  lineageEntityId: string
+  handleWorkflowNavigate: (target: WorkflowNavigateTarget) => void
+  handleOpenLineage: (type: string, id: string) => void
 }
 
-const NavigationContext = createContext<NavigationContextType | null>(null);
+const NavigationContext = createContext<NavigationContextType | null>(null)
 
 // eslint-disable-next-line react-refresh/only-export-components
 export function useNavigation(): NavigationContextType {
-  const ctx = useContext(NavigationContext);
-  if (!ctx) throw new Error('useNavigation must be used within NavigationProvider');
-  return ctx;
+  const ctx = useContext(NavigationContext)
+  if (!ctx) throw new Error('useNavigation must be used within NavigationProvider')
+  return ctx
 }
 
 export function NavigationProvider({ children }: { children: ReactNode }) {
-  const { isAuthenticated, userPermissions } = useAuth();
+  const { isAuthenticated, userPermissions } = useAuth()
+  const navigate = useNavigate()
+  const location = useLocation()
 
-  const [currentPage, setCurrentPage] = useState<PageType>('myTasks');
-  const [requirementsFilter, setRequirementsFilter] = useState<string | undefined>(undefined);
-  const [lineageEntityType, setLineageEntityType] = useState<string>('');
-  const [lineageEntityId, setLineageEntityId] = useState<string>('');
-  const initialPageSetRef = useRef(false);
+  const visibleNavItems = getVisibleNavItemsWithIcons(userPermissions)
 
-  const visibleNavItems = getVisibleNavItems(userPermissions);
+  // Derive currentPage from URL path
+  const currentPage: PageType = ROUTE_TO_PAGE[location.pathname] ?? 'myTasks'
 
-  const navigate = useCallback((page: PageType) => {
-    setCurrentPage(page);
-  }, []);
+  // Use ref to store mutable navigation state (requirementsFilter, lineage) without re-renders
+  const requirementsFilterRef = useRef<string | undefined>(undefined)
+  const lineageStateRef = useRef<{ type: string; id: string }>({ type: '', id: '' })
+  const initialRedirectRef = useRef(false)
+
+  const handleNavigate = useCallback((page: PageType) => {
+    const path = PAGE_ROUTES[page]
+    if (path) navigate(path)
+  }, [navigate])
 
   const handleWorkflowNavigate = useCallback((target: WorkflowNavigateTarget) => {
     if (target.page === 'requirements') {
-      setRequirementsFilter(target.status);
+      requirementsFilterRef.current = target.status
     }
-    setCurrentPage(target.page);
-  }, []);
+    const path = PAGE_ROUTES[target.page]
+    if (path) navigate(path)
+  }, [navigate])
 
   const handleOpenLineage = useCallback((type: string, id: string) => {
-    setLineageEntityType(type);
-    setLineageEntityId(id);
-    setCurrentPage('lineageView');
-  }, []);
+    lineageStateRef.current = { type, id }
+    navigate(PAGE_ROUTES.lineageView)
+  }, [navigate])
 
-  // 登录状态变化时重置导航
+  // On login: redirect to default page based on permissions
+  useEffect(() => {
+    if (!isAuthenticated || userPermissions.length === 0) return
+    if (initialRedirectRef.current) return
+
+    const visible = getVisibleNavItemsWithIcons(userPermissions)
+    const visibleKeys = new Set(visible.map(item => item.key))
+    const currentPathPage = ROUTE_TO_PAGE[location.pathname]
+
+    // If on root or page not in visible items, redirect to default
+    if (!currentPathPage || (currentPathPage !== 'profile' && !visibleKeys.has(currentPathPage))) {
+      const defaultPage = resolveDefaultPage(visible)
+      navigate(PAGE_ROUTES[defaultPage], { replace: true })
+    }
+
+    initialRedirectRef.current = true
+  }, [isAuthenticated, userPermissions, location.pathname, navigate])
+
+  // Reset on logout
   useEffect(() => {
     if (!isAuthenticated) {
-      initialPageSetRef.current = false;
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setCurrentPage('myTasks');
-      setRequirementsFilter(undefined);
-      setLineageEntityType('');
-      setLineageEntityId('');
+      initialRedirectRef.current = false
+      requirementsFilterRef.current = undefined
+      lineageStateRef.current = { type: '', id: '' }
     }
-  }, [isAuthenticated]);
-
-  // 权限加载完成后设置默认页面
-  useEffect(() => {
-    if (!isAuthenticated) return;
-    if (userPermissions.length === 0) return;
-
-    const visible = getVisibleNavItems(userPermissions);
-    const visibleKeys = new Set(visible.map((item) => item.key));
-
-    if (!initialPageSetRef.current) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setCurrentPage(resolveDefaultPage(visible));
-      initialPageSetRef.current = true;
-      return;
-    }
-
-    if (currentPage !== 'profile' && !visibleKeys.has(currentPage)) {
-      setCurrentPage(resolveDefaultPage(visible));
-    }
-  }, [userPermissions, isAuthenticated, currentPage]);
+  }, [isAuthenticated])
 
   return (
     <NavigationContext.Provider
       value={{
         currentPage,
-        navigate,
+        navigate: handleNavigate,
         visibleNavItems,
         navSections,
-        requirementsFilter,
-        lineageEntityType,
-        lineageEntityId,
+        requirementsFilter: requirementsFilterRef.current,
+        lineageEntityType: lineageStateRef.current.type,
+        lineageEntityId: lineageStateRef.current.id,
         handleWorkflowNavigate,
         handleOpenLineage,
       }}
     >
       {children}
     </NavigationContext.Provider>
-  );
+  )
 }

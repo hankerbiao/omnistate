@@ -1,6 +1,7 @@
 import React, { useReducer, useCallback } from 'react';
 import type { PlanTask, PlanTaskResult } from './myTasksTypes';
 import { modalLabel } from './myTasksTypes';
+import { Dialog, DialogContent } from './ui/dialog';
 
 // ═══════════════════════════════════════════════════════════════════════
 //  Reducer — 用 useReducer 替代 10 个独立 useState
@@ -149,15 +150,8 @@ const ResultBackfillModal: React.FC<ResultBackfillModalProps> = ({ task, onClose
   if (!task) return null;
 
   return (
-    <div style={{
-      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000,
-    }}>
-      <div onClick={e => e.stopPropagation()} style={{
-        background: 'var(--bg-elevated)', borderRadius: 14, width: 560, maxWidth: '94vw',
-        maxHeight: '90vh', display: 'flex', flexDirection: 'column',
-        boxShadow: '0 25px 80px rgba(0,0,0,0.35)', border: '1px solid var(--border-default)',
-      }}>
+    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="sm:max-w-[560px]" style={{ padding: 0, maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
         {/* Header */}
         <div style={{
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
@@ -169,11 +163,6 @@ const ResultBackfillModal: React.FC<ResultBackfillModalProps> = ({ task, onClose
               {task.caseId} · {task.caseTitle}
             </p>
           </div>
-          <button onClick={onClose} style={{
-            fontSize: 22, color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer',
-          }}>
-            ×
-          </button>
         </div>
 
         {/* Scrollable body */}
@@ -376,8 +365,8 @@ const ResultBackfillModal: React.FC<ResultBackfillModalProps> = ({ task, onClose
           <button className="btn btn--secondary" onClick={onClose}>取消</button>
           <button className="btn btn--primary" onClick={handleSubmit}>✓ 提交结果</button>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 };
 

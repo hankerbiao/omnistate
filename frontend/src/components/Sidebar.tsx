@@ -1,9 +1,10 @@
-import type { PageType, NavItem, NavSection } from '../types/app'
+import type { PageType, NavSection } from '../types/app'
+import type { NavItemWithIcon } from '../config/navigation'
 
 interface SidebarProps {
   currentPage: PageType
   onNavigate: (page: PageType) => void
-  visibleItems: NavItem[]
+  visibleItems: NavItemWithIcon[]
   sections: NavSection[]
 }
 
@@ -34,6 +35,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, visibleItems
               <span className="sidebar__section-label">{section.label}</span>
               {sectionItems.map(item => {
                 const active = currentPage === item.key
+                const Icon = item.icon
                 return (
                   <button
                     key={item.key}
@@ -42,7 +44,9 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, visibleItems
                     onClick={() => onNavigate(item.key)}
                     aria-current={active ? 'page' : undefined}
                   >
-                    <span className="sidebar__icon" aria-hidden>{item.icon}</span>
+                    <span className="sidebar__icon" aria-hidden>
+                      <Icon size={16} />
+                    </span>
                     <span>{item.label}</span>
                   </button>
                 )

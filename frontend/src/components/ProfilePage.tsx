@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { api } from '../services/api';
 import type { UserResponse, CurrentUserPermissionsResponse, PermissionResponse } from '../types';
+import { Dialog, DialogContent } from './ui/dialog';
 
 // 用户状态中文映射
 const USER_STATUS_LABELS: Record<string, string> = {
@@ -505,109 +506,90 @@ const ProfilePage: React.FC = () => {
       </div>
 
       {/* ── Permissions Modal ── */}
-      {permModalOpen && (
-        <div
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}
-          onClick={() => setPermModalOpen(false)}
-        >
-          <div
-            onClick={e => e.stopPropagation()}
-            style={{
-              background: 'var(--bg-elevated)', borderRadius: 12, width: 720, maxWidth: '90vw',
-              maxHeight: '80vh', display: 'flex', flexDirection: 'column',
-              boxShadow: '0 20px 60px rgba(0,0,0,0.3)', border: '1px solid var(--border-default)',
-            }}
-          >
-            {/* Modal header */}
-            <div style={{
-              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-              padding: '18px 24px', borderBottom: '1px solid var(--border-subtle)', flexShrink: 0,
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <h3 style={{ margin: 0, fontSize: 17, fontWeight: 600, color: 'var(--text-primary)' }}>权限列表</h3>
-                <span style={styles.badge}>{permissionsInfo?.permissions?.length || 0}</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <input
-                  className="form-input"
-                  style={{ width: 200, fontSize: 12, padding: '5px 10px' }}
-                  value={permSearch}
-                  onChange={e => setPermSearch(e.target.value)}
-                  placeholder="搜索权限名称或代码…"
-                />
-                <button
-                  style={{ fontSize: 20, color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer', lineHeight: 1 }}
-                  onClick={() => setPermModalOpen(false)}
-                >×</button>
-              </div>
+      <Dialog open={permModalOpen} onOpenChange={setPermModalOpen}>
+        <DialogContent style={{ padding: 0, gap: 0, width: 720, maxWidth: '90vw', maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            padding: '18px 24px', borderBottom: '1px solid var(--border-subtle)', flexShrink: 0,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <h3 style={{ margin: 0, fontSize: 17, fontWeight: 600, color: 'var(--text-primary)' }}>权限列表</h3>
+              <span style={styles.badge}>{permissionsInfo?.permissions?.length || 0}</span>
             </div>
-
-            {/* Modal body */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
-              {groupedAndFiltered.length > 0 ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-                  {groupedAndFiltered.map(cat => (
-                    <div key={cat.key}>
-                      {/* Category header */}
-                      <div style={{
-                        display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10,
-                        paddingBottom: 8, borderBottom: `2px solid ${cat.color}`,
-                      }}>
-                        <span style={{ fontSize: 20 }}>{cat.icon}</span>
-                        <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)', flex: 1 }}>{cat.label}</span>
-                        <span style={{
-                          fontSize: 11, fontWeight: 600, padding: '2px 10px', borderRadius: 8,
-                          color: cat.color, background: `color-mix(in srgb, ${cat.color} 15%, transparent)`,
-                        }}>{cat.items.length} 项</span>
-                      </div>
-
-                      {/* Permission cards */}
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                        {cat.items.map(code => {
-                          const name = getPermissionName(code);
-                          const desc = getPermissionDescription(code);
-                          return (
-                            <div key={code} style={{
-                              padding: '10px 14px', borderRadius: 8, background: 'var(--surface-secondary)',
-                              border: `0.5px solid ${cat.color}20`,
-                            }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)' }}>{name}</span>
-                                <span style={{
-                                  fontSize: 10, color: 'var(--text-tertiary)', fontFamily: 'monospace',
-                                  background: 'var(--surface-tertiary)', padding: '1px 6px', borderRadius: 4,
-                                }}>{code}</span>
-                              </div>
-                              {desc && (
-                                <p style={{
-                                  margin: '4px 0 0', fontSize: 12, color: 'var(--text-secondary)',
-                                  lineHeight: 1.5,
-                                }}>{desc}</p>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 14 }}>
-                  {permSearch ? '无匹配的权限' : '暂无权限'}
-                </div>
-              )}
-            </div>
-
-            {/* Modal footer */}
-            <div style={{
-              padding: '12px 24px', borderTop: '1px solid var(--border-subtle)',
-              textAlign: 'right', fontSize: 12, color: 'var(--text-tertiary)',
-            }}>
-              共 {permissionsInfo?.permissions?.length || 0} 项权限
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <input
+                className="form-input"
+                style={{ width: 200, fontSize: 12, padding: '5px 10px' }}
+                value={permSearch}
+                onChange={e => setPermSearch(e.target.value)}
+                placeholder="搜索权限名称或代码…"
+              />
             </div>
           </div>
-        </div>
-      )}
+
+          <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
+            {groupedAndFiltered.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                {groupedAndFiltered.map(cat => (
+                  <div key={cat.key}>
+                    {/* Category header */}
+                    <div style={{
+                      display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10,
+                      paddingBottom: 8, borderBottom: `2px solid ${cat.color}`,
+                    }}>
+                      <span style={{ fontSize: 20 }}>{cat.icon}</span>
+                      <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)', flex: 1 }}>{cat.label}</span>
+                      <span style={{
+                        fontSize: 11, fontWeight: 600, padding: '2px 10px', borderRadius: 8,
+                        color: cat.color, background: `color-mix(in srgb, ${cat.color} 15%, transparent)`,
+                      }}>{cat.items.length} 项</span>
+                    </div>
+
+                    {/* Permission cards */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {cat.items.map(code => {
+                        const name = getPermissionName(code);
+                        const desc = getPermissionDescription(code);
+                        return (
+                          <div key={code} style={{
+                            padding: '10px 14px', borderRadius: 8, background: 'var(--surface-secondary)',
+                            border: `0.5px solid ${cat.color}20`,
+                          }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)' }}>{name}</span>
+                              <span style={{
+                                fontSize: 10, color: 'var(--text-tertiary)', fontFamily: 'monospace',
+                                background: 'var(--surface-tertiary)', padding: '1px 6px', borderRadius: 4,
+                              }}>{code}</span>
+                            </div>
+                            {desc && (
+                              <p style={{
+                                margin: '4px 0 0', fontSize: 12, color: 'var(--text-secondary)',
+                                lineHeight: 1.5,
+                              }}>{desc}</p>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 14 }}>
+                {permSearch ? '无匹配的权限' : '暂无权限'}
+              </div>
+            )}
+          </div>
+
+          <div style={{
+            padding: '12px 24px', borderTop: '1px solid var(--border-subtle)',
+            textAlign: 'right', fontSize: 12, color: 'var(--text-tertiary)',
+          }}>
+            共 {permissionsInfo?.permissions?.length || 0} 项权限
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

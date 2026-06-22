@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { api } from '../services/api';
 import type { CollectionAnalysisResult } from '../types';
+import { Dialog, DialogContent } from './ui/dialog';
 
 interface AIAnalysisPanelProps {
   caseIds: string[];
@@ -221,26 +222,32 @@ const AIAnalysisPanel: React.FC<AIAnalysisPanelProps> = ({ caseIds, autoCaseIds,
         {loading ? '⏳ 分析中...' : 'AI 分析'}
       </button>
 
-      {open && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 999 }} onClick={() => setOpen(false)}>
-          <div onClick={e => e.stopPropagation()} style={{
-            position: 'absolute', right: 24, top: 60, width: 520,
-            background: '#fff', borderRadius: 12,
-            boxShadow: '0 8px 30px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06)',
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent
+          style={{
+            right: 24,
+            top: 60,
+            left: 'auto',
+            transform: 'none',
+            maxWidth: 520,
+            width: 520,
+            padding: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            maxHeight: '80vh',
+            borderRadius: 12,
             border: `1px solid ${colors.grayBorder}`,
-            maxHeight: '80vh', overflow: 'hidden', display: 'flex', flexDirection: 'column',
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: `1px solid ${colors.grayBorder}` }}>
-              <span style={{ fontSize: 14, fontWeight: 600 }}>AI 分析结果</span>
-              <button type="button" onClick={() => setOpen(false)}
-                style={{ background: 'none', border: 'none', fontSize: 18, color: colors.gray, cursor: 'pointer', padding: '0 4px', lineHeight: 1 }}>×</button>
-            </div>
-            <div style={{ padding: '14px 18px 16px', overflowY: 'auto' }}>
-              {renderBody()}
-            </div>
+            boxShadow: '0 8px 30px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', padding: '14px 18px', borderBottom: `1px solid ${colors.grayBorder}` }}>
+            <span style={{ fontSize: 14, fontWeight: 600 }}>AI 分析结果</span>
           </div>
-        </div>
-      )}
+          <div style={{ padding: '14px 18px 16px', overflowY: 'auto', flex: 1, minHeight: 0 }}>
+            {renderBody()}
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   );
 };

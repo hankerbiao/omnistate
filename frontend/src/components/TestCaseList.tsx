@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { api } from '../services/api';
 import type { AutomationTestCaseResponse } from '../types';
 import CreateAutomationTestCaseForm from './CreateAutomationTestCaseForm';
+import { Dialog, DialogContent } from './ui/dialog';
 
 type DetailTab = 'code' | 'params' | 'relations' | 'meta';
 
@@ -433,25 +434,22 @@ const TestCaseList: React.FC = () => {
       {showCreateForm && <CreateAutomationTestCaseForm onClose={() => setShowCreateForm(false)} onSuccess={fetchAll} />}
 
       {/* Dispatch modal */}
-      {showDispatchModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg-elevated)', borderRadius: 12, width: 400, maxWidth: '90vw', boxShadow: '0 20px 60px rgba(0,0,0,0.4)', border: '1px solid var(--border-default)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', borderBottom: '1px solid var(--border-subtle)' }}>
-              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: 'var(--text-primary)' }}>下发任务</h3>
-              <button style={{ fontSize: 22, color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer' }} onClick={() => setShowDispatchModal(false)}>×</button>
-            </div>
-            <div style={{ padding: 20 }}>
-              <p style={{ margin: '0 0 12', fontSize: 14, color: 'var(--text-secondary)' }}>将 <strong>{selectedIds.size}</strong> 个用例下发到执行队列</p>
-              {dispatchError && <div style={{ padding: '10px 14px', background: 'var(--status-error-bg)', borderRadius: 6, fontSize: 13, color: 'var(--status-error)', marginBottom: 8 }}>⚠ {dispatchError}</div>}
-              {dispatchSuccess && <div style={{ padding: '10px 14px', background: 'var(--status-success-bg)', borderRadius: 6, fontSize: 13, color: 'var(--status-success)' }}>✓ {dispatchSuccess}</div>}
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, padding: '14px 20px', borderTop: '1px solid var(--border-subtle)' }}>
-              <button className="btn btn--secondary" onClick={() => setShowDispatchModal(false)} disabled={dispatching}>取消</button>
-              <button className="btn btn--primary" onClick={handleDispatch} disabled={dispatching || Boolean(dispatchSuccess)}>{dispatching ? '下发中...' : '确认下发'}</button>
-            </div>
+      <Dialog open={showDispatchModal} onOpenChange={setShowDispatchModal}>
+        <DialogContent style={{ padding: 0, gap: 0, width: 400, maxWidth: '90vw' }}>
+          <div style={{ display: 'flex', alignItems: 'center', padding: '16px 20px', borderBottom: '1px solid var(--border-subtle)' }}>
+            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: 'var(--text-primary)' }}>下发任务</h3>
           </div>
-        </div>
-      )}
+          <div style={{ padding: 20 }}>
+            <p style={{ margin: '0 0 12', fontSize: 14, color: 'var(--text-secondary)' }}>将 <strong>{selectedIds.size}</strong> 个用例下发到执行队列</p>
+            {dispatchError && <div style={{ padding: '10px 14px', background: 'var(--status-error-bg)', borderRadius: 6, fontSize: 13, color: 'var(--status-error)', marginBottom: 8 }}>⚠ {dispatchError}</div>}
+            {dispatchSuccess && <div style={{ padding: '10px 14px', background: 'var(--status-success-bg)', borderRadius: 6, fontSize: 13, color: 'var(--status-success)' }}>✓ {dispatchSuccess}</div>}
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, padding: '14px 20px', borderTop: '1px solid var(--border-subtle)' }}>
+            <button className="btn btn--secondary" onClick={() => setShowDispatchModal(false)} disabled={dispatching}>取消</button>
+            <button className="btn btn--primary" onClick={handleDispatch} disabled={dispatching || Boolean(dispatchSuccess)}>{dispatching ? '下发中...' : '确认下发'}</button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

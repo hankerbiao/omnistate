@@ -11,6 +11,14 @@ import {
   DetailEmpty,
 } from './ui/SplitDetailPanel';
 import { getErrorMessage } from '../utils/errors';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from './ui/dialog';
+import { Button } from './ui/button';
 
 interface RoleGroupManagementProps {
   onNavigate?: (page: string) => void;
@@ -419,142 +427,84 @@ const RoleGroupManagement: React.FC<RoleGroupManagementProps> = ({ onNavigate })
     </div>
 
     {/* ── Add Member Modal ── */}
-    {addModalOpen && (
-      <div className="modal-overlay" onClick={() => setAddModalOpen(false)}>
-        <div className="modal" onClick={e => e.stopPropagation()} style={{ width: 520, maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
-          <div className="modal__header">
-            <h3 className="modal__title">添加成员 — {selectedRole?.name}</h3>
-            <button className="modal__close" onClick={() => setAddModalOpen(false)}>×</button>
-          </div>
-          <div className="modal__body" style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-            <input
-              ref={addSearchRef}
-              className="form-input"
-              value={addSearch}
-              onChange={e => setAddSearch(e.target.value)}
-              placeholder="搜索用户名、ID 或邮箱…"
-              style={{ marginBottom: 12, width: '100%' }}
-            />
-            <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
-              {filteredAvailable.length === 0 ? (
-                <p style={{ textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 12, padding: 24 }}>
-                  {addSearch ? '没有匹配的用户' : '所有用户已是此组成员'}
-                </p>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  {filteredAvailable.map(user => {
-                    const checked = addingIds.has(user.user_id);
-                    return (
-                      <label key={user.user_id} style={{
-                        display: 'flex', alignItems: 'center', gap: 10,
-                        padding: '8px 10px', borderRadius: 8, cursor: 'pointer',
-                        background: checked ? 'color-mix(in srgb, var(--accent-primary) 6%, transparent)' : 'transparent',
-                        border: checked ? '1px solid color-mix(in srgb, var(--accent-primary) 20%, transparent)' : '1px solid transparent',
-                        transition: 'all 0.1s',
+    <Dialog open={addModalOpen} onOpenChange={(o) => { if (!o) setAddModalOpen(false); }}>
+      <DialogContent className="sm:max-w-[520px]" style={{ maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
+        <DialogHeader>
+          <DialogTitle>添加成员 — {selectedRole?.name}</DialogTitle>
+        </DialogHeader>
+        <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          <input
+            ref={addSearchRef}
+            className="form-input"
+            value={addSearch}
+            onChange={e => setAddSearch(e.target.value)}
+            placeholder="搜索用户名、ID 或邮箱…"
+            style={{ marginBottom: 12, width: '100%' }}
+          />
+          <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+            {filteredAvailable.length === 0 ? (
+              <p style={{ textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 12, padding: 24 }}>
+                {addSearch ? '没有匹配的用户' : '所有用户已是此组成员'}
+              </p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {filteredAvailable.map(user => {
+                  const checked = addingIds.has(user.user_id);
+                  return (
+                    <label key={user.user_id} style={{
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      padding: '8px 10px', borderRadius: 8, cursor: 'pointer',
+                      background: checked ? 'color-mix(in srgb, var(--accent-primary) 6%, transparent)' : 'transparent',
+                      border: checked ? '1px solid color-mix(in srgb, var(--accent-primary) 20%, transparent)' : '1px solid transparent',
+                      transition: 'all 0.1s',
+                    }}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleAddUser(user.user_id)}
+                        style={{ accentColor: 'var(--accent-primary)', width: 14, height: 14 }}
+                      />
+                      <div style={{
+                        width: 26, height: 26, borderRadius: 6,
+                        background: 'var(--accent-primary)', flexShrink: 0,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        color: '#fff', fontSize: 11, fontWeight: 600,
                       }}>
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() => toggleAddUser(user.user_id)}
-                          style={{ accentColor: 'var(--accent-primary)', width: 14, height: 14 }}
-                        />
-                        <div style={{
-                          width: 26, height: 26, borderRadius: 6,
-                          background: 'var(--accent-primary)', flexShrink: 0,
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          color: '#fff', fontSize: 11, fontWeight: 600,
-                        }}>
-                          {(user.username || user.user_id).charAt(0).toUpperCase()}
+                        {(user.username || user.user_id).charAt(0).toUpperCase()}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)' }}>
+                          {user.username || user.user_id}
                         </div>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)' }}>
-                            {user.username || user.user_id}
-                          </div>
-                          <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
-                            <span className="mono">{user.user_id}</span>
-                            {user.email && <span> · {user.email}</span>}
-                          </div>
+                        <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
+                          <span className="mono">{user.user_id}</span>
+                          {user.email && <span> · {user.email}</span>}
                         </div>
-                        <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>
-                          当前 {user.role_ids?.length || 0} 个组
-                        </span>
-                      </label>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </div>
-          <div className="modal__footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
-              {addingIds.size > 0 ? `已选 ${addingIds.size} 人` : '选择要添加的用户'}
-            </span>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn btn--secondary" onClick={() => setAddModalOpen(false)}>取消</button>
-              <button
-                className="btn btn--primary"
-                onClick={handleAddMembers}
-                disabled={adding || addingIds.size === 0}
-              >
-                {adding ? '添加中...' : `添加 (${addingIds.size})`}
-              </button>
-            </div>
+                      </div>
+                      <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>
+                        当前 {user.role_ids?.length || 0} 个组
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
-      </div>
-    )}
+        <DialogFooter style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
+            {addingIds.size > 0 ? `已选 ${addingIds.size} 人` : '选择要添加的用户'}
+          </span>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Button variant="ghost" size="sm" onClick={() => setAddModalOpen(false)}>取消</Button>
+            <Button size="sm" onClick={handleAddMembers} disabled={adding || addingIds.size === 0}>
+              {adding ? '添加中...' : `添加 (${addingIds.size})`}
+            </Button>
+          </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
 
-    <style>{`
-      .modal-overlay {
-        position: fixed;
-        inset: 0;
-        background: rgba(0,0,0,0.4);
-        z-index: 2000;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-      }
-      .modal {
-        background: var(--bg-elevated);
-        border-radius: 14px;
-        border: 1px solid var(--border-default);
-        box-shadow: 0 25px 60px rgba(0,0,0,0.25);
-        width: 480px;
-        max-width: 90vw;
-      }
-      .modal__header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 16px 24px;
-        border-bottom: 1px solid var(--border-subtle);
-      }
-      .modal__title {
-        margin: 0;
-        font-size: 15px;
-        font-weight: 600;
-        color: var(--text-primary);
-      }
-      .modal__close {
-        background: none;
-        border: none;
-        font-size: 22px;
-        cursor: pointer;
-        color: var(--text-tertiary);
-        padding: 0;
-        line-height: 1;
-      }
-      .modal__body {
-        padding: 16px 24px;
-      }
-      .modal__footer {
-        padding: 12px 24px;
-        border-top: 1px solid var(--border-subtle);
-        display: flex;
-        justify-content: flex-end;
-        gap: 8px;
-      }
-    `}</style>
     </>
   );
 };

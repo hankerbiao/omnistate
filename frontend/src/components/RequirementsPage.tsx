@@ -12,6 +12,7 @@ import {
   REQUIREMENT_STATUS_FILTER_OPTIONS,
 } from '../constants/workflowLabels';
 import PageToolbar, { StatPill } from './ui/PageToolbar';
+import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogAction, AlertDialogCancel } from './ui/alert-dialog';
 
 /** 需求分类标签映射 */
 const CATEGORY_LABELS: Record<string, string> = {
@@ -743,103 +744,67 @@ const RequirementsPage: React.FC<RequirementsPageProps> = ({ initialStatusFilter
       )}
 
       {/* Delete Confirm Modal */}
-      {deleteConfirm.open && (
-        <div className="modal-overlay" onClick={() => setDeleteConfirm({ open: false })}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
-            <div className="modal__header">
-              <h3 className="modal__title">确认删除</h3>
-              <button className="modal__close" onClick={() => setDeleteConfirm({ open: false })}>×</button>
-            </div>
-            <div className="modal__body">
-              <p style={{ color: 'var(--text-primary)', marginBottom: '8px' }}>
-                确定要删除需求 <strong>"{deleteConfirm.title}"</strong> 吗？
-              </p>
-              <p style={{ color: 'var(--status-error)', fontSize: '13px' }}>
+      <AlertDialog open={deleteConfirm.open} onOpenChange={(o) => { if (!o) setDeleteConfirm({ open: false }); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认删除</AlertDialogTitle>
+            <AlertDialogDescription>
+              确定要删除需求 <strong>"{deleteConfirm.title}"</strong> 吗？
+              <p style={{ color: 'var(--status-error)', fontSize: '13px', marginTop: '8px' }}>
                 此操作不可恢复，相关测试用例也将一并删除。
               </p>
-            </div>
-            <div className="modal__footer">
-              <button className="btn btn--secondary" onClick={() => setDeleteConfirm({ open: false })}>
-                取消
-              </button>
-              <button
-                className="btn"
-                style={{ backgroundColor: 'var(--status-error)', color: 'white' }}
-                onClick={handleDeleteRequirement}
-                disabled={deleting}
-              >
-                {deleting ? '删除中...' : '删除'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setDeleteConfirm({ open: false })}>取消</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteRequirement} disabled={deleting}>
+              {deleting ? '删除中...' : '删除'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Batch Delete Confirm Modal */}
-      {batchDeleteConfirm && (
-        <div className="modal-overlay" onClick={() => setBatchDeleteConfirm(false)}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
-            <div className="modal__header">
-              <h3 className="modal__title">确认批量删除</h3>
-              <button className="modal__close" onClick={() => setBatchDeleteConfirm(false)}>×</button>
-            </div>
-            <div className="modal__body">
-              <p style={{ color: 'var(--text-primary)', marginBottom: '8px' }}>
-                确定要删除选中的 <strong>{selectedIds.size}</strong> 个需求吗？
-              </p>
-              <p style={{ color: 'var(--status-error)', fontSize: '13px' }}>
+      <AlertDialog open={batchDeleteConfirm} onOpenChange={(o) => { if (!o) setBatchDeleteConfirm(false); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认批量删除</AlertDialogTitle>
+            <AlertDialogDescription>
+              确定要删除选中的 <strong>{selectedIds.size}</strong> 个需求吗？
+              <p style={{ color: 'var(--status-error)', fontSize: '13px', marginTop: '8px' }}>
                 此操作不可恢复，相关测试用例也将一并删除。
               </p>
-            </div>
-            <div className="modal__footer">
-              <button className="btn btn--secondary" onClick={() => setBatchDeleteConfirm(false)}>
-                取消
-              </button>
-              <button
-                className="btn"
-                style={{ backgroundColor: 'var(--status-error)', color: 'white' }}
-                onClick={handleBatchDelete}
-                disabled={deleting}
-              >
-                {deleting ? '删除中...' : `删除 ${selectedIds.size} 项`}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setBatchDeleteConfirm(false)}>取消</AlertDialogCancel>
+            <AlertDialogAction onClick={handleBatchDelete} disabled={deleting}>
+              {deleting ? '删除中...' : `删除 ${selectedIds.size} 项`}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Delete Test Case Confirm Modal */}
-      {deleteCaseConfirm.open && (
-        <div className="modal-overlay" onClick={() => setDeleteCaseConfirm({ open: false })}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
-            <div className="modal__header">
-              <h3 className="modal__title">确认删除测试用例</h3>
-              <button className="modal__close" onClick={() => setDeleteCaseConfirm({ open: false })}>×</button>
-            </div>
-            <div className="modal__body">
-              <p style={{ color: 'var(--text-primary)', marginBottom: '8px' }}>
-                确定要删除测试用例 <strong>"{deleteCaseConfirm.title}"</strong> 吗？
-              </p>
-              <p style={{ color: 'var(--status-error)', fontSize: '13px' }}>
+      <AlertDialog open={deleteCaseConfirm.open} onOpenChange={(o) => { if (!o) setDeleteCaseConfirm({ open: false }); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认删除测试用例</AlertDialogTitle>
+            <AlertDialogDescription>
+              确定要删除测试用例 <strong>"{deleteCaseConfirm.title}"</strong> 吗？
+              <p style={{ color: 'var(--status-error)', fontSize: '13px', marginTop: '8px' }}>
                 此操作不可恢复。
               </p>
-            </div>
-            <div className="modal__footer">
-              <button className="btn btn--secondary" onClick={() => setDeleteCaseConfirm({ open: false })}>
-                取消
-              </button>
-              <button
-                className="btn"
-                style={{ backgroundColor: 'var(--status-error)', color: 'white' }}
-                onClick={handleDeleteTestCase}
-                disabled={deleting}
-              >
-                {deleting ? '删除中...' : '删除'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setDeleteCaseConfirm({ open: false })}>取消</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteTestCase} disabled={deleting}>
+              {deleting ? '删除中...' : '删除'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <style>{`
         .requirement-item {

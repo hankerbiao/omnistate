@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import type { TestCaseResponse } from '../types';
 import { api } from '../services/api';
+import { Dialog, DialogContent } from './ui/dialog';
 
 interface Props {
   autoCaseId: string;
@@ -49,18 +50,10 @@ export default function LinkManualCaseModal({ autoCaseId, onClose, onLinked }: P
     : manualCases;
 
   return (
-    <div style={{
-      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 2000,
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-    }} onClick={onClose}>
-      <div style={{
-        background: 'var(--bg-primary, #fff)', borderRadius: 12, padding: 24,
-        width: 520, maxHeight: '70vh', display: 'flex', flexDirection: 'column',
-        boxShadow: '0 8px 30px rgba(0,0,0,0.12)',
-      }} onClick={e => e.stopPropagation()}>
+    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="sm:max-w-[520px]" style={{ padding: 24, maxHeight: '70vh', display: 'flex', flexDirection: 'column' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
           <h3 style={{ fontSize: 16, fontWeight: 600, margin: 0 }}>关联手工用例</h3>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, color: 'var(--text-secondary, #6b7280)' }}>×</button>
         </div>
         <p style={{ fontSize: 13, color: 'var(--text-secondary, #6b7280)', marginBottom: 12, marginTop: 0 }}>
           为 <strong>{autoCaseId}</strong> 选择要关联的手工测试用例
@@ -122,7 +115,7 @@ export default function LinkManualCaseModal({ autoCaseId, onClose, onLinked }: P
         <div style={{ fontSize: 11, color: 'var(--text-tertiary, #9ca3af)', marginTop: 10, textAlign: 'center' }}>
           共 {manualCases.length} 个手工用例
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

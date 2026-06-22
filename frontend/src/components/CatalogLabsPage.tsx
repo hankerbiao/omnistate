@@ -10,6 +10,9 @@ import {
   DetailEmpty,
   DetailMetaRow,
 } from './ui/SplitDetailPanel';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from './ui/dialog';
+import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter as AlertFooter, AlertDialogAction, AlertDialogCancel } from './ui/alert-dialog';
+import { Button } from './ui/button';
 
 const emptyForm: CreateCatalogLabRequest = { code: '', name: '', description: '', sort_order: 0 };
 
@@ -397,43 +400,43 @@ const CatalogLabsPage: React.FC = () => {
 
       {createOpen && (
         <div className="modal-overlay" onClick={() => setCreateOpen(false)}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ width: 480 }}>
             <div className="modal__header">
-              <div>
-                <h3 className="modal__title">新建 Lab</h3>
-                <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--text-tertiary)' }}>Lab Code 创建后不可修改</p>
-              </div>
+              <h3 className="modal__title">新建 Lab</h3>
               <button type="button" className="modal__close" onClick={() => setCreateOpen(false)}>×</button>
             </div>
-            <div className="modal__body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <div>
-                <label style={s.label}>显示名称</label>
-                <input className="form-input" placeholder="例如：DDR5 验证实验室" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} autoFocus />
-              </div>
-              <div>
-                <label style={s.label}>Code（创建后不可改）</label>
-                <input className="form-input" placeholder={suggestedCode || 'LAB_CODE'} value={form.code}
-                  onChange={e => { setForm({ ...form, code: e.target.value.toUpperCase() }); setCodeTouched(true); }}
-                  style={{ fontFamily: 'monospace' }}
-                />
-                {!codeTouched && suggestedCode && form.name && (
-                  <button type="button" className="btn btn--ghost btn--sm" style={{ marginTop: 8 }} onClick={() => setForm({ ...form, code: suggestedCode })}>
-                    使用建议 Code：{suggestedCode}
-                  </button>
-                )}
-              </div>
-              <div>
-                <label style={s.label}>描述（可选）</label>
-                <textarea className="form-input" value={form.description || ''} onChange={e => setForm({ ...form, description: e.target.value })} rows={2} style={{ resize: 'vertical', fontFamily: 'inherit' }} />
-              </div>
-              <div>
-                <label style={s.label}>排序权重</label>
-                <input type="number" className="form-input" value={form.sort_order ?? 0} onChange={e => setForm({ ...form, sort_order: Number(e.target.value) })} style={{ width: 120 }} />
+            <div className="modal__body">
+              <p style={{ fontSize: 12, color: 'var(--text-tertiary)', margin: '0 0 16px' }}>Lab Code 创建后不可修改</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <div>
+                  <label style={s.label}>显示名称</label>
+                  <input className="form-input" placeholder="例如：DDR5 验证实验室" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} autoFocus />
+                </div>
+                <div>
+                  <label style={s.label}>Code（创建后不可改）</label>
+                  <input className="form-input" placeholder={suggestedCode || 'LAB_CODE'} value={form.code}
+                    onChange={e => { setForm({ ...form, code: e.target.value.toUpperCase() }); setCodeTouched(true); }}
+                    style={{ fontFamily: 'monospace' }}
+                  />
+                  {!codeTouched && suggestedCode && form.name && (
+                    <button type="button" className="btn btn--secondary btn--sm" style={{ marginTop: 8, background: 'none', fontWeight: 500 }} onClick={() => setForm({ ...form, code: suggestedCode })}>
+                      使用建议 Code：{suggestedCode}
+                    </button>
+                  )}
+                </div>
+                <div>
+                  <label style={s.label}>描述（可选）</label>
+                  <textarea className="form-input" value={form.description || ''} onChange={e => setForm({ ...form, description: e.target.value })} rows={2} style={{ resize: 'vertical', fontFamily: 'inherit' }} />
+                </div>
+                <div>
+                  <label style={s.label}>排序权重</label>
+                  <input type="number" className="form-input" value={form.sort_order ?? 0} onChange={e => setForm({ ...form, sort_order: Number(e.target.value) })} style={{ width: 120 }} />
+                </div>
               </div>
             </div>
             <div className="modal__footer">
-              <button type="button" className="btn btn--secondary" onClick={() => setCreateOpen(false)}>取消</button>
-              <button type="button" className="btn btn--primary" onClick={handleCreate} disabled={creating || !form.name.trim()}>
+              <button type="button" className="btn btn--secondary btn--sm" onClick={() => setCreateOpen(false)}>取消</button>
+              <button type="button" className="btn btn--primary btn--sm" onClick={handleCreate} disabled={creating || !form.name.trim()}>
                 {creating ? '创建中...' : '创建 Lab'}
               </button>
             </div>
@@ -442,18 +445,17 @@ const CatalogLabsPage: React.FC = () => {
       )}
 
       {deactivateLab && (
-        <div className="modal-overlay" onClick={() => { setDeactivateLab(null); setTargetLabId(''); }}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
-            <div className="modal__header">
-              <h3 className="modal__title">停用 Lab：{deactivateLab.name}</h3>
-              <button type="button" className="modal__close" onClick={() => { setDeactivateLab(null); setTargetLabId(''); }}>×</button>
-            </div>
-            <div className="modal__body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <p style={{ margin: 0, fontSize: 13, color: 'var(--text-secondary)' }}>
+        <Dialog open onOpenChange={(o) => { if (!o) { setDeactivateLab(null); setTargetLabId(''); } }}>
+          <DialogContent className="sm:max-w-[480px]">
+            <DialogHeader>
+              <DialogTitle>停用 Lab：{deactivateLab.name}</DialogTitle>
+            </DialogHeader>
+            <div className="flex flex-col gap-3.5">
+              <p className="text-sm text-[var(--text-secondary)] m-0">
                 停用前需将下属 {deactivateLab.case_count ?? 0} 条用例迁移至目标 Lab。
               </p>
               <div>
-                <label style={s.label}>目标 Lab</label>
+                <label className="text-sm font-medium text-[var(--text-secondary)] block mb-1">目标 Lab</label>
                 <select className="form-input form-select" value={targetLabId} onChange={e => setTargetLabId(e.target.value)}>
                   <option value="">选择接收用例的 Lab…</option>
                   {activeLabs.filter(l => l.lab_id !== deactivateLab.lab_id).map(l => (
@@ -462,37 +464,32 @@ const CatalogLabsPage: React.FC = () => {
                 </select>
               </div>
             </div>
-            <div className="modal__footer">
-              <button type="button" className="btn btn--secondary" onClick={() => { setDeactivateLab(null); setTargetLabId(''); }}>取消</button>
-              <button type="button" className="btn btn--primary" onClick={handleDeactivate} disabled={saving || !targetLabId}>
+            <DialogFooter>
+              <Button variant="ghost" size="sm" onClick={() => { setDeactivateLab(null); setTargetLabId(''); }}>取消</Button>
+              <Button size="sm" onClick={handleDeactivate} disabled={saving || !targetLabId}>
                 {saving ? '处理中...' : '确认停用并迁移'}
-              </button>
-            </div>
-          </div>
-        </div>
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       )}
 
-      {deleteModalOpen && selectedLab && (
-        <div className="modal-overlay" onClick={() => setDeleteModalOpen(false)}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
-            <div className="modal__header">
-              <h3 className="modal__title">删除 Lab</h3>
-              <button type="button" className="modal__close" onClick={() => setDeleteModalOpen(false)}>×</button>
-            </div>
-            <div className="modal__body">
-              <p style={{ margin: 0, fontSize: 14 }}>
-                确认删除 Lab <strong>{selectedLab.name}</strong>？仅当无下属用例时可删。
-              </p>
-            </div>
-            <div className="modal__footer">
-              <button type="button" className="btn btn--secondary" onClick={() => setDeleteModalOpen(false)}>取消</button>
-              <button type="button" className="btn btn--danger" onClick={handleDelete} disabled={deleting}>
-                {deleting ? '删除中...' : '确认删除'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <AlertDialog open={deleteModalOpen && !!selectedLab} onOpenChange={(o) => { if (!o) setDeleteModalOpen(false); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>删除 Lab</AlertDialogTitle>
+            <AlertDialogDescription>
+              确认删除 Lab <strong>{selectedLab?.name}</strong>？仅当无下属用例时可删。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertFooter>
+            <AlertDialogCancel onClick={() => setDeleteModalOpen(false)}>取消</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete} disabled={deleting}>
+              {deleting ? '删除中...' : '确认删除'}
+            </AlertDialogAction>
+          </AlertFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 };

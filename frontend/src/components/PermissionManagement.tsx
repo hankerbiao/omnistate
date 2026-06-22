@@ -5,6 +5,7 @@ import type { PermissionResponse } from '../types';
 import PageToolbar, { StatPill } from './ui/PageToolbar';
 import { getErrorMessage } from '../utils/errors';
 import { queryKeys } from '../providers/queryKeys';
+import { Dialog, DialogContent } from './ui/dialog';
 
 const CATEGORY_LABELS: Record<string, string> = {
   users: '用户管理', roles: '角色管理', permissions: '权限管理',
@@ -352,40 +353,33 @@ const PermissionManagement: React.FC = () => {
     </div>
 
     {/* Create Modal */}
-    {createModalOpen && (
-      <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}
-        onClick={() => setCreateModalOpen(false)}>
-        <div onClick={e => e.stopPropagation()} style={{
-          background: 'var(--bg-elevated)', borderRadius: 12, width: 460, maxWidth: '90vw',
-          boxShadow: '0 20px 60px rgba(0,0,0,0.3)', border: '1px solid var(--border-default)',
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '18px 20px', borderBottom: '1px solid var(--border-subtle)' }}>
-            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>新建权限</h3>
-            <button style={{ fontSize: 20, color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer' }} onClick={() => setCreateModalOpen(false)}>×</button>
+    <Dialog open={createModalOpen} onOpenChange={setCreateModalOpen}>
+      <DialogContent style={{ padding: 0, gap: 0, width: 460, maxWidth: '90vw' }}>
+        <div style={{ display: 'flex', alignItems: 'center', padding: '18px 20px', borderBottom: '1px solid var(--border-subtle)' }}>
+          <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>新建权限</h3>
+        </div>
+        <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div>
+            <label style={css.label}>权限代码</label>
+            <input className="form-input" value={newPermCode} onChange={e => setNewPermCode(e.target.value)} placeholder="例如: users:create" style={{ width: '100%', padding: '7px 10px', fontSize: 13 }} />
           </div>
-          <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <div>
-              <label style={css.label}>权限代码</label>
-              <input className="form-input" value={newPermCode} onChange={e => setNewPermCode(e.target.value)} placeholder="例如: users:create" style={{ width: '100%', padding: '7px 10px', fontSize: 13 }} />
-            </div>
-            <div>
-              <label style={css.label}>权限名称</label>
-              <input className="form-input" value={newPermName} onChange={e => setNewPermName(e.target.value)} placeholder="例如: 创建用户" style={{ width: '100%', padding: '7px 10px', fontSize: 13 }} />
-            </div>
-            <div>
-              <label style={css.label}>描述（可选）</label>
-              <textarea className="form-input" value={newPermDesc} onChange={e => setNewPermDesc(e.target.value)} placeholder="权限说明" rows={2} style={{ width: '100%', padding: '7px 10px', fontSize: 13, resize: 'vertical', fontFamily: 'inherit' }} />
-            </div>
+          <div>
+            <label style={css.label}>权限名称</label>
+            <input className="form-input" value={newPermName} onChange={e => setNewPermName(e.target.value)} placeholder="例如: 创建用户" style={{ width: '100%', padding: '7px 10px', fontSize: 13 }} />
           </div>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, padding: '14px 20px', borderTop: '1px solid var(--border-subtle)' }}>
-            <button className="btn btn--secondary" onClick={() => setCreateModalOpen(false)}>取消</button>
-            <button className="btn btn--primary" onClick={() => createMutation.mutate()} disabled={createMutation.isPending || !newPermCode.trim() || !newPermName.trim()}>
-              {createMutation.isPending ? '创建中...' : '创建'}
-            </button>
+          <div>
+            <label style={css.label}>描述（可选）</label>
+            <textarea className="form-input" value={newPermDesc} onChange={e => setNewPermDesc(e.target.value)} placeholder="权限说明" rows={2} style={{ width: '100%', padding: '7px 10px', fontSize: 13, resize: 'vertical', fontFamily: 'inherit' }} />
           </div>
         </div>
-      </div>
-    )}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, padding: '14px 20px', borderTop: '1px solid var(--border-subtle)' }}>
+          <button className="btn btn--secondary" onClick={() => setCreateModalOpen(false)}>取消</button>
+          <button className="btn btn--primary" onClick={() => createMutation.mutate()} disabled={createMutation.isPending || !newPermCode.trim() || !newPermName.trim()}>
+            {createMutation.isPending ? '创建中...' : '创建'}
+          </button>
+        </div>
+      </DialogContent>
+    </Dialog>
     </>
   );
 };

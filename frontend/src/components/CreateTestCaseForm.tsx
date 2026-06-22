@@ -268,19 +268,16 @@ const CreateTestCaseForm: React.FC<CreateTestCaseFormProps> = ({
   };
 
   return (
-    <div style={styles.modalOverlay} onClick={onClose} role="presentation">
+    <div className="modal-overlay" onClick={onClose}>
       <div
-        style={styles.modalContent}
+        className="modal"
         onClick={e => e.stopPropagation()}
-        role="dialog"
-        aria-labelledby="create-test-case-title"
+        style={{ width: 720, maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}
       >
-        <div style={styles.modalHeader}>
+        <div className="modal__header">
           <div>
-            <h2 id="create-test-case-title" style={styles.modalTitle}>
-              {isEditMode ? '编辑测试用例' : '创建测试用例'}
-            </h2>
-            <p style={styles.modalSubtitle}>
+            <h3 className="modal__title">{isEditMode ? '编辑测试用例' : '创建测试用例'}</h3>
+            <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: '4px 0 0' }}>
               {isEditMode
                 ? `用例 ${editTestCase?.case_id} · 目录与基本信息可在此调整`
                 : lockCatalogFromTree
@@ -288,13 +285,11 @@ const CreateTestCaseForm: React.FC<CreateTestCaseFormProps> = ({
                   : '先确定所属目录，再填写用例详情'}
             </p>
           </div>
-          <button type="button" className="modal__close" style={styles.closeButton} onClick={onClose} aria-label="关闭">
-            ×
-          </button>
+          <button type="button" className="modal__close" onClick={onClose}>×</button>
         </div>
 
         {error && (
-          <div style={styles.errorBanner} role="alert">
+          <div style={{ ...styles.errorBanner, margin: 'var(--space-4) var(--space-6) 0' }} role="alert">
             <span style={styles.errorIcon}>!</span>
             <span>{error}</span>
           </div>
@@ -795,10 +790,8 @@ const CreateTestCaseForm: React.FC<CreateTestCaseFormProps> = ({
           </div>
 
           <div style={styles.modalFooter}>
-            <button type="button" className="btn btn--secondary" onClick={onClose} disabled={loading}>
-              取消
-            </button>
-            <button type="submit" className="btn btn--primary" disabled={loading}>
+            <button type="button" className="btn btn--secondary btn--sm" onClick={onClose} disabled={loading}>取消</button>
+            <button type="submit" className="btn btn--primary btn--sm" disabled={loading}>
               {loading ? (isEditMode ? '保存中…' : '创建中…') : (isEditMode ? '保存修改' : '创建测试用例')}
             </button>
           </div>
@@ -809,50 +802,6 @@ const CreateTestCaseForm: React.FC<CreateTestCaseFormProps> = ({
 };
 
 const styles: Record<string, React.CSSProperties> = {
-  modalOverlay: {
-    position: 'fixed',
-    inset: 0,
-    backgroundColor: 'rgba(15, 23, 42, 0.55)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1000,
-    backdropFilter: 'blur(4px)',
-  },
-  modalContent: {
-    backgroundColor: 'var(--surface-primary)',
-    borderRadius: 'var(--radius-lg)',
-    border: '1px solid var(--border-default)',
-    width: '92%',
-    maxWidth: 920,
-    maxHeight: '90vh',
-    display: 'flex',
-    flexDirection: 'column',
-    boxShadow: 'var(--shadow-lg)',
-  },
-  modalHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    padding: 'var(--space-5) var(--space-6)',
-    borderBottom: '1px solid var(--border-subtle)',
-    backgroundColor: 'var(--surface-secondary)',
-    borderRadius: 'var(--radius-lg) var(--radius-lg) 0 0',
-  },
-  modalTitle: {
-    margin: 0,
-    fontSize: 18,
-    fontWeight: 600,
-    color: 'var(--text-primary)',
-  },
-  modalSubtitle: {
-    margin: 'var(--space-1) 0 0',
-    fontSize: 13,
-    color: 'var(--text-secondary)',
-  },
-  closeButton: {
-    marginTop: 2,
-  },
   errorBanner: {
     display: 'flex',
     alignItems: 'flex-start',

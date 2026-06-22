@@ -12,6 +12,8 @@ import type {
   GovernanceStats,
   CatalogLab,
 } from '../types';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
+import { Badge } from './ui/badge';
 
 // ═══════════════════════════════════════════════════════════════════════
 //  类型 & 常量
@@ -497,21 +499,14 @@ const LinkModal: React.FC<{
   };
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-         onClick={onClose}>
-      <div style={{
-        background: 'var(--bg-primary, #fff)', borderRadius: 12, padding: 24, width: 560, maxHeight: '80vh', overflow: 'hidden',
-        display: 'flex', flexDirection: 'column',
-        boxShadow: '0 8px 30px rgba(0,0,0,0.12)',
-      }} onClick={e => e.stopPropagation()}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-          <h3 style={{ fontSize: 16, fontWeight: 600, margin: 0 }}>关联自动化用例</h3>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, color: 'var(--text-secondary, #6b7280)' }}>×</button>
-        </div>
-
-        <p style={{ fontSize: 13, color: 'var(--text-secondary, #6b7280)', marginBottom: 12, marginTop: 0 }}>
-          为 <strong>{testCase.case_id}</strong> 选择要关联的自动化用例
-        </p>
+    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="sm:max-w-[560px] max-h-[80vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle>关联自动化用例</DialogTitle>
+          <p className="text-sm text-[var(--text-secondary)]">
+            为 <strong>{testCase.case_id}</strong> 选择要关联的自动化用例
+          </p>
+        </DialogHeader>
 
         {/* 搜索 + 框架筛选行 */}
         <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
@@ -603,8 +598,8 @@ const LinkModal: React.FC<{
         <div style={{ fontSize: 11, color: 'var(--text-tertiary, #9ca3af)', marginTop: 10, textAlign: 'center' }}>
           共 {linkable.length} 个可关联的自动化用例
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 };
 

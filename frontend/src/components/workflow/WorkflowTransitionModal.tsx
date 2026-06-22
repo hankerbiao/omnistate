@@ -8,6 +8,13 @@ import {
 } from '../../constants/workflowLabels';
 import type { WorkflowTransition } from '../../types';
 import { SWITCHABLE_USERS } from '../../config/users';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '../ui/dialog';
+import { Button } from '../ui/button';
 
 interface WorkflowTransitionModalProps {
   open: boolean;
@@ -79,134 +86,126 @@ const WorkflowTransitionModal: React.FC<WorkflowTransitionModalProps> = ({
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '480px' }}>
-        <div className="modal__header">
-          <h3 className="modal__title">
+    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="sm:max-w-[480px]">
+        <DialogHeader>
+          <DialogTitle>
             {WORKFLOW_ACTION_LABELS[transition.action] || transition.action}
-          </h3>
-          <button type="button" className="modal__close" onClick={onClose}>×</button>
-        </div>
-        <div className="modal__body">
-          <p style={{ marginBottom: '16px', color: 'var(--text-secondary)', fontSize: '13px' }}>
-            状态将变为:{' '}
-            <strong>{getStateLabel(transition.to_state, typeCode)}</strong>
-            <span style={{ color: 'var(--text-tertiary)', marginLeft: '6px' }}>
-              ({transition.to_state})
-            </span>
-          </p>
+          </DialogTitle>
+        </DialogHeader>
 
-          {transition.required_fields.includes('target_owner_id') && (
-            <div style={styles.quickUsers}>
-              <span style={styles.quickLabel}>快捷指派（测试角色）:</span>
-              <div style={styles.quickChips}>
-                {SWITCHABLE_USERS.filter((u) => u.userId !== 'admin').map((user) => (
-                  <button
-                    key={user.userId}
-                    type="button"
-                    style={styles.chip}
-                    onClick={() => quickPickUser(user.userId, user.label)}
-                  >
-                    {user.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
+        <p style={{ marginBottom: '16px', color: 'var(--text-secondary)', fontSize: '13px' }}>
+          状态将变为:{' '}
+          <strong>{getStateLabel(transition.to_state, typeCode)}</strong>
+          <span style={{ color: 'var(--text-tertiary)', marginLeft: '6px' }}>
+            ({transition.to_state})
+          </span>
+        </p>
 
-          {transition.required_fields.map((field) => (
-            <div key={field} style={{ marginBottom: '16px' }}>
-              <label style={styles.formLabel}>{WORKFLOW_FIELD_LABELS[field] || field} *</label>
-              {field === 'priority' ? (
-                <select
-                  className="form-input form-select"
-                  value={formData[field] || ''}
-                  onChange={(e) => setFormData({ ...formData, [field]: e.target.value })}
+        {transition.required_fields.includes('target_owner_id') && (
+          <div style={styles.quickUsers}>
+            <span style={styles.quickLabel}>快捷指派（测试角色）:</span>
+            <div style={styles.quickChips}>
+              {SWITCHABLE_USERS.filter((u) => u.userId !== 'admin').map((user) => (
+                <button
+                  key={user.userId}
+                  type="button"
+                  style={styles.chip}
+                  onClick={() => quickPickUser(user.userId, user.label)}
                 >
-                  <option value="">请选择</option>
-                  <option value="P0">P0 - 紧急</option>
-                  <option value="P1">P1 - 高</option>
-                  <option value="P2">P2 - 中</option>
-                  <option value="P3">P3 - 低</option>
-                </select>
-              ) : field === 'target_owner_id' ? (
-                <div style={{ position: 'relative' }}>
-                  <input
-                    className="form-input"
-                    type="text"
-                    value={ownerSearchQuery}
-                    onChange={(e) => {
-                      setOwnerSearchQuery(e.target.value);
-                      searchUsers(e.target.value);
-                      setShowOwnerDropdown(true);
-                    }}
-                    onFocus={() => {
-                      searchUsers(ownerSearchQuery);
-                      setShowOwnerDropdown(true);
-                    }}
-                    placeholder="搜索用户 ID 或姓名..."
-                    autoComplete="off"
-                  />
-                  {formData.target_owner_id && (
-                    <div style={styles.selectedId}>已选: {formData.target_owner_id}</div>
-                  )}
-                  {showOwnerDropdown && ownerSuggestions.length > 0 && (
-                    <div style={styles.dropdown}>
-                      {ownerSuggestions.map((user) => (
-                        <div
-                          key={user.user_id}
-                          style={styles.dropdownItem}
-                          onClick={() => quickPickUser(user.user_id, user.username)}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.backgroundColor = 'var(--surface-hover)';
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.backgroundColor = '';
-                          }}
-                        >
-                          <span style={{ fontWeight: 500 }}>{user.username}</span>
-                          <span style={styles.userId}>{user.user_id}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ) : field === 'comment' ? (
-                <textarea
-                  className="form-input"
-                  rows={3}
-                  value={formData[field] || ''}
-                  onChange={(e) => setFormData({ ...formData, [field]: e.target.value })}
-                  placeholder="请输入备注"
-                  style={{ resize: 'vertical' }}
-                />
-              ) : (
+                  {user.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {transition.required_fields.map((field) => (
+          <div key={field} style={{ marginBottom: '16px' }}>
+            <label style={styles.formLabel}>{WORKFLOW_FIELD_LABELS[field] || field} *</label>
+            {field === 'priority' ? (
+              <select
+                className="form-input form-select"
+                value={formData[field] || ''}
+                onChange={(e) => setFormData({ ...formData, [field]: e.target.value })}
+              >
+                <option value="">请选择</option>
+                <option value="P0">P0 - 紧急</option>
+                <option value="P1">P1 - 高</option>
+                <option value="P2">P2 - 中</option>
+                <option value="P3">P3 - 低</option>
+              </select>
+            ) : field === 'target_owner_id' ? (
+              <div style={{ position: 'relative' }}>
                 <input
                   className="form-input"
                   type="text"
-                  value={formData[field] || ''}
-                  onChange={(e) => setFormData({ ...formData, [field]: e.target.value })}
-                  placeholder={`请输入${WORKFLOW_FIELD_LABELS[field] || field}`}
+                  value={ownerSearchQuery}
+                  onChange={(e) => {
+                    setOwnerSearchQuery(e.target.value);
+                    searchUsers(e.target.value);
+                    setShowOwnerDropdown(true);
+                  }}
+                  onFocus={() => {
+                    searchUsers(ownerSearchQuery);
+                    setShowOwnerDropdown(true);
+                  }}
+                  placeholder="搜索用户 ID 或姓名..."
+                  autoComplete="off"
                 />
-              )}
-            </div>
-          ))}
-        </div>
-        <div className="modal__footer">
-          <button type="button" className="btn btn--secondary" onClick={onClose}>
-            取消
-          </button>
-          <button
-            type="button"
-            className="btn btn--primary"
-            onClick={handleSubmit}
-            disabled={submitting}
-          >
+                {formData.target_owner_id && (
+                  <div style={styles.selectedId}>已选: {formData.target_owner_id}</div>
+                )}
+                {showOwnerDropdown && ownerSuggestions.length > 0 && (
+                  <div style={styles.dropdown}>
+                    {ownerSuggestions.map((user) => (
+                      <div
+                        key={user.user_id}
+                        style={styles.dropdownItem}
+                        onClick={() => quickPickUser(user.user_id, user.username)}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = 'var(--surface-hover)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.backgroundColor = '';
+                        }}
+                      >
+                        <span style={{ fontWeight: 500 }}>{user.username}</span>
+                        <span style={styles.userId}>{user.user_id}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : field === 'comment' ? (
+              <textarea
+                className="form-input"
+                rows={3}
+                value={formData[field] || ''}
+                onChange={(e) => setFormData({ ...formData, [field]: e.target.value })}
+                placeholder="请输入备注"
+                style={{ resize: 'vertical' }}
+              />
+            ) : (
+              <input
+                className="form-input"
+                type="text"
+                value={formData[field] || ''}
+                onChange={(e) => setFormData({ ...formData, [field]: e.target.value })}
+                placeholder={`请输入${WORKFLOW_FIELD_LABELS[field] || field}`}
+              />
+            )}
+          </div>
+        ))}
+
+        <DialogFooter>
+          <Button variant="ghost" size="sm" onClick={onClose}>取消</Button>
+          <Button size="sm" onClick={handleSubmit} disabled={submitting}>
             {submitting ? '处理中...' : '确认流转'}
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 };
 

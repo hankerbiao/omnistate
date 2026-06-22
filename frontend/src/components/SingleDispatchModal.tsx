@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { api } from '../services/api';
 import type { PlanItemDispatchRequest, PlanItemDispatchConfig, AutomationConfigField } from '../types';
+import { Dialog, DialogContent } from './ui/dialog';
 
 /** 将字符串值按字段 type 转换为对应类型 */
 function convertParamValue(val: string, field: AutomationConfigField): unknown {
@@ -192,15 +193,8 @@ const SingleDispatchModal: React.FC<Props> = ({
   const hasParams = autoCase?.param_spec && autoCase.param_spec.length > 0;
 
   return (
-    <div style={{
-      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(6px)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000,
-    }}>
-      <div onClick={e => e.stopPropagation()} style={{
-        background: 'var(--bg-elevated)', borderRadius: 16, width: 560, maxWidth: '94vw',
-        boxShadow: '0 30px 80px rgba(0,0,0,0.35)', border: '1px solid var(--border-default)',
-        overflow: 'hidden',
-      }}>
+    <Dialog open onOpenChange={(o) => { if (!o) handleClose(); }}>
+      <DialogContent className="sm:max-w-[560px]" style={{ padding: 0, overflow: 'hidden' }}>
         {/* Header */}
         <div style={{
           background: 'linear-gradient(135deg, rgba(57,208,214,0.08) 0%, rgba(163,113,247,0.08) 100%)',
@@ -215,7 +209,6 @@ const SingleDispatchModal: React.FC<Props> = ({
               </div>
               <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600, lineHeight: 1.4 }}>{caseTitle}</h3>
             </div>
-            <button onClick={handleClose} style={{ fontSize: 22, color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, lineHeight: 1 }}>×</button>
           </div>
         </div>
 
@@ -324,8 +317,8 @@ const SingleDispatchModal: React.FC<Props> = ({
             {submitting ? '下发中...' : success ? '✓ 已完成' : '🚀 确认下发'}
           </button>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 };
 

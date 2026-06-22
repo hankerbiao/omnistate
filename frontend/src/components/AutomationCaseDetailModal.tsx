@@ -3,6 +3,7 @@ import type { AutomationTestCaseResponse, ExecutionStatsResponse, TestCaseRespon
 import { api } from '../services/api';
 import TestCaseDetailModal from './TestCaseDetailModal';
 import LinkManualCaseModal from './LinkManualCaseModal';
+import { Dialog, DialogContent } from './ui/dialog';
 
 interface Props {
   testCase: AutomationTestCaseResponse;
@@ -61,9 +62,8 @@ export default function AutomationCaseDetailModal({ testCase: tc, onClose }: Pro
 
   return (
     <>
-    <div style={{ position: 'fixed', inset: 0, background: 'var(--overlay-bg)', zIndex: 1000, display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(2px)' }}
-      onClick={onClose}>
-      <div style={st.modal} onClick={e => e.stopPropagation()}>
+    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="sm:max-w-[680px]" style={{ padding: 0, overflow: 'hidden', maxHeight: '88vh', display: 'flex', flexDirection: 'column' }}>
         {/* ── Header ── */}
         <div style={st.header}>
           <div style={st.headerLeft}>
@@ -75,7 +75,6 @@ export default function AutomationCaseDetailModal({ testCase: tc, onClose }: Pro
               color: isProd ? '#3fb950' : '#58a6ff',
             }}>{tc.status}</span>
           </div>
-          <button onClick={onClose} style={st.closeBtn}>x</button>
         </div>
 
         <div style={st.title}>{tc.name}</div>
@@ -242,8 +241,8 @@ export default function AutomationCaseDetailModal({ testCase: tc, onClose }: Pro
             </Section>
           </div>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
 
       {manualCase && (
         <TestCaseDetailModal
@@ -265,18 +264,6 @@ export default function AutomationCaseDetailModal({ testCase: tc, onClose }: Pro
 }
 
 const st: Record<string, React.CSSProperties> = {
-  modal: {
-    background: 'var(--surface-primary)',
-    borderRadius: 12,
-    width: 680,
-    maxWidth: '94vw',
-    maxHeight: '88vh',
-    display: 'flex',
-    flexDirection: 'column',
-    boxShadow: '0 25px 80px rgba(0,0,0,0.35)',
-    border: '1px solid var(--border-default)',
-    overflow: 'hidden',
-  },
   header: {
     display: 'flex',
     justifyContent: 'space-between',
@@ -303,15 +290,6 @@ const st: Record<string, React.CSSProperties> = {
     fontWeight: 600,
     padding: '2px 8px',
     borderRadius: 6,
-  },
-  closeBtn: {
-    fontSize: 18,
-    color: 'var(--text-tertiary)',
-    background: 'none',
-    border: 'none',
-    cursor: 'pointer',
-    padding: '0 4px',
-    lineHeight: 1,
   },
   title: {
     fontSize: 16,

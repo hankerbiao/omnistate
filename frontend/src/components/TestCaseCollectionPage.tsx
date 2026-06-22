@@ -9,6 +9,8 @@ import type {
 import PageToolbar, { StatPill } from './ui/PageToolbar';
 import CaseLibraryPicker, { useCaseLibrary, useDualCaseSelection } from './CaseLibraryPicker';
 import AIAnalysisPanel from './AIAnalysisPanel';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from './ui/dialog';
+import { Button } from './ui/button';
 import {
   getCaseDisplayTitle,
   getCaseTypeLabel,
@@ -71,37 +73,35 @@ function CollectionFormModal({
   mode, open, name, description, tags, submitting,
   onClose, onNameChange, onDescriptionChange, onTagsChange, onSubmit,
 }: CollectionFormModalProps) {
-  if (!open) return null;
   const title = mode === 'create' ? '新建预制用例集' : '编辑预制集合';
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()} style={{ width: 480 }}>
-        <div className="modal__header">
-          <h3 className="modal__title">{title}</h3>
-          <button type="button" className="modal__close" onClick={onClose}>×</button>
-        </div>
-        <div className="modal__body">
-          <div className="form-field">
-            <label className="form-field__label">集合名称 *</label>
+    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="sm:max-w-[480px]">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-[var(--text-secondary)]">集合名称 *</label>
             <input className="form-input" value={name} onChange={e => onNameChange(e.target.value)} placeholder={mode === 'create' ? '例如: 回归基线集合' : undefined} autoFocus />
           </div>
-          <div className="form-field">
-            <label className="form-field__label">描述</label>
-            <textarea className="form-input" value={description} onChange={e => onDescriptionChange(e.target.value)} placeholder="说明此预制集的用途" rows={3} />
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-[var(--text-secondary)]">描述</label>
+            <textarea className="form-input" style={{ width: '100%', minHeight: 80, resize: 'vertical' }} value={description} onChange={e => onDescriptionChange(e.target.value)} placeholder="说明此预制集的用途" rows={3} />
           </div>
-          <div className="form-field">
-            <label className="form-field__label">标签（逗号分隔）</label>
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-[var(--text-secondary)]">标签（逗号分隔）</label>
             <input className="form-input" value={tags} onChange={e => onTagsChange(e.target.value)} placeholder="回归, 冒烟, P0" />
           </div>
         </div>
-        <div className="modal__footer">
-          <button type="button" className="btn btn--secondary" onClick={onClose}>取消</button>
-          <button type="button" className="btn btn--primary" onClick={onSubmit} disabled={submitting || !name.trim()}>
+        <DialogFooter>
+          <Button variant="ghost" size="sm" onClick={onClose}>取消</Button>
+          <Button size="sm" onClick={onSubmit} disabled={submitting || !name.trim()}>
             {submitting ? (mode === 'create' ? '创建中…' : '保存中…') : (mode === 'create' ? '创建' : '保存')}
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

@@ -3,6 +3,7 @@ import type { RequirementResponse } from '../types';
 import { WorkflowPanel, WorkflowActionToolbar } from './workflow';
 import WorkflowCurrentStateBadge from './workflow/WorkflowCurrentStateBadge';
 import { rdmStyles as styles } from './RequirementDetailModal.styles';
+import { Dialog, DialogContent } from './ui/dialog';
 
 // ─── 附件工具函数 ────────────────────────────────────────────────────────────
 
@@ -258,8 +259,8 @@ const RequirementDetailModal: React.FC<RequirementDetailModalProps> = ({ require
   );
 
   return (
-    <div style={styles.overlay} onClick={onClose} onKeyDown={(e) => e.key === 'Escape' && onClose()} tabIndex={0}>
-      <div style={styles.modal} onClick={e => e.stopPropagation()}>
+    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="sm:max-w-[960px] max-h-[90vh] flex flex-col p-0 gap-0" style={{ borderRadius: 12, overflow: 'hidden' }}>
         {/* ─── Header ─── */}
         <div style={styles.modalHeader}>
           <div style={styles.modalHeaderMain}>
@@ -297,7 +298,6 @@ const RequirementDetailModal: React.FC<RequirementDetailModalProps> = ({ require
                 showStateBadge={false}
               />
             )}
-            <button style={styles.closeButton} onClick={onClose}>×</button>
           </div>
         </div>
 
@@ -443,8 +443,8 @@ const RequirementDetailModal: React.FC<RequirementDetailModalProps> = ({ require
             </div>
           </main>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 };
 

@@ -8,6 +8,7 @@ import { catalogStyles } from './catalog/catalogStyles';
 import { SWITCHABLE_USERS } from '../config/users';
 import { api } from '../services/api';
 import TestCaseHistoryPanel from './TestCaseHistoryPanel';
+import { Dialog, DialogContent } from './ui/dialog';
 const CONFIDENTIALITY_LABELS: Record<string, string> = {
   PUBLIC: '公开',
   INTERNAL: '内部',
@@ -373,8 +374,8 @@ const TestCaseDetailModal: React.FC<TestCaseDetailModalProps> = ({
   const cleanupCount = testCase.cleanup_steps?.length ?? 0;
 
   return (
-    <div style={styles.overlay} onClick={onClose} onKeyDown={(e) => e.key === 'Escape' && onClose()} tabIndex={0}>
-      <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="sm:max-w-[960px] max-h-[90vh] flex flex-col p-0 gap-0" style={{ borderRadius: 12, overflow: 'hidden' }}>
         {/* ── Header ── */}
         <div style={styles.modalHeader}>
           <div style={styles.modalHeaderMain}>
@@ -424,7 +425,6 @@ const TestCaseDetailModal: React.FC<TestCaseDetailModalProps> = ({
                 onTransitionSuccess={handleWorkflowSuccess}
               />
             )}
-            <button type="button" style={styles.closeButton} onClick={onClose}>×</button>
           </div>
         </div>
 
@@ -647,34 +647,12 @@ const TestCaseDetailModal: React.FC<TestCaseDetailModalProps> = ({
             </div>
           </main>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 };
 
 const styles = {
-  overlay: {
-    position: 'fixed' as const,
-    top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.55)',
-    backdropFilter: 'blur(4px)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 2000,
-  },
-  modal: {
-    backgroundColor: 'var(--bg-elevated)',
-    borderRadius: '14px',
-    width: '92%',
-    maxWidth: '1200px',
-    maxHeight: '92vh',
-    display: 'flex',
-    flexDirection: 'column' as const,
-    boxShadow: '0 25px 80px rgba(0, 0, 0, 0.35)',
-    border: '1px solid var(--border-default)',
-  },
-
   // ── Header ──
   modalHeader: {
     display: 'flex',
@@ -743,15 +721,6 @@ const styles = {
     border: '1px solid var(--border-default)',
     borderRadius: '6px',
     cursor: 'pointer',
-  },
-  closeButton: {
-    fontSize: '28px',
-    color: 'var(--text-muted)',
-    backgroundColor: 'transparent',
-    border: 'none',
-    cursor: 'pointer',
-    padding: '0',
-    lineHeight: 1,
   },
 
   // ── Catalog banner ──

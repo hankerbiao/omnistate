@@ -1,4 +1,5 @@
 import React from 'react';
+import { Dialog, DialogContent } from './ui/dialog';
 
 interface Props {
   taskId: string;
@@ -19,16 +20,10 @@ const StatBadge: React.FC<{ label: string; value: string; color?: string }> = ({
 );
 
 const ExecResultModal: React.FC<Props> = ({ taskId, loading, data, onClose }) => (
-  <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2100 }}
-    onClick={onClose}>
-    <div onClick={e => e.stopPropagation()} style={{
-      background: 'var(--bg-elevated)', borderRadius: 12, width: 520, maxWidth: '94vw',
-      maxHeight: '70vh', display: 'flex', flexDirection: 'column',
-      boxShadow: '0 30px 80px rgba(0,0,0,0.35)', border: '1px solid var(--border-default)',
-    }}>
+  <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+    <DialogContent className="sm:max-w-[520px]" style={{ maxHeight: '70vh', display: 'flex', flexDirection: 'column', padding: 0 }}>
       <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <span style={{ fontSize: 14, fontWeight: 600 }}>执行结果 — {taskId}</span>
-        <button onClick={onClose} style={{ fontSize: 20, color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer' }}>×</button>
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', fontSize: 12 }}>
         {loading ? (
@@ -74,8 +69,8 @@ const ExecResultModal: React.FC<Props> = ({ taskId, loading, data, onClose }) =>
           </div>
         )}
       </div>
-    </div>
-  </div>
+    </DialogContent>
+  </Dialog>
 );
 
 export default ExecResultModal;

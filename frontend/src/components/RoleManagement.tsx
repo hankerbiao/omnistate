@@ -13,6 +13,10 @@ import {
 } from './ui/SplitDetailPanel';
 import { rlmStyles as styles } from './RoleManagement.styles';
 import { getErrorMessage } from '../utils/errors';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from './ui/dialog';
+import { Button } from './ui/button';
+import { Input } from './ui/input';
+import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogAction, AlertDialogCancel } from './ui/alert-dialog';
 import { queryKeys } from '../providers/queryKeys';
 
 const getPermissionKey = (perm: PermissionResponse) =>
@@ -679,114 +683,66 @@ const RoleManagement: React.FC<RoleManagementProps> = ({ onNavigate }) => {
     </div>
 
       {/* Create Role Modal */}
-      {createModalOpen && (
-        <div className="modal-overlay" onClick={() => setCreateModalOpen(false)}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
-            <div className="modal__header">
-              <h3 className="modal__title">新建角色</h3>
-              <button className="modal__close" onClick={() => setCreateModalOpen(false)}>×</button>
+      <Dialog open={createModalOpen} onOpenChange={(o) => { if (!o) setCreateModalOpen(false); }}>
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle>新建角色</DialogTitle>
+          </DialogHeader>
+          {displayError && <div className="error-banner" style={{ marginBottom: 16 }}><span>⚠</span> {displayError}</div>}
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-[var(--text-secondary)]">角色名称 *</label>
+              <input className="form-input" value={newRoleName} onChange={e => setNewRoleName(e.target.value)} placeholder="输入角色名称" autoFocus />
             </div>
-            <div className="modal__body">
-              {displayError && (
-                <div className="error-banner" style={{ marginBottom: 16 }}>
-                  <span>⚠</span> {displayError}
-                </div>
-              )}
-              <div style={styles.formGroup}>
-                <label style={styles.label}>角色名称 *</label>
-                <input
-                  className="form-input"
-                  value={newRoleName}
-                  onChange={e => setNewRoleName(e.target.value)}
-                  placeholder="输入角色名称"
-                  autoFocus
-                />
-              </div>
-              <div style={styles.formGroup}>
-                <label style={styles.label}>角色描述</label>
-                <textarea
-                  className="form-input"
-                  style={styles.textarea}
-                  value={newRoleDesc}
-                  onChange={e => setNewRoleDesc(e.target.value)}
-                  placeholder="输入角色描述（可选）"
-                  rows={3}
-                />
-              </div>
-            </div>
-            <div className="modal__footer">
-              <button className="btn btn--secondary" onClick={() => setCreateModalOpen(false)}>
-                取消
-              </button>
-              <button
-                className="btn btn--primary"
-                onClick={() => createMutation.mutate()}
-                disabled={createMutation.isPending || !newRoleName.trim()}
-              >
-                {createMutation.isPending ? '创建中...' : '创建'}
-              </button>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-[var(--text-secondary)]">角色描述</label>
+              <textarea className="form-input" style={{ width: '100%', minHeight: 80, resize: 'vertical' }} value={newRoleDesc} onChange={e => setNewRoleDesc(e.target.value)} placeholder="输入角色描述（可选）" rows={3} />
             </div>
           </div>
-        </div>
-      )}
+          <DialogFooter>
+            <Button variant="ghost" size="sm" onClick={() => setCreateModalOpen(false)}>取消</Button>
+            <Button size="sm" onClick={() => createMutation.mutate()} disabled={createMutation.isPending || !newRoleName.trim()}>
+              {createMutation.isPending ? '创建中...' : '创建'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Delete Confirmation */}
-      {deleteConfirm && (
-        <div className="modal-overlay" onClick={() => setDeleteConfirm(null)}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
-            <div className="modal__header">
-              <h3 className="modal__title">确认删除</h3>
-              <button className="modal__close" onClick={() => setDeleteConfirm(null)}>×</button>
-            </div>
-            <div className="modal__body">
-              <p style={styles.confirmText}>
-                确定要删除角色 <strong>{deleteTargetRole?.name || deleteConfirm}</strong> 吗？此操作不可恢复。
-              </p>
-            </div>
-            <div className="modal__footer">
-              <button className="btn btn--secondary" onClick={() => setDeleteConfirm(null)}>
-                取消
-              </button>
-              <button
-                className="btn btn--danger"
-                onClick={() => deleteMutation.mutate(deleteConfirm)}
-                disabled={deleteMutation.isPending}
-              >
-                {deleteMutation.isPending ? '删除中...' : '确认删除'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <AlertDialog open={!!deleteConfirm} onOpenChange={(o) => { if (!o) setDeleteConfirm(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认删除</AlertDialogTitle>
+            <AlertDialogDescription>
+              确定要删除角色 <strong>{deleteTargetRole?.name || deleteConfirm}</strong> 吗？此操作不可恢复。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setDeleteConfirm(null)}>取消</AlertDialogCancel>
+            <AlertDialogAction onClick={() => deleteMutation.mutate(deleteConfirm)} disabled={deleteMutation.isPending}>
+              {deleteMutation.isPending ? '删除中...' : '确认删除'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Batch Delete Confirmation */}
-      {batchDeleteConfirm && (
-        <div className="modal-overlay" onClick={() => setBatchDeleteConfirm(false)}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
-            <div className="modal__header">
-              <h3 className="modal__title">确认批量删除</h3>
-              <button className="modal__close" onClick={() => setBatchDeleteConfirm(false)}>×</button>
-            </div>
-            <div className="modal__body">
-              <p style={styles.confirmText}>
-                确定要删除选中的 <strong>{selectedIds.size}</strong> 个角色吗？此操作不可恢复。
-              </p>
-            </div>
-            <div className="modal__footer">
-              <button className="btn btn--secondary" onClick={() => setBatchDeleteConfirm(false)}>
-                取消
-              </button>
-              <button
-                className="btn btn--danger"
-                onClick={() => batchDeleteMutation.mutate(Array.from(selectedIds))}
-                disabled={batchDeleteMutation.isPending}
-              >
-                {batchDeleteMutation.isPending ? '删除中...' : `删除 ${selectedIds.size} 项`}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <AlertDialog open={batchDeleteConfirm} onOpenChange={(o) => { if (!o) setBatchDeleteConfirm(false); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认批量删除</AlertDialogTitle>
+            <AlertDialogDescription>
+              确定要删除选中的 <strong>{selectedIds.size}</strong> 个角色吗？此操作不可恢复。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setBatchDeleteConfirm(false)}>取消</AlertDialogCancel>
+            <AlertDialogAction onClick={() => batchDeleteMutation.mutate(Array.from(selectedIds))} disabled={batchDeleteMutation.isPending}>
+              {batchDeleteMutation.isPending ? '删除中...' : `删除 ${selectedIds.size} 项`}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <style>{`
         .perm-tile:hover:not(:has(input:disabled)) {

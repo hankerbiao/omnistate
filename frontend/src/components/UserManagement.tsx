@@ -5,6 +5,9 @@ import type { UserResponse, PermissionResponse } from '../types';
 import PageToolbar, { StatPill } from './ui/PageToolbar';
 import { getErrorMessage } from '../utils/errors';
 import { queryKeys } from '../providers/queryKeys';
+import { CreateUserModal } from './user-management/modals/CreateUserModal';
+import { PasswordResetModal } from './user-management/modals/PasswordResetModal';
+import { DeleteConfirmModal, BatchDeleteConfirmModal } from './user-management/modals/DeleteConfirmModal';
 
 type EditableUserField = 'username' | 'email';
 
@@ -316,11 +319,12 @@ const UserManagement: React.FC<UserManagementProps> = ({ onNavigate }) => {
     updateRolesMutation.mutate();
   };
 
-  const handleCreateUser = () => {
-    if (!newUser.user_id.trim() || !newUser.username.trim() || !newUser.password.trim()) {
+  const handleCreateUser = (data: { user_id: string; username: string; password: string; email: string; role_ids: string[] }) => {
+    if (!data.user_id.trim() || !data.username.trim() || !data.password.trim()) {
       setMutationError('请填写必填字段');
       return;
     }
+    setNewUser(data);
     createUserMutation.mutate();
   };
 
@@ -354,12 +358,13 @@ const UserManagement: React.FC<UserManagementProps> = ({ onNavigate }) => {
     batchDeleteMutation.mutate();
   };
 
-  const handlePasswordReset = () => {
-    if (!selectedUser || !passwordValue.trim()) return;
-    if (passwordValue.trim().length < 6) {
+  const handlePasswordReset = (password: string) => {
+    if (!selectedUser || !password.trim()) return;
+    if (password.trim().length < 6) {
       setMutationError('密码长度至少6位');
       return;
     }
+    setPasswordValue(password.trim());
     passwordResetMutation.mutate();
   };
 
@@ -890,199 +895,39 @@ const UserManagement: React.FC<UserManagementProps> = ({ onNavigate }) => {
         )}
       </main>
 
-      {/* Create User Modal */}
-      {createModalOpen && (
-        <div style={styles.modalOverlay} onClick={() => setCreateModalOpen(false)}>
-          <div style={styles.modal} onClick={e => e.stopPropagation()}>
-            <div style={styles.modalHeader}>
-              <h3 style={styles.modalTitle}>新建用户</h3>
-              <button style={styles.modalClose} onClick={() => setCreateModalOpen(false)}>×</button>
-            </div>
-            <div style={styles.modalBody}>
-              <div style={styles.formGroup}>
-                <label style={styles.label}>用户ID *</label>
-                <input
-                  style={styles.input}
-                  value={newUser.user_id}
-                  onChange={e => setNewUser({ ...newUser, user_id: e.target.value })}
-                  placeholder="登录用ID"
-                />
-              </div>
-              <div style={styles.formGroup}>
-                <label style={styles.label}>用户名 *</label>
-                <input
-                  style={styles.input}
-                  value={newUser.username}
-                  onChange={e => setNewUser({ ...newUser, username: e.target.value })}
-                  placeholder="显示名称"
-                />
-              </div>
-              <div style={styles.formGroup}>
-                <label style={styles.label}>密码 *</label>
-                <input
-                  style={styles.input}
-                  type="password"
-                  value={newUser.password}
-                  onChange={e => setNewUser({ ...newUser, password: e.target.value })}
-                  placeholder="至少6位"
-                />
-              </div>
-              <div style={styles.formGroup}>
-                <label style={styles.label}>邮箱</label>
-                <input
-                  style={styles.input}
-                  type="email"
-                  value={newUser.email}
-                  onChange={e => setNewUser({ ...newUser, email: e.target.value })}
-                  placeholder="可选"
-                />
-              </div>
-              <div style={styles.formGroup}>
-                <label style={styles.label}>初始角色</label>
-                <div style={styles.modalRoleList}>
-                  {roles.map(role => (
-                    <div
-                      key={role.role_id}
-                      style={{
-                        ...styles.modalRoleItem,
-                        ...(newUser.role_ids.includes(role.role_id) ? styles.modalRoleItemSelected : {}),
-                      }}
-                      onClick={() => {
-                        const ids = newUser.role_ids.includes(role.role_id)
-                          ? newUser.role_ids.filter(id => id !== role.role_id)
-                          : [...newUser.role_ids, role.role_id];
-                        setNewUser({ ...newUser, role_ids: ids });
-                      }}
-                    >
-                    <input
-                      type="checkbox"
-                      checked={newUser.role_ids.includes(role.role_id)}
-                      onClick={e => e.stopPropagation()}
-                      onChange={() => {
-                        const ids = newUser.role_ids.includes(role.role_id)
-                          ? newUser.role_ids.filter(id => id !== role.role_id)
-                          : [...newUser.role_ids, role.role_id];
-                        setNewUser({ ...newUser, role_ids: ids });
-                      }}
-                      style={styles.checkbox}
-                    />
-                      <span>{role.name}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-            <div style={styles.modalFooter}>
-              <button style={styles.cancelBtn} onClick={() => setCreateModalOpen(false)}>取消</button>
-              <button
-                style={styles.saveBtn}
-                onClick={handleCreateUser}
-                disabled={creating || !newUser.user_id.trim() || !newUser.username.trim() || !newUser.password}
-              >
-                {creating ? '创建中...' : '创建'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <CreateUserModal
+        open={createModalOpen}
+        onClose={() => setCreateModalOpen(false)}
+        roles={roles}
+        creating={creating}
+        onCreateUser={handleCreateUser}
+      />
 
-      {/* Delete Confirmation Modal */}
-      {deleteConfirm && (
-        <div style={styles.modalOverlay} onClick={() => setDeleteConfirm(null)}>
-          <div style={styles.modal} onClick={e => e.stopPropagation()}>
-            <div style={styles.modalHeader}>
-              <h3 style={styles.modalTitle}>确认删除</h3>
-              <button style={styles.modalClose} onClick={() => setDeleteConfirm(null)}>×</button>
-            </div>
-            <div style={styles.modalBody}>
-              <p style={{ fontSize: '14px', color: 'var(--text-primary)', margin: 0 }}>
-                确定要删除用户 <strong>{deleteConfirm}</strong> 吗？此操作不可恢复。
-              </p>
-            </div>
-            <div style={styles.modalFooter}>
-              <button style={styles.cancelBtn} onClick={() => setDeleteConfirm(null)}>取消</button>
-              <button
-                style={{
-                  ...styles.dangerBtn,
-                  ...(deleting ? { opacity: 0.6, cursor: 'wait' } : {}),
-                }}
-                onClick={handleDeleteUser}
-                disabled={deleting}
-              >
-                {deleting ? '删除中...' : '确认删除'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <DeleteConfirmModal
+        open={!!deleteConfirm}
+        onClose={() => setDeleteConfirm(null)}
+        onConfirm={handleDeleteUser}
+        title="确认删除"
+        description={`确定要删除用户 ${deleteConfirm || ''} 吗？此操作不可恢复。`}
+        deleting={deleting}
+      />
 
-      {/* Batch Delete Confirmation Modal */}
-      {batchDeleteConfirm && (
-        <div style={styles.modalOverlay} onClick={() => setBatchDeleteConfirm(false)}>
-          <div style={styles.modal} onClick={e => e.stopPropagation()}>
-            <div style={styles.modalHeader}>
-              <h3 style={styles.modalTitle}>确认批量删除</h3>
-              <button style={styles.modalClose} onClick={() => setBatchDeleteConfirm(false)}>×</button>
-            </div>
-            <div style={styles.modalBody}>
-              <p style={{ fontSize: '14px', color: 'var(--text-primary)', margin: 0 }}>
-                确定要删除选中的 <strong>{selectedIds.size}</strong> 个用户吗？此操作不可恢复。
-              </p>
-            </div>
-            <div style={styles.modalFooter}>
-              <button style={styles.cancelBtn} onClick={() => setBatchDeleteConfirm(false)}>取消</button>
-              <button
-                style={{
-                  ...styles.dangerBtn,
-                  ...(batchDeleting ? { opacity: 0.6, cursor: 'wait' } : {}),
-                }}
-                onClick={handleBatchDelete}
-                disabled={batchDeleting}
-              >
-                {batchDeleting ? '删除中...' : `删除 ${selectedIds.size} 项`}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <BatchDeleteConfirmModal
+        open={batchDeleteConfirm}
+        count={selectedIds.size}
+        onClose={() => setBatchDeleteConfirm(false)}
+        onConfirm={handleBatchDelete}
+        deleting={batchDeleting}
+      />
 
-      {/* Password Reset Modal */}
-      {passwordModal && (
-        <div style={styles.modalOverlay} onClick={() => setPasswordModal(false)}>
-          <div style={styles.modal} onClick={e => e.stopPropagation()}>
-            <div style={styles.modalHeader}>
-              <h3 style={styles.modalTitle}>重置密码</h3>
-              <button style={styles.modalClose} onClick={() => setPasswordModal(false)}>×</button>
-            </div>
-            <div style={styles.modalBody}>
-              <p style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginBottom: '12px' }}>
-                为用户 <strong>{selectedUser?.username}</strong> 设置新密码
-              </p>
-              <input
-                style={styles.input}
-                type="password"
-                value={passwordValue}
-                onChange={e => setPasswordValue(e.target.value)}
-                placeholder="输入新密码（至少6位）"
-                autoFocus
-              />
-            </div>
-            <div style={styles.modalFooter}>
-              <button style={styles.cancelBtn} onClick={() => setPasswordModal(false)}>取消</button>
-              <button
-                style={{
-                  ...styles.saveBtn,
-                  ...(resetting ? { opacity: 0.6, cursor: 'wait' } : {}),
-                }}
-                onClick={handlePasswordReset}
-                disabled={resetting || !passwordValue.trim()}
-              >
-                {resetting ? '重置中...' : '确认重置'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <PasswordResetModal
+        open={passwordModal}
+        username={selectedUser?.username || ''}
+        onClose={() => setPasswordModal(false)}
+        resetting={resetting}
+        onReset={handlePasswordReset}
+        error={mutationError}
+      />
 
       <style>{`
         @keyframes spin {
@@ -1774,83 +1619,6 @@ const styles = {
     border: 'none',
     color: 'var(--accent-red)',
     cursor: 'pointer',
-  },
-  modalOverlay: {
-    position: 'fixed' as const,
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1000,
-  },
-  modal: {
-    width: '520px',
-    maxWidth: '90vw',
-    backgroundColor: 'var(--bg-secondary)',
-    borderRadius: 'var(--radius-lg)',
-    border: '1px solid var(--border-default)',
-    overflow: 'hidden',
-  },
-  modalHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: '18px 24px',
-    borderBottom: '1px solid var(--border-muted)',
-  },
-  modalTitle: {
-    fontSize: '16px',
-    fontWeight: 600,
-    color: 'var(--text-primary)',
-    margin: 0,
-  },
-  modalClose: {
-    padding: '0 8px',
-    fontSize: '20px',
-    background: 'none',
-    border: 'none',
-    color: 'var(--text-muted)',
-    cursor: 'pointer',
-  },
-  modalBody: {
-    padding: '24px',
-    maxHeight: '60vh',
-    overflowY: 'auto' as const,
-  },
-  formGroup: {
-    marginBottom: '18px',
-  },
-  modalRoleList: {
-    display: 'flex',
-    flexWrap: 'wrap' as const,
-    gap: '8px',
-  },
-  modalRoleItem: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    padding: '8px 14px',
-    backgroundColor: 'var(--bg-primary)',
-    border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-md)',
-    cursor: 'pointer',
-    fontSize: '13px',
-    color: 'var(--text-primary)',
-  },
-  modalRoleItemSelected: {
-    border: '1px solid var(--accent-green)',
-    backgroundColor: 'rgba(72, 199, 142, 0.08)',
-  },
-  modalFooter: {
-    display: 'flex',
-    justifyContent: 'flex-end',
-    gap: '10px',
-    padding: '18px 24px',
-    borderTop: '1px solid var(--border-muted)',
   },
 };
 

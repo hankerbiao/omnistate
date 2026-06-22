@@ -1,5 +1,6 @@
 import React from 'react';
 import type { PlanTask } from './myTasksTypes';
+import { Dialog, DialogContent } from './ui/dialog';
 
 interface Props {
   task: PlanTask;
@@ -13,15 +14,10 @@ interface Props {
 }
 
 const ReassignModal: React.FC<Props> = ({ task, users, loading, currentUserId, selectedUserId, onSelectUser, onConfirm, onClose }) => (
-  <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2100 }}
-    onClick={onClose}>
-    <div onClick={e => e.stopPropagation()} style={{
-      background: 'var(--bg-elevated)', borderRadius: 12, width: 400, maxWidth: '94vw',
-      boxShadow: '0 30px 80px rgba(0,0,0,0.35)', border: '1px solid var(--border-default)',
-    }}>
+  <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+    <DialogContent className="sm:max-w-[400px]" style={{ padding: 0 }}>
       <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <span style={{ fontSize: 14, fontWeight: 600 }}>改派 — {task.caseId}</span>
-        <button onClick={onClose} style={{ fontSize: 20, color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer' }}>×</button>
       </div>
       <div style={{ padding: '16px 20px' }}>
         <label style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>选择新执行人</label>
@@ -45,8 +41,8 @@ const ReassignModal: React.FC<Props> = ({ task, users, loading, currentUserId, s
           确认改派
         </button>
       </div>
-    </div>
-  </div>
+    </DialogContent>
+  </Dialog>
 );
 
 export default ReassignModal;

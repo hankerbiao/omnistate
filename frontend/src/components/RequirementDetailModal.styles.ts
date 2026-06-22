@@ -1,25 +1,4 @@
 export const rdmStyles = {
-  overlay: {
-    position: 'fixed' as const,
-    top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.55)',
-    backdropFilter: 'blur(4px)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 2000,
-  },
-  modal: {
-    backgroundColor: 'var(--bg-elevated)',
-    borderRadius: '14px',
-    width: '92%',
-    maxWidth: '1200px',
-    maxHeight: '92vh',
-    display: 'flex',
-    flexDirection: 'column' as const,
-    boxShadow: '0 25px 80px rgba(0, 0, 0, 0.35)',
-    border: '1px solid var(--border-default)',
-  },
 
   // ── Header ──
   modalHeader: {
@@ -68,15 +47,6 @@ export const rdmStyles = {
     color: 'var(--text-primary)',
     wordBreak: 'break-word' as const,
     lineHeight: 1.4,
-  } as const,
-  closeButton: {
-    fontSize: '28px',
-    color: 'var(--text-muted)',
-    backgroundColor: 'transparent',
-    border: 'none',
-    cursor: 'pointer',
-    padding: '0',
-    lineHeight: 1,
   } as const,
 
   // ── Split body ──
