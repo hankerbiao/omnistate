@@ -1,11 +1,13 @@
 app:
+  debug: true
   host: 0.0.0.0
   port: 8801
+  service_name: "dmlv4-backend_dev"
   cors_origins:
   - '*'
 mongodb:
   uri: mongodb://10.17.154.252:27019?replicaSet=rs0
-  db_name: workflow_db2
+  db_name: workflow_db_dev
 rabbitmq:
   host: 10.32.12.28
   port: 5672
@@ -73,7 +75,7 @@ redis:
   db: 0
   socket_timeout: 2
   max_connections: 100
-  service_registry_key: dmlv4:service_registry_dev
+  service_registry_key: dmlv4:service_registry
 logging:
   console_level: DEBUG
   log_dir: logs

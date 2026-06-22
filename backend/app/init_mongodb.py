@@ -36,27 +36,74 @@ from app.modules.auth.repository.models import (
 )
 from app.modules.auth.service.navigation_page_service import DEFAULT_NAVIGATION_PAGES
 
+# =============================================================================
+# RBAC 默认数据
+# =============================================================================
+_DEFAULT_PERMISSIONS: list[tuple[str, str]] = [
+    ("work_items:read", "工作流读取权限"),
+    ("work_items:write", "工作流写入权限"),
+    ("work_items:transition", "工作流流转权限"),
+    ("users:read", "用户读取权限"),
+    ("users:write", "用户写入权限"),
+    ("roles:read", "角色读取权限"),
+    ("roles:write", "角色写入权限"),
+    ("permissions:read", "权限读取权限"),
+    ("permissions:write", "权限写入权限"),
+    ("requirements:read", "需求读取权限"),
+    ("requirements:write", "需求写入权限"),
+    ("test_cases:read", "用例读取权限"),
+    ("test_cases:write", "用例写入权限"),
+    ("execution_agents:read", "执行代理读取权限"),
+    ("execution_agents:write", "执行代理写入权限"),
+    ("execution_tasks:read", "执行任务读取权限"),
+    ("execution_tasks:write", "执行任务写入权限"),
+    ("navigation:read", "导航读取权限"),
+    ("navigation:write", "导航写入权限"),
+]
+
+_ALL_PERM_IDS = [code for code, _ in _DEFAULT_PERMISSIONS]
+
+_DEFAULT_ROLES: dict[str, list[str]] = {
+    # 管理员：拥有全部权限
+    "ADMIN": _ALL_PERM_IDS,
+    # TPM（测试项目经理）：需求和用例管理、流转、执行管理、导航管理
+    "TPM": [
+        "users:read", "requirements:read", "requirements:write",
+        "test_cases:read", "work_items:read", "work_items:transition",
+        "execution_agents:read", "execution_agents:write",
+        "execution_tasks:read", "execution_tasks:write",
+        "navigation:read", "navigation:write",
+    ],
+    # TESTER（测试执行人员）：用例编写和执行
+    "TESTER": [
+        "users:read", "requirements:read",
+        "test_cases:read", "test_cases:write",
+        "work_items:read", "work_items:transition",
+        "execution_agents:read",
+        "execution_tasks:read", "execution_tasks:write",
+        "navigation:read", "navigation:write",
+    ],
+    # AUTOMATION（自动化工程师）：自动化用例开发和执行
+    "AUTOMATION": [
+        "users:read", "test_cases:read", "test_cases:write",
+        "assets:read", "work_items:read",
+        "execution_agents:read", "execution_tasks:read",
+        "navigation:read", "navigation:write",
+    ],
+}
+
 
 def _parse_state_entry(entry: Any) -> Optional[tuple[str, str, Optional[bool]]]:
-    """兼容多种 states 配置格式并标准化。"""
-    if isinstance(entry, list):
-        if len(entry) < 2:
-            return None
-        code = str(entry[0]).strip()
-        name = str(entry[1]).strip()
-        is_end = bool(entry[2]) if len(entry) >= 3 else None
-        return code, name, is_end
-
-    if isinstance(entry, dict):
-        code = str(entry.get("code", "")).strip()
-        name = str(entry.get("name", "")).strip()
-        if not code or not name:
-            return None
-        raw_is_end = entry.get("is_end")
-        is_end = bool(raw_is_end) if raw_is_end is not None else None
-        return code, name, is_end
-
-    return None
+    """解析状态配置（dict 格式）。"""
+    if not isinstance(entry, dict):
+        return None
+    code = str(entry.get("code", "")).strip()
+    name = str(entry.get("name", "")).strip()
+    if not code or not name:
+        return None
+    raw_is_end = entry.get("is_end")
+    is_end = bool(raw_is_end) if raw_is_end is not None else None
+    return code, name, is_end
 
 
 def _merge_work_types(data: Dict[str, Any], work_types_map: Dict[str, str]) -> None:
@@ -98,17 +145,11 @@ def _merge_workflow_configs(
     data: Dict[str, Any],
     workflow_configs_map: Dict[str, list[dict]],
 ) -> None:
-    """合并工作流配置，兼容两种格式。"""
-    wf_configs = data.get("workflow_configs", [])
+    """合并工作流配置（按 type_code 组织）。"""
+    wf_configs = data.get("workflow_configs", {})
     if isinstance(wf_configs, dict):
         for type_code, configs in wf_configs.items():
             workflow_configs_map.setdefault(type_code, []).extend(configs)
-        return
-
-    for cfg in wf_configs:
-        type_code = cfg.get("type_code")
-        if type_code:
-            workflow_configs_map.setdefault(type_code, []).append(cfg)
 
 
 def _load_config_maps(
@@ -194,12 +235,22 @@ def _derive_state_end_flags(states_map: Dict[str, Dict[str, Any]], from_states: 
         meta["is_end"] = explicit_is_end if explicit_is_end is not None else state_code not in from_states
 
 
+async def _upsert_doc(Model, filter_expr, set_data, insert_data) -> None:
+    """通用 upsert 辅助函数。"""
+    now = datetime.now(timezone.utc)
+    await Model.find_one(filter_expr).upsert(
+        {"$set": {**set_data, "updated_at": now}},
+        on_insert=insert_data
+    )
+
+
 async def _sync_work_types(work_types_map: Dict[str, str]) -> None:
     """同步事项类型。"""
     for code, name in work_types_map.items():
-        await SysWorkTypeDoc.find_one(SysWorkTypeDoc.code == code).upsert(
-            {"$set": {"name": name, "updated_at": datetime.now(timezone.utc)}},
-            on_insert=SysWorkTypeDoc(code=code, name=name)
+        await _upsert_doc(
+            SysWorkTypeDoc, SysWorkTypeDoc.code == code,
+            {"name": name},
+            SysWorkTypeDoc(code=code, name=name)
         )
         log.info(f"初始化事项类型: {code}")
 
@@ -209,9 +260,10 @@ async def _sync_workflow_states(states_map: Dict[str, Dict[str, Any]]) -> None:
     for code, meta in states_map.items():
         name = meta["name"]
         is_end = bool(meta["is_end"])
-        await SysWorkflowStateDoc.find_one(SysWorkflowStateDoc.code == code).upsert(
-            {"$set": {"name": name, "is_end": is_end, "updated_at": datetime.now(timezone.utc)}},
-            on_insert=SysWorkflowStateDoc(code=code, name=name, is_end=is_end)
+        await _upsert_doc(
+            SysWorkflowStateDoc, SysWorkflowStateDoc.code == code,
+            {"name": name, "is_end": is_end},
+            SysWorkflowStateDoc(code=code, name=name, is_end=is_end)
         )
         log.info(f"初始化流程状态: {code}")
 
@@ -226,32 +278,42 @@ async def _sync_workflow_configs(
             continue  # 跳过未定义类型的工作流
 
         for cfg in configs:
-            await SysWorkflowConfigDoc.find_one(
-                SysWorkflowConfigDoc.type_code == type_code,
-                SysWorkflowConfigDoc.from_state == cfg.get("from_state"),
-                SysWorkflowConfigDoc.action == cfg.get("action")
-            ).upsert(
-                {"$set": {
+            await _upsert_doc(
+                SysWorkflowConfigDoc,
+                (SysWorkflowConfigDoc.type_code == type_code)
+                & (SysWorkflowConfigDoc.from_state == cfg.get("from_state"))
+                & (SysWorkflowConfigDoc.action == cfg.get("action")),
+                {
                     "to_state": cfg.get("to_state"),
                     "target_owner_strategy": cfg.get("target_owner_strategy", "KEEP"),
                     "required_fields": cfg.get("required_fields", []),
                     "properties": cfg.get("properties", {}),
-                    "updated_at": datetime.now(timezone.utc)
-                }},
-                on_insert=SysWorkflowConfigDoc(type_code=type_code, **cfg)
+                },
+                SysWorkflowConfigDoc(type_code=type_code, **cfg)
             )
             log.info(
                 f"初始化流转配置: {type_code} {cfg.get('from_state')} -> {cfg.get('action')}"
             )
 
 
+async def _cleanup_removed(
+    Model,
+    desired_keys: set,
+    key_attrs: str | tuple[str, ...],
+    label: str,
+) -> None:
+    """删除数据库中不再存在于配置中的记录。"""
+    existing = await Model.find_all().to_list()
+    for doc in existing:
+        key = getattr(doc, key_attrs) if isinstance(key_attrs, str) else tuple(getattr(doc, a) for a in key_attrs)
+        if key not in desired_keys:
+            await doc.delete()
+            log.info(f"删除已下线{label}: {key}")
+
+
 async def _cleanup_removed_work_types(work_types_map: Dict[str, str]) -> None:
     """删除配置中已移除的事项类型。"""
-    existing_types = await SysWorkTypeDoc.find_all().to_list()
-    for doc in existing_types:
-        if doc.code not in work_types_map:
-            await doc.delete()
-            log.info(f"删除已下线事项类型: {doc.code}")
+    await _cleanup_removed(SysWorkTypeDoc, set(work_types_map.keys()), "code", "事项类型")
 
 
 async def _cleanup_removed_workflow_configs(
@@ -259,19 +321,17 @@ async def _cleanup_removed_workflow_configs(
     workflow_configs_map: Dict[str, list[dict]],
 ) -> None:
     """删除配置中已移除的流转配置。"""
-    desired_workflow_keys = set()
-    for type_code, configs in workflow_configs_map.items():
-        if type_code not in work_types_map:
-            continue
-        for cfg in configs:
-            desired_workflow_keys.add((type_code, cfg.get("from_state"), cfg.get("action")))
-
-    existing_workflows = await SysWorkflowConfigDoc.find_all().to_list()
-    for cfg_doc in existing_workflows:
-        key = (cfg_doc.type_code, cfg_doc.from_state, cfg_doc.action)
-        if key not in desired_workflow_keys:
-            await cfg_doc.delete()
-            log.info(f"删除已下线流转配置: {cfg_doc.type_code} {cfg_doc.from_state} -> {cfg_doc.action}")
+    desired_keys = {
+        (type_code, cfg.get("from_state"), cfg.get("action"))
+        for type_code, configs in workflow_configs_map.items()
+        if type_code in work_types_map
+        for cfg in configs
+    }
+    await _cleanup_removed(
+        SysWorkflowConfigDoc, desired_keys,
+        ("type_code", "from_state", "action"),
+        "流转配置",
+    )
 
 
 async def init_config_data():
@@ -311,100 +371,26 @@ async def init_config_data():
 
 async def init_rbac_data():
     """
-    初始化 RBAC 默认权限与 ADMIN 角色。
+    初始化 RBAC 默认权限与角色。
 
-    说明：
-    - 权限以 perm_id/code 统一为权限码（如 work_items:read）
-    - ADMIN 角色默认拥有全部权限
+    权限与角色定义见模块级常量 _DEFAULT_PERMISSIONS、_DEFAULT_ROLES。
     """
     log.info("开始初始化 RBAC 权限与角色...")
 
-    default_permissions = [
-        # workflow
-        ("work_items:read", "工作流读取权限"),
-        ("work_items:write", "工作流写入权限"),
-        ("work_items:transition", "工作流流转权限"),
-        # rbac
-        ("users:read", "用户读取权限"),
-        ("users:write", "用户写入权限"),
-        ("roles:read", "角色读取权限"),
-        ("roles:write", "角色写入权限"),
-        ("permissions:read", "权限读取权限"),
-        ("permissions:write", "权限写入权限"),
-        # test specs (预留)
-        ("requirements:read", "需求读取权限"),
-        ("requirements:write", "需求写入权限"),
-        ("test_cases:read", "用例读取权限"),
-        ("test_cases:write", "用例写入权限"),
-        ("execution_agents:read", "执行代理读取权限"),
-        ("execution_agents:write", "执行代理写入权限"),
-        ("execution_tasks:read", "执行任务读取权限"),
-        ("execution_tasks:write", "执行任务写入权限"),
-        ("navigation:read", "导航读取权限"),
-        ("navigation:write", "导航写入权限"),
-    ]
-
-    # 1) upsert 权限
-    for code, name in default_permissions:
-        await PermissionDoc.find_one(PermissionDoc.perm_id == code).upsert(
-            {"$set": {"code": code, "name": name, "updated_at": datetime.now(timezone.utc)}},
-            on_insert=PermissionDoc(perm_id=code, code=code, name=name)
+    # upsert 权限
+    for code, name in _DEFAULT_PERMISSIONS:
+        await _upsert_doc(
+            PermissionDoc, PermissionDoc.perm_id == code,
+            {"code": code, "name": name},
+            PermissionDoc(perm_id=code, code=code, name=name)
         )
 
-    # 2) upsert 默认角色
-    all_perm_ids = [code for code, _ in default_permissions]
-    default_roles = {
-        "ADMIN": all_perm_ids,
-        "TPM": [
-            "users:read",
-            "requirements:read",
-            "requirements:write",
-            "test_cases:read",
-            "work_items:read",
-            "work_items:transition",
-            "execution_agents:read",
-            "execution_agents:write",
-            "execution_tasks:read",
-            "execution_tasks:write",
-            "navigation:read",
-            "navigation:write",
-        ],
-        "TESTER": [
-            "users:read",
-            "requirements:read",
-            "test_cases:read",
-            "test_cases:write",
-            "work_items:read",
-            "work_items:transition",
-            "execution_agents:read",
-            "execution_tasks:read",
-            "execution_tasks:write",
-            "navigation:read",
-            "navigation:write",
-        ],
-        "AUTOMATION": [
-            "users:read",
-            "test_cases:read",
-            "test_cases:write",
-            "assets:read",
-            "work_items:read",
-            "execution_agents:read",
-            "execution_tasks:read",
-            "navigation:read",
-            "navigation:write",
-        ],
-    }
-
-    for role_id, permission_ids in default_roles.items():
-        await RoleDoc.find_one(RoleDoc.role_id == role_id).upsert(
-            {
-                "$set": {
-                    "name": role_id,
-                    "permission_ids": permission_ids,
-                    "updated_at": datetime.now(timezone.utc),
-                }
-            },
-            on_insert=RoleDoc(role_id=role_id, name=role_id, permission_ids=permission_ids)
+    # upsert 默认角色
+    for role_id, permission_ids in _DEFAULT_ROLES.items():
+        await _upsert_doc(
+            RoleDoc, RoleDoc.role_id == role_id,
+            {"name": role_id, "permission_ids": permission_ids},
+            RoleDoc(role_id=role_id, name=role_id, permission_ids=permission_ids)
         )
 
     log.success("RBAC 初始化完成")
@@ -484,10 +470,7 @@ async def main():
         log.error(f"MongoDB 初始化失败: {e}")
         raise
     finally:
-        # 兼容同步/异步的 close 调用
-        close_result = client.close()
-        if asyncio.iscoroutine(close_result):
-            await close_result
+        await client.close()
         log.info("MongoDB 连接已关闭")
 
 

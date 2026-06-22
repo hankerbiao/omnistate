@@ -2,10 +2,17 @@
 
 from __future__ import annotations
 
+import importlib
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from app.modules.project.domain.constants import PROJECT_RELATED_MODEL_PATHS, ProjectStatus
+from app.modules.auth.repository.models import UserDoc
+from app.modules.execution_plan.repository.models import ExecutionPlanItemDoc
+from app.modules.project.domain.constants import (
+    PROJECT_ID_PREFIX,
+    PROJECT_RELATED_MODEL_PATHS,
+    ProjectStatus,
+)
 from app.modules.project.domain.exceptions import (
     ProjectKeyConflictError,
     ProjectNotFoundError,
@@ -20,8 +27,11 @@ from app.modules.project.schemas.project import (
     ProjectStatsResponse,
     StatsBreakdown,
 )
-from app.shared.service.base import BaseService
 from app.shared.core.logger import log as logger
+from app.shared.service.base import BaseService
+
+
+# ── 关联模型延迟加载 ──────────────────────────────────────────────────
 
 
 def _get_related_models() -> list[type]:
@@ -29,7 +39,6 @@ def _get_related_models() -> list[type]:
     models = []
     for module_path, class_name in PROJECT_RELATED_MODEL_PATHS:
         try:
-            import importlib
             module = importlib.import_module(module_path)
             model_cls = getattr(module, class_name)
             models.append(model_cls)
@@ -38,11 +47,24 @@ def _get_related_models() -> list[type]:
     return models
 
 
+def _find_model(related: list[type], name: str) -> type:
+    """在关联模型列表中按类名查找，未找到时抛出明确异常。"""
+    for m in related:
+        if m.__name__ == name:
+            return m
+    raise ValueError(
+        f"Related model '{name}' is not registered in PROJECT_RELATED_MODEL_PATHS. "
+        f"Available models: {[m.__name__ for m in related]}"
+    )
+
+
+# ── 辅助查询 ──────────────────────────────────────────────────────────
+
+
 async def _resolve_owner(owner_id: Optional[str]) -> Optional[OwnerBrief]:
     if not owner_id:
         return None
     try:
-        from app.modules.auth.repository.models import UserDoc
         user = await UserDoc.find_one({"user_id": owner_id, "is_deleted": False})
         if user:
             return OwnerBrief(user_id=user.user_id, username=user.username)
@@ -53,7 +75,6 @@ async def _resolve_owner(owner_id: Optional[str]) -> Optional[OwnerBrief]:
 
 async def _fetch_assignee_distribution(project_id: str) -> List[AssigneeDistribution]:
     try:
-        from app.modules.execution_plan.repository.models import ExecutionPlanItemDoc
         pipeline = [
             {"$match": {"project_ids": {"$in": [project_id]}, "is_deleted": False}},
             {"$group": {
@@ -77,7 +98,8 @@ async def _fetch_assignee_distribution(project_id: str) -> List[AssigneeDistribu
         return []
 
 
-# ── 统计查询的辅助函数 ──────────────────────────────────────────────────
+# ── 统计查询辅助函数 ──────────────────────────────────────────────────
+
 
 def _make_project_filter(project_id: str, extra_filters: Optional[list] = None) -> dict:
     q: dict = {"project_ids": {"$in": [project_id]}, "is_deleted": False}
@@ -97,35 +119,48 @@ async def _compute_task_breakdown(task_cls, project_id: str) -> ExecutionTaskBre
     failed = await _count_for_project(task_cls, project_id, [{"overall_status": {"$in": ["FAILED", "ERROR"]}}])
     pending = total - done - running - failed
     progress = round(done / total * 100, 1) if total > 0 else 0.0
-    return ExecutionTaskBreakdown(total=total, done=done, running=running, failed=failed, pending=pending, progress=progress)
+    return ExecutionTaskBreakdown(
+        total=total, done=done, running=running, failed=failed,
+        pending=pending, progress=progress,
+    )
 
 
 async def _compute_pass_rates(project_id: str) -> tuple[StatsBreakdown, StatsBreakdown]:
+    """使用 aggregation pipeline 分类型统计通过率，避免全量加载到内存。"""
     manual = StatsBreakdown()
     auto = StatsBreakdown()
     try:
-        from app.modules.execution_plan.repository.models import ExecutionPlanItemDoc
-        items = await ExecutionPlanItemDoc.find(
-            {"project_ids": {"$in": [project_id]}, "is_deleted": False}
-        ).to_list()
-        if items:
-            manual = _make_pass_stats([i for i in items if i.ref_type == "manual"])
-            auto = _make_pass_stats([i for i in items if i.ref_type == "auto"])
+        pipeline = [
+            {"$match": {"project_ids": {"$in": [project_id]}, "is_deleted": False}},
+            {"$group": {
+                "_id": "$ref_type",
+                "total": {"$sum": 1},
+                "passed": {"$sum": {"$cond": [{"$eq": ["$status", "done"]}, 1, 0]}},
+                "failed": {"$sum": {"$cond": [{"$eq": ["$status", "fail"]}, 1, 0]}},
+            }},
+        ]
+        results = await ExecutionPlanItemDoc.aggregate(pipeline, projection_model=None).to_list()
+        for r in results:
+            ref_type = r.get("_id")
+            total = r.get("total", 0)
+            passed = r.get("passed", 0)
+            failed = r.get("failed", 0)
+            rate = round(passed / total * 100, 1) if total > 0 else 0.0
+            sb = StatsBreakdown(total=total, passed=passed, failed=failed, pass_rate=rate)
+            if ref_type == "manual":
+                manual = sb
+            elif ref_type == "auto":
+                auto = sb
     except Exception:
         pass
     return manual, auto
 
 
-def _make_pass_stats(items: list) -> StatsBreakdown:
-    total = len(items)
-    passed = sum(1 for i in items if i.status == "done")
-    failed = sum(1 for i in items if i.status == "fail")
-    rate = round(passed / total * 100, 1) if total > 0 else 0.0
-    return StatsBreakdown(total=total, passed=passed, failed=failed, pass_rate=rate)
-
-
 async def _compute_coverage(test_case_count: int, requirement_count: int) -> float:
     return round(test_case_count / requirement_count * 100, 1) if requirement_count > 0 else 0.0
+
+
+# ── 主服务类 ───────────────────────────────────────────────────────────
 
 
 class ProjectService(BaseService):
@@ -190,7 +225,6 @@ class ProjectService(BaseService):
         )
 
         items = [await ProjectService._to_project_response(d) for d in docs]
-
         return {"items": items, "total": total}
 
     # ── 创建 ──────────────────────────────────────────────────────────
@@ -241,7 +275,6 @@ class ProjectService(BaseService):
     async def get_project_detail(project_id: str) -> ProjectDetailResponse:
         doc = await ProjectService.get_project(project_id)
         stats = await ProjectService.get_project_stats(project_id)
-
         response = await ProjectService._to_project_response(doc)
         return ProjectDetailResponse(**response.model_dump(), stats=stats)
 
@@ -306,21 +339,18 @@ class ProjectService(BaseService):
     async def get_project_stats(project_id: str) -> ProjectStatsResponse:
         related = _get_related_models()
 
-        def _find(name: str):
-            return next(m for m in related if m.__name__ == name)
-
-        tc = _find("TestCaseDoc")
-        ac = _find("AutomationTestCaseDoc")
-        rc = _find("TestRequirementDoc")
-        ec = _find("TestCaseCollectionDoc")
+        tc = _find_model(related, "TestCaseDoc")
+        ac = _find_model(related, "AutomationTestCaseDoc")
+        rc = _find_model(related, "TestRequirementDoc")
+        ec = _find_model(related, "TestCaseCollectionDoc")
 
         test_case_count = await _count_for_project(tc, project_id)
         auto_case_count = await _count_for_project(ac, project_id)
         requirement_count = await _count_for_project(rc, project_id)
-        plan_count = await _count_for_project(_find("ExecutionPlanDoc"), project_id)
+        plan_count = await _count_for_project(_find_model(related, "ExecutionPlanDoc"), project_id)
         collection_count = await _count_for_project(ec, project_id)
 
-        task = await _compute_task_breakdown(_find("ExecutionTaskDoc"), project_id)
+        task = await _compute_task_breakdown(_find_model(related, "ExecutionTaskDoc"), project_id)
         manual_pass, auto_pass = await _compute_pass_rates(project_id)
         coverage_rate = await _compute_coverage(test_case_count, requirement_count)
         assignee_dist = await _fetch_assignee_distribution(project_id)
@@ -343,7 +373,6 @@ class ProjectService(BaseService):
 
     @staticmethod
     async def _generate_project_id() -> str:
-        from app.modules.project.domain.constants import PROJECT_ID_PREFIX
         year = datetime.now(timezone.utc).year
         prefix = f"{PROJECT_ID_PREFIX}-{year}-"
         last = await ProjectDoc.find(
