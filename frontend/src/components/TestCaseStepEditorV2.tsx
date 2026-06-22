@@ -245,21 +245,52 @@ const TestCaseStepEditorV2: React.FC<TestCaseStepEditorV2Props> = ({
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
             <button
               type="button"
-              className="btn btn--secondary btn--sm"
               onClick={handleCompletenessCheck}
               disabled={analyzing}
               title="检查当前步骤的字段完整性"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                padding: '6px 14px',
+                fontSize: 12,
+                fontWeight: 600,
+                border: '1px solid rgba(124, 58, 237, 0.3)',
+                borderRadius: 6,
+                color: '#7c3aed',
+                background: 'rgba(124, 58, 237, 0.06)',
+                cursor: analyzing ? 'not-allowed' : 'pointer',
+                opacity: analyzing ? 0.5 : 1,
+                transition: 'all 0.2s',
+              }}
             >
               🔍 检查当前步骤
             </button>
             <button
               type="button"
-              className="btn btn--primary btn--sm"
               onClick={handleAnalyze}
               disabled={analyzing}
               title="分析全部步骤的完整性和一致性"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                padding: '6px 14px',
+                fontSize: 12,
+                fontWeight: 600,
+                border: 'none',
+                borderRadius: 6,
+                color: '#fff',
+                background: analyzing
+                  ? 'linear-gradient(135deg, #9ca3af, #6b7280)'
+                  : 'linear-gradient(135deg, #7c3aed, #6366f1)',
+                boxShadow: '0 1px 4px rgba(124, 58, 237, 0.3)',
+                cursor: analyzing ? 'not-allowed' : 'pointer',
+                opacity: analyzing ? 0.5 : 1,
+                transition: 'all 0.2s',
+              }}
             >
-              {analyzing ? '分析中...' : '🤖 分析全部步骤'}
+              🤖 {analyzing ? '分析中...' : '分析全部步骤'}
             </button>
           </div>
         )}
@@ -353,7 +384,8 @@ const TestCaseStepEditorV2: React.FC<TestCaseStepEditorV2Props> = ({
               </div>
             </div>
 
-            {/* AI 分析面板 */}
+            {/* AI 分析面板 — 仅在分析时或有结果时显示 */}
+            {(analyzing || analysisError || analysisResult) && (
             <div style={{ border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-lg)', overflow: 'hidden', marginTop: 4 }}>
               <div
                 style={{
@@ -493,6 +525,7 @@ const TestCaseStepEditorV2: React.FC<TestCaseStepEditorV2Props> = ({
                 </div>
               )}
             </div>
+            )}
           </>
         )}
       </div>
