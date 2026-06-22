@@ -4,6 +4,7 @@ import type { CreateTestCaseRequest, TestCaseResponse, TestCaseStep } from '../t
 import CatalogPathEditor, { type CatalogPathValue } from './catalog/CatalogPathEditor';
 import { PRIORITY_COLORS, PRIORITY_LABELS } from '../constants/testCaseLabels';
 import TestCaseStepEditor from './TestCaseStepEditor';
+import TestCaseStepEditorV2 from './TestCaseStepEditorV2';
 
 interface CreateTestCaseFormProps {
   onClose: () => void;
@@ -84,16 +85,19 @@ function stepsChanged(a: TestCaseStep[] = [], b: TestCaseStep[] = []): boolean {
   return JSON.stringify(a) !== JSON.stringify(b);
 }
 
-const FormSection: React.FC<FormSectionProps> = ({ title, badge, prominent, children }) => (
+const FormSection: React.FC<FormSectionProps> = ({ title, badge, prominent, children, actions }) => (
   <section
     style={{
       ...styles.section,
       ...(prominent ? styles.sectionProminent : {}),
     }}
   >
-    <div style={styles.sectionHeader}>
-      <span style={styles.sectionTitle}>{title}</span>
-      {badge && <span style={prominent ? styles.sectionBadgeProminent : styles.sectionBadge}>{badge}</span>}
+    <div style={{ ...styles.sectionHeader, justifyContent: actions ? 'space-between' : undefined }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+        <span style={styles.sectionTitle}>{title}</span>
+        {badge && <span style={prominent ? styles.sectionBadgeProminent : styles.sectionBadge}>{badge}</span>}
+      </div>
+      {actions && <div>{actions}</div>}
     </div>
     <div style={styles.sectionContent}>{children}</div>
   </section>
@@ -144,6 +148,7 @@ const CreateTestCaseForm: React.FC<CreateTestCaseFormProps> = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'basic' | 'steps' | 'automation'>('basic');
+  const [activeStepIndex, setActiveStepIndex] = useState(0);
   const [cleanupExpanded, setCleanupExpanded] = useState(
     () => Boolean(editTestCase?.cleanup_steps?.length),
   );
@@ -644,9 +649,13 @@ const CreateTestCaseForm: React.FC<CreateTestCaseFormProps> = ({
                 )}
 
                 <FormSection title="执行步骤" badge="可选">
-                  <TestCaseStepEditor
+                  <TestCaseStepEditorV2
                     steps={formData.steps ?? []}
                     onChange={steps => setFormData(prev => ({ ...prev, steps }))}
+                    testCaseTitle={formData.title}
+                    category={formData.test_category}
+                    preCondition={formData.pre_condition}
+                    postCondition={formData.post_condition}
                   />
                 </FormSection>
 

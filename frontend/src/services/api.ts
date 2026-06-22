@@ -1054,6 +1054,14 @@ class ApiClient {
     return res.data.polished;
   }
 
+  /** AI 分析测试用例步骤 */
+  async analyzeTestSteps(data: import('../types/ai').AnalyzeTestStepsRequest): Promise<ApiResponse<import('../types/ai').StepAnalysisResult>> {
+    return this.request<import('../types/ai').StepAnalysisResult>('/ai/analyze-steps', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
   /** 获取测试用例执行统计 */
   async getCaseExecutionStats(caseId: string): Promise<ApiResponse<ExecutionStatsResponse>> {
     return this.request<ExecutionStatsResponse>(
