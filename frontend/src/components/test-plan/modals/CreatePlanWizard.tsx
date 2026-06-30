@@ -2,6 +2,7 @@
  * CreatePlanWizard — Multi-step plan creation wizard.
  * Redesigned: standard modal sheet pattern with fixed header/body/footer.
  */
+import React, { useState } from 'react';
 import { Dialog, DialogClose, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,6 +14,7 @@ import { DateRangePicker } from '../DateRangePicker';
 import type { NewPlanData, CaseMapEntry, CollectionEntry } from '../types';
 import { PRIORITY_COLORS } from '../types';
 import type { UserResponse } from '../../../types';
+import AiRecommendCasesPanel from '../../ui/AiRecommendCasesPanel';
 
 interface CreatePlanWizardProps {
   wizardStep: number;
@@ -41,6 +43,7 @@ export function CreatePlanWizard({
   submittingPlan, onCreatePlan, onClose, onToggleCase, onToggleCollection, onSetAssignment,
   users, collections, caseMap, casesLoading, currentUserId,
 }: CreatePlanWizardProps) {
+  const [showAiRecommend, setShowAiRecommend] = useState(false);
   const q = caseSearch.trim().toLowerCase();
   const matchedCollections = q
     ? collections.filter(col => col.name?.toLowerCase().includes(q) || (col.description || '').toLowerCase().includes(q))
@@ -190,6 +193,10 @@ export function CreatePlanWizard({
             <div>
               <div className="flex items-center justify-between mb-3">
                 <span className="text-sm text-[var(--text-secondary)]">已选 <strong className="text-[var(--text-primary)]">{newPlan.selectedCases.length}</strong> 个用例</span>
+                <button type="button" onClick={() => setShowAiRecommend(true)} style={{
+                  padding: '4px 12px', borderRadius: 6, border: 'none',
+                  background: '#7c3aed', color: '#fff', fontSize: 11, cursor: 'pointer',
+                }}>AI 推荐</button>
               </div>
               <Input value={caseSearch} onChange={e => onCaseSearchChange(e.target.value)} placeholder="搜索用例名称、ID 或预置用例集..." className="mb-3" />
               {casesLoading ? (
@@ -297,6 +304,18 @@ export function CreatePlanWizard({
           </div>
         </div>
       </DialogContent>
+      {showAiRecommend && (
+        <AiRecommendCasesPanel
+          onSelectCases={(ids) => {
+            ids.forEach(id => {
+              if (!newPlan.selectedCases.includes(id)) {
+                onToggleCase(id);
+              }
+            });
+          }}
+          onClose={() => setShowAiRecommend(false)}
+        />
+      )}
     </Dialog>
   );
 }

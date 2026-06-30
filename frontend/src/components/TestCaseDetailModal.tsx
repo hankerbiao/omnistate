@@ -9,6 +9,7 @@ import { SWITCHABLE_USERS } from '../config/users';
 import { api } from '../services/api';
 import TestCaseHistoryPanel from './TestCaseHistoryPanel';
 import { Dialog, DialogContent } from './ui/dialog';
+import AiCaseReviewPanel from './ui/AiCaseReviewPanel';
 const CONFIDENTIALITY_LABELS: Record<string, string> = {
   PUBLIC: '公开',
   INTERNAL: '内部',
@@ -33,7 +34,7 @@ interface TestCaseDetailModalProps {
   changeLogRefreshSignal?: number;
 }
 
-type DetailTab = 'steps' | 'workflow' | 'more' | 'comments' | 'stats';
+type DetailTab = 'steps' | 'workflow' | 'more' | 'comments' | 'stats' | 'aiReview';
 
 const DETAIL_TABS: { id: DetailTab; label: string; badge?: number }[] = [
   { id: 'steps', label: '步骤' },
@@ -41,6 +42,7 @@ const DETAIL_TABS: { id: DetailTab; label: string; badge?: number }[] = [
   { id: 'more', label: '更多' },
   { id: 'stats', label: '执行统计' },
   { id: 'comments', label: '评论' },
+  { id: 'aiReview', label: 'AI 评审' },
 ];
 
 const NON_EDITABLE_STATES = new Set(['PENDING_REVIEW', 'DONE']);
@@ -544,6 +546,13 @@ const TestCaseDetailModal: React.FC<TestCaseDetailModalProps> = ({
               >
                 评论
               </button>
+              <button
+                type="button"
+                style={{ ...styles.mainTab, ...(activeTab === 'aiReview' ? styles.mainTabActive : {}) }}
+                onClick={() => handleTabChange('aiReview')}
+              >
+                AI 评审
+              </button>
             </div>
 
             <div style={styles.mainContent}>
@@ -624,6 +633,11 @@ const TestCaseDetailModal: React.FC<TestCaseDetailModalProps> = ({
               )}
               {activeTab === 'comments' && (
                 <TestCaseCommentPanel caseId={testCase.case_id} />
+              )}
+              {activeTab === 'aiReview' && (
+                <div style={{ padding: 16 }}>
+                  <AiCaseReviewPanel caseId={testCase.case_id} />
+                </div>
               )}
             </div>
           </main>

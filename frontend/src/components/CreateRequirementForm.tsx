@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { api } from '../services/api';
 import type { CreateRequirementRequest, RequirementResponse } from '../types';
 import AIPolishButton from './ui/AIPolishButton';
+import AiCaseDraftPanel from './ui/AiCaseDraftPanel';
 
 /** 预设推荐标签 */
 const RECOMMENDED_TAGS = ['功能', '性能', '稳定性', '兼容性', '安全', '回归', '自动化', '压力', '冒烟'];
@@ -117,8 +118,7 @@ const CreateRequirementForm: React.FC<CreateRequirementFormProps> = ({ onClose, 
       if (!cleaned.planned_end_date) delete cleaned.planned_end_date;
 
       const response = await api.createRequirement(cleaned);
-      onSuccess(response.data);
-      onClose();
+      setCreatedReqId(response.data.req_id);
     } catch (err) {
       setError('创建测试用例编写需求失败');
       console.error('Create requirement error:', err);
@@ -126,6 +126,10 @@ const CreateRequirementForm: React.FC<CreateRequirementFormProps> = ({ onClose, 
       setLoading(false);
     }
   };
+
+  // ── 创建成功后的状态 ──
+  const [createdReqId, setCreatedReqId] = useState<string | null>(null);
+  const [showAiPanel, setShowAiPanel] = useState(false);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -376,32 +380,55 @@ const CreateRequirementForm: React.FC<CreateRequirementFormProps> = ({ onClose, 
             </div>
           </div>
 
-          {/* ═══ Footer ═══ */}
+          {/* Footer */}
           <div style={styles.footer}>
-            <button type="button" style={styles.cancelBtn} onClick={onClose} disabled={loading}>
-              取消
-            </button>
-            <button
-              type="submit"
-              disabled={loading}
-              style={{
-                ...styles.submitBtn,
-                ...(loading ? styles.submitBtnLoading : {}),
-              }}
-            >
-              {loading ? (
-                <span style={styles.submitLoadingContent}>
-                  <span style={styles.submitSpinner} />
-                  创建中...
+            {createdReqId ? (
+              <>
+                <span style={{ fontSize: 13, color: '#16a34a', marginRight: 'auto' }}>
+                  需求已创建（{createdReqId}）
                 </span>
-              ) : (
-                <span>创建需求</span>
-              )}
-            </button>
+                <button type="button" onClick={() => setShowAiPanel(true)} style={{
+                  padding: '6px 16px', borderRadius: 6, border: 'none',
+                  background: '#7c3aed', color: '#fff', fontSize: 12, cursor: 'pointer',
+                }}>AI 生成用例</button>
+                <button type="button" style={styles.cancelBtn} onClick={() => { onSuccess({ req_id: createdReqId } as any); onClose(); }}>
+                  完成
+                </button>
+              </>
+            ) : (
+              <>
+                <button type="button" style={styles.cancelBtn} onClick={onClose} disabled={loading}>
+                  取消
+                </button>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  style={{
+                    ...styles.submitBtn,
+                    ...(loading ? styles.submitBtnLoading : {}),
+                  }}
+                >
+                  {loading ? (
+                    <span style={styles.submitLoadingContent}>
+                      <span style={styles.submitSpinner} />
+                      创建中...
+                    </span>
+                  ) : (
+                    <span>创建需求</span>
+                  )}
+                </button>
+              </>
+            )}
           </div>
 
         </form>
       </div>
+      {showAiPanel && createdReqId && (
+        <AiCaseDraftPanel
+          requirementId={createdReqId}
+          onClose={() => setShowAiPanel(false)}
+        />
+      )}
     </div>
   );
 };
