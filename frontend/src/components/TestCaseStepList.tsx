@@ -15,13 +15,15 @@ function StepBlock({ step, index }: { step: TestCaseStep; index: number }) {
         <span style={styles.stepBadge}>{index + 1}</span>
         <span style={styles.stepName}>{step.name}</span>
       </div>
-      <div style={styles.stepField}>
-        <span style={styles.fieldLabel}>动作</span>
-        <p style={styles.fieldText}>{step.action}</p>
-      </div>
-      <div style={{ ...styles.stepField, ...styles.expectedField }}>
-        <span style={styles.fieldLabel}>期望</span>
-        <p style={styles.fieldText}>{step.expected}</p>
+      <div style={styles.fieldsRow}>
+        <div style={styles.actionField}>
+          <span style={styles.fieldLabel}>动作</span>
+          <p style={styles.fieldText}>{step.action}</p>
+        </div>
+        <div style={styles.expectedField}>
+          <span style={styles.fieldLabel}>期望</span>
+          <p style={styles.fieldText}>{step.expected}</p>
+        </div>
       </div>
     </div>
   );
@@ -35,13 +37,15 @@ function CleanupStepBlock({ step, index }: { step: TestCaseStep; index: number }
         <span style={styles.cleanupStepName}>{step.name}</span>
         <span style={styles.cleanupStepTag}>清理</span>
       </div>
-      <div style={styles.stepField}>
-        <span style={styles.fieldLabel}>动作</span>
-        <p style={{ ...styles.fieldText, color: '#92400e' }}>{step.action}</p>
-      </div>
-      <div style={{ ...styles.stepField, ...styles.cleanupExpectedField }}>
-        <span style={styles.fieldLabel}>期望</span>
-        <p style={{ ...styles.fieldText, color: '#92400e' }}>{step.expected}</p>
+      <div style={styles.fieldsRow}>
+        <div style={styles.cleanupActionField}>
+          <span style={styles.fieldLabel}>动作</span>
+          <p style={styles.cleanupFieldText}>{step.action}</p>
+        </div>
+        <div style={styles.cleanupExpectedField}>
+          <span style={styles.fieldLabel}>期望</span>
+          <p style={styles.cleanupFieldText}>{step.expected}</p>
+        </div>
       </div>
     </div>
   );
@@ -122,43 +126,50 @@ const styles: Record<string, React.CSSProperties> = {
   list: {
     display: 'flex',
     flexDirection: 'column',
-    gap: 'var(--space-3)',
+    gap: 'var(--space-2)',
   },
   stepBlock: {
     border: '1px solid var(--border-subtle)',
     borderRadius: 'var(--radius-md)',
-    padding: 'var(--space-4)',
+    padding: 'var(--space-3)',
     backgroundColor: 'var(--surface-primary)',
   },
   stepHeader: {
     display: 'flex',
     alignItems: 'center',
     gap: 'var(--space-2)',
-    marginBottom: 'var(--space-3)',
+    marginBottom: 'var(--space-2)',
   },
   stepBadge: {
     display: 'inline-flex',
     alignItems: 'center',
     justifyContent: 'center',
-    width: 28,
-    height: 28,
+    width: 24,
+    height: 24,
     borderRadius: '50%',
     backgroundColor: 'var(--accent-primary)',
     color: 'white',
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: 600,
     flexShrink: 0,
   },
   stepName: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: 600,
     color: 'var(--text-primary)',
   },
-  stepField: {
-    marginBottom: 'var(--space-2)',
+  // ── 动作 + 期望并排 ──
+  fieldsRow: {
+    display: 'flex',
+    gap: 'var(--space-3)',
+  },
+  actionField: {
+    flex: 1,
+    minWidth: 0,
   },
   expectedField: {
-    marginBottom: 0,
+    flex: 1,
+    minWidth: 0,
     padding: 'var(--space-2) var(--space-3)',
     backgroundColor: 'var(--status-success-bg)',
     borderLeft: '3px solid var(--status-success)',
@@ -166,10 +177,12 @@ const styles: Record<string, React.CSSProperties> = {
   },
   fieldLabel: {
     display: 'block',
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: 600,
     color: 'var(--text-secondary)',
-    marginBottom: 4,
+    marginBottom: 3,
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.3px',
   },
   fieldText: {
     margin: 0,
@@ -202,34 +215,34 @@ const styles: Record<string, React.CSSProperties> = {
   },
   // ── 清理步骤（警告风格） ──
   cleanupStepBlock: {
-    border: '1px solid #fde68a',
+    border: '1px solid var(--status-warning)',
     borderRadius: 'var(--radius-md)',
-    padding: 'var(--space-4)',
-    backgroundColor: '#fffbeb',
+    padding: 'var(--space-3)',
+    backgroundColor: 'var(--status-warning-bg)',
   },
   cleanupStepHeader: {
     display: 'flex',
     alignItems: 'center',
     gap: 'var(--space-2)',
-    marginBottom: 'var(--space-3)',
+    marginBottom: 'var(--space-2)',
   },
   cleanupStepBadge: {
     display: 'inline-flex',
     alignItems: 'center',
     justifyContent: 'center',
-    width: 28,
-    height: 28,
+    width: 24,
+    height: 24,
     borderRadius: '50%',
-    backgroundColor: '#d97706',
+    backgroundColor: 'var(--status-warning)',
     color: 'white',
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: 600,
     flexShrink: 0,
   },
   cleanupStepName: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: 600,
-    color: '#92400e',
+    color: 'var(--status-warning)',
     flex: 1,
   },
   cleanupStepTag: {
@@ -237,15 +250,27 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 600,
     padding: '2px 8px',
     borderRadius: 999,
-    backgroundColor: '#fde68a',
-    color: '#92400e',
+    backgroundColor: 'var(--status-warning)',
+    color: 'white',
+  },
+  cleanupActionField: {
+    flex: 1,
+    minWidth: 0,
   },
   cleanupExpectedField: {
-    marginBottom: 0,
+    flex: 1,
+    minWidth: 0,
     padding: 'var(--space-2) var(--space-3)',
-    backgroundColor: '#fef3c7',
-    borderLeft: '3px solid #d97706',
+    backgroundColor: 'var(--status-warning-bg)',
+    borderLeft: '3px solid var(--status-warning)',
     borderRadius: 'var(--radius-sm)',
+  },
+  cleanupFieldText: {
+    margin: 0,
+    fontSize: 13,
+    color: 'var(--text-primary)',
+    whiteSpace: 'pre-wrap',
+    lineHeight: 1.5,
   },
   emptyState: {
     padding: 'var(--space-8) var(--space-4)',

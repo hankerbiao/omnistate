@@ -67,7 +67,6 @@ export type NewPlanData = {
   description: string;
   startDate: string;
   endDate: string;
-  triggerAt: string;
   selectedCases: string[];
   assignments: Record<string, { assignee: string }>;
 };
@@ -77,7 +76,6 @@ export const emptyNewPlan: NewPlanData = {
   description: '',
   startDate: '',
   endDate: '',
-  triggerAt: '',
   selectedCases: [],
   assignments: {},
 };

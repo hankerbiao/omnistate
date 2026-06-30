@@ -10,8 +10,7 @@
  *
  * 本文件只负责：布局编排 + 导入子模块 + 渲染 Modals
  */
-import { CalendarClock, RefreshCw, Plus, Archive, Eye, List, AlertCircle } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { CalendarClock, RefreshCw, Plus, Eye, AlertCircle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { EmptyState, LoadingState, ErrorState } from '@/components/ui/states';
 import { useTestPlan } from './test-plan/useTestPlan';
@@ -20,7 +19,6 @@ import { PlanDetailView } from './test-plan/views';
 import { OverviewView } from './test-plan/OverviewView';
 import { AddCasesModal } from './test-plan/modals/AddCasesModal';
 import { CreatePlanWizard } from './test-plan/modals/CreatePlanWizard';
-import { ArchivedModal } from './test-plan/modals/ArchivedModal';
 import { ResultModal } from './test-plan/modals/ResultModal';
 import { RerunConfirmModal } from './test-plan/modals/RerunConfirmModal';
 
@@ -36,15 +34,12 @@ export default function TestExecutionPlanDemo() {
           <span style={{ fontSize: 17, fontWeight: 700, letterSpacing: '-0.2px' }}>执行计划</span>
         </div>
         <div className="flex gap-2">
-          <Button variant="ghost" size="sm" onClick={h.openArchive}>
-            <Archive size={14} /> 归档{h.archivedItems.length > 0 ? ` (${h.archivedItems.length})` : ''}
-          </Button>
-          <Button variant="ghost" size="sm" onClick={h.handleRefresh} disabled={h.loading || h.detailLoading}>
+          <button type="button" className="btn btn--ghost btn--sm" onClick={h.handleRefresh} disabled={h.loading || h.detailLoading}>
             <RefreshCw size={14} className={h.loading || h.detailLoading ? 'animate-spin' : ''} /> 刷新
-          </Button>
-          <Button variant="default" size="sm" onClick={() => { h.resetWizard(); h.setShowWizard(true); h.loadCases(); }}>
+          </button>
+          <button type="button" className="btn btn--primary btn--sm" onClick={() => { h.resetWizard(); h.setShowWizard(true); h.loadCases(); }}>
             <Plus size={14} /> 新建计划
-          </Button>
+          </button>
         </div>
       </div>
 
@@ -60,9 +55,9 @@ export default function TestExecutionPlanDemo() {
           ))}
         </div>
         <div style={{ flex: 1 }} />
-        <Button variant={h.showOverview ? 'default' : 'secondary'} size="sm" onClick={() => h.setShowOverview(v => !v)}>
+        <button type="button" className={`btn btn--sm ${h.showOverview ? 'btn--primary' : 'btn--secondary'}`} onClick={() => h.setShowOverview(v => !v)}>
           <Eye size={14} /> {h.showOverview ? '计划列表' : '运行总览'}
-        </Button>
+        </button>
         {h.error && (
           <div className="flex items-center gap-1.5 text-xs text-[var(--status-error)]">
             <AlertCircle size={12} /> {h.error}
@@ -153,14 +148,6 @@ export default function TestExecutionPlanDemo() {
           currentUserId={h.currentUserId}
         />
       )}
-      <ArchivedModal
-        open={h.showArchive}
-        loading={h.archiveLoading}
-        items={h.archivedItems}
-        onClose={() => h.setShowArchive(false)}
-        onUnarchive={h.handleUnarchive}
-        onRerunItem={h.handleRerunItem}
-      />
       {h.resultModal && (
         <ResultModal
           item={h.resultModal.item}

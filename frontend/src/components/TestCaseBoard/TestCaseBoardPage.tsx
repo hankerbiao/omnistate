@@ -11,7 +11,6 @@ import CreateAutomationTestCaseForm from '../CreateAutomationTestCaseForm';
 import CreateTestCaseForm from '../CreateTestCaseForm';
 import TestCaseDetailModal from '../TestCaseDetailModal';
 import AutomationCaseDetailModal from '../AutomationCaseDetailModal';
-import PageHero from '../ui/PageHero';
 import CatalogTreeSidebar from '../catalog/CatalogTreeSidebar';
 import {
   buildLabMap,
@@ -197,15 +196,6 @@ export default function TestCaseBoardPage() {
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ padding: 'var(--space-6) var(--space-6) 0' }}>
-        <PageHero
-          badge="Case Center"
-          description="统一浏览所有测试用例。从左侧目录树按 Lab 和分类逐级浏览，点击卡片查看详情。"
-          accent="#0ea5e9"
-          gradient={['#f0f9ff', '#e0f2fe', '#f0fdfa']}
-        />
-      </div>
-
       <div style={{ flex: 1, minHeight: 0, padding: 'var(--space-5) var(--space-6)', display: 'flex', gap: 16, overflow: 'hidden' }}>
         {/* 左侧：Lab 目录树 */}
         <div style={{

@@ -32,11 +32,6 @@ export function useTestPlan() {
   const [saving, setSaving] = useState(false);
   const isEditing = editingPlanId === activePlanId && activePlanId !== '';
 
-  // ── Archive ──
-  const [showArchive, setShowArchive] = useState(false);
-  const [archivedItems, setArchivedItems] = useState<any[]>([]);
-  const [archiveLoading, setArchiveLoading] = useState(false);
-
   // ── Users ──
   const [users, setUsers] = useState<UserResponse[]>([]);
   const [currentUserId, setCurrentUserId] = useState('');
@@ -293,23 +288,6 @@ export function useTestPlan() {
     ));
   }, []);
 
-  // ── Archive ──
-  const openArchive = useCallback(() => {
-    setShowArchive(true);
-    setArchiveLoading(true);
-    api.listArchivedItems('')
-      .then(res => setArchivedItems(res.data || []))
-      .catch(() => setArchivedItems([]))
-      .finally(() => setArchiveLoading(false));
-  }, []);
-
-  const handleUnarchive = useCallback(async (itemId: string) => {
-    try {
-      await api.unarchiveItem(itemId);
-      setArchivedItems(prev => prev.filter((i: any) => i.item_id !== itemId));
-    } catch { /* ignore */ }
-  }, []);
-
   // ── Batch assign ──
   const handleBatchAssign = useCallback(async (itemIds: string[], assigneeId: string) => {
     if (!activePlanId || itemIds.length === 0) return;
@@ -394,7 +372,6 @@ export function useTestPlan() {
     try {
       if ((item as any).archived_at) {
         try { await api.unarchiveItem(item.item_id); } catch { /* ignore */ }
-        setArchivedItems(prev => prev.filter((i: any) => i.item_id !== item.item_id));
       }
       await api.rerunPlanItem(item.item_id, { assignee_id: assigneeId || undefined });
       if (activePlanId) await refreshPlanDetail(activePlanId);
@@ -421,7 +398,6 @@ export function useTestPlan() {
         description: newPlan.description || undefined,
         start_date: newPlan.startDate || undefined,
         end_date: newPlan.endDate || undefined,
-        trigger_at: newPlan.triggerAt || undefined,
       });
       const planId = (planRes.data as Record<string, unknown>)?.plan_id as string;
       await api.addPlanItems(planId, {
@@ -485,7 +461,6 @@ export function useTestPlan() {
     plans, loading, error, activePlanId, searchQuery, statusFilter,
     activePlanItems, detailLoading, viewMode,
     editingPlanId, editingItems, selectedAddCaseIds, showAddCases, saving, isEditing,
-    showArchive, archivedItems, archiveLoading,
     users, currentUserId,
     showOverview, overviewData, overviewLoading,
     testCases, collections, casesLoading, caseMap,
@@ -495,14 +470,13 @@ export function useTestPlan() {
     // Setters
     setActivePlanId, setSearchQuery, setStatusFilter,
     setViewMode, setEditingItems, setShowAddCases,
-    setShowArchive, setShowOverview, setShowWizard,
+    setShowOverview, setShowWizard,
     setWizardStep, setCaseSearch, setNewPlan,
     setResultModal, setRerunConfirm, setError,
     // Actions
     fetchPlans, handleRefresh, fetchOverview, loadCases, refreshPlanDetail,
     startEditing, cancelEditing, removeEditingItem, saveEditing,
     handleAddCaseToggle, handleAddSelectedCases, handleUpdateItemAssignee,
-    openArchive, handleUnarchive,
     handleBatchAssign, handleTerminateItem, handleDeleteItem, handleDeletePlan,
     handleViewResult, handleRerunItem, confirmRerun,
     resetWizard, handleCreatePlan, toggleSelectCase, toggleSelectCollection, setAssignment,

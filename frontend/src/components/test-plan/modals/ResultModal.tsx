@@ -96,8 +96,8 @@ export function ResultModal({ item, taskData, timelineData, loading, error, onCl
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
       <DialogContent className="sm:max-w-[680px] max-h-[85vh] flex flex-col">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
+        <DialogHeader className="pb-2">
+          <DialogTitle className="mb-1 flex items-center gap-2">
             <span className="font-mono text-[10px] text-[var(--text-tertiary)] bg-[var(--surface-tertiary)] px-2 py-0.5 rounded">{item.case_id}</span>
             执行结果
           </DialogTitle>

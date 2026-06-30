@@ -22,8 +22,8 @@ export function ArchivedModal({ open, loading, items, onClose, onUnarchive, onRe
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
       <DialogContent className="sm:max-w-[620px] max-h-[80vh] flex flex-col">
-        <DialogHeader>
-          <DialogTitle>已归档条目</DialogTitle>
+        <DialogHeader className="pb-2">
+          <DialogTitle className="mb-1">已归档条目</DialogTitle>
           <div className="flex items-center gap-2">
             <span className="text-xs text-[var(--text-tertiary)]">{items.length} 条记录</span>
             {doneCount > 0 && <Badge variant="success">已完成 {doneCount}</Badge>}

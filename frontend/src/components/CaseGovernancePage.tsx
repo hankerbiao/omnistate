@@ -501,8 +501,8 @@ const LinkModal: React.FC<{
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
       <DialogContent className="sm:max-w-[560px] max-h-[80vh] flex flex-col">
-        <DialogHeader>
-          <DialogTitle>关联自动化用例</DialogTitle>
+        <DialogHeader className="pb-2">
+          <DialogTitle className="mb-1">关联自动化用例</DialogTitle>
           <p className="text-sm text-[var(--text-secondary)]">
             为 <strong>{testCase.case_id}</strong> 选择要关联的自动化用例
           </p>
@@ -511,14 +511,16 @@ const LinkModal: React.FC<{
         {/* 搜索 + 框架筛选行 */}
         <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
           <input
+            className="form-input"
             type="text" placeholder="搜索自动用例名称或 ID..." value={search}
             onChange={e => onSearchChange(e.target.value)}
-            style={{ ...inputStyle, flex: 1 }}
+            style={{ flex: 1 }}
           />
           <select
+            className="form-input form-select"
             value={frameworkFilter}
             onChange={e => setFrameworkFilter(e.target.value)}
-            style={{ ...inputStyle, width: 130 }}
+            style={{ width: 130 }}
           >
             <option value="">全部框架</option>
             {frameworkOptions.map(fw => (

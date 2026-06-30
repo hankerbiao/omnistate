@@ -1087,7 +1087,7 @@ class ApiClient {
     if (params?.sort_by) query.set('sort_by', params.sort_by);
     if (params?.sort_order) query.set('sort_order', params.sort_order);
     const qs = query.toString();
-    return this.request(`/projects${qs ? `?${qs}` : ''}`, { method: 'GET' });
+    return this.request<import('../types').ProjectListResponse>(`/projects${qs ? `?${qs}` : ''}`, { method: 'GET' });
   }
 
   /** 创建项目 */
@@ -1113,6 +1113,22 @@ class ApiClient {
   /** 获取项目统计 */
   async getProjectStats(projectId: string): Promise<ApiResponse<import('../types').ProjectStats>> {
     return this.request(`/projects/${encodeURIComponent(projectId)}/stats`, { method: 'GET' });
+  }
+
+  /** 获取项目风险/阻塞项 */
+  async getProjectBlockers(projectId: string): Promise<ApiResponse<import('../types').BlockerItem[]>> {
+    return this.request(`/projects/${encodeURIComponent(projectId)}/blockers`, { method: 'GET' });
+  }
+
+  /** 获取项目最近动态 */
+  async getProjectActivities(projectId: string, limit?: number): Promise<ApiResponse<import('../types').ProjectActivity[]>> {
+    const qs = limit ? `?limit=${limit}` : '';
+    return this.request(`/projects/${encodeURIComponent(projectId)}/activities${qs}`, { method: 'GET' });
+  }
+
+  /** 生成项目演示数据 */
+  async generateProjectDemoData(projectId: string): Promise<ApiResponse<import('../types').GenerateDemoResponse>> {
+    return this.request(`/projects/${encodeURIComponent(projectId)}/generate-demo-data`, { method: 'POST' });
   }
 }
 

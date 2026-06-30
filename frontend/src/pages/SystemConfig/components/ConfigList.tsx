@@ -20,10 +20,9 @@ const TYPE_LABELS: Record<string, string> = {
 };
 
 interface ConfigListProps {
-  onOpenAiConfig?: () => void;
 }
 
-const ConfigList: React.FC<ConfigListProps> = ({ onOpenAiConfig }) => {
+const ConfigList: React.FC<ConfigListProps> = ({}) => {
   const [configs, setConfigs] = useState<SystemConfig[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -97,13 +96,6 @@ const ConfigList: React.FC<ConfigListProps> = ({ onOpenAiConfig }) => {
       <div className="config-list__header">
         <h3>配置列表</h3>
         <div className="config-list__actions">
-          <button
-            type="button"
-            className="btn btn--primary btn--sm"
-            onClick={onOpenAiConfig}
-          >
-            AI 配置
-          </button>
           <button
             type="button"
             className="btn btn--secondary btn--sm"

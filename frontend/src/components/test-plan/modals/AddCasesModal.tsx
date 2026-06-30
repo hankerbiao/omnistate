@@ -43,8 +43,8 @@ export function AddCasesModal({ editingItems, selectedAddCaseIds, onToggle, onCl
   return (
     <Dialog open onOpenChange={(o) => { if (!o) handleClose(); }}>
       <DialogContent className="sm:max-w-[520px] max-h-[70vh] flex flex-col">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-3">
+        <DialogHeader className="pb-2">
+          <DialogTitle className="mb-1 flex items-center gap-3">
             {step === 1 ? '添加测试用例' : '指派执行人'}
             <div className="flex items-center gap-1">
               <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${step === 1 ? 'bg-[var(--accent-primary)] text-white' : 'bg-[var(--status-success-bg)] text-[var(--status-success)]'}`}>1. 选用例</span>

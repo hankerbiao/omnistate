@@ -3,7 +3,7 @@ import type { TestCaseResponse, UserResponse, ExecutionStatsResponse } from '../
 import { WorkflowPanel, WorkflowActionToolbar, WorkflowOverflowMenu } from './workflow';
 import { useWorkflow } from '../hooks/useWorkflow';
 import WorkflowCurrentStateBadge from './workflow/WorkflowCurrentStateBadge';
-import { PRIORITY_COLORS, PRIORITY_LABELS } from '../constants/testCaseLabels';
+import { PRIORITY_COLORS } from '../constants/testCaseLabels';
 import { catalogStyles } from './catalog/catalogStyles';
 import { SWITCHABLE_USERS } from '../config/users';
 import { api } from '../services/api';
@@ -134,9 +134,6 @@ const TestCaseDetailModal: React.FC<TestCaseDetailModalProps> = ({
   const ownerName = resolveUserName(userNameMap, testCase.owner_id);
   const reviewerName = resolveUserName(userNameMap, testCase.reviewer_id);
   const autoDevName = resolveUserName(userNameMap, testCase.auto_dev_id);
-  const priorityLabel = testCase.priority
-    ? (PRIORITY_LABELS[testCase.priority as keyof typeof PRIORITY_LABELS] || testCase.priority)
-    : null;
 
   const hasAutomationSection = Boolean(
     testCase.automation_case_ref
@@ -162,7 +159,7 @@ const TestCaseDetailModal: React.FC<TestCaseDetailModalProps> = ({
 
   const historyRefreshSignal = changeLogRefreshSignal + workflowRefreshSignal;
 
-  const formatDate = (dateStr: string) => new Date(dateStr).toLocaleString('zh-CN');
+  const formatDate = (dateStr: string | null | undefined) => dateStr ? new Date(dateStr).toLocaleString('zh-CN') : '-';
 
   const renderField = (label: string, value: React.ReactNode) => {
     if (!hasDisplayValue(value)) return null;
@@ -228,6 +225,32 @@ const TestCaseDetailModal: React.FC<TestCaseDetailModalProps> = ({
   };
 
   // ─── Left sidebar: summary dashboard ───
+  const sidebarCatalog = (labLabel || catalogPathParts.length > 0) && (
+    <div style={styles.sideSection}>
+      {labLabel && (
+        <div style={styles.sideField}>
+          <span style={styles.sideFieldLabel}>Lab</span>
+          <span style={{ ...catalogStyles.chip, ...catalogStyles.chipLab }}>{labLabel}</span>
+        </div>
+      )}
+      {catalogPathParts.length > 0 && (
+        <div style={styles.sideField}>
+          <span style={styles.sideFieldLabel}>目录</span>
+          <div style={styles.sideEnvList}>
+            {catalogPathParts.map((part, i) => (
+              <React.Fragment key={`${part}-${i}`}>
+                {i > 0 && <span style={styles.catalogSep}>/</span>}
+                <span style={{ ...catalogStyles.chip, ...(i === catalogPathParts.length - 1 ? styles.catalogChipLeaf : {}) }}>
+                  {part}
+                </span>
+              </React.Fragment>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
   const sidebarPersonCards = (ownerName || reviewerName || autoDevName) && (
     <div style={styles.sidePersonGroup}>
       {ownerName && (
@@ -258,21 +281,6 @@ const TestCaseDetailModal: React.FC<TestCaseDetailModalProps> = ({
       ))}
     </div>
   ) : null;
-
-  const sidebarCoreFields = (
-    <div style={styles.sideFieldGrid}>
-      {renderField('关联需求', testCase.ref_req_id)}
-      {renderField('测试类别', testCase.test_category)}
-      {renderField('风险等级', testCase.risk_level)}
-      {renderField('保密级别', CONFIDENTIALITY_LABELS[testCase.confidentiality ?? ''] || testCase.confidentiality)}
-      {renderField('可见范围', VISIBILITY_LABELS[testCase.visibility_scope ?? ''] || testCase.visibility_scope)}
-      {renderField('预计时长', testCase.estimated_duration_sec ? `${testCase.estimated_duration_sec}s` : null)}
-      {testCase.is_destructive && renderField('破坏性测试', '是')}
-      {testCase.is_need_auto && renderField('需要自动化', '是')}
-      {testCase.is_automated && renderField('已自动化', '是')}
-      {!testCase.is_active && renderField('激活状态', '未激活')}
-    </div>
-  );
 
   const sidebarConditions = (testCase.pre_condition || testCase.post_condition) && (
     <div style={styles.sideSection}>
@@ -343,6 +351,20 @@ const TestCaseDetailModal: React.FC<TestCaseDetailModalProps> = ({
   const moreContent = (
     <>
       <div style={styles.moreGrid}>
+        {renderField('关联需求', testCase.ref_req_id)}
+        {renderField('测试类别', testCase.test_category)}
+        {renderField('风险等级', testCase.risk_level)}
+        {renderField('保密级别', CONFIDENTIALITY_LABELS[testCase.confidentiality ?? ''] || testCase.confidentiality)}
+        {renderField('可见范围', VISIBILITY_LABELS[testCase.visibility_scope ?? ''] || testCase.visibility_scope)}
+        {renderField('预计时长', testCase.estimated_duration_sec ? `${testCase.estimated_duration_sec}s` : null)}
+      </div>
+      <div style={styles.moreGrid}>
+        {testCase.is_destructive && renderField('破坏性测试', '是')}
+        {testCase.is_need_auto && renderField('需要自动化', '是')}
+        {testCase.is_automated && renderField('已自动化', '是')}
+        {!testCase.is_active && renderField('激活状态', '未激活')}
+      </div>
+      <div style={styles.moreGrid}>
         {renderField('故障分析', testCase.failure_analysis)}
         {renderField('弃用原因', testCase.deprecation_reason)}
       </div>
@@ -387,10 +409,6 @@ const TestCaseDetailModal: React.FC<TestCaseDetailModalProps> = ({
                 variant="compact"
               />
               <span style={styles.headerVersion}>v{testCase.version}</span>
-              {priorityLabel && (
-                <span style={{ ...styles.headerPriorityDot, backgroundColor: PRIORITY_COLORS[testCase.priority as keyof typeof PRIORITY_COLORS] || '#888' }} />
-              )}
-              {priorityLabel && <span style={styles.headerPriority}>{priorityLabel}</span>}
             </div>
             <h2 style={styles.modalTitle}>{testCase.title}</h2>
           </div>
@@ -428,45 +446,14 @@ const TestCaseDetailModal: React.FC<TestCaseDetailModalProps> = ({
           </div>
         </div>
 
-        {/* ── Catalog banner ── */}
-        {(labLabel || catalogPathParts.length > 0) && (
-          <div style={styles.catalogBanner}>
-            {labLabel && (
-              <div style={styles.catalogBannerRow}>
-                <span style={styles.catalogBannerLabel}>Lab</span>
-                <span style={{ ...catalogStyles.chip, ...catalogStyles.chipLab }}>{labLabel}</span>
-              </div>
-            )}
-            {catalogPathParts.length > 0 && (
-              <div style={styles.catalogBannerRow}>
-                <span style={styles.catalogBannerLabel}>目录</span>
-                <div style={styles.catalogBannerChips}>
-                  {catalogPathParts.map((part, i) => (
-                    <React.Fragment key={`${part}-${i}`}>
-                      {i > 0 && <span style={styles.catalogSep}>/</span>}
-                      <span style={{ ...catalogStyles.chip, ...(i === catalogPathParts.length - 1 ? styles.catalogChipLeaf : {}) }}>
-                        {part}
-                      </span>
-                    </React.Fragment>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ── Version note ── */}
-        {testCase.change_log && (
-          <div style={styles.versionNote}>
-            <span style={styles.versionNoteLabel}>版本说明</span>
-            <p style={styles.versionNoteText}>{testCase.change_log}</p>
-          </div>
-        )}
-
         {/* ── Split body: sidebar + main ── */}
         <div style={styles.splitBody}>
           {/* Left sidebar — always visible summary */}
           <aside style={styles.sidebar}>
+            {/* Catalog (Lab + directory) */}
+            {sidebarCatalog}
+            <div style={styles.sideDivider} />
+
             {/* Person cards */}
             {sidebarPersonCards}
 
@@ -475,12 +462,6 @@ const TestCaseDetailModal: React.FC<TestCaseDetailModalProps> = ({
 
             {/* Divider */}
             <div style={styles.sideDivider} />
-
-            {/* Core fields */}
-            {sidebarCoreFields}
-
-            {/* Divider */}
-            {sidebarConditions && <div style={styles.sideDivider} />}
 
             {/* Conditions */}
             {sidebarConditions}
@@ -580,24 +561,24 @@ const TestCaseDetailModal: React.FC<TestCaseDetailModalProps> = ({
                       {/* 统计卡片 */}
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8 }}>
                         {[
-                          { label: '总次数', value: execStats.total, color: '#3b82f6' },
-                          { label: '通过', value: execStats.passed, color: '#16a34a' },
-                          { label: '失败', value: execStats.failed, color: '#dc2626' },
-                          { label: '通过率', value: `${execStats.pass_rate}%`, color: execStats.pass_rate >= 80 ? '#16a34a' : '#d97706' },
+                          { label: '总次数', value: execStats.total, color: 'var(--status-info)' },
+                          { label: '通过', value: execStats.passed, color: 'var(--status-success)' },
+                          { label: '失败', value: execStats.failed, color: 'var(--status-error)' },
+                          { label: '通过率', value: `${execStats.pass_rate}%`, color: execStats.pass_rate >= 80 ? 'var(--status-success)' : 'var(--status-warning)' },
                         ].map(({ label, value, color }) => (
                           <div key={label} style={{
-                            background: '#f8fafc', borderRadius: 10, padding: '14px 16px',
-                            border: '1px solid #e2e8f0', textAlign: 'center',
+                            background: 'var(--surface-secondary)', borderRadius: 10, padding: '14px 16px',
+                            border: '1px solid var(--border-subtle)', textAlign: 'center',
                           }}>
                             <div style={{ fontSize: 24, fontWeight: 700, color, lineHeight: 1.2 }}>{value}</div>
-                            <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>{label}</div>
+                            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4 }}>{label}</div>
                           </div>
                         ))}
                       </div>
 
                       {/* 最近执行记录 */}
                       <div>
-                        <div style={{ fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 8 }}>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 8 }}>
                           最近执行记录
                         </div>
                         {execStats.recent.length > 0 ? (
@@ -605,39 +586,39 @@ const TestCaseDetailModal: React.FC<TestCaseDetailModalProps> = ({
                             {execStats.recent.map((r) => (
                               <div key={r.result_id} style={{
                                 display: 'flex', alignItems: 'center', gap: 10,
-                                padding: '8px 12px', background: '#fff',
-                                borderRadius: 8, border: '1px solid #e2e8f0',
-                                fontSize: 12, color: '#475569',
+                                padding: '8px 12px', background: 'var(--surface-primary)',
+                                borderRadius: 8, border: '1px solid var(--border-subtle)',
+                                fontSize: 12, color: 'var(--text-secondary)',
                               }}>
                                 <span style={{
                                   width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
-                                  backgroundColor: r.passed ? '#16a34a' : '#dc2626',
+                                  backgroundColor: r.passed ? 'var(--status-success)' : 'var(--status-error)',
                                 }} />
                                 <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                   {r.notes || (r.passed ? '测试通过' : '测试失败')}
                                 </span>
-                                <span style={{ color: '#94a3b8', whiteSpace: 'nowrap' }}>
+                                <span style={{ color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}>
                                   {new Date(r.executed_at).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
                                 </span>
-                                <span style={{ color: '#94a3b8', whiteSpace: 'nowrap', fontFamily: 'monospace', fontSize: 11 }}>
+                                <span style={{ color: 'var(--text-tertiary)', whiteSpace: 'nowrap', fontFamily: 'monospace', fontSize: 11 }}>
                                   {r.executed_by}
                                 </span>
                               </div>
                             ))}
                           </div>
                         ) : (
-                          <p style={{ fontSize: 12, color: '#94a3b8', fontStyle: 'italic' }}>暂无执行记录</p>
+                          <p style={{ fontSize: 12, color: 'var(--text-tertiary)', fontStyle: 'italic' }}>暂无执行记录</p>
                         )}
                       </div>
 
                       {execStats.last_executed_at && (
-                        <div style={{ fontSize: 11, color: '#94a3b8' }}>
+                        <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
                           最近执行：{new Date(execStats.last_executed_at).toLocaleString('zh-CN')}
                         </div>
                       )}
                     </div>
                   ) : (
-                    <p style={{ textAlign: 'center', fontSize: 13, color: '#94a3b8', padding: 40 }}>加载失败</p>
+                    <p style={{ textAlign: 'center', fontSize: 13, color: 'var(--text-tertiary)', padding: 40 }}>加载失败</p>
                   )}
                 </div>
               )}
@@ -726,8 +707,9 @@ const styles = {
   // ── Catalog banner ──
   catalogBanner: {
     display: 'flex',
-    flexDirection: 'column' as const,
-    gap: 'var(--space-1)',
+    flexDirection: 'row' as const,
+    flexWrap: 'wrap' as const,
+    gap: '12px 24px',
     padding: '10px 28px',
     backgroundColor: 'var(--status-info-bg)',
     borderBottom: '1px solid var(--border-subtle)',
@@ -808,31 +790,33 @@ const styles = {
     gap: '16px',
   } as const,
   sidePersonGroup: {
-    display: 'flex',
-    flexDirection: 'column' as const,
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(90px, 1fr))',
     gap: '8px',
   } as const,
   sidePersonCard: {
     display: 'flex',
+    flexDirection: 'column',
     alignItems: 'center',
-    gap: '10px',
-    padding: '10px 14px',
+    gap: '4px',
+    padding: '10px 8px',
     backgroundColor: 'var(--surface-secondary)',
     borderRadius: '8px',
     border: '1px solid var(--border-muted)',
   } as const,
   sidePersonRole: {
-    fontSize: '11px',
+    fontSize: '10px',
     fontWeight: 500,
     color: 'var(--text-tertiary)',
     textTransform: 'uppercase' as const,
     letterSpacing: '0.4px',
-    minWidth: 50,
   } as const,
   sidePersonName: {
-    fontSize: '14px',
+    fontSize: '13px',
     fontWeight: 600,
     color: 'var(--text-primary)',
+    textAlign: 'center' as const,
+    wordBreak: 'break-word' as const,
   } as const,
   sideTags: {
     display: 'flex',

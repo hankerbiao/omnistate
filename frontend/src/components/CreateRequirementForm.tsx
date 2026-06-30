@@ -17,16 +17,6 @@ const CATEGORY_OPTIONS = [
   { value: 'REGRESSION', label: '回归测试' },
 ];
 
-/** 需求来源选项 */
-const SOURCE_OPTIONS = [
-  { value: '', label: '请选择来源' },
-  { value: 'CUSTOMER', label: '客户需求' },
-  { value: 'INTERNAL', label: '内部需求' },
-  { value: 'BUG', label: '缺陷驱动' },
-  { value: 'SPEC', label: '规格驱动' },
-  { value: 'REGULATION', label: '合规要求' },
-];
-
 interface CreateRequirementFormProps {
   onClose: () => void;
   onSuccess: (requirement: RequirementResponse) => void;
@@ -56,7 +46,6 @@ const CreateRequirementForm: React.FC<CreateRequirementFormProps> = ({ onClose, 
     description: '',
     category: '',
     tags: [],
-    source: '',
     acceptance_criteria: '',
     priority: 'P1',
     target_components: [],
@@ -105,10 +94,6 @@ const CreateRequirementForm: React.FC<CreateRequirementFormProps> = ({ onClose, 
     return parts.join('\n\n');
   };
 
-  const handleDateRangeChange = (field: 'planned_start_date' | 'planned_end_date', value: string) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
-  };
-
   const toggleRecommendedTag = (tag: string) => {
     setFormData((prev) => ({
       ...prev,
@@ -127,7 +112,6 @@ const CreateRequirementForm: React.FC<CreateRequirementFormProps> = ({ onClose, 
       const description = buildDescription();
       const cleaned = { ...formData, description };
       if (!cleaned.category) delete cleaned.category;
-      if (!cleaned.source) delete cleaned.source;
       if (!cleaned.acceptance_criteria) delete cleaned.acceptance_criteria;
       if (!cleaned.planned_start_date) delete cleaned.planned_start_date;
       if (!cleaned.planned_end_date) delete cleaned.planned_end_date;
@@ -269,52 +253,41 @@ const CreateRequirementForm: React.FC<CreateRequirementFormProps> = ({ onClose, 
                   </select>
                 </div>
                 <div style={styles.field}>
-                  <label style={styles.fieldLabel}>需求来源</label>
-                  <select
-                    name="source"
-                    value={formData.source || ''}
+                  <label style={styles.fieldLabel}>验收标准</label>
+                  <textarea
+                    name="acceptance_criteria"
+                    value={formData.acceptance_criteria || ''}
                     onChange={handleChange}
-                    style={styles.input}
-                  >
-                    {SOURCE_OPTIONS.map(opt => (
-                      <option key={opt.value} value={opt.value}>{opt.label}</option>
-                    ))}
-                  </select>
+                    style={{ ...styles.input, ...styles.textarea, minHeight: 60 }}
+                    placeholder="需求通过的具体条件"
+                    rows={2}
+                  />
                 </div>
               </div>
             </div>
           </div>
 
-          {/* ─── 计划时间 ─── */}
-          <div style={styles.section}>
-            <div style={styles.sectionHeader}>
-              <span style={styles.sectionIcon}>📅</span>
-              <span style={styles.sectionTitle}>计划时间</span>
+          {/* ─── 计划时间（紧凑行） ─── */}
+          <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end' }}>
+            <div style={{ flex: 1 }}>
+              <label style={{ ...styles.fieldLabel, marginBottom: 6, display: 'block' }}>起始日期</label>
+              <input
+                type="date"
+                value={formData.planned_start_date || ''}
+                onChange={e => setFormData(prev => ({ ...prev, planned_start_date: e.target.value }))}
+                style={styles.input}
+              />
             </div>
-            <div style={styles.sectionBody}>
-              <div style={styles.twoCol}>
-                <div style={styles.field}>
-                  <label style={styles.fieldLabel}>起始日期</label>
-                  <input
-                    type="date"
-                    name="planned_start_date"
-                    value={formData.planned_start_date || ''}
-                    onChange={e => handleDateRangeChange('planned_start_date', e.target.value)}
-                    style={styles.input}
-                  />
-                </div>
-                <div style={styles.field}>
-                  <label style={styles.fieldLabel}>结束日期</label>
-                  <input
-                    type="date"
-                    name="planned_end_date"
-                    min={formData.planned_start_date || undefined}
-                    value={formData.planned_end_date || ''}
-                    onChange={e => handleDateRangeChange('planned_end_date', e.target.value)}
-                    style={styles.input}
-                  />
-                </div>
-              </div>
+            <span style={{ paddingBottom: 10, color: C.gray, fontSize: 13 }}>→</span>
+            <div style={{ flex: 1 }}>
+              <label style={{ ...styles.fieldLabel, marginBottom: 6, display: 'block' }}>结束日期</label>
+              <input
+                type="date"
+                min={formData.planned_start_date || undefined}
+                value={formData.planned_end_date || ''}
+                onChange={e => setFormData(prev => ({ ...prev, planned_end_date: e.target.value }))}
+                style={styles.input}
+              />
             </div>
           </div>
 
@@ -375,48 +348,30 @@ const CreateRequirementForm: React.FC<CreateRequirementFormProps> = ({ onClose, 
               <span style={styles.sectionHint}>逐项填写，编写人员可快速理解</span>
             </div>
             <div style={styles.sectionBody}>
-              {([
-                { key: 'background', label: '业务背景', placeholder: '为什么需要这个需求？业务场景是什么？（如：XX 芯片新增 DDR5 支持，需验证带宽达标）', rows: 2 as const },
-                { key: 'functional', label: '功能描述', placeholder: '具体要测哪些功能？变更点是什么？（如：支持 DDR5 4800/5600 两档速率，需覆盖单双通道）', rows: 3 as const },
-                { key: 'precondition', label: '前置条件', placeholder: '环境/数据/配置有什么要求？（如：需 DDR5 内存条、BIOS 开启 XMP、特定驱动版本）', rows: 2 as const },
-                { key: 'testFocus', label: '测试要点', placeholder: '重点验证哪些方面？边界情况？（如：满负载下带宽是否达标、降频场景稳定性）', rows: 2 as const },
-              ] as const).map(({ key, label, placeholder, rows }) => (
-                <div key={key} style={styles.descItem}>
-                  <div style={styles.descLabelRow}>
-                    <span style={styles.descLabel}>{label}</span>
-                    <AIPolishButton
-                      text={descSections[key]}
-                      onPolished={(t) => handleDescChange(key, t)}
+              <div style={styles.descGrid}>
+                {([
+                  { key: 'background', label: '业务背景', placeholder: '为什么需要这个需求？业务场景是什么？', rows: 3 as const },
+                  { key: 'functional', label: '功能描述', placeholder: '具体要测哪些功能？变更点是什么？', rows: 3 as const },
+                  { key: 'precondition', label: '前置条件', placeholder: '环境/数据/配置有什么要求？', rows: 3 as const },
+                  { key: 'testFocus', label: '测试要点', placeholder: '重点验证哪些方面？边界情况？', rows: 3 as const },
+                ] as const).map(({ key, label, placeholder, rows }) => (
+                  <div key={key} style={styles.descItem}>
+                    <div style={styles.descLabelRow}>
+                      <span style={styles.descLabel}>{label}</span>
+                      <AIPolishButton
+                        text={descSections[key]}
+                        onPolished={(t) => handleDescChange(key, t)}
+                      />
+                    </div>
+                    <textarea
+                      value={descSections[key]}
+                      onChange={e => handleDescChange(key, e.target.value)}
+                      style={styles.descTextarea}
+                      placeholder={placeholder}
+                      rows={rows}
                     />
                   </div>
-                  <textarea
-                    value={descSections[key]}
-                    onChange={e => handleDescChange(key, e.target.value)}
-                    style={styles.descTextarea}
-                    placeholder={placeholder}
-                    rows={rows}
-                  />
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* ─── 验收标准 ─── */}
-          <div style={styles.section}>
-            <div style={styles.sectionHeader}>
-              <span style={styles.sectionIcon}>✅</span>
-              <span style={styles.sectionTitle}>验收标准</span>
-            </div>
-            <div style={styles.sectionBody}>
-              <div style={styles.field}>
-                <textarea
-                  name="acceptance_criteria"
-                  value={formData.acceptance_criteria || ''}
-                  onChange={handleChange}
-                  style={{ ...styles.input, ...styles.textarea }}
-                  placeholder="需求通过的具体条件（如：读写带宽不低于 5600 MT/s，双通道模式下带宽翻倍）"
-                  rows={3}
-                />
+                ))}
               </div>
             </div>
           </div>
@@ -723,11 +678,16 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   // ── Description Sections ──
+  descGrid: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: 10,
+  },
   descItem: {
     display: 'flex',
     flexDirection: 'column',
     gap: 6,
-    padding: '12px 14px',
+    padding: '10px 12px',
     backgroundColor: C.grayLight,
     borderRadius: 10,
     border: `1px solid ${C.border}`,

@@ -1334,6 +1334,31 @@ export interface ProjectListResponse {
   total: number;
 }
 
+export interface BlockerItem {
+  id: string;
+  title: string;
+  source: string;
+  assignee_id?: string | null;
+  status: string;
+  priority: string;
+  updated_at?: string | null;
+}
+
+export interface ProjectActivity {
+  id: string;
+  time: string;
+  user_id: string;
+  username: string;
+  action: string;
+  target: string;
+  target_type: string;
+}
+
+export interface GenerateDemoResponse {
+  plan_items_created: number;
+  activities_created: number;
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 //  Execution Timeline types
 // ═══════════════════════════════════════════════════════════════════════

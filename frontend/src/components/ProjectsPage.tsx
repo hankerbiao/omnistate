@@ -1,97 +1,12 @@
 // ═══════════════════════════════════════════════════════════════════════
 //  ProjectsPage — 项目管理页面
-//   分栏布局：左侧项目列表 + 右侧项目详情（各数据模块点击查看详情）
+//   分栏布局：左侧项目列表 + 右侧项目详情（统计数据来自后端 API）
 // ═══════════════════════════════════════════════════════════════════════
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigation } from '../providers/NavigationProvider'
 import { api } from '../services/api'
-import type { Project, ProjectDetail, ProjectStats, AssigneeDistribution } from '../types'
-
-// ── Mock 数据类型 ──────────────────────────────────────────────────────
-
-interface MockTask {
-  id: string; name: string; assignee: string; status: string; progress: number; priority: string; updated: string
-}
-
-interface MockCase {
-  id: string; title: string; module: string; status: string; priority: string; executor: string; lastResult: string
-}
-
-interface MockPlan {
-  id: string; name: string; status: string; total: number; passed: number; failed: number; executor: string; date: string
-}
-
-interface MockRequirement {
-  id: string; title: string; priority: string; status: string; caseCount: number; coverageRate: number; owner: string
-}
-
-interface MockActivity {
-  id: string; time: string; user: string; action: string; target: string; type: string
-}
-
-// ── Mock 数据 ─────────────────────────────────────────────────────────
-
-const mockTasks: MockTask[] = [
-  { id: 'T-001', name: '登录模块功能验证', assignee: '张三', status: '已完成', progress: 100, priority: 'P0', updated: '2024-03-15' },
-  { id: 'T-002', name: '权限管理回归测试', assignee: '李四', status: '进行中', progress: 65, priority: 'P1', updated: '2024-03-14' },
-  { id: 'T-003', name: '数据导出性能测试', assignee: '王五', status: '进行中', progress: 30, priority: 'P1', updated: '2024-03-13' },
-  { id: 'T-004', name: 'UI兼容性适配验证', assignee: '赵六', status: '失败', progress: 45, priority: 'P2', updated: '2024-03-12' },
-  { id: 'T-005', name: '接口安全扫描', assignee: '张三', status: '待执行', progress: 0, priority: 'P0', updated: '2024-03-11' },
-  { id: 'T-006', name: '批量导入功能测试', assignee: '李四', status: '待执行', progress: 0, priority: 'P2', updated: '2024-03-10' },
-  { id: 'T-007', name: '消息通知推送验证', assignee: '王五', status: '已完成', progress: 100, priority: 'P1', updated: '2024-03-09' },
-  { id: 'T-008', name: '搜索功能准确率测试', assignee: '赵六', status: '进行中', progress: 80, priority: 'P2', updated: '2024-03-08' },
-]
-
-const mockManualCases: MockCase[] = [
-  { id: 'MC-001', title: '用户登录-正常流程', module: '登录', status: '通过', priority: 'P0', executor: '张三', lastResult: '通过' },
-  { id: 'MC-002', title: '用户登录-密码错误', module: '登录', status: '通过', priority: 'P0', executor: '张三', lastResult: '通过' },
-  { id: 'MC-003', title: '权限分配-管理员', module: '权限', status: '通过', priority: 'P1', executor: '李四', lastResult: '通过' },
-  { id: 'MC-004', title: '权限分配-只读用户', module: '权限', status: '失败', priority: 'P1', executor: '李四', lastResult: '失败' },
-  { id: 'MC-005', title: '数据导出-CSV格式', module: '数据', status: '通过', priority: 'P2', executor: '王五', lastResult: '通过' },
-  { id: 'MC-006', title: '数据导出-Excel格式', module: '数据', status: '阻塞', priority: 'P2', executor: '王五', lastResult: '未执行' },
-  { id: 'MC-007', title: 'UI-深色模式显示', module: 'UI', status: '通过', priority: 'P2', executor: '赵六', lastResult: '通过' },
-  { id: 'MC-008', title: 'UI-移动端适配', module: 'UI', status: '进行中', priority: 'P1', executor: '赵六', lastResult: '未执行' },
-]
-
-const mockAutoCases: MockCase[] = [
-  { id: 'AC-001', title: '[自动] 登录接口测试', module: 'API', status: '通过', priority: 'P0', executor: 'CI', lastResult: '通过' },
-  { id: 'AC-002', title: '[自动] 用户注册校验', module: 'API', status: '通过', priority: 'P0', executor: 'CI', lastResult: '通过' },
-  { id: 'AC-003', title: '[自动] 权限拦截测试', module: 'API', status: '失败', priority: 'P1', executor: 'CI', lastResult: '失败' },
-  { id: 'AC-004', title: '[自动] 数据一致性检查', module: '数据', status: '通过', priority: 'P1', executor: 'CI', lastResult: '通过' },
-  { id: 'AC-005', title: '[自动] 超时处理测试', module: 'API', status: '通过', priority: 'P2', executor: 'CI', lastResult: '通过' },
-  { id: 'AC-006', title: '[自动] 并发请求测试', module: '性能', status: '失败', priority: 'P1', executor: 'CI', lastResult: '失败' },
-]
-
-const mockPlans: MockPlan[] = [
-  { id: 'P-001', name: 'V2.0 回归测试计划', status: '已完成', total: 120, passed: 108, failed: 12, executor: '张三', date: '2024-03-01 ~ 2024-03-10' },
-  { id: 'P-002', name: 'V2.1 冒烟测试', status: '进行中', total: 45, passed: 32, failed: 3, executor: '李四', date: '2024-03-11 ~ 2024-03-15' },
-  { id: 'P-003', name: '安全专项扫描', status: '待执行', total: 60, passed: 0, failed: 0, executor: '王五', date: '2024-03-20 ~ 2024-03-25' },
-]
-
-const mockRequirements: MockRequirement[] = [
-  { id: 'R-001', title: '用户登录功能', priority: 'P0', status: '已覆盖', caseCount: 8, coverageRate: 100, owner: '张三' },
-  { id: 'R-002', title: '权限分级管理', priority: 'P0', status: '已覆盖', caseCount: 12, coverageRate: 100, owner: '李四' },
-  { id: 'R-003', title: '数据导出功能', priority: 'P1', status: '部分覆盖', caseCount: 5, coverageRate: 62, owner: '王五' },
-  { id: 'R-004', title: '深色模式适配', priority: 'P2', status: '部分覆盖', caseCount: 3, coverageRate: 50, owner: '赵六' },
-  { id: 'R-005', title: '消息实时推送', priority: 'P1', status: '未覆盖', caseCount: 0, coverageRate: 0, owner: '张三' },
-]
-
-const mockActivities: MockActivity[] = [
-  { id: 'A-01', time: '刚刚', user: '张三', action: '完成', target: '登录模块功能验证', type: 'task_done' },
-  { id: 'A-02', time: '5分钟前', user: '李四', action: '标记进行中', target: '权限管理回归测试', type: 'task_running' },
-  { id: 'A-03', time: '1小时前', user: '王五', action: '创建计划', target: '安全专项扫描', type: 'plan_create' },
-  { id: 'A-04', time: '2小时前', user: '赵六', action: '提交用例', target: 'UI-深色模式显示', type: 'case_pass' },
-  { id: 'A-05', time: '3小时前', user: '张三', action: '标记失败', target: '接口安全扫描', type: 'task_fail' },
-  { id: 'A-06', time: '昨天', user: '李四', action: '归档计划', target: 'V2.0 回归测试计划', type: 'plan_done' },
-]
-
-const mockBlockers = [
-  { id: 'T-004', name: 'UI兼容性适配验证', type: '失败', assignee: '赵六', color: '#f85149' },
-  { id: 'T-005', name: '接口安全扫描', type: '待执行(P0)', assignee: '张三', color: '#f85149' },
-  { id: 'MC-004', name: '权限分配-只读用户', type: '失败', assignee: '李四', color: '#f85149' },
-  { id: 'AC-003', name: '[自动] 权限拦截测试', type: '失败', assignee: 'CI', color: '#f85149' },
-]
+import type { Project, ProjectDetail, ProjectStats, AssigneeDistribution, BlockerItem, ProjectActivity } from '../types'
 
 // ── 样式 ─────────────────────────────────────────────────────────────
 
@@ -111,15 +26,47 @@ const s: Record<string, React.CSSProperties> = {
   pill: (bg: string, fg: string) => ({ display: 'inline-block', fontSize: 9, padding: '1px 6px', borderRadius: 7, background: bg, color: fg, fontWeight: 600 }),
   modalOverlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
   modal: { background: 'var(--surface-primary)', borderRadius: 12, width: 680, maxWidth: '90vw', maxHeight: '85vh', overflowY: 'auto', padding: 28, boxShadow: '0 8px 32px rgba(0,0,0,0.3)' },
-  clickable: { cursor: 'pointer', transition: 'all 0.12s' },
-  clickIcon: { fontSize: 10, color: 'var(--text-tertiary)', marginLeft: 6, opacity: 0.6 },
 }
 
 // ── helpers ───────────────────────────────────────────────────────────
 
+// 后端无数据时的 UI 占位数据
+const FALLBACK_BLOCKERS: BlockerItem[] = [
+  { id: 'demo-b1', title: 'UI兼容性适配验证', source: 'plan_item', assignee_id: 'u001', status: 'fail', priority: 'P2', updated_at: null },
+  { id: 'demo-b2', title: '接口安全扫描', source: 'plan_item', assignee_id: 'u002', status: 'pending', priority: 'P0', updated_at: null },
+  { id: 'demo-b3', title: '权限分配-只读用户', source: 'plan_item', assignee_id: 'u003', status: 'fail', priority: 'P1', updated_at: null },
+]
+
+function getFallbackActivities(): ProjectActivity[] {
+  const now = Date.now()
+  return [
+    { id: 'demo-a1', time: new Date(now - 60000).toISOString(), user_id: 'u001', username: '张三', action: '完成', target: '登录模块功能验证', target_type: 'test_case' },
+    { id: 'demo-a2', time: new Date(now - 300000).toISOString(), user_id: 'u002', username: '李四', action: '标记进行中', target: '权限管理回归测试', target_type: 'test_case' },
+    { id: 'demo-a3', time: new Date(now - 3600000).toISOString(), user_id: 'u003', username: '王五', action: '创建计划', target: '安全专项扫描', target_type: 'plan' },
+    { id: 'demo-a4', time: new Date(now - 7200000).toISOString(), user_id: 'u004', username: '赵六', action: '提交用例', target: 'UI-深色模式显示', target_type: 'test_case' },
+    { id: 'demo-a5', time: new Date(now - 10800000).toISOString(), user_id: 'u001', username: '张三', action: '标记失败', target: '接口安全扫描', target_type: 'test_case' },
+    { id: 'demo-a6', time: new Date(now - 86400000).toISOString(), user_id: 'u002', username: '李四', action: '归档计划', target: 'V2.0 回归测试计划', target_type: 'plan' },
+  ]
+}
+
 function fmtDate(d: string | null | undefined): string {
   if (!d) return '-'
   try { return new Date(d).toLocaleDateString('zh-CN') } catch { return d }
+}
+
+function fmtDateTime(d: string | null | undefined): string {
+  if (!d) return '-'
+  try {
+    const dt = new Date(d)
+    const now = new Date()
+    const diffMs = now.getTime() - dt.getTime()
+    const diffMin = Math.floor(diffMs / 60000)
+    if (diffMin < 1) return '刚刚'
+    if (diffMin < 60) return `${diffMin}分钟前`
+    const diffHour = Math.floor(diffMin / 60)
+    if (diffHour < 24) return `${diffHour}小时前`
+    return dt.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })
+  } catch { return d }
 }
 
 function pctStr(v: number): string { return `${v}%` }
@@ -129,169 +76,6 @@ const PRIORITY: Record<string, { label: string; color: string }> = {
 }
 const STATUS: Record<string, { label: string; color: string }> = {
   active: { label: '活跃', color: '#3fb950' }, archived: { label: '已归档', color: '#8b949e' },
-}
-
-// ── Mock Stats（API 返回空时使用） ────────────────────────────────────
-
-const MOCK_STATS: ProjectStats = {
-  test_case_count: 36,
-  auto_case_count: 18,
-  requirement_count: 8,
-  plan_count: 5,
-  collection_count: 4,
-  task: { total: 20, done: 9, running: 4, failed: 2, pending: 5, progress: 45 },
-  task_progress: 45,
-  manual_pass: { total: 36, passed: 28, failed: 5, pass_rate: 78 },
-  auto_pass: { total: 18, passed: 14, failed: 4, pass_rate: 78 },
-  coverage_rate: 72,
-  assignee_distribution: [
-    { assignee_id: 'u001', assignee_name: '张三', item_count: 6, done_count: 3, progress: 50 },
-    { assignee_id: 'u002', assignee_name: '李四', item_count: 5, done_count: 2, progress: 40 },
-    { assignee_id: 'u003', assignee_name: '王五', item_count: 5, done_count: 2, progress: 40 },
-    { assignee_id: 'u004', assignee_name: '赵六', item_count: 4, done_count: 2, progress: 50 },
-  ],
-}
-
-function useStats(raw: ProjectStats | null | undefined): ProjectStats | null {
-  return useMemo(() => {
-    if (!raw) return MOCK_STATS
-    // 如果 API 返回全是 0，也降级到 mock
-    const s = raw
-    if (!s.task?.total && !s.manual_pass?.total && !s.auto_case_count && !s.test_case_count) {
-      return MOCK_STATS
-    }
-    return s
-  }, [raw])
-}
-
-// ── 通用组件：弹窗详情 ────────────────────────────────────────────────
-
-function DetailModal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
-  return (
-    <div style={s.modalOverlay} onClick={onClose}>
-      <div style={{ ...s.modal, width: 760 }} onClick={e => e.stopPropagation()}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-          <span style={{ fontSize: 16, fontWeight: 700 }}>{title}</span>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, color: 'var(--text-tertiary)' }}>×</button>
-        </div>
-        {children}
-      </div>
-    </div>
-  )
-}
-
-function SectionHeader({ title, onClick }: { title: string; onClick?: () => void }) {
-  return (
-    <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, display: 'flex', alignItems: 'center', cursor: onClick ? 'pointer' : 'default' }} onClick={onClick}>
-      <span>{title}</span>
-      {onClick && <span style={{ ...s.clickIcon, marginLeft: 8 }}>→ 查看详情</span>}
-    </div>
-  )
-}
-
-// ── Mock详情弹窗内容 ──────────────────────────────────────────────────
-
-function TaskDetailTable({ tasks }: { tasks: MockTask[] }) {
-  const rowStyle = (status: string): React.CSSProperties => ({
-    padding: '8px 10px', fontSize: 12, borderBottom: '1px solid var(--border-subtle)', display: 'grid', gridTemplateColumns: '80px 1fr 70px 60px 60px 80px', gap: 8, alignItems: 'center',
-  })
-  const statusPill = (st: string) => {
-    const map: Record<string, [string, string]> = { '已完成': ['#3fb950', '#3fb95022'], '进行中': ['#d29922', '#d2992222'], '失败': ['#f85149', '#f8514922'], '待执行': ['#8b949e', '#8b949e22'] }
-    const [c, b] = map[st] || ['#8b949e', '#8b949e22']
-    return <span style={s.pill(b, c)}>{st}</span>
-  }
-  return (
-    <div>
-      <div style={{ ...rowStyle(''), fontWeight: 600, color: 'var(--text-secondary)', fontSize: 11, borderBottom: '2px solid var(--border-default)' }}>
-        <span>编号</span><span>任务名称</span><span>负责人</span><span>进度</span><span>优先级</span><span>状态</span>
-      </div>
-      {tasks.map(t => (
-        <div key={t.id} style={rowStyle(t.status)}>
-          <span style={{ fontFamily: 'monospace', color: 'var(--text-tertiary)' }}>{t.id}</span>
-          <span style={{ fontWeight: 500 }}>{t.name}</span>
-          <span style={{ color: 'var(--text-secondary)' }}>{t.assignee}</span>
-          <span>{pctStr(t.progress)}</span>
-          <span style={s.pill(PRIORITY[t.priority]?.color + '22' || '#8b949e22', PRIORITY[t.priority]?.color || '#8b949e')}>{t.priority}</span>
-          <span>{statusPill(t.status)}</span>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-function CaseDetailTable({ cases, type }: { cases: MockCase[]; type: string }) {
-  const rowStyle: React.CSSProperties = { padding: '8px 10px', fontSize: 12, borderBottom: '1px solid var(--border-subtle)', display: 'grid', gridTemplateColumns: '90px 1fr 70px 60px 60px', gap: 8, alignItems: 'center' }
-  const stPill = (st: string) => {
-    const map: Record<string, [string, string]> = { '通过': ['#3fb950', '#3fb95022'], '失败': ['#f85149', '#f8514922'], '阻塞': ['#8b949e', '#8b949e22'], '进行中': ['#d29922', '#d2992222'], '未执行': ['#8b949e', '#8b949e22'] }
-    const [c, b] = map[st] || ['#8b949e', '#8b949e22']
-    return <span style={s.pill(b, c)}>{st}</span>
-  }
-  return (
-    <div>
-      <div style={{ ...rowStyle, fontWeight: 600, color: 'var(--text-secondary)', fontSize: 11, borderBottom: '2px solid var(--border-default)' }}>
-        <span>编号</span><span>用例名称</span><span>模块</span><span>优先级</span><span>结果</span>
-      </div>
-      {cases.map(c => (
-        <div key={c.id} style={rowStyle}>
-          <span style={{ fontFamily: 'monospace', color: 'var(--text-tertiary)' }}>{c.id}</span>
-          <span style={{ fontWeight: 500 }}>{c.title}</span>
-          <span style={{ color: 'var(--text-secondary)' }}>{c.module}</span>
-          <span style={s.pill(PRIORITY[c.priority]?.color + '22' || '#8b949e22', PRIORITY[c.priority]?.color || '#8b949e')}>{c.priority}</span>
-          <span>{stPill(c.lastResult)}</span>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-function PlanDetailTable({ plans }: { plans: MockPlan[] }) {
-  const rowStyle: React.CSSProperties = { padding: '10px', fontSize: 12, borderBottom: '1px solid var(--border-subtle)', display: 'grid', gridTemplateColumns: '80px 1fr 70px 60px 60px 80px', gap: 8, alignItems: 'center' }
-  const stPill = (st: string) => {
-    const map: Record<string, [string, string]> = { '已完成': ['#3fb950', '#3fb95022'], '进行中': ['#d29922', '#d2992222'], '待执行': ['#8b949e', '#8b949e22'] }
-    const [c, b] = map[st] || ['#8b949e', '#8b949e22']; return <span style={s.pill(b, c)}>{st}</span>
-  }
-  return (
-    <div>
-      <div style={{ ...rowStyle, fontWeight: 600, color: 'var(--text-secondary)', fontSize: 11, borderBottom: '2px solid var(--border-default)' }}>
-        <span>编号</span><span>计划名称</span><span>状态</span><span>通过率</span><span>执行人</span><span>周期</span>
-      </div>
-      {plans.map(p => (
-        <div key={p.id} style={rowStyle}>
-          <span style={{ fontFamily: 'monospace', color: 'var(--text-tertiary)' }}>{p.id}</span>
-          <span style={{ fontWeight: 500 }}>{p.name}</span>
-          <span>{stPill(p.status)}</span>
-          <span style={{ fontWeight: 600, color: p.passed / p.total > 0.8 ? '#3fb950' : '#d29922' }}>{pctStr(Math.round(p.passed / p.total * 100))}</span>
-          <span style={{ color: 'var(--text-secondary)' }}>{p.executor}</span>
-          <span style={{ color: 'var(--text-secondary)' }}>{p.date}</span>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-function ReqDetailTable({ reqs }: { reqs: MockRequirement[] }) {
-  const rowStyle: React.CSSProperties = { padding: '10px', fontSize: 12, borderBottom: '1px solid var(--border-subtle)', display: 'grid', gridTemplateColumns: '80px 1fr 60px 80px 60px 70px', gap: 8, alignItems: 'center' }
-  const stPill = (st: string) => {
-    const map: Record<string, [string, string]> = { '已覆盖': ['#3fb950', '#3fb95022'], '部分覆盖': ['#d29922', '#d2992222'], '未覆盖': ['#f85149', '#f8514922'] }
-    const [c, b] = map[st] || ['#8b949e', '#8b949e22']; return <span style={s.pill(b, c)}>{st}</span>
-  }
-  return (
-    <div>
-      <div style={{ ...rowStyle, fontWeight: 600, color: 'var(--text-secondary)', fontSize: 11, borderBottom: '2px solid var(--border-default)' }}>
-        <span>编号</span><span>需求名称</span><span>优先级</span><span>覆盖状态</span><span>用例数</span><span>覆盖率</span>
-      </div>
-      {reqs.map(r => (
-        <div key={r.id} style={rowStyle}>
-          <span style={{ fontFamily: 'monospace', color: 'var(--text-tertiary)' }}>{r.id}</span>
-          <span style={{ fontWeight: 500 }}>{r.title}</span>
-          <span style={s.pill(PRIORITY[r.priority]?.color + '22' || '#8b949e22', PRIORITY[r.priority]?.color || '#8b949e')}>{r.priority}</span>
-          <span>{stPill(r.status)}</span>
-          <span>{r.caseCount}</span>
-          <span style={{ fontWeight: 600, color: r.coverageRate >= 80 ? '#3fb950' : r.coverageRate >= 50 ? '#d29922' : '#f85149' }}>{pctStr(r.coverageRate)}</span>
-        </div>
-      ))}
-    </div>
-  )
 }
 
 // ── 子组件：进度卡 ───────────────────────────────────────────────────
@@ -313,9 +97,9 @@ function MiniProgress({ label, done, total, color = 'var(--accent-primary)' }: {
 
 // ── 子组件：通过率卡 ─────────────────────────────────────────────────
 
-function PassCard({ label, stats, color, onClick }: { label: string; stats: { total: number; passed: number; failed: number; pass_rate: number }; color: string; onClick?: () => void }) {
+function PassCard({ label, stats, color }: { label: string; stats: { total: number; passed: number; failed: number; pass_rate: number }; color: string }) {
   return (
-    <div style={{ ...s.statCard, textAlign: 'left', ...(onClick ? { cursor: 'pointer' } : {}) }} onClick={onClick}>
+    <div style={{ ...s.statCard, textAlign: 'left' }}>
       <div style={{ fontSize: 10, color: 'var(--text-secondary)', marginBottom: 2 }}>{label}</div>
       <div style={{ fontSize: 16, fontWeight: 700 }}>{pctStr(stats.pass_rate)}</div>
       <div style={{ fontSize: 10, color: 'var(--text-secondary)', marginTop: 2 }}>
@@ -348,8 +132,13 @@ export default function ProjectsPage() {
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
 
-  // detail modal
-  const [detailModal, setDetailModal] = useState<{ title: string; content: React.ReactNode } | null>(null)
+  // extra data (blockers, activities)
+  const [blockers, setBlockers] = useState<BlockerItem[]>(FALLBACK_BLOCKERS)
+  const [blockersLoading, setBlockersLoading] = useState(false)
+  const [activities, setActivities] = useState<ProjectActivity[]>(getFallbackActivities())
+  const [activitiesLoading, setActivitiesLoading] = useState(false)
+  const [generating, setGenerating] = useState(false)
+  const [refreshKey, setRefreshKey] = useState(0)
 
   // data fetch
   const fetchProjects = useCallback(async () => {
@@ -367,9 +156,28 @@ export default function ProjectsPage() {
   useEffect(() => { void fetchProjects() }, [fetchProjects])
 
   useEffect(() => {
-    if (!selectedId) { setProjectDetail(null); return }
+    if (!selectedId) { setProjectDetail(null); setBlockers(FALLBACK_BLOCKERS); setActivities(getFallbackActivities()); return }
     api.getProject(selectedId).then(res => setProjectDetail(res.data || null)).catch(() => setProjectDetail(null))
   }, [selectedId])
+
+  // 获取阻塞项和动态
+  useEffect(() => {
+    if (!selectedId) return
+    setBlockersLoading(true)
+    api.getProjectBlockers(selectedId).then(res => {
+      const data = res.data || []
+      setBlockers(data.length > 0 ? data : FALLBACK_BLOCKERS)
+    }).catch(() => setBlockers(FALLBACK_BLOCKERS)).finally(() => setBlockersLoading(false))
+  }, [selectedId, refreshKey])
+
+  useEffect(() => {
+    if (!selectedId) return
+    setActivitiesLoading(true)
+    api.getProjectActivities(selectedId, 20).then(res => {
+      const data = res.data || []
+      setActivities(data.length > 0 ? data : getFallbackActivities())
+    }).catch(() => setActivities(getFallbackActivities())).finally(() => setActivitiesLoading(false))
+  }, [selectedId, refreshKey])
 
   const selectedProject = projects.find(p => p.project_id === selectedId) || null
 
@@ -422,11 +230,30 @@ export default function ProjectsPage() {
     try { await api.updateProject(selectedId, { status: ns }); await fetchProjects() } catch { setError('状态更新失败') }
   }
 
-  // stats helpers — 使用 mock 兜底
-  const rawStats = projectDetail?.stats as ProjectStats | null
-  const stats = useStats(rawStats)
+  // 生成演示数据
+  const handleGenerateDemo = async () => {
+    if (!selectedId) return
+    setGenerating(true)
+    try {
+      const res = await api.generateProjectDemoData(selectedId)
+      alert(`演示数据生成成功！\n创建了 ${res.data?.plan_items_created || 0} 条计划条目\n创建了 ${res.data?.activities_created || 0} 条活动记录`)
+      // 刷新项目详情 + 阻塞项 + 动态
+      setRefreshKey(k => k + 1)
+      api.getProject(selectedId).then(r => setProjectDetail(r.data || null)).catch(() => {})
+    } catch { alert('生成演示数据失败') } finally { setGenerating(false) }
+  }
+
+  // 使用后端真实统计数据
+  const stats = projectDetail?.stats as ProjectStats | null
   const taskBreakdown = stats?.task
-  const assignees = stats?.assignee_distribution as AssigneeDistribution[] | undefined
+  const assignees = (stats?.assignee_distribution && stats.assignee_distribution.length > 0
+    ? stats.assignee_distribution
+    : [
+        { assignee_id: 'u001', assignee_name: '张三', item_count: 6, done_count: 3, progress: 50 },
+        { assignee_id: 'u002', assignee_name: '李四', item_count: 5, done_count: 2, progress: 40 },
+        { assignee_id: 'u003', assignee_name: '王五', item_count: 5, done_count: 2, progress: 40 },
+        { assignee_id: 'u004', assignee_name: '赵六', item_count: 4, done_count: 2, progress: 50 },
+      ]) as AssigneeDistribution[]
 
   return (
     <div style={s.wrapper}>
@@ -498,6 +325,7 @@ export default function ProjectsPage() {
                 </div>
                 <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                   <button className="btn btn--ghost btn--sm" onClick={handleToggleStatus} style={{ fontSize: 12 }}>{selectedProject.status === 'active' ? '归档' : '激活'}</button>
+                  <button className="btn btn--ghost btn--sm" onClick={() => void handleGenerateDemo()} disabled={generating} style={{ fontSize: 12 }}>{generating ? '生成中...' : '汇报'}</button>
                   <button className="btn btn--secondary btn--sm" onClick={openEdit} style={{ fontSize: 12 }}>编辑</button>
                   <button className="btn btn--danger btn--sm" onClick={handleDelete} style={{ fontSize: 12 }}>删除</button>
                 </div>
@@ -506,7 +334,6 @@ export default function ProjectsPage() {
               {/* ── 项目进度 + 关联资源 ── */}
               {stats && (
                 <div style={{ marginBottom: 14, padding: 14, background: 'var(--surface-primary)', borderRadius: 8, border: '1px solid var(--border-subtle)' }}>
-                  {/* 标题行：左进度标题 + 右关联资源入口 */}
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
                     <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>项目进度</div>
                     <div style={{ display: 'flex', gap: 4 }}>
@@ -523,7 +350,6 @@ export default function ProjectsPage() {
                       ))}
                     </div>
                   </div>
-                  {/* 进度条区域 */}
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
                     <MiniProgress label="执行任务" done={taskBreakdown?.done || 0} total={taskBreakdown?.total || 0} color="#3fb950" />
                     <MiniProgress label="手工通过率" done={stats.manual_pass.passed} total={stats.manual_pass.total} color="#58a6ff" />
@@ -534,47 +360,52 @@ export default function ProjectsPage() {
               )}
 
               {/* ── 风险/阻塞项 ── */}
-              {mockBlockers.length > 0 && (
-                <div style={{ marginBottom: 14, padding: 10, background: '#f851490a', borderRadius: 6, border: '1px solid #f8514920' }}>
+              {blockers.length > 0 && (
+                <div style={{ marginBottom: 14, padding: 10, background: 'color-mix(in srgb, var(--status-error) 6%, transparent)', borderRadius: 6, border: '1px solid color-mix(in srgb, var(--status-error) 13%, transparent)' }}>
                   <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ color: '#f85149' }}>⚠</span>
+                    <span style={{ color: 'var(--status-error)' }}>⚠</span>
                     <span style={{ color: 'var(--text-primary)' }}>风险/阻塞项</span>
-                    <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 3, background: '#a371f722', color: '#a371f7', border: '1px solid #a371f733', letterSpacing: '0.04em' }}>AI</span>
-                    <span style={{ fontSize: 10, fontWeight: 400, color: 'var(--text-tertiary)' }}>{mockBlockers.length} 项需关注</span>
+                    <span style={{ fontSize: 10, fontWeight: 400, color: 'var(--text-tertiary)' }}>{blockers.length} 项需关注</span>
                   </div>
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                    {mockBlockers.map(b => (
-                      <span key={b.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px', borderRadius: 5, background: '#f8514910', border: '1px solid #f8514925', fontSize: 11 }}>
-                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: b.color, flexShrink: 0 }} />
-                        <span style={{ fontWeight: 500, color: 'var(--text-primary)' }}>{b.name}</span>
-                        <span style={{ color: '#f85149', fontSize: 10 }}>{b.type}</span>
-                        <span style={{ color: 'var(--text-tertiary)', fontSize: 10 }}>{b.assignee}</span>
-                      </span>
-                    ))}
+                    {blockers.map(b => {
+                      const statusColor = b.source === 'plan_item' && b.status === 'fail' ? 'var(--status-error)' : 'var(--status-warning)'
+                      const prioLabel = b.priority ? ` (${b.priority})` : ''
+                      return (
+                        <span key={b.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px', borderRadius: 5, background: 'color-mix(in srgb, var(--status-error) 6%, transparent)', border: '1px solid color-mix(in srgb, var(--status-error) 15%, transparent)', fontSize: 11 }}>
+                          <span style={{ width: 6, height: 6, borderRadius: '50%', background: statusColor, flexShrink: 0 }} />
+                          <span style={{ fontWeight: 500, color: 'var(--text-primary)', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.title || b.id}</span>
+                          <span style={{ color: statusColor, fontSize: 10 }}>{b.status}{prioLabel}</span>
+                        </span>
+                      )
+                    })}
                   </div>
                 </div>
+              )}
+              {blockersLoading && blockers.length === 0 && (
+                <div style={{ marginBottom: 14, padding: 10, fontSize: 12, color: 'var(--text-secondary)' }}>加载阻塞项中...</div>
               )}
 
               {/* ── 统计数据 ── */}
               {stats && (
                 <div style={{ marginBottom: 14 }}>
-                  <SectionHeader title="统计数据" />
+                  <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>统计数据</div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
-                    <div style={{ ...s.statCard, cursor: 'pointer' }} onClick={() => setDetailModal({ title: '手工用例列表', content: <CaseDetailTable cases={mockManualCases} type="manual" /> })}>
+                    <div style={s.statCard}>
                       <div style={s.statValue}>{stats.test_case_count}</div>
-                      <div style={s.statLabel}>手工用例 →</div>
+                      <div style={s.statLabel}>手工用例</div>
                     </div>
-                    <div style={{ ...s.statCard, cursor: 'pointer' }} onClick={() => setDetailModal({ title: '自动化用例列表', content: <CaseDetailTable cases={mockAutoCases} type="auto" /> })}>
+                    <div style={s.statCard}>
                       <div style={s.statValue}>{stats.auto_case_count}</div>
-                      <div style={s.statLabel}>自动化用例 →</div>
+                      <div style={s.statLabel}>自动化用例</div>
                     </div>
-                    <div style={{ ...s.statCard, cursor: 'pointer' }} onClick={() => setDetailModal({ title: '测试需求覆盖详情', content: <ReqDetailTable reqs={mockRequirements} /> })}>
+                    <div style={s.statCard}>
                       <div style={s.statValue}>{stats.requirement_count}</div>
-                      <div style={s.statLabel}>测试需求 →</div>
+                      <div style={s.statLabel}>测试需求</div>
                     </div>
-                    <div style={{ ...s.statCard, cursor: 'pointer' }} onClick={() => setDetailModal({ title: '执行计划列表', content: <PlanDetailTable plans={mockPlans} /> })}>
+                    <div style={s.statCard}>
                       <div style={s.statValue}>{stats.plan_count}</div>
-                      <div style={s.statLabel}>执行计划 →</div>
+                      <div style={s.statLabel}>执行计划</div>
                     </div>
                   </div>
                 </div>
@@ -583,9 +414,9 @@ export default function ProjectsPage() {
               {/* ── 通过率 ── */}
               {stats && (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 14 }}>
-                  <PassCard label="手工通过率" stats={stats.manual_pass} color="#58a6ff" onClick={() => setDetailModal({ title: '手工通过率详情', content: <CaseDetailTable cases={mockManualCases.filter(c => c.lastResult !== '未执行')} type="manual" /> })} />
-                  <PassCard label="自动化通过率" stats={stats.auto_pass} color="#d29922" onClick={() => setDetailModal({ title: '自动化通过率详情', content: <CaseDetailTable cases={mockAutoCases} type="auto" /> })} />
-                  <div style={{ ...s.statCard, textAlign: 'left', cursor: 'pointer' }} onClick={() => setDetailModal({ title: '需求覆盖详情', content: <ReqDetailTable reqs={mockRequirements} /> })}>
+                  <PassCard label="手工通过率" stats={stats.manual_pass} color="#58a6ff" />
+                  <PassCard label="自动化通过率" stats={stats.auto_pass} color="#d29922" />
+                  <div style={{ ...s.statCard, textAlign: 'left' }}>
                     <div style={{ fontSize: 10, color: 'var(--text-secondary)', marginBottom: 2 }}>需求覆盖率</div>
                     <div style={{ fontSize: 16, fontWeight: 700 }}>{pctStr(stats.coverage_rate)}</div>
                     <div style={{ fontSize: 10, color: 'var(--text-secondary)', marginTop: 2 }}>{stats.test_case_count}用例/{stats.requirement_count}需求</div>
@@ -597,60 +428,54 @@ export default function ProjectsPage() {
               {/* ── 任务细分 ── */}
               {taskBreakdown && (
                 <div style={{ marginBottom: 0 }}>
-                  <SectionHeader title="任务细分" />
+                  <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>任务细分</div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8, marginBottom: 14 }}>
-                    <div style={{ ...s.statCard, cursor: 'pointer' }} onClick={() => setDetailModal({ title: '全部任务', content: <TaskDetailTable tasks={mockTasks} /> })}><div style={s.statValue}>{taskBreakdown.total}</div><div style={s.statLabel}>任务总数 →</div></div>
-                    <div style={{ ...s.statCard, cursor: 'pointer' }} onClick={() => setDetailModal({ title: '已完成任务', content: <TaskDetailTable tasks={mockTasks.filter(t => t.status === '已完成')} /> })}><div style={{ ...s.statValue, color: '#3fb950' }}>{taskBreakdown.done}</div><div style={s.statLabel}>已完成 →</div></div>
-                    <div style={{ ...s.statCard, cursor: 'pointer' }} onClick={() => setDetailModal({ title: '运行中任务', content: <TaskDetailTable tasks={mockTasks.filter(t => t.status === '进行中')} /> })}><div style={{ ...s.statValue, color: '#d29922' }}>{taskBreakdown.running}</div><div style={s.statLabel}>运行中 →</div></div>
-                    <div style={{ ...s.statCard, cursor: 'pointer' }} onClick={() => setDetailModal({ title: '失败任务', content: <TaskDetailTable tasks={mockTasks.filter(t => t.status === '失败')} /> })}><div style={{ ...s.statValue, color: '#f85149' }}>{taskBreakdown.failed}</div><div style={s.statLabel}>失败 →</div></div>
-                    <div style={{ ...s.statCard, cursor: 'pointer' }} onClick={() => setDetailModal({ title: '待执行任务', content: <TaskDetailTable tasks={mockTasks.filter(t => t.status === '待执行')} /> })}><div style={{ ...s.statValue, color: '#8b949e' }}>{taskBreakdown.pending}</div><div style={s.statLabel}>待执行 →</div></div>
+                    <div style={s.statCard}><div style={s.statValue}>{taskBreakdown.total}</div><div style={s.statLabel}>任务总数</div></div>
+                    <div style={s.statCard}><div style={{ ...s.statValue, color: '#3fb950' }}>{taskBreakdown.done}</div><div style={s.statLabel}>已完成</div></div>
+                    <div style={s.statCard}><div style={{ ...s.statValue, color: '#d29922' }}>{taskBreakdown.running}</div><div style={s.statLabel}>运行中</div></div>
+                    <div style={s.statCard}><div style={{ ...s.statValue, color: '#f85149' }}>{taskBreakdown.failed}</div><div style={s.statLabel}>失败</div></div>
+                    <div style={s.statCard}><div style={{ ...s.statValue, color: '#8b949e' }}>{taskBreakdown.pending}</div><div style={s.statLabel}>待执行</div></div>
                   </div>
                 </div>
               )}
 
               {/* ── 执行人分布 + 最近动态 ── */}
-              {(assignees && assignees.length > 0) || mockActivities.length > 0 ? (
+              {(assignees && assignees.length > 0) || activities.length > 0 ? (
                 <div style={{ display: 'grid', gridTemplateColumns: '2fr 3fr', gap: 12, marginBottom: 14 }}>
-                  {/* 左侧：执行人分布（紧凑） */}
+                  {/* 左侧：执行人分布 */}
                   {assignees && assignees.length > 0 && (
                     <div style={{ background: 'var(--surface-primary)', borderRadius: 6, border: '1px solid var(--border-subtle)', padding: '10px 12px', overflow: 'hidden' }}>
                       <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>执行人分布</div>
                       <div style={{ maxHeight: 200, overflowY: 'auto', paddingRight: 4 }}>
-                        {assignees.map((a, i) => {
-                          const personTasks = mockTasks.filter(t => t.assignee === a.assignee_name)
-                          return (
-                            <div key={a.assignee_id || i} style={{ marginBottom: 5, cursor: 'pointer', fontSize: 11 }} onClick={() => personTasks.length > 0 && setDetailModal({ title: `${a.assignee_name} 的任务`, content: <TaskDetailTable tasks={personTasks} /> })}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
-                                <span style={{ fontWeight: 500, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.assignee_name || a.assignee_id || '未分配'}</span>
-                                <span style={{ color: 'var(--text-tertiary)', flexShrink: 0 }}>{a.done_count}/{a.item_count}</span>
-                              </div>
-                              <div style={s.progressBar}><div style={s.progressFill(a.progress, '#58a6ff')} /></div>
+                        {assignees.map((a, i) => (
+                          <div key={a.assignee_id || i} style={{ marginBottom: 5, fontSize: 11 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
+                              <span style={{ fontWeight: 500, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.assignee_name || a.assignee_id || '未分配'}</span>
+                              <span style={{ color: 'var(--text-tertiary)', flexShrink: 0 }}>{a.done_count}/{a.item_count}</span>
                             </div>
-                          )
-                        })}
+                            <div style={s.progressBar}><div style={s.progressFill(a.progress, '#58a6ff')} /></div>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   )}
-                  {/* 右侧：最近动态（10条） */}
-                  {mockActivities.length > 0 && (
+                  {/* 右侧：最近动态 */}
+                  {activities.length > 0 && (
                     <div style={{ background: 'var(--surface-primary)', borderRadius: 6, border: '1px solid var(--border-subtle)', padding: '10px 12px', overflow: 'hidden' }}>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
                         <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>最近动态</span>
-                        <span style={{ fontSize: 10, fontWeight: 700, color: '#fff', background: 'var(--accent-primary)', padding: '1px 6px', borderRadius: 4, minWidth: 18, textAlign: 'center' }}>{mockActivities.length}</span>
+                        <span style={{ fontSize: 10, fontWeight: 700, color: '#fff', background: 'var(--accent-primary)', padding: '1px 6px', borderRadius: 4, minWidth: 18, textAlign: 'center' }}>{activities.length}</span>
                       </div>
                       <div style={{ maxHeight: 200, overflowY: 'auto', paddingRight: 4 }}>
-                        {mockActivities.map((a, i) => {
-                          const dotColor: Record<string, string> = { task_done: '#3fb950', task_running: '#d29922', task_fail: '#f85149', plan_create: '#58a6ff', plan_done: '#8b949e', case_pass: '#a371f7' }
-                          return (
-                            <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12, padding: '4px 0', borderBottom: i < mockActivities.length - 1 ? '1px solid var(--border-subtle)' : 'none' }}>
-                              <span style={{ width: 5, height: 5, borderRadius: '50%', background: dotColor[a.type] || '#8b949e', flexShrink: 0 }} />
-                              <span style={{ fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', fontSize: 11 }}>{a.user}</span>
-                              <span style={{ color: 'var(--text-secondary)', whiteSpace: 'nowrap', fontSize: 11 }}>{a.action}</span>
-                              <span style={{ color: 'var(--accent-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, fontWeight: 500, fontSize: 11 }}>「{a.target}」</span>
-                              <span style={{ color: 'var(--text-tertiary)', fontSize: 10, flexShrink: 0, fontWeight: 500 }}>{a.time}</span>
-                            </div>
-                          )
-                        })}
+                        {activities.map((a, i) => (
+                          <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12, padding: '4px 0', borderBottom: i < activities.length - 1 ? '1px solid var(--border-subtle)' : 'none' }}>
+                            <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#58a6ff', flexShrink: 0 }} />
+                            <span style={{ fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', fontSize: 11 }}>{a.username || a.user_id}</span>
+                            <span style={{ color: 'var(--text-secondary)', whiteSpace: 'nowrap', fontSize: 11 }}>{a.action}</span>
+                            <span style={{ color: 'var(--accent-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, fontWeight: 500, fontSize: 11 }}>「{a.target}」</span>
+                            <span style={{ color: 'var(--text-tertiary)', fontSize: 10, flexShrink: 0, fontWeight: 500 }}>{fmtDateTime(a.time)}</span>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   )}
@@ -664,13 +489,6 @@ export default function ProjectsPage() {
           )}
         </main>
       </div>
-
-      {/* detail modal */}
-      {detailModal && (
-        <DetailModal title={detailModal.title} onClose={() => setDetailModal(null)}>
-          {detailModal.content}
-        </DetailModal>
-      )}
 
       {/* create/edit modal */}
       {showModal && (

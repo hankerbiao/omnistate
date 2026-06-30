@@ -369,6 +369,14 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
   const displayWorkItemsError = workItemsError ? '获取工作流任务列表失败' : null;
   const displayPlanItemsError = planItemsError ? '获取计划任务列表失败' : null;
 
+  // ── Tab state ──
+  const [activeTab, setActiveTab] = useState<'plan' | 'workflow'>('plan');
+
+  const tabs = [
+    { key: 'plan' as const, label: '执行计划', count: planTasks.length },
+    { key: 'workflow' as const, label: '工作流事项', count: workItems.length },
+  ];
+
   return (
     <div className="page-content">
       <PageToolbar
@@ -417,6 +425,45 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
         </div>
       )}
 
+      {/* ── Tab bar ── */}
+      {(!workItemsLoading || !planItemsLoading) && (
+        <div style={{
+          display: 'flex', gap: 2, marginBottom: 16, borderBottom: '1px solid var(--border-subtle)',
+          paddingBottom: 0,
+        }}>
+          {tabs.map(tab => {
+            const isActive = activeTab === tab.key;
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setActiveTab(tab.key)}
+                style={{
+                  position: 'relative', padding: '8px 20px', fontSize: 13, fontWeight: isActive ? 600 : 500,
+                  color: isActive ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                  background: 'transparent', border: 'none', cursor: 'pointer',
+                  transition: 'color 0.15s',
+                }}
+              >
+                {tab.label}
+                <span style={{
+                  marginLeft: 6, fontSize: 11, fontWeight: 500,
+                  color: isActive ? 'var(--accent-primary)' : 'var(--text-tertiary)',
+                }}>
+                  {tab.count}
+                </span>
+                {isActive && (
+                  <div style={{
+                    position: 'absolute', bottom: -1, left: 0, right: 0, height: 2,
+                    background: 'var(--accent-primary)', borderRadius: '2px 2px 0 0',
+                  }} />
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {workItemsLoading && planItemsLoading && execTasksLoading ? (
         <div className="loading-overlay"><div className="loading-spinner" /></div>
       ) : workItems.length === 0 && planTasks.length === 0 && execTasks.length === 0 ? (
@@ -426,8 +473,7 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
         </div>
       ) : (
         <div style={myTasksStyles.list}>
-          {/* ── Plan Tasks ── */}
-          {planTasks.length > 0 && (
+          {activeTab === 'plan' && planTasks.length > 0 && (
             <PlanTaskTable
               planTasks={planTasks}
               isDemo={false}
@@ -440,17 +486,13 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
             />
           )}
 
-          {/* ── 自动化执行记录弹窗 ── */}
-          {execRecordsOpen && (
-            <ExecRecordsModal
-              tasks={execTasks}
-              onViewResult={handleOpenExecResult}
-              onClose={() => setExecRecordsOpen(false)}
-            />
+          {activeTab === 'plan' && planTasks.length === 0 && (
+            <div className="empty-state" style={{ padding: '40px 0' }}>
+              <p className="empty-state__text">暂无执行计划任务</p>
+            </div>
           )}
 
-          {/* ── Workflow items by category ── */}
-          {categories.map(cat => (
+          {activeTab === 'workflow' && categories.length > 0 && categories.map(cat => (
             <div key={cat.key} style={myTasksStyles.group}>
               <div style={myTasksStyles.groupHeader}>
                 <span style={groupBadgeStyle({ bg: `${cat.color}18`, color: cat.color })}>
@@ -542,7 +584,6 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
                             {item.type_code === 'REQUIREMENT' && itemDetail && 'req_id' in itemDetail ? (
                               /* ── 需求详情 ── 两栏布局 ── */
                               <>
-                                {/* 顶部元信息行 */}
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
                                   <div style={{ background: '#f8fafc', borderRadius: 8, padding: '10px 12px' }}>
                                     <div style={{ fontSize: 10, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', marginBottom: 4 }}>优先级 & 状态</div>
@@ -574,7 +615,6 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
                                   </div>
                                 </div>
 
-                                {/* 中间两栏：人员 + 标签 | 描述 */}
                                 <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: 12, marginBottom: 12 }}>
                                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                                     <div style={{ background: '#f8fafc', borderRadius: 8, padding: '10px 12px' }}>
@@ -613,7 +653,6 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
                                   </div>
                                 </div>
 
-                                {/* 底部：测试用例 */}
                                 <div style={{ background: '#f8fafc', borderRadius: 8, padding: '10px 12px' }}>
                                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                                     <span style={{ fontSize: 10, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase' }}>
@@ -641,7 +680,6 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
                                 </div>
                               </>
                             ) : (
-                              /* ── 其他类型（TEST_CASE）的预览 ── */
                               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                                 {item.content && <p style={myTasksStyles.contentPreview}>{item.content}</p>}
                                 {itemDetail && 'description' in itemDetail && itemDetail.description && (
@@ -649,7 +687,6 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
                                 )}
                               </div>
                             )}
-
                           </>
                         )}
                         <WorkflowPanel
@@ -667,7 +704,22 @@ const MyTasksPage: React.FC<MyTasksPageProps> = ({ userId }) => {
               })}
             </div>
           ))}
+
+          {activeTab === 'workflow' && categories.length === 0 && (
+            <div className="empty-state" style={{ padding: '40px 0' }}>
+              <p className="empty-state__text">暂无工作流事项</p>
+            </div>
+          )}
         </div>
+      )}
+
+      {/* ── 自动化执行记录弹窗 ── */}
+      {execRecordsOpen && (
+        <ExecRecordsModal
+          tasks={execTasks}
+          onViewResult={handleOpenExecResult}
+          onClose={() => setExecRecordsOpen(false)}
+        />
       )}
 
       {/* ════════════════════════════════════════════════════════ */}

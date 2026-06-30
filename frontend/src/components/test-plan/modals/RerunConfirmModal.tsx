@@ -23,8 +23,8 @@ export function RerunConfirmModal({ item, users, onConfirm, onClose }: RerunConf
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent className="sm:max-w-[440px]">
-        <DialogHeader>
-          <DialogTitle>确认重新执行</DialogTitle>
+        <DialogHeader className="pb-2">
+          <DialogTitle className="mb-1">确认重新执行</DialogTitle>
           <DialogDescription>
             确定要重新执行用例 <strong>{item.case_title}</strong> 吗？
           </DialogDescription>

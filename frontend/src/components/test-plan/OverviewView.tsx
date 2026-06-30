@@ -4,7 +4,6 @@
  */
 import { RefreshCw, TrendingUp, CheckCircle, XCircle, Clock, Activity } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { LoadingState, EmptyState } from '@/components/ui/states';
 import type { UserResponse } from '../../types';
 import type { PlanItemSummary, ItemStatus } from './types';
@@ -23,7 +22,7 @@ interface OverviewViewProps {
 
 export function OverviewView({ data, loading, onRefresh, onSelectPlan, users, onViewResult, onDeleteItem, onCancelExecution }: OverviewViewProps) {
   if (loading && !data) return <LoadingState title="加载总览数据..." className="flex-1" />;
-  if (!data) return <EmptyState title="暂无总览数据" description="点击刷新按钮获取最新数据" className="flex-1" action={<Button size="sm" onClick={onRefresh}><RefreshCw size={14} /> 刷新</Button>} />;
+  if (!data) return <EmptyState title="暂无总览数据" description="点击刷新按钮获取最新数据" className="flex-1" action={<button type="button" className="btn btn--primary btn--sm" onClick={onRefresh}><RefreshCw size={14} /> 刷新</button>} />;
 
   const stats = data.stats || {};
   const runningItems: any[] = data.running_items || [];
@@ -53,9 +52,9 @@ export function OverviewView({ data, loading, onRefresh, onSelectPlan, users, on
             </div>
           );
         })}
-        <Button variant="ghost" size="sm" onClick={onRefresh} className="self-center">
+        <button type="button" className="btn btn--ghost btn--sm" onClick={onRefresh} style={{ alignSelf: 'center' }}>
           <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> 刷新
-        </Button>
+        </button>
       </div>
 
       {/* Running items */}
