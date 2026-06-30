@@ -32,6 +32,15 @@ API_CROSS_MODULE_MODEL_EXCEPTIONS = {
         "app/modules/terminal/api/routes.py",
         "app.modules.auth.repository.models",
     ),
+    # AI 工具端点延迟导入需求/用例数据用于 AI 生成与分析。
+    (
+        "app/modules/system_config/api/ai_routes.py",
+        "app.modules.test_specs.repository.models.requirement",
+    ),
+    (
+        "app/modules/failure_analysis/api/routes.py",
+        "app.modules.test_specs.repository.models.test_case",
+    ),
 }
 
 

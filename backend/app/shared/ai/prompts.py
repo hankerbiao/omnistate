@@ -44,3 +44,117 @@ STEP_ANALYSIS_USER_TEMPLATE = """请分析以下测试用例：
 
 步骤列表（共 {step_count} 步）：
 {steps_json}"""
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  需求→用例生成
+# ═══════════════════════════════════════════════════════════════════════
+
+GENERATE_CASES_SYSTEM_PROMPT = """你是一位资深测试工程师，请根据测试需求生成高质量的测试用例草稿。
+
+请以严格 JSON 格式返回结果，不要包含 markdown 代码块标记或额外说明：
+
+{
+  "cases": [
+    {
+      "title": "用例标题（简洁明确，体现测试目标）",
+      "priority": "P0|P1|P2|P3",
+      "test_category": "functional|performance|stability|compatibility|security|regression",
+      "pre_condition": "前置条件（环境/数据/状态准备）",
+      "post_condition": "后置条件（清理/恢复操作）",
+      "steps": [
+        {
+          "step_id": "step-1",
+          "name": "步骤简述",
+          "action": "具体操作步骤（可执行、可验证）",
+          "expected": "预期结果（明确、可判定 pass/fail）"
+        }
+      ],
+      "tags": ["标签1", "标签2"],
+      "rationale": "生成此用例的理由（1句话）"
+    }
+  ]
+}
+
+生成规则：
+1. 每条用例必须有明确的测试目标，不与已有用例重复
+2. 步骤必须可执行、可验证，预期结果必须是可判定的（非主观描述）
+3. 优先级不应高于需求优先级（如需求 P1 → 用例最高 P1，不能 P0）
+4. 覆盖正常流程、边界条件、异常场景三类路径
+5. 正常流程用例约占 40%，边界条件约 35%，异常场景约 25%
+6. 每条用例 3-8 个步骤为宜
+7. test_category 从枚举中选择，与需求分类对齐
+8. tags 提取自需求关键词
+
+如果需求信息不足以生成用例，返回 {"cases": [], "reason": "原因说明"}"""
+
+GENERATE_CASES_USER_TEMPLATE = """请根据以下测试需求生成测试用例草稿：
+
+需求标题：{title}
+需求优先级：{priority}
+需求分类：{category}
+需求描述：
+{description}
+
+验收标准：
+{acceptance_criteria}
+
+关键参数：
+{key_parameters}
+
+风险点：
+{risk_points}
+
+请生成 {max_cases} 条测试用例草稿。"""
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  失败根因分析
+# ═══════════════════════════════════════════════════════════════════════
+
+FAILURE_ANALYSIS_SYSTEM_PROMPT = """你是一位资深测试工程师和调试专家，请分析测试执行失败的根本原因。
+
+请以严格 JSON 格式返回结果，不要包含 markdown 代码块标记或额外说明：
+
+{
+  "root_cause_category": "code_defect|environment|test_case|test_data|infrastructure|unknown",
+  "confidence": 0-1的浮点数,
+  "analysis": "根因分析（2-4句话）",
+  "probable_cause": "最可能的直接原因",
+  "fix_suggestions": [
+    "修复建议1（具体可操作）",
+    "修复建议2"
+  ],
+  "related_patterns": [
+    "历史失败模式1（如果有相似性）"
+  ],
+  "severity": "critical|high|medium|low"
+}
+
+分析框架：
+1. code_defect：被测代码有 bug，需开发修复
+2. environment：测试环境配置/版本/依赖问题
+3. test_case：用例步骤/预期/数据有误
+4. test_data：测试数据不完整或脏数据
+5. infrastructure：网络/存储/计算资源问题
+6. unknown：信息不足，需进一步排查
+
+请基于提供的执行日志、用例步骤和环境信息进行推理，避免猜测无法证实的信息。"""
+
+FAILURE_ANALYSIS_USER_TEMPLATE = """请分析以下测试执行失败：
+
+执行任务 ID：{task_id}
+用例 ID：{case_id}
+用例标题：{case_title}
+
+用例步骤：
+{steps_json}
+
+执行日志：
+{execution_log}
+
+失败信息：
+{failure_info}
+
+环境信息：
+{env_info}"""

@@ -248,11 +248,20 @@ _ALLOWED_CROSS_MODULE_REPO_IMPORTS: dict[str, set[str]] = {
     "app/modules/notification/service.py": {
         "app.modules.auth.repository.models",
     },
+    # ── AI 工具（延迟导入需求/用例数据用于 AI 生成与分析） ───
+    "app/modules/system_config/api/ai_routes.py": {
+        "app.modules.test_specs.repository.models",
+    },
+    "app/modules/failure_analysis/api/routes.py": {
+        "app.modules.test_specs.repository.models",
+    },
 }
 
 # API 层允许跨模块读 repository 的例外清单（应尽可能少）
 _API_ALLOWED_REPO_IMPORTS: set[str] = {
     "app/modules/terminal/api/routes.py",
+    "app/modules/system_config/api/ai_routes.py",
+    "app/modules/failure_analysis/api/routes.py",
 }
 
 
