@@ -16,8 +16,10 @@
    - [5.5 智能用例选择](#55-智能用例选择-post-airecommend-cases)
    - [5.6 失败根因分析](#56-失败根因分析-post-failure-analysisanalyze)
    - [5.7 用例集分析](#57-用例集分析-post-ai-analyze-collectionsid)
-6. [前端集成](#6-前端集成)
-7. [扩展指南](#7-扩展指南)
+   - [5.8 连接测试](#58-连接测试-post-system-configsaitest-connection)
+6. [AI 输出反馈](#6-ai-输出反馈)
+7. [前端集成](#7-前端集成)
+8. [扩展指南](#8-扩展指南)
 
 ---
 
@@ -483,7 +485,61 @@ content = await client.simple_chat(
 
 ---
 
-## 6. 前端集成
+## 6. AI 输出反馈
+
+AI 输出反馈记录用户对 AI 生成结果的采纳/拒绝/编辑行为，用于持续改进 prompt 质量和评估 AI 效果。
+
+### 6.1 反馈类型
+
+| 反馈值 | 说明 |
+|--------|------|
+| `accepted` | 用户直接采纳 AI 输出 |
+| `rejected` | 用户拒绝 AI 输出 |
+| `edited` | 用户在 AI 输出的基础上编辑后采纳 |
+
+### 6.2 提���反馈
+
+**端点**: `POST /api/v1/audit-logs/ai-feedback`
+
+**请求体**:
+```json
+{
+  "ai_endpoint": "/ai/generate-cases",
+  "request_id": "req_xxx",
+  "feedback": "accepted",
+  "input_summary": "生成登录测试用例",
+  "output_summary": "5 条登录相关用例",
+  "edited_content": null,
+  "comment": "生成的用例质量不错",
+  "rating": 4
+}
+```
+
+### 6.3 查询反馈统计
+
+**端点**: `GET /api/v1/audit-logs/ai-feedback`
+
+**参数**: `ai_endpoint`（可选） / `feedback`（可选）
+
+**响应**:
+```json
+{
+  "code": 0,
+  "data": {
+    "items": [
+      { "id": "...", "ai_endpoint": "...", "feedback": "accepted", "rating": 4, "comment": "...", "created_at": "..." }
+    ],
+    "total": 42,
+    "stats": { "accepted": 30, "rejected": 8, "edited": 4 }
+  }
+}
+```
+
+支持统计各 AI 端点的采纳率、拒绝率，辅助 prompt 优化决策。
+
+---
+
+## 7. 前端集成
 
 ### 6.1 API 方法
 
@@ -536,7 +592,7 @@ const res = await api.testAIConnection({ base_url, model });
 
 ---
 
-## 7. 扩展指南
+## 8. 扩展指南
 
 ### 7.1 新增一个 AI 端点
 

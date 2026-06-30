@@ -16,6 +16,8 @@
 - [本地开发](./guide/local-development.md)
 - [模块实现](./modules/workflow/index.md)
 - [执行计划](./modules/execution_plan/index.md)
+- [AI 功能使用说明](./modules/ai-usage.md)
+- [操作审计日志](./modules/audit.md)
 - [通用约定](./reference/conventions.md)
 - [设计文档](./design/design-global-config.md)
 - [认证与授权](./guide/authentication.md)
