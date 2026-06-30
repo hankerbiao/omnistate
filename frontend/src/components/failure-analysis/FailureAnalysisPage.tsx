@@ -6,8 +6,9 @@ import {
 } from 'recharts'
 import PageToolbar, { StatPill } from '../ui/PageToolbar'
 import { getCatalogLabs } from '../../services/catalogLabsCache'
-import { getFailureAnalysisMockData } from './failureAnalysisMockData'
+import api from '../../services/api'
 import type { FailureAnalysisDashboard, FailurePattern, CatalogLab } from '../../types'
+import type { AnalyzeFailureResponse } from '../../types/ai'
 
 const PATTERN_COLORS: Record<string, string> = {
   TIMEOUT: '#f59e0b',
@@ -47,6 +48,13 @@ export default function FailureAnalysisPage() {
   const [labs, setLabs] = useState<CatalogLab[]>([])
   const [selectedLabId, setSelectedLabId] = useState('all')
 
+  // ── AI 根因分析面板 ──
+  const [aiTaskId, setAiTaskId] = useState('')
+  const [aiCaseId, setAiCaseId] = useState('')
+  const [aiLog, setAiLog] = useState('')
+  const [aiResult, setAiResult] = useState<AnalyzeFailureResponse | null>(null)
+  const [aiLoading, setAiLoading] = useState(false)
+
   // ── Load labs ──
   useEffect(() => {
     getCatalogLabs({ active_only: true }).then(items => {
@@ -54,15 +62,19 @@ export default function FailureAnalysisPage() {
     }).catch(() => {})
   }, [])
 
-  // ── Generate mock data ──
+  // ── Load dashboard data from API ──
   useEffect(() => {
     setLoading(true)
-    const timer = setTimeout(() => {
-      setData(getFailureAnalysisMockData(timeRange, selectedLabId))
-      setLoading(false)
-    }, 400)
-    return () => clearTimeout(timer)
-  }, [timeRange, selectedLabId])
+    api.request<FailureAnalysisDashboard>(`/failure-analysis/dashboard?time_range=${encodeURIComponent(timeRange)}`, { method: 'GET' })
+      .then(res => {
+        setData(res.data)
+        setLoading(false)
+      })
+      .catch(() => {
+        setData(null)
+        setLoading(false)
+      })
+  }, [timeRange])
 
   const pieData = useMemo(() => {
     if (!data) return []
@@ -299,11 +311,71 @@ export default function FailureAnalysisPage() {
           <EmptyPlaceholder />
         )}
       </SectionCard>
+
+      {/* ════ AI 根因分析面板 ════ */}
+      <SectionCard title="AI 根因分析">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <input
+              type="text" placeholder="任务 ID"
+              value={aiTaskId} onChange={e => setAiTaskId(e.target.value)}
+              style={{ width: 140, padding: '6px 10px', fontSize: 12, borderRadius: 6, border: '1px solid #d1d5db' }}
+            />
+            <input
+              type="text" placeholder="用例 ID"
+              value={aiCaseId} onChange={e => setAiCaseId(e.target.value)}
+              style={{ width: 140, padding: '6px 10px', fontSize: 12, borderRadius: 6, border: '1px solid #d1d5db' }}
+            />
+            <button
+              onClick={async () => {
+                if (!aiTaskId || !aiCaseId) return
+                setAiLoading(true); setAiResult(null)
+                try {
+                  const res = await api.analyzeFailure({ task_id: aiTaskId, case_id: aiCaseId, execution_log: aiLog, failure_info: aiLog })
+                  setAiResult(res.data)
+                } catch (e: any) {
+                  setAiResult({ root_cause_category: 'unknown', confidence: 0, analysis: `调用失败: ${e.message}`, probable_cause: '', fix_suggestions: [], related_patterns: [], severity: 'medium' })
+                } finally { setAiLoading(false) }
+              }}
+              disabled={aiLoading || !aiTaskId || !aiCaseId}
+              style={{ padding: '6px 16px', borderRadius: 6, border: 'none', background: aiLoading || !aiTaskId || !aiCaseId ? '#d1d5db' : '#3b82f6', color: '#fff', fontSize: 12, cursor: aiLoading ? 'default' : 'pointer' }}
+            >{aiLoading ? '分析中...' : 'AI 根因分析'}</button>
+          </div>
+          <textarea
+            placeholder="执行日志 / 失败信息（可选）"
+            value={aiLog} onChange={e => setAiLog(e.target.value)}
+            rows={3}
+            style={{ width: '100%', padding: '6px 10px', fontSize: 12, borderRadius: 6, border: '1px solid #d1d5db', resize: 'vertical' }}
+          />
+          {aiResult && (
+            <div style={{ padding: 12, borderRadius: 8, fontSize: 13, background: aiResult.root_cause_category === 'code_defect' ? '#fef2f2' : aiResult.root_cause_category === 'environment' ? '#fffbeb' : '#f0fdf4', border: `1px solid ${aiResult.root_cause_category === 'code_defect' ? '#fecaca' : aiResult.root_cause_category === 'environment' ? '#fed7aa' : '#bbf7d0'}` }}>
+              <div style={{ fontWeight: 500, marginBottom: 6 }}>
+                根因: {aiResult.root_cause_category === 'code_defect' ? '代码缺陷' : aiResult.root_cause_category === 'environment' ? '环境问题' : aiResult.root_cause_category === 'test_case' ? '用例问题' : aiResult.root_cause_category === 'test_data' ? '测试数据' : aiResult.root_cause_category === 'infrastructure' ? '基础设施' : '未知'}
+                <span style={{ marginLeft: 8, padding: '1px 6px', borderRadius: 8, fontSize: 11, background: aiResult.confidence > 0.7 ? '#bbf7d0' : '#fef08a' }}>置信度: {Math.round(aiResult.confidence * 100)}%</span>
+                <span style={{ marginLeft: 8, padding: '1px 6px', borderRadius: 8, fontSize: 11, color: '#fff', background: aiResult.severity === 'critical' ? '#dc2626' : aiResult.severity === 'high' ? '#f97316' : aiResult.severity === 'medium' ? '#eab308' : '#6b7280' }}>{aiResult.severity}</span>
+              </div>
+              <p style={{ margin: '0 0 6px', color: '#374151', lineHeight: 1.5 }}>{aiResult.analysis}</p>
+              {aiResult.probable_cause && <p style={{ margin: '0 0 6px', color: '#4b5563' }}><strong>最可能原因:</strong> {aiResult.probable_cause}</p>}
+              {aiResult.fix_suggestions.length > 0 && (
+                <div style={{ marginTop: 6 }}>
+                  <strong style={{ fontSize: 12, color: '#4b5563' }}>修复建议:</strong>
+                  <ul style={{ margin: '4px 0', paddingLeft: 18 }}>
+                    {aiResult.fix_suggestions.map((s, i) => <li key={i} style={{ fontSize: 12, color: '#6b7280', marginBottom: 2 }}>{s}</li>)}
+                  </ul>
+                </div>
+              )}
+              {aiResult.related_patterns.length > 0 && (
+                <div style={{ marginTop: 6, fontSize: 12, color: '#6b7280' }}>
+                  <strong>相关历史模式:</strong> {aiResult.related_patterns.join('; ')}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </SectionCard>
     </div>
   )
-}
-
-function SectionCard({ title, children, style }: { title: string; children: React.ReactNode; style?: React.CSSProperties }) {
+}function SectionCard({ title, children, style }: { title: string; children: React.ReactNode; style?: React.CSSProperties }) {
   return (
     <div style={{
       background: '#fff',

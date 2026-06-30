@@ -1,6 +1,6 @@
 import type { ComponentType } from 'react'
 
-export type PageType = 'requirements' | 'manualTestCases' | 'testCases' | 'agents' | 'roles' | 'roleGroup' | 'users' | 'profile' | 'myTasks' | 'permissions' | 'dashboard' | 'catalogLabs' | 'testPlanStudioDemo' | 'lineageView' | 'search' | 'collections' | 'projects' | 'systemConfig' | 'caseGovernance'
+export type PageType = 'requirements' | 'manualTestCases' | 'testCases' | 'agents' | 'roles' | 'roleGroup' | 'users' | 'profile' | 'myTasks' | 'permissions' | 'dashboard' | 'catalogLabs' | 'testPlanStudioDemo' | 'lineageView' | 'search' | 'collections' | 'projects' | 'systemConfig' | 'caseGovernance' | 'failureAnalysis'
 
 export interface NavItem {
   key: PageType

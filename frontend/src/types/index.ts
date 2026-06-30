@@ -1236,6 +1236,70 @@ export interface BatchUpdateResult {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+//  失效分析（Failure Analysis）
+// ═══════════════════════════════════════════════════════════════════════
+
+export type FailurePattern =
+  | 'TIMEOUT'
+  | 'ASSERTION_ERROR'
+  | 'ENV_SETUP'
+  | 'DEPENDENCY'
+  | 'CONFIG_ERROR'
+  | 'NETWORK_ERROR'
+  | 'HARDWARE_ERROR'
+  | 'MEMORY_ERROR'
+  | 'SCRIPT_ERROR'
+  | 'UNKNOWN';
+
+export interface FailurePatternSummary {
+  pattern: FailurePattern;
+  count: number;
+  percentage: number;
+}
+
+export interface FailureByAgent {
+  agent_id: string;
+  hostname: string;
+  failure_count: number;
+  pattern_breakdown: Record<FailurePattern, number>;
+}
+
+export interface FailureDailyTrend {
+  date: string;
+  failure_count: number;
+  patterns: Record<FailurePattern, number>;
+}
+
+export interface FlakyTestCase {
+  auto_case_id: string;
+  case_id: string;
+  name: string;
+  total_runs: number;
+  flaky_ratio: number;
+  recent_results: Record<string, unknown>[];
+}
+
+export interface HighFrequencyFailure {
+  auto_case_id: string;
+  case_id: string;
+  name: string;
+  failure_count: number;
+  dominant_pattern: FailurePattern;
+  latest_failure_at?: string;
+  avg_duration_sec?: number;
+}
+
+export interface FailureAnalysisDashboard {
+  time_range: string;
+  total_failures: number;
+  pattern_distribution: FailurePatternSummary[];
+  by_agent: FailureByAgent[];
+  daily_trend: FailureDailyTrend[];
+  flaky_tests: FlakyTestCase[];
+  high_frequency_failures: HighFrequencyFailure[];
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 //  项目（Project）相关
 // ═══════════════════════════════════════════════════════════════════════
 

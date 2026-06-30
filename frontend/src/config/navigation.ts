@@ -2,7 +2,7 @@ import type { ComponentType } from 'react'
 import {
   ListTodo, Search, ClipboardList, Zap, FolderKanban, Layers3,
   Bot, CalendarClock, ShieldCheck, BarChart3, Users, Shield,
-  GroupIcon, KeyRound, FlaskConical, Settings,
+  GroupIcon, KeyRound, FlaskConical, Settings, Bug,
 } from 'lucide-react'
 import type { NavItem, NavSection, PageType } from '../types/app'
 
@@ -26,6 +26,7 @@ const NAV_ITEM_DEFS: NavItemDef[] = [
   { key: 'agents',               label: '执行代理',   section: '执行', icon: Bot, permission: 'execution_agents:read' },
   { key: 'testPlanStudioDemo',   label: '执行计划',   section: '执行', icon: CalendarClock, permission: 'execution_plans:read' },
   { key: 'caseGovernance',       label: '用例治理',   section: '执行', icon: ShieldCheck, permission: 'case_governance:read' },
+  { key: 'failureAnalysis',      label: '失效分析',   section: '执行', icon: Bug, permission: 'execution_tasks:read' },
 
   { key: 'dashboard',    label: '数据统计',  section: '系统', icon: BarChart3, permission: 'nav:dashboard:view' },
   { key: 'users',        label: '用户管理',  section: '系统', icon: Users, permission: 'users:read' },

@@ -1062,6 +1062,38 @@ class ApiClient {
     });
   }
 
+  /** AI 根据需求生成测试用例 */
+  async generateCases(data: import('../types/ai').GenerateCasesRequest): Promise<ApiResponse<import('../types/ai').GenerateCasesResponse>> {
+    return this.request<import('../types/ai').GenerateCasesResponse>('/ai/generate-cases', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  /** AI 评审单条测试用例 */
+  async reviewCase(caseId: string): Promise<ApiResponse<import('../types/ai').ReviewCaseResponse>> {
+    return this.request<import('../types/ai').ReviewCaseResponse>('/ai/review-case', {
+      method: 'POST',
+      body: JSON.stringify({ case_id: caseId }),
+    });
+  }
+
+  /** AI 智能推荐执行计划用例 */
+  async recommendCases(data: import('../types/ai').RecommendCasesRequest): Promise<ApiResponse<import('../types/ai').RecommendCasesResponse>> {
+    return this.request<import('../types/ai').RecommendCasesResponse>('/ai/recommend-cases', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  /** AI 分析执行失败根因 */
+  async analyzeFailure(data: import('../types/ai').AnalyzeFailureRequest): Promise<ApiResponse<import('../types/ai').AnalyzeFailureResponse>> {
+    return this.request<import('../types/ai').AnalyzeFailureResponse>('/failure-analysis/analyze', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
   /** 获取测试用例执行统计 */
   async getCaseExecutionStats(caseId: string): Promise<ApiResponse<ExecutionStatsResponse>> {
     return this.request<ExecutionStatsResponse>(

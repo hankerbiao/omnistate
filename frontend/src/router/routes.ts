@@ -24,6 +24,7 @@ export const PAGE_ROUTES: Record<PageType, string> = {
   profile:              '/profile',
   lineageView:          '/lineage',
   manualTestCases:      '/manual-test-cases',
+  failureAnalysis:      '/failure-analysis',
 }
 
 /** Reverse lookup: URL path -> PageType */

@@ -26,6 +26,7 @@ const CaseGovernancePage = lazy(() => import('./components/CaseGovernancePage'))
 const TestExecutionPlanDemo = lazy(() => import('./components/TestExecutionPlanDemo'))
 const ProfilePage = lazy(() => import('./components/ProfilePage'))
 const LineageViewPage = lazy(() => import('./components/lineage/LineageViewPage'))
+const FailureAnalysisPage = lazy(() => import('./components/failure-analysis/FailureAnalysisPage'))
 
 function PageLoading() {
   return (
@@ -131,6 +132,10 @@ function LineageRoute() {
   return <LineageViewPage key={`${currentUserId}-${lineageEntityId}`} entityType={lineageEntityType} entityId={lineageEntityId} />
 }
 
+function FailureAnalysisRoute() {
+  return <FailureAnalysisPage />
+}
+
 function AppContent() {
   const { isAuthenticated, handleLoginSuccess } = useAuth()
 
@@ -161,6 +166,7 @@ function AppContent() {
         <Route path={PAGE_ROUTES.manualTestCases} element={<TestPlanRoute />} />
         <Route path={PAGE_ROUTES.profile} element={<ProfileRoute />} />
         <Route path={PAGE_ROUTES.lineageView} element={<LineageRoute />} />
+        <Route path={PAGE_ROUTES.failureAnalysis} element={<FailureAnalysisRoute />} />
         <Route path="*" element={<Navigate to={PAGE_ROUTES.myTasks} replace />} />
       </Route>
     </Routes>
