@@ -12,6 +12,10 @@ from app.shared.ai.client import AIClient
 from app.shared.ai.prompts import (
     GENERATE_CASES_SYSTEM_PROMPT,
     GENERATE_CASES_USER_TEMPLATE,
+    RECOMMEND_CASES_SYSTEM_PROMPT,
+    RECOMMEND_CASES_USER_TEMPLATE,
+    REVIEW_CASE_SYSTEM_PROMPT,
+    REVIEW_CASE_USER_TEMPLATE,
     STEP_ANALYSIS_SYSTEM_PROMPT,
     STEP_ANALYSIS_USER_TEMPLATE,
 )
@@ -287,3 +291,224 @@ async def generate_cases(request: GenerateCasesRequest):
         request.requirement_id or "text", request.max_cases, len(cases),
     )
     return APIResponse(data=GenerateCasesResponse(cases=cases, reason=reason))
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  用例评审建议
+# ═══════════════════════════════════════════════════════════════════════
+
+class ReviewCaseRequest(BaseModel):
+    """用例评审请求。"""
+    case_id: str = Field(..., description="用例 ID")
+
+
+class ReviewDimension(BaseModel):
+    """单维度评审结果。"""
+    score: int = Field(..., description="0-100")
+    issues: list[str] = Field(default_factory=list)
+
+
+class ReviewCaseResponse(BaseModel):
+    """用例评审结果。"""
+    score: int = Field(..., description="0-100 总分")
+    verdict: str = Field(..., description="pass / needs_revision / reject")
+    dimensions: dict[str, ReviewDimension] = Field(default_factory=dict)
+    missing_scenarios: list[str] = Field(default_factory=list)
+    priority_suggestion: str = Field(default="保持不变")
+    summary: str = Field(default="")
+
+
+@router.post("/review-case", response_model=APIResponse[ReviewCaseResponse])
+async def review_case(request: ReviewCaseRequest):
+    """AI 评审单条测试用例。
+
+    从完整性、清晰度、可追溯性、可执行性四个维度评审，
+    返回评分 + verdict + 缺失场景 + 优先级建议。
+    """
+    from app.modules.test_specs.repository.models.test_case import TestCaseDoc
+
+    doc = await TestCaseDoc.find_one(
+        TestCaseDoc.case_id == request.case_id,
+        TestCaseDoc.is_deleted == False,  # noqa: E712
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail=f"用例不存在: {request.case_id}")
+
+    steps = []
+    for s in (doc.steps or []):
+        steps.append({
+            "step_id": s.step_id,
+            "name": s.name,
+            "action": s.action,
+            "expected": s.expected,
+        })
+
+    user_content = REVIEW_CASE_USER_TEMPLATE.format(
+        title=doc.title or "（无标题）",
+        case_id=request.case_id,
+        priority=doc.priority or "未指定",
+        test_category=doc.test_category or "未指定",
+        tags=", ".join(doc.tags) if doc.tags else "无",
+        pre_condition=doc.pre_condition or "无",
+        post_condition=doc.post_condition or "无",
+        ref_req_id=doc.ref_req_id or "无",
+        step_count=len(steps),
+        steps_json=json.dumps(steps, ensure_ascii=False, indent=2),
+    )
+
+    client = AIClient.get_instance()
+    try:
+        raw = await client.chat_completion_json(
+            system_prompt=REVIEW_CASE_SYSTEM_PROMPT,
+            user_content=user_content,
+            temperature=0.3,
+        )
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except json.JSONDecodeError as e:
+        log.error("AI review-case JSON parse failed: {}", e)
+        raise HTTPException(status_code=502, detail=f"AI 返回格式错误: {e}")
+    except Exception as e:
+        log.error("AI review-case failed: {}", e)
+        raise HTTPException(status_code=502, detail=f"AI 调用失败: {e}")
+
+    dimensions: dict[str, ReviewDimension] = {}
+    for dim_name, dim_data in (raw.get("dimensions") or {}).items():
+        dimensions[dim_name] = ReviewDimension(
+            score=int(dim_data.get("score", 0)),
+            issues=[str(i) for i in dim_data.get("issues", [])],
+        )
+
+    result = ReviewCaseResponse(
+        score=int(raw.get("score", 0)),
+        verdict=str(raw.get("verdict", "needs_revision")),
+        dimensions=dimensions,
+        missing_scenarios=[str(s) for s in raw.get("missing_scenarios", [])],
+        priority_suggestion=str(raw.get("priority_suggestion", "保持不变")),
+        summary=str(raw.get("summary", "")),
+    )
+
+    log.info(
+        "AI review-case: case={} score={} verdict={}",
+        request.case_id, result.score, result.verdict,
+    )
+    return APIResponse(data=result)
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  智能用例选择
+# ═══════════════════════════════════════════════════════════════════════
+
+class RecommendCasesRequest(BaseModel):
+    """智能用例选择请求。"""
+    project_id: str = Field(default="", description="项目 ID")
+    change_description: str = Field(..., description="变更描述/commit range")
+    case_ids: list[str] = Field(default_factory=list, description="候选用例 ID 列表（可选，留空则查全部）")
+    max_recommend: int = Field(default=20, ge=1, le=100, description="最大推荐数")
+
+
+class RecommendedCase(BaseModel):
+    """单条推荐用例。"""
+    case_id: str
+    reason: str = Field(default="")
+    priority_order: int = Field(default=0)
+
+
+class ExcludedCase(BaseModel):
+    """被排除的用例。"""
+    case_id: str
+    reason: str = Field(default="")
+
+
+class RecommendCasesResponse(BaseModel):
+    """智能用例选择结果。"""
+    recommended: list[RecommendedCase] = Field(default_factory=list)
+    excluded: list[ExcludedCase] = Field(default_factory=list)
+    coverage_note: str = Field(default="")
+    estimated_runtime_min: int = Field(default=0)
+
+
+@router.post("/recommend-cases", response_model=APIResponse[RecommendCasesResponse])
+async def recommend_cases(request: RecommendCasesRequest):
+    """AI 根据变更范围推荐应执行的测试用例。
+
+    输入变更描述和候选用例列表，AI 返回推荐用例（含理由和优先级顺序）
+    以及被排除的用例（含排除理由）。
+    """
+    from app.modules.test_specs.repository.models.test_case import TestCaseDoc
+
+    if request.case_ids:
+        docs = await TestCaseDoc.find(
+            TestCaseDoc.case_id.in_(request.case_ids),
+            TestCaseDoc.is_deleted == False,  # noqa: E712
+        ).to_list()
+    else:
+        docs = await TestCaseDoc.find(
+            TestCaseDoc.is_deleted == False,  # noqa: E712
+        ).to_list()
+
+    if not docs:
+        raise HTTPException(status_code=404, detail="没有找到候选用例")
+
+    cases_summary = []
+    for d in docs[:100]:
+        cases_summary.append({
+            "case_id": d.case_id,
+            "title": d.title,
+            "priority": d.priority or "P2",
+            "test_category": d.test_category or "",
+            "tags": d.tags or [],
+        })
+
+    user_content = RECOMMEND_CASES_USER_TEMPLATE.format(
+        project_id=request.project_id or "未指定",
+        change_description=request.change_description,
+        total_cases=len(docs),
+        cases_json=json.dumps(cases_summary, ensure_ascii=False, indent=2),
+        failure_stats="（暂无历史失败统计，请基于用例信息推荐）",
+    )
+
+    client = AIClient.get_instance()
+    try:
+        raw = await client.chat_completion_json(
+            system_prompt=RECOMMEND_CASES_SYSTEM_PROMPT,
+            user_content=user_content,
+            temperature=0.4,
+        )
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except json.JSONDecodeError as e:
+        log.error("AI recommend-cases JSON parse failed: {}", e)
+        raise HTTPException(status_code=502, detail=f"AI 返回格式错误: {e}")
+    except Exception as e:
+        log.error("AI recommend-cases failed: {}", e)
+        raise HTTPException(status_code=502, detail=f"AI 调用失败: {e}")
+
+    recommended = []
+    for item in raw.get("recommended", [])[:request.max_recommend]:
+        recommended.append(RecommendedCase(
+            case_id=str(item.get("case_id", "")),
+            reason=str(item.get("reason", "")),
+            priority_order=int(item.get("priority_order", 0)),
+        ))
+    recommended.sort(key=lambda x: x.priority_order)
+
+    excluded = []
+    for item in raw.get("excluded", []):
+        excluded.append(ExcludedCase(
+            case_id=str(item.get("case_id", "")),
+            reason=str(item.get("reason", "")),
+        ))
+
+    result = RecommendCasesResponse(
+        recommended=recommended,
+        excluded=excluded,
+        coverage_note=str(raw.get("coverage_note", "")),
+        estimated_runtime_min=int(raw.get("estimated_runtime_min", 0)),
+    )
+
+    log.info(
+        "AI recommend-cases: project={} candidates={} recommended={} excluded={}",
+        request.project_id, len(docs), len(recommended), len(excluded),
+    )
+    return APIResponse(data=result)

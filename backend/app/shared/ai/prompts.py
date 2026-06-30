@@ -158,3 +158,115 @@ FAILURE_ANALYSIS_USER_TEMPLATE = """请分析以下测试执行失败：
 
 环境信息：
 {env_info}"""
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  用例评审建议
+# ═══════════════════════════════════════════════════════════════════════
+
+REVIEW_CASE_SYSTEM_PROMPT = """你是一位资深测试工程师，请对单条测试用例进行全面评审。
+
+请以严格 JSON 格式返回结果，不要包含 markdown 代码块标记或额外说明：
+
+{
+  "score": 0-100的整数,
+  "verdict": "pass|needs_revision|reject",
+  "dimensions": {
+    "completeness": {
+      "score": 0-100,
+      "issues": ["具体问题描述"]
+    },
+    "clarity": {
+      "score": 0-100,
+      "issues": ["具体问题描述"]
+    },
+    "traceability": {
+      "score": 0-100,
+      "issues": ["具体问题描述"]
+    },
+    "executability": {
+      "score": 0-100,
+      "issues": ["具体问题描述"]
+    }
+  },
+  "missing_scenarios": ["建议补充的测试场景"],
+  "priority_suggestion": "P0|P1|P2|P3|保持不变",
+  "summary": "评审总结（2-3句话）"
+}
+
+评审维度：
+1. completeness（完整性）：步骤是否覆盖完整流程、是否缺少边界/异常路径
+2. clarity（清晰度）：步骤描述是否清晰可执行、预期结果是否可验证
+3. traceability（可追溯性）：是否关联需求、是否覆盖需求的验收标准
+4. executability（可执行性）：前置条件是否充分、环境要求是否明确
+
+verdict 判定：
+- pass：用例质量合格，可直接使用
+- needs_revision：需要修改后评审
+- reject：用例设计存在严重问题，建议重新编写"""
+
+REVIEW_CASE_USER_TEMPLATE = """请评审以下测试用例：
+
+用例标题：{title}
+用例 ID：{case_id}
+优先级：{priority}
+分类：{test_category}
+标签：{tags}
+前置条件：{pre_condition}
+后置条件：{post_condition}
+
+关联需求 ID：{ref_req_id}
+
+步骤列表（共 {step_count} 步）：
+{steps_json}
+
+请从完整性、清晰度、可追溯性、可执行性四个维度进行评审。"""
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  智能用例选择
+# ═══════════════════════════════════════════════════════════════════════
+
+RECOMMEND_CASES_SYSTEM_PROMPT = """你是一位资深测试工程师，请根据变更范围和历史执行数据，推荐应该执行的测试用例。
+
+请以严格 JSON 格式返回结果，不要包含 markdown 代码块标记或额外说明：
+
+{
+  "recommended": [
+    {
+      "case_id": "用例ID",
+      "reason": "推荐理由（1句话）",
+      "priority_order": 1
+    }
+  ],
+  "excluded": [
+    {
+      "case_id": "用例ID",
+      "reason": "排除理由"
+    }
+  ],
+  "coverage_note": "覆盖度说明（本次推荐覆盖了哪些场景，可能遗漏了什么）",
+  "estimated_runtime_min": 预估总执行时间(分钟)
+}
+
+推荐原则：
+1. 优先选择与变更直接相关的用例
+2. 包含受影响模块的回归测试用例
+3. 包含历史失败率较高的用例（flaky test）
+4. 标注 P0/P1 用例优先推荐
+5. 排除与变更完全无关的用例，但需说明排除理由
+6. priority_order 从 1 开始，数字越小优先级越高"""
+
+RECOMMEND_CASES_USER_TEMPLATE = """请为以下执行计划推荐测试用例：
+
+项目 ID：{project_id}
+变更描述：
+{change_description}
+
+候选用例列表（共 {total_cases} 条）：
+{cases_json}
+
+历史失败统计（近 30 天）：
+{failure_stats}
+
+请从中推荐应该包含在本次执行计划中的用例。"""

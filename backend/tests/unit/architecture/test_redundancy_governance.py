@@ -38,6 +38,10 @@ API_CROSS_MODULE_MODEL_EXCEPTIONS = {
         "app.modules.test_specs.repository.models.requirement",
     ),
     (
+        "app/modules/system_config/api/ai_routes.py",
+        "app.modules.test_specs.repository.models.test_case",
+    ),
+    (
         "app/modules/failure_analysis/api/routes.py",
         "app.modules.test_specs.repository.models.test_case",
     ),
