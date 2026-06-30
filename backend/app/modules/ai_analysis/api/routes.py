@@ -14,7 +14,7 @@ from app.shared.api.schemas.base import APIResponse
 router = APIRouter(prefix="/ai-analyze", tags=["AIAnalysis"])
 
 
-@router.post("/collections/{collection_id}", response_model=APIResponse[CollectionAnalysisResult])
+@router.post("/collections/{collection_id}", response_model=APIResponse[CollectionAnalysisResult], summary="AI 分析用例集质量/冗余/覆盖")
 async def analyze_collection(
     collection_id: str,
     request: AnalyzeRequest,

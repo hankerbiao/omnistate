@@ -255,6 +255,10 @@ _ALLOWED_CROSS_MODULE_REPO_IMPORTS: dict[str, set[str]] = {
     "app/modules/failure_analysis/api/routes.py": {
         "app.modules.test_specs.repository.models",
     },
+    # ── audit（API 层直接访问同模块的 repository 模型） ───
+    "app/modules/audit/api/routes.py": {
+        "app.modules.audit.repository.models",
+    },
 }
 
 # API 层允许跨模块读 repository 的例外清单（应尽可能少）
@@ -262,6 +266,7 @@ _API_ALLOWED_REPO_IMPORTS: set[str] = {
     "app/modules/terminal/api/routes.py",
     "app/modules/system_config/api/ai_routes.py",
     "app/modules/failure_analysis/api/routes.py",
+    "app/modules/audit/api/routes.py",
 }
 
 

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from beanie import Document, Indexed
 from pydantic import Field
@@ -18,6 +18,7 @@ class AuditLogDoc(Document):
 
     # ── 操作者信息 ──
     actor_id: Indexed(str) = Field(..., description="操作者用户 ID")
+    actor_type: str = Field(default="human", description="操作者类型: human/ai")
     username: str = Field(default="", description="操作者用户名")
     role_ids: list[str] = Field(default_factory=list, description="操作者角色列表")
     client_ip: str = Field(default="", description="客户端 IP")

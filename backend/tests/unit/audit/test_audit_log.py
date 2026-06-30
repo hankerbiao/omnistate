@@ -271,3 +271,55 @@ async def test_write_audit_log_writes_for_authenticated():
                 assert call_kwargs["request_body"]["title"] == "test"
 
                 mock_doc_instance.insert.assert_awaited_once()
+
+def test_audit_log_actor_type_default():
+    """AuditLogDoc 的 actor_type 默认值为 human。"""
+    from app.modules.audit.repository.models.audit_log import AuditLogDoc
+    assert AuditLogDoc.model_fields["actor_type"].default == "human"
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  AiFeedbackDoc model
+# ═══════════════════════════════════════════════════════════════════════
+
+def test_ai_feedback_collection_name():
+    from app.modules.audit.repository.models.ai_feedback import AiFeedbackDoc
+    assert AiFeedbackDoc.Settings.name == "ai_feedback"
+
+
+def test_ai_feedback_has_indexes():
+    from app.modules.audit.repository.models.ai_feedback import AiFeedbackDoc
+    indexes = AiFeedbackDoc.Settings.indexes
+    # 至少有 4 个索引
+    assert len(indexes) >= 4
+
+
+async def test_ai_feedback_model_structure():
+    """验证 AiFeedbackDoc 模型结构和字段。"""
+    from app.modules.audit.repository.models.ai_feedback import AiFeedbackDoc
+
+    assert AiFeedbackDoc.Settings.name == "ai_feedback"
+    indexes = AiFeedbackDoc.Settings.indexes
+    assert len(indexes) >= 4
+
+    fields = AiFeedbackDoc.model_fields
+    assert "ai_endpoint" in fields
+    assert "feedback" in fields
+    assert "rating" in fields
+
+    feedback_field = fields["feedback"]
+    # feedback 是必填字段（没有 default）
+    assert feedback_field.is_required() is True
+
+
+def test_ai_feedback_defaults():
+    """验证默认值。"""
+    from app.modules.audit.repository.models.ai_feedback import AiFeedbackDoc
+
+    fields = AiFeedbackDoc.model_fields
+    # actor_id 默认 "-"
+    assert fields["actor_id"].default == "-"
+    # request_id 默认 "-"
+    assert fields["request_id"].default == "-"
+    # rating 默认 None（可选）
+    assert fields["rating"].default is None

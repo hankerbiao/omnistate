@@ -40,7 +40,7 @@ def _doc_to_response(doc) -> SystemConfigResponse:
     )
 
 
-@router.get("", response_model=APIResponse[SystemConfigListResponse])
+@router.get("", response_model=APIResponse[SystemConfigListResponse], summary="获取系统配置列表")
 async def get_configs(
     category: Optional[str] = Query(None, description="配置分类"),
     active_only: bool = Query(True, description="是否只返回激活的配置"),
@@ -56,14 +56,14 @@ async def get_configs(
     return APIResponse(data=SystemConfigListResponse(items=items, total=total))
 
 
-@router.get("/categories", response_model=APIResponse[list[str]])
+@router.get("/categories", response_model=APIResponse[list[str]], summary="获取配置分类列表")
 async def get_categories() -> APIResponse[list[str]]:
     """获取配置分类列表"""
     categories = await ConfigService.get_categories()
     return APIResponse(data=categories)
 
 
-@router.get("/history", response_model=APIResponse[list[ConfigHistoryResponse]])
+@router.get("/history", response_model=APIResponse[list[ConfigHistoryResponse]], summary="获取配置历史记录")
 async def get_config_history(
     config_key: Optional[str] = Query(None, description="配置键（可选，筛选特定配置的历史）"),
     limit: int = Query(50, ge=1, le=200, description="返回数量"),
@@ -85,7 +85,7 @@ async def get_config_history(
     return APIResponse(data=items)
 
 
-@router.get("/{config_key}", response_model=APIResponse[SystemConfigResponse])
+@router.get("/{config_key}", response_model=APIResponse[SystemConfigResponse], summary="获取单个配置")
 async def get_config(config_key: str) -> APIResponse[SystemConfigResponse]:
     """获取单个配置"""
     doc = await ConfigService.get_config_by_key(config_key)
@@ -94,7 +94,7 @@ async def get_config(config_key: str) -> APIResponse[SystemConfigResponse]:
     return APIResponse(data=_doc_to_response(doc))
 
 
-@router.put("/{config_key}", response_model=APIResponse[SystemConfigResponse])
+@router.put("/{config_key}", response_model=APIResponse[SystemConfigResponse], summary="更新配置")
 async def update_config(
     config_key: str,
     data: SystemConfigUpdate,
@@ -116,7 +116,7 @@ async def update_config(
     return APIResponse(data=_doc_to_response(doc), message="配置更新成功")
 
 
-@router.put("/batch", response_model=APIResponse[BatchUpdateResponse])
+@router.put("/batch", response_model=APIResponse[BatchUpdateResponse], summary="批量更新配置")
 async def batch_update_configs(
     data: BatchUpdateRequest,
     current_user=Depends(get_current_user),
@@ -134,7 +134,7 @@ async def batch_update_configs(
     )
 
 
-@router.post("/ai/test-connection", response_model=APIResponse[TestConnectionResponse])
+@router.post("/ai/test-connection", response_model=APIResponse[TestConnectionResponse], summary="测试 AI 服务连接")
 async def test_ai_connection(data: TestConnectionRequest) -> APIResponse[TestConnectionResponse]:
     """测试AI服务连接"""
     result = await ConfigService.test_ai_connection(
@@ -155,7 +155,7 @@ async def test_ai_connection(data: TestConnectionRequest) -> APIResponse[TestCon
     return APIResponse(data=response, message=message)
 
 
-@router.post("/reload", response_model=APIResponse)
+@router.post("/reload", response_model=APIResponse, summary="热加载配置（清除缓存）")
 async def reload_config(
     config_key: Optional[str] = Query(None, description="配置键（可选，不传则清除所有缓存）"),
 ) -> APIResponse:

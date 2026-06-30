@@ -23,7 +23,7 @@ def get_service() -> AttachmentService:
     return AttachmentService()
 
 
-@router.post("/upload", response_model=UploadResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/upload", response_model=UploadResponse, status_code=status.HTTP_201_CREATED, summary="上传附件")
 async def upload_attachment(
     file: UploadFile = File(..., description="要上传的文件"),
     current_user: CurrentUser = None,
@@ -60,7 +60,7 @@ async def upload_attachment(
     return result
 
 
-@router.get("/{file_id}", response_model=AttachmentInfo)
+@router.get("/{file_id}", response_model=AttachmentInfo, summary="获取附件信息")
 async def get_attachment(
     file_id: str,
     current_user: CurrentUser = None,
@@ -83,7 +83,7 @@ async def get_attachment(
     return info
 
 
-@router.get("/{file_id}/download", response_model=DownloadResponse)
+@router.get("/{file_id}/download", response_model=DownloadResponse, summary="获取附件下载链接")
 async def get_download_url(
     file_id: str,
     expires_seconds: int | None = None,
@@ -110,7 +110,7 @@ async def get_download_url(
     return DownloadResponse(download_url=download_url, expires_in=expires_seconds)
 
 
-@router.delete("/{file_id}", response_model=DeleteResponse)
+@router.delete("/{file_id}", response_model=DeleteResponse, summary="删除附件")
 async def delete_attachment(
     file_id: str,
     current_user: CurrentUser = None,
@@ -133,7 +133,7 @@ async def delete_attachment(
     return DeleteResponse(file_id=file_id, deleted=True)
 
 
-@router.get("", response_model=AttachmentListResponse)
+@router.get("", response_model=AttachmentListResponse, summary="列出附件列表")
 async def list_attachments(
     uploaded_by: Optional[str] = None,
     limit: int = 100,

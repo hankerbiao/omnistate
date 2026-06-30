@@ -1,0 +1,85 @@
+# DML V4 — AI 友好型项目说明
+
+> DML V4 是一个测试用例管理与执行平台，提供完整的测试资产全生命周期管理（需求→用例→执行计划→执行→分析）。
+
+## 项目概况
+
+- 后端: Python FastAPI + MongoDB (Beanie ODM)
+- 前端: React + TypeScript + TailwindCSS v4
+- API 规范: RESTful JSON, OpenAPI schema at `/docs`
+- 认证: JWT Bearer Token
+
+## API 端点速查
+
+### 核心业务
+
+- `GET /api/v1/requirements` — 需求管理（CRUD + 工作流）
+- `GET /api/v1/test-cases` — 用例管理（CRUD + 步骤编辑 + 工作流）
+- `GET /api/v1/execution-plans/plans` — 执行计划（创建/派发/结果回填）
+- `GET /api/v1/execution/tasks` — 执行任务（派发/取消/重跑）
+- `GET /api/v1/projects` — 项目管理（统计/风险/动态）
+- `POST /api/v1/work-items/{id}/transition` — 工作流状态流转
+
+### AI 能力（8 个端点）
+
+- `POST /api/v1/ai/polish` — 文本润色
+- `POST /api/v1/ai/analyze-steps` — 步骤完整性分析
+- `POST /api/v1/ai/generate-cases` — 根据需求 AI 生成用例草稿
+- `POST /api/v1/ai/review-case` — 单条用例 AI 评审（四维度评分）
+- `POST /api/v1/ai/recommend-cases` — 根据变更描述推荐执行用例
+- `POST /api/v1/failure-analysis/analyze` — 执行失败根因 AI 分析
+- `POST /api/v1/ai-analyze/collections/{id}` — 用例集质量/冗余/覆盖分析
+- `POST /api/v1/system-configs/ai/test-connection` — LLM 连接测试
+
+### 审计与监控
+
+- `GET /api/v1/audit-logs` — 操作审计日志（用户操作全记录）
+- `GET /api/v1/audit-logs/stats` — 审计日志统计
+
+### 系统
+
+- `GET /api/v1/enums` — 系统枚举值（机器可读的受控词表）
+- `GET /api/v1/system-configs` — 系统配置管理
+
+## 数据模型
+
+全部数据模型通过 Beanie ODM 定义，字段均有 `description=` 注释。
+OpenAPI schema 可通过 `/docs` 或 `/openapi.json` 获取。
+
+### 核心实体关系
+
+```
+需求 (TestRequirementDoc) ───→ 用例 (TestCaseDoc) ←─── 执行任务 (ExecutionTaskDoc)
+                                    │
+                                    └──→ 执行计划条目 (ExecutionPlanItemDoc)
+                                              │
+                                              └──→ 执行计划 (ExecutionPlanDoc)
+```
+
+## AI 配置
+
+AI 功能通过 MongoDB `system_configs` 集合热加载配置：
+
+| 配置键 | 默认值 | 说明 |
+|--------|--------|------|
+| `ai.base_url` | `http://localhost:11434/v1` | LLM API 地址 |
+| `ai.model` | `qwen2.5:latest` | 模型名称 |
+| `ai.enabled` | `true` | 是否启用 AI |
+
+默认指向本地 Ollama 服务，兼容 OpenAI 格式。
+
+## 枚举值（受控词表）
+
+通过 `GET /api/v1/enums` 获取完整枚举列表，包括：
+
+- `Priority`: P0 / P1 / P2 / P3
+- `TestCategory`: FUNCTIONAL / PERFORMANCE / STABILITY / COMPATIBILITY / SECURITY / REGRESSION
+- `RequirementCategory`: 同上 + 需求专属分类
+- `WorkItemState`: DRAFT / PENDING_REVIEW / DEVELOPING / DONE / REJECTED
+- `PlanItemStatus`: PENDING / RUNNING / DONE / FAIL / SKIPPED
+- `FailurePattern`: TIMEOUT / ASSERTION_ERROR / ENV_SETUP / DEPENDENCY / ...
+
+## 开发指南
+
+- 见 `AGENTS.md`（项目结构、构建命令、编码规范）
+- 见 `backend/docs/modules/ai-usage.md`（AI 功能详细使用说明）

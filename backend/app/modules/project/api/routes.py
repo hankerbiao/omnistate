@@ -24,7 +24,7 @@ from app.shared.auth import get_current_user
 router = APIRouter(prefix="/projects", tags=["Projects"])
 
 
-@router.get("", response_model=APIResponse[ProjectListResponse])
+@router.get("", response_model=APIResponse[ProjectListResponse], summary="获取项目列表")
 async def list_projects(
     service: ProjectServiceDep,
     current_user=Depends(get_current_user),
@@ -49,7 +49,7 @@ async def list_projects(
     return APIResponse(data=ProjectListResponse(**result))
 
 
-@router.post("", response_model=APIResponse[ProjectResponse])
+@router.post("", response_model=APIResponse[ProjectResponse], summary="创建项目")
 async def create_project(
     data: CreateProjectRequest,
     service: ProjectServiceDep,
@@ -66,7 +66,7 @@ async def create_project(
     )
 
 
-@router.get("/{project_id}", response_model=APIResponse[ProjectDetailResponse])
+@router.get("/{project_id}", response_model=APIResponse[ProjectDetailResponse], summary="获取项目详情")
 async def get_project(
     project_id: str,
     service: ProjectServiceDep,
@@ -77,7 +77,7 @@ async def get_project(
     return APIResponse(data=detail)
 
 
-@router.put("/{project_id}", response_model=APIResponse[ProjectResponse])
+@router.put("/{project_id}", response_model=APIResponse[ProjectResponse], summary="更新项目")
 async def update_project(
     project_id: str,
     data: UpdateProjectRequest,
@@ -95,7 +95,7 @@ async def update_project(
     )
 
 
-@router.delete("/{project_id}", response_model=APIResponse)
+@router.delete("/{project_id}", response_model=APIResponse, summary="删除项目")
 async def delete_project(
     project_id: str,
     service: ProjectServiceDep,
@@ -106,7 +106,7 @@ async def delete_project(
     return APIResponse(message="项目已删除")
 
 
-@router.get("/{project_id}/stats", response_model=APIResponse[ProjectStatsResponse])
+@router.get("/{project_id}/stats", response_model=APIResponse[ProjectStatsResponse], summary="获取项目统计数据")
 async def get_project_stats(
     project_id: str,
     service: ProjectServiceDep,
@@ -117,7 +117,7 @@ async def get_project_stats(
     return APIResponse(data=stats)
 
 
-@router.get("/{project_id}/blockers", response_model=APIResponse[List[BlockerItemResponse]])
+@router.get("/{project_id}/blockers", response_model=APIResponse[List[BlockerItemResponse]], summary="获取项目风险/阻塞项")
 async def get_project_blockers(
     project_id: str,
     service: ProjectServiceDep,
@@ -128,7 +128,7 @@ async def get_project_blockers(
     return APIResponse(data=blockers)
 
 
-@router.get("/{project_id}/activities", response_model=APIResponse[List[ProjectActivityResponse]])
+@router.get("/{project_id}/activities", response_model=APIResponse[List[ProjectActivityResponse]], summary="获取项目最近动态")
 async def get_project_activities(
     project_id: str,
     service: ProjectServiceDep,
@@ -140,7 +140,7 @@ async def get_project_activities(
     return APIResponse(data=activities)
 
 
-@router.post("/{project_id}/generate-demo-data", response_model=APIResponse[GenerateDemoResponse])
+@router.post("/{project_id}/generate-demo-data", response_model=APIResponse[GenerateDemoResponse], summary="生成项目演示数据")
 async def generate_demo_data(
     project_id: str,
     service: ProjectServiceDep,
