@@ -135,6 +135,37 @@ class ProjectListResponse(BaseModel):
     total: int
 
 
+class BlockerItemResponse(BaseModel):
+    """风险/阻塞项。"""
+
+    id: str
+    title: str = ""
+    source: str = ""  # "plan_item" | "execution_task"
+    assignee_id: Optional[str] = None
+    status: str = ""
+    priority: str = ""
+    updated_at: Optional[datetime] = None
+
+
+class ProjectActivityResponse(BaseModel):
+    """最近动态条目。"""
+
+    id: str
+    time: datetime
+    user_id: str
+    username: str = ""
+    action: str = ""
+    target: str = ""
+    target_type: str = ""
+
+
+class GenerateDemoResponse(BaseModel):
+    """生成演示数据响应。"""
+
+    plan_items_created: int = 0
+    activities_created: int = 0
+
+
 class ProjectDetailResponse(ProjectResponse):
     """项目详情响应（含统计）。"""
 

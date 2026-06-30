@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Query
 
 from app.modules.project.api.dependencies import ProjectServiceDep
 from app.modules.project.schemas.project import (
+    BlockerItemResponse,
     CreateProjectRequest,
+    GenerateDemoResponse,
+    ProjectActivityResponse,
     ProjectDetailResponse,
     ProjectListResponse,
     ProjectResponse,
@@ -58,7 +61,7 @@ async def create_project(
         created_by=current_user.get("username"),
     )
     return APIResponse(
-        data=await ProjectService._to_project_response(doc),
+        data=await service._to_project_response(doc),
         message="项目创建成功",
     )
 
@@ -87,7 +90,7 @@ async def update_project(
         data=data.model_dump(exclude_unset=True),
     )
     return APIResponse(
-        data=await ProjectService._to_project_response(doc),
+        data=await service._to_project_response(doc),
         message="项目更新成功",
     )
 
@@ -112,3 +115,37 @@ async def get_project_stats(
     """获取项目统计数据。"""
     stats = await service.get_project_stats(project_id)
     return APIResponse(data=stats)
+
+
+@router.get("/{project_id}/blockers", response_model=APIResponse[List[BlockerItemResponse]])
+async def get_project_blockers(
+    project_id: str,
+    service: ProjectServiceDep,
+    current_user=Depends(get_current_user),
+) -> APIResponse[List[BlockerItemResponse]]:
+    """获取项目风险/阻塞项。"""
+    blockers = await service.get_blockers(project_id)
+    return APIResponse(data=blockers)
+
+
+@router.get("/{project_id}/activities", response_model=APIResponse[List[ProjectActivityResponse]])
+async def get_project_activities(
+    project_id: str,
+    service: ProjectServiceDep,
+    current_user=Depends(get_current_user),
+    limit: int = Query(20, ge=1, le=100, description="返回条数"),
+) -> APIResponse[List[ProjectActivityResponse]]:
+    """获取项目最近动态。"""
+    activities = await service.get_activities(project_id, limit=limit)
+    return APIResponse(data=activities)
+
+
+@router.post("/{project_id}/generate-demo-data", response_model=APIResponse[GenerateDemoResponse])
+async def generate_demo_data(
+    project_id: str,
+    service: ProjectServiceDep,
+    current_user=Depends(get_current_user),
+) -> APIResponse[GenerateDemoResponse]:
+    """生成项目演示数据。"""
+    result = await service.generate_demo_data(project_id)
+    return APIResponse(data=result, message="演示数据生成成功")

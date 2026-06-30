@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import importlib
-from datetime import datetime, timezone
+import random
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from app.modules.auth.repository.models import UserDoc
-from app.modules.execution_plan.repository.models import ExecutionPlanItemDoc
+from app.modules.execution_plan.repository.models import ExecutionPlanDoc, ExecutionPlanItemDoc
 from app.modules.project.domain.constants import (
     PROJECT_ID_PREFIX,
     PROJECT_RELATED_MODEL_PATHS,
@@ -20,13 +21,17 @@ from app.modules.project.domain.exceptions import (
 from app.modules.project.repository.models.project import ProjectDoc
 from app.modules.project.schemas.project import (
     AssigneeDistribution,
+    BlockerItemResponse,
     ExecutionTaskBreakdown,
+    GenerateDemoResponse,
     OwnerBrief,
+    ProjectActivityResponse,
     ProjectDetailResponse,
     ProjectResponse,
     ProjectStatsResponse,
     StatsBreakdown,
 )
+from app.modules.workflow.repository.models.business import BusFlowLogDoc, BusWorkItemDoc
 from app.shared.core.logger import log as logger
 from app.shared.service.base import BaseService
 
@@ -69,14 +74,26 @@ async def _resolve_owner(owner_id: Optional[str]) -> Optional[OwnerBrief]:
         if user:
             return OwnerBrief(user_id=user.user_id, username=user.username)
     except Exception:
-        pass
+        logger.warning("解析项目 owner 失败: owner_id={}", owner_id)
     return None
 
 
 async def _fetch_assignee_distribution(project_id: str) -> List[AssigneeDistribution]:
     try:
+        # ExecutionPlanItemDoc 没有 project_ids，需要通过 ExecutionPlanDoc 做 $lookup
         pipeline = [
-            {"$match": {"project_ids": {"$in": [project_id]}, "is_deleted": False}},
+            {"$lookup": {
+                "from": "execution_plans",
+                "localField": "plan_id",
+                "foreignField": "plan_id",
+                "as": "plan",
+            }},
+            {"$unwind": "$plan"},
+            {"$match": {
+                "plan.project_ids": {"$in": [project_id]},
+                "plan.is_deleted": False,
+                "is_deleted": False,
+            }},
             {"$group": {
                 "_id": "$assignee_id",
                 "item_count": {"$sum": 1},
@@ -95,6 +112,7 @@ async def _fetch_assignee_distribution(project_id: str) -> List[AssigneeDistribu
             ) for r in result
         ]
     except Exception:
+        logger.warning("获取项目执行人分布失败: project_id={}", project_id)
         return []
 
 
@@ -130,8 +148,20 @@ async def _compute_pass_rates(project_id: str) -> tuple[StatsBreakdown, StatsBre
     manual = StatsBreakdown()
     auto = StatsBreakdown()
     try:
+        # ExecutionPlanItemDoc 没有 project_ids，需要通过 ExecutionPlanDoc 做 $lookup
         pipeline = [
-            {"$match": {"project_ids": {"$in": [project_id]}, "is_deleted": False}},
+            {"$lookup": {
+                "from": "execution_plans",
+                "localField": "plan_id",
+                "foreignField": "plan_id",
+                "as": "plan",
+            }},
+            {"$unwind": "$plan"},
+            {"$match": {
+                "plan.project_ids": {"$in": [project_id]},
+                "plan.is_deleted": False,
+                "is_deleted": False,
+            }},
             {"$group": {
                 "_id": "$ref_type",
                 "total": {"$sum": 1},
@@ -152,7 +182,7 @@ async def _compute_pass_rates(project_id: str) -> tuple[StatsBreakdown, StatsBre
             elif ref_type == "auto":
                 auto = sb
     except Exception:
-        pass
+        logger.warning("计算项目通过率失败: project_id={}", project_id)
     return manual, auto
 
 
@@ -367,6 +397,255 @@ class ProjectService(BaseService):
             auto_pass=auto_pass,
             coverage_rate=coverage_rate,
             assignee_distribution=assignee_dist,
+        )
+
+    # ── 阻塞项 ─────────────────────────────────────────────────────────
+
+    @staticmethod
+    async def get_blockers(project_id: str) -> List[BlockerItemResponse]:
+        """获取项目风险/阻塞项。"""
+        blockers: List[BlockerItemResponse] = []
+        try:
+            # 1. 从 ExecutionPlanItemDoc 查询失败的条目（通过 ExecutionPlanDoc 关联）
+            pipeline = [
+                {"$lookup": {
+                    "from": "execution_plans",
+                    "localField": "plan_id",
+                    "foreignField": "plan_id",
+                    "as": "plan",
+                }},
+                {"$unwind": "$plan"},
+                {"$match": {
+                    "plan.project_ids": {"$in": [project_id]},
+                    "plan.is_deleted": False,
+                    "is_deleted": False,
+                    "$or": [
+                        {"status": "fail"},
+                        {"$and": [{"status": "pending"}, {"priority": "P0"}]},
+                    ],
+                }},
+                {"$sort": {"updated_at": -1}},
+                {"$limit": 20},
+            ]
+            items = await ExecutionPlanItemDoc.aggregate(pipeline, projection_model=None).to_list()
+            for item in items:
+                blockers.append(BlockerItemResponse(
+                    id=item.get("item_id", ""),
+                    title=item.get("case_title", ""),
+                    source="plan_item",
+                    assignee_id=item.get("assignee_id"),
+                    status=item.get("status", ""),
+                    priority=item.get("priority", ""),
+                    updated_at=item.get("updated_at"),
+                ))
+
+            # 2. 从 ExecutionTaskDoc 查询失败的任务
+            task_cls = _find_model(_get_related_models(), "ExecutionTaskDoc")
+            failed_tasks = await task_cls.find(
+                {"project_ids": {"$in": [project_id]}, "is_deleted": False,
+                 "overall_status": {"$in": ["FAILED", "ERROR"]}},
+                sort=[("updated_at", -1)],
+                limit=20,
+            ).to_list()
+            for t in failed_tasks:
+                blockers.append(BlockerItemResponse(
+                    id=getattr(t, "task_id", ""),
+                    title=getattr(t, "task_id", ""),
+                    source="execution_task",
+                    assignee_id=getattr(t, "created_by", None),
+                    status=getattr(t, "overall_status", ""),
+                    priority="",
+                    updated_at=getattr(t, "updated_at", None),
+                ))
+        except Exception as e:
+            logger.warning(f"获取项目阻塞项失败: {e}")
+
+        return blockers[:20]
+
+    # ── 最近动态 ───────────────────────────────────────────────────────
+
+    @staticmethod
+    async def get_activities(project_id: str, limit: int = 20) -> List[ProjectActivityResponse]:
+        """获取项目最近动态。"""
+        activities: List[ProjectActivityResponse] = []
+        try:
+            # BusFlowLogDoc → $lookup BusWorkItemDoc → 按 project_ids 过滤
+            pipeline = [
+                {"$lookup": {
+                    "from": "bus_work_items",
+                    "localField": "work_item_id",
+                    "foreignField": "_id",
+                    "as": "work_item",
+                }},
+                {"$unwind": "$work_item"},
+                {"$match": {
+                    "work_item.project_ids": {"$in": [project_id]},
+                    "work_item.is_deleted": False,
+                }},
+                {"$sort": {"created_at": -1}},
+                {"$limit": limit},
+            ]
+            logs = await BusFlowLogDoc.aggregate(pipeline, projection_model=None).to_list()
+            for log_entry in logs:
+                operator_id = log_entry.get("operator_id", "")
+                username = ""
+                try:
+                    user = await UserDoc.find_one({"user_id": operator_id})
+                    if user:
+                        username = user.username
+                except Exception:
+                    logger.warning("查询操作人用户名失败: operator_id={}", operator_id)
+
+                activities.append(ProjectActivityResponse(
+                    id=str(log_entry.get("_id", "")),
+                    time=log_entry.get("created_at", datetime.now(timezone.utc)),
+                    user_id=operator_id,
+                    username=username,
+                    action=log_entry.get("action", ""),
+                    target=log_entry.get("work_item", {}).get("title", ""),
+                    target_type=log_entry.get("work_item", {}).get("type_code", ""),
+                ))
+        except Exception as e:
+            logger.warning(f"获取项目动态失败: {e}")
+
+        return activities
+
+    # ── 演示数据生成 ───────────────────────────────────────────────────
+
+    @staticmethod
+    async def generate_demo_data(project_id: str) -> GenerateDemoResponse:
+        """生成演示数据。"""
+        # 确认项目存在
+        project = await ProjectService.get_project(project_id)
+
+        # 查找或创建演示执行计划
+        plan_id = f"DEMO-PLAN-{project_id[-6:]}"
+        plan = await ExecutionPlanDoc.find_one({"plan_id": plan_id})
+        if plan is None:
+            plan = ExecutionPlanDoc(
+                plan_id=plan_id,
+                title=f"演示执行计划 ({project_id[-6:]})",
+                description="系统生成的演示数据",
+                status="active",
+                project_ids=[project_id],
+                created_by="system",
+            )
+            await plan.insert()
+
+        # 演示数据
+        demo_items = [
+            {"case_title": "用户登录-正常流程验证", "ref_type": "manual", "status": "done", "priority": "P0"},
+            {"case_title": "用户登录-密码错误处理", "ref_type": "manual", "status": "done", "priority": "P0"},
+            {"case_title": "权限管理-管理员角色验证", "ref_type": "manual", "status": "done", "priority": "P1"},
+            {"case_title": "权限管理-只读用户权限验证", "ref_type": "manual", "status": "fail", "priority": "P1"},
+            {"case_title": "数据导出-CSV格式验证", "ref_type": "manual", "status": "done", "priority": "P2"},
+            {"case_title": "数据导出-Excel格式验证", "ref_type": "manual", "status": "fail", "priority": "P2"},
+            {"case_title": "接口安全扫描-P0用例", "ref_type": "auto", "status": "pending", "priority": "P0"},
+            {"case_title": "性能测试-并发请求", "ref_type": "auto", "status": "running", "priority": "P1"},
+            {"case_title": "UI兼容性-深色模式", "ref_type": "manual", "status": "running", "priority": "P2"},
+            {"case_title": "消息推送-实时通知验证", "ref_type": "auto", "status": "pending", "priority": "P1"},
+        ]
+
+        assignees = ["admin001", "user002", "user003", "user004"]
+        now = datetime.now(timezone.utc)
+        created_items = 0
+        created_activities = 0
+
+        for i, item_data in enumerate(demo_items):
+            existing = await ExecutionPlanItemDoc.find_one(
+                {"plan_id": plan_id, "case_title": item_data["case_title"]}
+            )
+            if existing:
+                continue
+
+            item = ExecutionPlanItemDoc(
+                item_id=f"DEMO-ITEM-{project_id[-6:]}-{i+1:03d}",
+                plan_id=plan_id,
+                ref_type=item_data["ref_type"],
+                case_id=f"DEMO-CASE-{i+1:03d}",
+                case_title=item_data["case_title"],
+                priority=item_data["priority"],
+                assignee_id=random.choice(assignees),
+                status=item_data["status"],
+                order_no=i + 1,
+            )
+            await item.insert()
+            created_items += 1
+
+        # 更新计划计数
+        total_items = await ExecutionPlanItemDoc.find(
+            {"plan_id": plan_id, "is_deleted": False}
+        ).count()
+        done_items = await ExecutionPlanItemDoc.find(
+            {"plan_id": plan_id, "is_deleted": False, "status": "done"}
+        ).count()
+        plan.item_count = total_items
+        plan.done_count = done_items
+        plan.progress_percent = round(done_items / total_items * 100) if total_items > 0 else 0
+        await plan.save()
+
+        # ── 创建演示工作流事项 + 流转日志（用于"最近动态"） ──
+        demo_work_items = [
+            {"title": "用户登录功能需求", "type_code": "requirement", "content": "用户登录模块的功能需求"},
+            {"title": "权限管理功能需求", "type_code": "requirement", "content": "权限分级管理的功能需求"},
+            {"title": "数据导出功能需求", "type_code": "requirement", "content": "数据导出模块的功能需求"},
+            {"title": "用户登录-正常流程验证", "type_code": "test_case", "content": "验证用户登录正常流程"},
+            {"title": "权限管理-管理员角色验证", "type_code": "test_case", "content": "验证管理员角色权限"},
+        ]
+
+        demo_actions = [
+            ("SUBMIT_REVIEW", "DRAFT", "PENDING_REVIEW"),
+            ("APPROVE", "PENDING_REVIEW", "PENDING_DEVELOP"),
+            ("START_DEVELOP", "PENDING_DEVELOP", "DEVELOPING"),
+            ("SUBMIT_TEST", "DEVELOPING", "PENDING_TEST"),
+            ("PASS_TEST", "PENDING_TEST", "DONE"),
+        ]
+
+        operators = ["admin001", "user002", "user003"]
+        type_labels = {"SUBMIT_REVIEW": "提交审核", "APPROVE": "审核通过", "START_DEVELOP": "开始开发",
+                       "SUBMIT_TEST": "提交测试", "PASS_TEST": "测试通过"}
+
+        for w_item in demo_work_items:
+            # 检查是否已存在
+            existing_wi = await BusWorkItemDoc.find_one(
+                {"title": w_item["title"], "project_ids": {"$in": [project_id]}}
+            )
+            if existing_wi:
+                continue
+
+            # 创建 BusWorkItemDoc
+            work_item = BusWorkItemDoc(
+                type_code=w_item["type_code"],
+                title=w_item["title"],
+                content=w_item["content"],
+                current_state="DONE",
+                current_owner_id="admin001",
+                creator_id="admin001",
+                project_ids=[project_id],
+            )
+            await work_item.insert()
+
+            # 为该工作项创建 2-3 条流转日志
+            num_logs = random.randint(2, 3)
+            for j in range(num_logs):
+                action_name, from_state, to_state = demo_actions[j]
+                log_time = now - timedelta(hours=random.randint(1, 48), minutes=random.randint(0, 59))
+                flow_log = BusFlowLogDoc(
+                    work_item_id=work_item.id,
+                    from_state=from_state,
+                    to_state=to_state,
+                    action=action_name,
+                    operator_id=random.choice(operators),
+                    payload={},
+                )
+                # 手动设置 created_at（因为 TimestampedDocumentMixin 自动设值为 now）
+                flow_log.created_at = log_time
+                await flow_log.insert()
+                created_activities += 1
+
+        return GenerateDemoResponse(
+            plan_items_created=created_items,
+            activities_created=created_activities,
         )
 
     # ── 工具 ──────────────────────────────────────────────────────────
