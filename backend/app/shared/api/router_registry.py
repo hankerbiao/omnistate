@@ -30,6 +30,7 @@ _API_MODULE_PATHS = [
     "app.shared.redis.api",
     "app.modules.failure_analysis.api",
     "app.modules.project.api",
+    "app.modules.audit.api",
 ]
 
 

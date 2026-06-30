@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 
 from app.shared.api.errors.handlers import setup_exception_handlers
 from app.shared.context import reset_context
-from app.shared.middleware import RequestLoggingMiddleware
+from app.shared.middleware.request_logging import RequestLoggingMiddleware
 
 
 def test_request_logging_middleware_injects_request_id_and_calls_reset(monkeypatch):
@@ -17,7 +17,7 @@ def test_request_logging_middleware_injects_request_id_and_calls_reset(monkeypat
         reset_calls.append(True)
         reset_context()
 
-    monkeypatch.setattr("app.shared.middleware.reset_context", tracking_reset)
+    monkeypatch.setattr("app.shared.middleware.request_logging.reset_context", tracking_reset)
 
     app = FastAPI()
     app.add_middleware(RequestLoggingMiddleware)
@@ -41,7 +41,7 @@ def test_request_logging_middleware_calls_reset_when_call_next_raises(monkeypatc
         reset_calls.append(True)
         reset_context()
 
-    monkeypatch.setattr("app.shared.middleware.reset_context", tracking_reset)
+    monkeypatch.setattr("app.shared.middleware.request_logging.reset_context", tracking_reset)
 
     app = FastAPI()
     app.add_middleware(RequestLoggingMiddleware)

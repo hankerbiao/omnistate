@@ -13,7 +13,7 @@ from app.shared.core.mongo_client import set_mongo_client
 from app.shared.infrastructure import initialize_infrastructure, shutdown_infrastructure
 from app.shared.infrastructure.bootstrap import initialize_beanie, validate_workflow_consistency
 from app.shared.kafka.health import check_kafka_health
-from app.shared.middleware import RequestLoggingMiddleware
+from app.shared.middleware import RequestLoggingMiddleware, AuditLogMiddleware
 
 
 @asynccontextmanager
@@ -119,6 +119,7 @@ app.add_middleware(
 )
 # 全链路追踪中间件（始终启用，不受 APP_DEBUG 控制）
 app.add_middleware(RequestLoggingMiddleware)
+app.add_middleware(AuditLogMiddleware)
 
 # 调试模式的 HTTP 详细日志中间件（仅 debug 模式开启）
 if get_settings().app.debug:

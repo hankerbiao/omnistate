@@ -22,6 +22,7 @@ _DOCUMENT_MODULE_PATHS = [
     "app.modules.system_config.repository.models",
     "app.modules.project.repository.models",
     "app.modules.notification.repository.models",
+    "app.modules.audit.repository.models",
 ]
 
 
