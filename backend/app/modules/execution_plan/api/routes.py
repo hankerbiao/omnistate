@@ -1,4 +1,9 @@
-"""执行计划 API 路由（My Tasks 所需端点）。"""
+"""执行计划 API 路由。
+
+读写分离：
+- PlanQueryServiceDep：纯读操作（列表、详情、统计）
+- PlanCommandServiceDep：写操作（CRUD、派发、改派、结果回填）
+"""
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
@@ -6,8 +11,8 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, Query
 
 from app.modules.execution_plan.api.dependencies import (
-    ExecutionPlanServiceDep,
-    SequenceIdServiceDep,
+    PlanCommandServiceDep,
+    PlanQueryServiceDep,
 )
 from app.modules.execution_plan.api.exception_handler import handle_service_error
 from app.modules.execution_plan.schemas.execution_plan import (
@@ -38,7 +43,7 @@ def _get_user_id(current_user: Dict[str, Any]) -> str:
 
 
 # ═══════════════════════════════════════════════════════════════════════
-#  My Tasks — 计划条目查询
+#  My Tasks — 计划条目查询（PlanQueryService）
 # ═══════════════════════════════════════════════════════════════════════
 
 @router.get(
@@ -47,13 +52,13 @@ def _get_user_id(current_user: Dict[str, Any]) -> str:
     summary="获取当前用户的计划任务列表（My Tasks）",
 )
 async def list_my_plan_items(
-    service: ExecutionPlanServiceDep,
+    query_service: PlanQueryServiceDep,
     current_user: Dict[str, Any] = Depends(get_current_user),
     assignee_id: Optional[str] = Query(None, description="执行人 user_id，不传则默认当前用户"),
 ):
     """返回当前用户被指派的计划条目列表，对齐前端 PlanTask 结构。"""
     uid = assignee_id or _get_user_id(current_user)
-    items = await service.list_my_items(uid)
+    items = await query_service.list_my_items(uid)
     return APIResponse(data=items)
 
 
@@ -63,14 +68,14 @@ async def list_my_plan_items(
     summary="查询计划条目列表（支持状态/计划筛选，不限执行人）",
 )
 async def list_plan_items(
-    service: ExecutionPlanServiceDep,
+    query_service: PlanQueryServiceDep,
     current_user: Dict[str, Any] = Depends(get_current_user),
     status: Optional[str] = Query(None, description="按状态筛选: pending|running|done|fail"),
     plan_id: Optional[str] = Query(None, description="按计划ID筛选"),
     limit: int = Query(200, description="返回条目数量上限", ge=1, le=1000),
 ):
     """查询所有未删除计划的条目列表，支持按状态和计划ID过滤，不限制执行人。"""
-    items = await service.list_items(status=status, plan_id=plan_id, limit=limit)
+    items = await query_service.list_items(status=status, plan_id=plan_id, limit=limit)
     return APIResponse(data=items)
 
 
@@ -80,11 +85,11 @@ async def list_plan_items(
     summary="获取所有计划的运行总览",
 )
 async def get_plan_overview(
-    service: ExecutionPlanServiceDep,
+    query_service: PlanQueryServiceDep,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """返回所有执行计划的统计摘要及运行中条目列表。"""
-    overview = await service.get_overview()
+    overview = await query_service.get_overview()
     return APIResponse(data=overview)
 
 
@@ -95,19 +100,19 @@ async def get_plan_overview(
 )
 async def get_plan_item(
     item_id: str,
-    service: ExecutionPlanServiceDep,
+    query_service: PlanQueryServiceDep,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """获取计划内单条条目的详细信息（含结果）。"""
     try:
-        item = await service.get_item(item_id)
+        item = await query_service.get_item(item_id)
         return APIResponse(data=item)
     except Exception as exc:
         handle_service_error(exc)
 
 
 # ═══════════════════════════════════════════════════════════════════════
-#  计划条目状态更新
+#  计划条目状态更新（PlanCommandService）
 # ═══════════════════════════════════════════════════════════════════════
 
 @router.put(
@@ -119,12 +124,12 @@ async def update_plan_item(
     plan_id: str,
     item_id: str,
     data: UpdatePlanItemRequest,
-    service: ExecutionPlanServiceDep,
+    command_service: PlanCommandServiceDep,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """更新计划条目的状态、指派人等字段。"""
     try:
-        item = await service.update_item(
+        item = await command_service.update_item(
             plan_id=plan_id,
             item_id=item_id,
             data=data.model_dump(exclude_none=True),
@@ -135,7 +140,7 @@ async def update_plan_item(
 
 
 # ═══════════════════════════════════════════════════════════════════════
-#  手工结果回填
+#  手工结果回填（PlanCommandService / PlanQueryService）
 # ═══════════════════════════════════════════════════════════════════════
 
 @router.post(
@@ -146,13 +151,13 @@ async def update_plan_item(
 async def submit_manual_result(
     item_id: str,
     request: SubmitManualResultRequest,
-    service: ExecutionPlanServiceDep,
+    command_service: PlanCommandServiceDep,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """提交手工用例的执行结果回填。"""
     try:
         actor_id = _get_user_id(current_user)
-        result = await service.submit_result(
+        result = await command_service.submit_result(
             item_id=item_id,
             request=request,
             actor_id=actor_id,
@@ -169,12 +174,12 @@ async def submit_manual_result(
 )
 async def get_manual_result(
     item_id: str,
-    service: ExecutionPlanServiceDep,
+    query_service: PlanQueryServiceDep,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """获取某个计划条目已有的手工回填结果。"""
     try:
-        result = await service.get_result(item_id=item_id)
+        result = await query_service.get_result(item_id=item_id)
         return APIResponse(data=result)
     except Exception as exc:
         handle_service_error(exc)
@@ -187,15 +192,15 @@ async def get_manual_result(
 )
 async def get_case_execution_stats(
     case_id: str,
-    service: ExecutionPlanServiceDep,
+    query_service: PlanQueryServiceDep,
 ):
     """获取测试用例的历史执行统计（手工+自动化）。"""
-    stats = await service.get_case_execution_stats(case_id)
+    stats = await query_service.get_case_execution_stats(case_id)
     return APIResponse(data=stats)
 
 
 # ═══════════════════════════════════════════════════════════════════════
-#  自动化下发
+#  自动化下发（PlanCommandService）
 # ═══════════════════════════════════════════════════════════════════════
 
 @router.post(
@@ -206,18 +211,16 @@ async def get_case_execution_stats(
 async def dispatch_single_item(
     item_id: str,
     request: PlanItemDispatchRequest,
-    service: ExecutionPlanServiceDep,
-    sequence_service: SequenceIdServiceDep,
+    command_service: PlanCommandServiceDep,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """将计划内的单条自动化用例下发到执行引擎。"""
     try:
         actor_id = _get_user_id(current_user)
-        result = await service.dispatch_item(
+        result = await command_service.dispatch_item(
             item_id=item_id,
             request=request,
             actor_id=actor_id,
-            sequence_service=sequence_service,
         )
         return APIResponse(data=result)
     except Exception as exc:
@@ -231,13 +234,13 @@ async def dispatch_single_item(
 )
 async def cancel_item_execution(
     item_id: str,
-    service: ExecutionPlanServiceDep,
+    command_service: PlanCommandServiceDep,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """取消计划内自动化条目的执行：删除关联任务，恢复状态为 pending。"""
     try:
         actor_id = _get_user_id(current_user)
-        result = await service.cancel_execution(
+        result = await command_service.cancel_execution(
             item_id=item_id,
             actor_id=actor_id,
         )
@@ -255,7 +258,7 @@ async def cancel_item_execution(
 async def rerun_plan_item(
     item_id: str,
     request: PlanItemRerunRequest,
-    service: ExecutionPlanServiceDep,
+    command_service: PlanCommandServiceDep,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """重新执行计划条目（支持可选执行人变更）。
@@ -267,7 +270,7 @@ async def rerun_plan_item(
     """
     try:
         actor_id = _get_user_id(current_user)
-        result = await service.rerun_item(
+        result = await command_service.rerun_item(
             item_id=item_id,
             actor_id=actor_id,
             request=request,
@@ -284,17 +287,15 @@ async def rerun_plan_item(
 )
 async def batch_dispatch_items(
     request: BatchDispatchRequest,
-    service: ExecutionPlanServiceDep,
-    sequence_service: SequenceIdServiceDep,
+    command_service: PlanCommandServiceDep,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """批量下发计划内的自动化用例到执行引擎。"""
     try:
         actor_id = _get_user_id(current_user)
-        results = await service.batch_dispatch(
+        results = await command_service.batch_dispatch(
             request=request,
             actor_id=actor_id,
-            sequence_service=sequence_service,
         )
         return APIResponse(data=results)
     except Exception as exc:
@@ -309,13 +310,13 @@ async def batch_dispatch_items(
 async def reassign_plan_item(
     item_id: str,
     request: ReassignRequest,
-    service: ExecutionPlanServiceDep,
+    command_service: PlanCommandServiceDep,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """改派计划条目到其他执行人，操作会记录审计日志。"""
     try:
         actor_id = _get_user_id(current_user)
-        result = await service.reassign_item(
+        result = await command_service.reassign_item(
             item_id=item_id,
             assignee_id=request.assignee_id,
             operator_id=actor_id,
@@ -327,7 +328,7 @@ async def reassign_plan_item(
 
 
 # ═══════════════════════════════════════════════════════════════════════
-#  计划 CRUD
+#  计划 CRUD（PlanCommandService 写 / PlanQueryService 读）
 # ═══════════════════════════════════════════════════════════════════════
 
 @router.get(
@@ -336,12 +337,12 @@ async def reassign_plan_item(
     summary="获取执行计划列表",
 )
 async def list_plans(
-    service: ExecutionPlanServiceDep,
+    query_service: PlanQueryServiceDep,
     current_user: Dict[str, Any] = Depends(get_current_user),
     status: Optional[str] = Query(None, description="按状态筛选: active|done"),
 ):
     """返回所有执行计划列表（不含条目详情）。"""
-    plans = await service.list_plans(status=status)
+    plans = await query_service.list_plans(status=status)
     return APIResponse(data=plans)
 
 
@@ -353,13 +354,13 @@ async def list_plans(
 )
 async def create_plan(
     request: CreatePlanRequest,
-    service: ExecutionPlanServiceDep,
+    command_service: PlanCommandServiceDep,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """创建一个新的执行计划（不含条目）。"""
     try:
         actor_id = _get_user_id(current_user)
-        plan = await service.create_plan(
+        plan = await command_service.create_plan(
             data=request.model_dump(exclude_none=True),
             actor_id=actor_id,
         )
@@ -375,12 +376,12 @@ async def create_plan(
 )
 async def get_plan_detail(
     plan_id: str,
-    service: ExecutionPlanServiceDep,
+    query_service: PlanQueryServiceDep,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """获取执行计划的详细信息，包含所有计划条目。"""
     try:
-        plan = await service.get_plan(plan_id=plan_id)
+        plan = await query_service.get_plan(plan_id=plan_id)
         return APIResponse(data=plan)
     except Exception as exc:
         handle_service_error(exc)
@@ -394,12 +395,12 @@ async def get_plan_detail(
 async def update_plan(
     plan_id: str,
     request: UpdatePlanRequest,
-    service: ExecutionPlanServiceDep,
+    command_service: PlanCommandServiceDep,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """更新执行计划的基本信息。"""
     try:
-        plan = await service.update_plan(
+        plan = await command_service.update_plan(
             plan_id=plan_id,
             data=request.model_dump(exclude_none=True),
         )
@@ -415,19 +416,19 @@ async def update_plan(
 )
 async def delete_plan(
     plan_id: str,
-    service: ExecutionPlanServiceDep,
+    command_service: PlanCommandServiceDep,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """软删除执行计划及其所有条目。"""
     try:
-        await service.delete_plan(plan_id=plan_id)
+        await command_service.delete_plan(plan_id=plan_id)
         return APIResponse(data={"plan_id": plan_id, "deleted": True})
     except Exception as exc:
         handle_service_error(exc)
 
 
 # ═══════════════════════════════════════════════════════════════════════
-#  计划条目管理（仅添加和删除，创建完成后不可编辑）
+#  计划条目管理（PlanCommandService）
 # ═══════════════════════════════════════════════════════════════════════
 
 @router.post(
@@ -438,12 +439,12 @@ async def delete_plan(
 async def add_plan_items(
     plan_id: str,
     request: AddPlanItemsRequest,
-    service: ExecutionPlanServiceDep,
+    command_service: PlanCommandServiceDep,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """为已有执行计划添加测试用例条目。"""
     try:
-        plan = await service.add_items(
+        plan = await command_service.add_items(
             plan_id=plan_id,
             items_data=[item.model_dump() for item in request.items],
         )
@@ -460,12 +461,12 @@ async def add_plan_items(
 async def delete_plan_item(
     plan_id: str,
     item_id: str,
-    service: ExecutionPlanServiceDep,
+    command_service: PlanCommandServiceDep,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """从执行计划中移除单个条目（软删除）。"""
     try:
-        await service.delete_item(plan_id=plan_id, item_id=item_id)
+        await command_service.delete_item(plan_id=plan_id, item_id=item_id)
         return APIResponse(data={"plan_id": plan_id, "item_id": item_id, "deleted": True})
     except Exception as exc:
         handle_service_error(exc)
@@ -479,12 +480,12 @@ async def delete_plan_item(
 async def batch_update_assignee(
     plan_id: str,
     request: BatchUpdateAssigneeRequest,
-    service: ExecutionPlanServiceDep,
+    command_service: PlanCommandServiceDep,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """批量更新执行计划条目的执行人（指派或取消指派）。"""
     try:
-        result = await service.batch_update_assignee(
+        result = await command_service.batch_update_assignee(
             plan_id=plan_id,
             item_ids=request.item_ids,
             assignee_id=request.assignee_id,
@@ -504,13 +505,13 @@ async def batch_update_assignee(
     summary="获取已归档的计划任务列表（收纳箱）",
 )
 async def list_archived_items(
-    service: ExecutionPlanServiceDep,
+    query_service: PlanQueryServiceDep,
     current_user: Dict[str, Any] = Depends(get_current_user),
     assignee_id: Optional[str] = Query(None, description="执行人 user_id，不传则默认当前用户"),
 ):
     """返回当前用户已归档的计划条目列表。"""
     uid = assignee_id or _get_user_id(current_user)
-    items = await service.list_archived_items(uid)
+    items = await query_service.list_archived_items(uid)
     return APIResponse(data=items)
 
 
@@ -521,13 +522,13 @@ async def list_archived_items(
 )
 async def archive_item(
     item_id: str,
-    service: ExecutionPlanServiceDep,
+    command_service: PlanCommandServiceDep,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """将计划条目标记为已归档（放入收纳箱）。"""
     try:
         actor_id = _get_user_id(current_user)
-        await service.archive_item(item_id=item_id, actor_id=actor_id)
+        await command_service.archive_item(item_id=item_id, actor_id=actor_id)
         return APIResponse(data={"item_id": item_id, "archived": True})
     except Exception as exc:
         handle_service_error(exc)
@@ -540,13 +541,13 @@ async def archive_item(
 )
 async def unarchive_item(
     item_id: str,
-    service: ExecutionPlanServiceDep,
+    command_service: PlanCommandServiceDep,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """将计划条目从收纳箱移回待处理。"""
     try:
         actor_id = _get_user_id(current_user)
-        await service.unarchive_item(item_id=item_id, actor_id=actor_id)
+        await command_service.unarchive_item(item_id=item_id, actor_id=actor_id)
         return APIResponse(data={"item_id": item_id, "archived": False})
     except Exception as exc:
         handle_service_error(exc)

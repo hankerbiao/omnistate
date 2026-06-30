@@ -28,7 +28,6 @@ class PlanTaskResultPayload(BaseModel):
 class CreatePlanRequest(BaseModel):
     title: str = Field(..., description="计划标题")
     description: str = ""
-    status: str = Field(default="draft", description="draft|active|done|archived")
     start_date: Optional[str] = None
     end_date: Optional[str] = None
     trigger_at: Optional[str] = None
