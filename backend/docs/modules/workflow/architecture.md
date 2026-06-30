@@ -63,7 +63,7 @@ flowchart TB
 配置来源：
 
 1. 开发编辑 `backend/app/configs/*.json`
-2. 执行 `python app/init_mongodb.py` 写入 MongoDB
+2. 执行 `python scripts/init/init_mongodb.py` 写入 MongoDB
 3. 进程启动时 `validate_workflow_consistency()` 校验 type/state 引用合法
 
 详见 [配置与初始化](./configuration.md)。
@@ -174,7 +174,7 @@ flowchart LR
 
 | 检查 | 位置 | 行为 |
 |------|------|------|
-| 种子数据 | `app/init_mongodb.py` | 合并 JSON、校验重复 transition、同步三表 |
+| 种子数据 | `scripts/init/init_mongodb.py` | 合并 JSON、校验重复 transition、同步三表 |
 | 运行期 | `validate_workflow_consistency()` | type/state 引用必须存在；三表全空仅 warning |
 | Kafka Worker | `kafka_worker_main` | 同样调用 consistency 校验 |
 

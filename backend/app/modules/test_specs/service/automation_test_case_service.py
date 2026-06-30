@@ -236,7 +236,7 @@ class AutomationTestCaseService(BaseService):
             or ""
         ).strip()
         if not linked_manual_case_id:
-            raise ValueError("case metadata.linked_manual_case_id is required")
+            linked_manual_case_id = ""
         return linked_manual_case_id
 
     @staticmethod

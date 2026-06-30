@@ -49,7 +49,7 @@ flowchart LR
 | P1-B4 | `POST .../deactivate`：迁移用例 `lab_id`、更新 segment 计数、置 `is_active=false` | 同上 + 事务 | 集成：停用后旧 Lab 无用例 |
 | P1-B5 | `DELETE`：仅 0 用例可删 | 同上 | 有用例时 409 |
 | P1-B6 | API 路由 `/api/v1/catalog/labs` | `api/catalog_routes.py`、挂 `shared/api/main.py` | OpenAPI 可见 |
-| P1-B7 | RBAC：`catalog:labs:read`、`catalog:labs:manage` | `scripts/init_rbac.py`；admin + TPM 角色 | 无权限 403 |
+| P1-B7 | RBAC：`catalog:labs:read`、`catalog:labs:manage` | `scripts/init/init_rbac.py`；admin + TPM 角色 | 无权限 403 |
 | P1-B8 | 种子数据：可选 `init_catalog.py` 预置 BIOS/BMC 等 | `scripts/` | 新环境可一键初始化 |
 
 #### 2.1.2 前端

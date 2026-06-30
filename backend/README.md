@@ -6,7 +6,7 @@ FastAPI 后端，提供测试需求、用例管理、执行编排、权限控制
 
 ```bash
 uv sync
-python app/init_mongodb.py
+python scripts/init/init_mongodb.py
 python scripts/init/init_rbac.py
 python scripts/init/create_user.py
 python -m app.main

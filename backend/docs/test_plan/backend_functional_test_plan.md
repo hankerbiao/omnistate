@@ -694,7 +694,7 @@ python scripts/init/init_rbac.py
 python scripts/init/seed_test_users.py
 
 # 3. 初始化 MongoDB 工作流配置
-python app/init_mongodb.py
+python scripts/init/init_mongodb.py
 ```
 
 ### 16.2 测试用户矩阵

@@ -214,6 +214,10 @@ _ALLOWED_CROSS_MODULE_REPO_IMPORTS: dict[str, set[str]] = {
     "app/modules/execution_plan/service/execution_plan_service.py": {
         "app.modules.execution.repository.models",
         "app.modules.test_specs.repository.models",
+        "app.modules.auth.repository.models",
+    },
+    "app/modules/execution_plan/application/adapters.py": {
+        "app.modules.execution.repository.models",
     },
     # ── failure_analysis ────────────────────────────────────
     "app/modules/failure_analysis/service/failure_analysis_service.py": {"app.modules.execution.repository.models"},
@@ -238,11 +242,10 @@ _ALLOWED_CROSS_MODULE_REPO_IMPORTS: dict[str, set[str]] = {
     "app/modules/project/service/project_service.py": {
         "app.modules.auth.repository.models",
         "app.modules.execution_plan.repository.models",
+        "app.modules.workflow.repository.models",
     },
-    # ── execution_plan（额外）─────────────────────────────────
-    "app/modules/execution_plan/service/execution_plan_service.py": {
-        "app.modules.execution.repository.models",
-        "app.modules.test_specs.repository.models",
+    # ── notification ─────────────────────────────────────────
+    "app/modules/notification/service.py": {
         "app.modules.auth.repository.models",
     },
 }
@@ -348,7 +351,7 @@ def test_module_document_models_exported_consistently() -> None:
             continue
 
         source = models_init.read_text()
-        # 跳过显式声明不使用 Beanie 模型的模块（如 redis）
+        # 跳过显式声明不使用 Beanie 模型的模块
         if "不使用 Beanie" in source or "no beanie" in source.lower():
             continue
         # 检查是否定义了 DOCUMENT_MODELS

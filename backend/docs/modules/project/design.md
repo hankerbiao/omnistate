@@ -389,7 +389,7 @@ async def delete_project(self, project_id: str) -> None:
 
 ### 10.1 初始化脚本
 
-新增 `app/init_projects.py`：
+新增 `scripts/init/init_projects.py`：
 
 ```python
 async def init_default_project():
@@ -413,10 +413,10 @@ async def init_default_project():
 
 ```bash
 # 开发环境：初始化默认项目
-python app/init_projects.py --migrate-existing
+python scripts/init/init_projects.py --migrate-existing
 
 # 生产环境：仅创建默认项目，不迁移历史数据（由管理员手动归档）
-python app/init_projects.py
+python scripts/init/init_projects.py
 ```
 
 ### 10.3 现有索引迁移
@@ -426,7 +426,7 @@ python app/init_projects.py
 IndexModel("project_ids")  # 支持 $in 查询
 ```
 
-在 `app/init_mongodb.py` 或启动时通过 `SKIP_INDEX_SYNC=0` 自动同步。
+在 `scripts/init/init_mongodb.py` 或启动时通过 `SKIP_INDEX_SYNC=0` 自动同步。
 
 ---
 
@@ -490,7 +490,7 @@ backend/app/modules/project/
 │   └── project.py
 └── domain/
     └── constants.py
-backend/app/init_projects.py
+backend/scripts/init/init_projects.py
 ```
 
 ### 后端修改

@@ -62,7 +62,7 @@ backend/app/configs/
 
 ```bash
 cd backend
-python app/init_mongodb.py
+python scripts/init/init_mongodb.py
 ```
 
 脚本会：
@@ -91,7 +91,7 @@ python app/init_mongodb.py
    - `work_types`: `[["MY_TYPE", "显示名"]]`
    - `workflow_configs.MY_TYPE`: 完整边列表
 2. 确认所有 `from_state` / `to_state` 已在 `global_config.json` 的 `states` 中（或在新文件补充 `states`）
-3. `python app/init_mongodb.py`
+3. `python scripts/init/init_mongodb.py`
 4. 重启后端，确认启动无 consistency 错误
 5. 若业务模块需要投影（类似 test_specs）：
    - 实现 `WorkflowItemGateway` / 事务创建

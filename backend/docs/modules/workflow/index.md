@@ -70,7 +70,7 @@ app/modules/workflow/
 
 | 需求 | 优先位置 |
 |------|----------|
-| 新增事项类型或改流转图 | `app/configs/<type>.json` → `python app/init_mongodb.py` |
+| 新增事项类型或改流转图 | `app/configs/<type>.json` → `python scripts/init/init_mongodb.py` |
 | 改流转必填 / 处理人策略 | JSON `required_fields`、`target_owner_strategy` |
 | 改谁能点某个按钮 | JSON `properties`（见 [状态与流转](./state-and-flow.md)） |
 | 改删除联动 | `test_specs/.../workflow_projection_hook.py` |

@@ -50,7 +50,7 @@
 
 ## RBAC 初始化默认角色与权限
 
-RBAC 默认数据初始化脚本是 `backend/scripts/init_rbac.py`。这份脚本负责幂等写入：
+RBAC 默认数据初始化脚本是 `backend/scripts/init/init_rbac.py`。这份脚本负责幂等写入：
 
 - `permissions` 集合中的默认权限
 - `roles` 集合中的默认角色

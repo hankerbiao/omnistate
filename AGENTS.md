@@ -21,7 +21,7 @@ cd backend
 
 # Database initialization
 cd backend
-python app/init_mongodb.py              # Sync workflow configs + base app data
+python scripts/init/init_mongodb.py      # Sync workflow configs + base app data
 python scripts/init/init_rbac.py        # Initialize RBAC (roles/permissions)
 python scripts/init/create_user.py \
   --user-id admin001 --username "系统管理员" --password 'Admin@123' \
@@ -73,8 +73,7 @@ npm run docs:preview                    # Preview built site
 
 - Backend config is loaded from `backend/config.yaml` via `app.shared.config.get_settings()`. See `backend/config.yaml.example` for the canonical template.
 - Key sections: `app` (debug, cors), `mongodb` (uri, db_name), `rabbitmq`, `kafka`, `minio` (attachments storage), `jwt` (secret, algorithm, expire), `execution`, `redis`, `notification`, `logging`.
-- `backend/app/shared/db/config.py` is a compatibility shim over the unified YAML settings.
-- Beanie index sync is skipped by default (`SKIP_INDEX_SYNC=1`). Run `python app/init_mongodb.py` or set `SKIP_INDEX_SYNC=0` when indexes must be synchronized.
+- Beanie index sync is skipped by default (`SKIP_INDEX_SYNC=1`). Run `python scripts/init/init_mongodb.py` or set `SKIP_INDEX_SYNC=0` when indexes must be synchronized.
 - Frontend API base URL: `VITE_API_BASE_URL` in `frontend/.env`, defaulting in `src/services/api.ts` to `http://localhost:8000/api/v1`.
 
 ## Backend Architecture

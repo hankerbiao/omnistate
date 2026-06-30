@@ -174,7 +174,7 @@ class CreateAutomationTestCaseRequest(BaseModel):
         None,
         description="自动化用例业务编号（可选，默认由后端生成）",
     )
-    linked_manual_case_id: str = Field(..., description="关联的平台手工测试用例编号")
+    linked_manual_case_id: Optional[str] = Field(..., description="关联的平台手工测试用例编号")
     name: str = Field(..., description="自动化用例名称")
     description: Optional[str] = Field(None, description="描述")
     status: str = Field("ACTIVE", description="状态（ACTIVE/DEPRECATED）")

@@ -19,7 +19,7 @@ VitePress 手册（更完整）：
 
 ```bash
 cd backend
-python app/init_mongodb.py   # 从 app/configs/*.json 同步配置
+python scripts/init/init_mongodb.py   # 从 app/configs/*.json 同步配置
 python -m app.main            # 启动前会 validate_workflow_consistency
 ```
 

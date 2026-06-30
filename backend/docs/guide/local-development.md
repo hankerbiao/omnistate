@@ -17,18 +17,18 @@ uv sync
 
 ```bash
 cd backend
-python app/init_mongodb.py
-python scripts/init_rbac.py
-python scripts/create_user.py
+python scripts/init/init_mongodb.py
+python scripts/init/init_rbac.py
+python scripts/init/create_user.py
 ```
 
 用途分别是：
 
-- `app/init_mongodb.py`
+- `scripts/init/init_mongodb.py`
   初始化 workflow 类型、状态和流转配置
-- `scripts/init_rbac.py`
+- `scripts/init/init_rbac.py`
   初始化角色、权限、导航等 RBAC 基础数据
-- `scripts/create_user.py`
+- `scripts/init/create_user.py`
   创建初始管理员
 
 ## 启动服务

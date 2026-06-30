@@ -195,7 +195,7 @@ AI 驱动的用例集质量分析。
 ```bash
 cd backend
 pip install -r requirements.txt
-python app/init_mongodb.py
+python scripts/init/init_mongodb.py
 python scripts/init/init_rbac.py
 python -m app.main
 ```

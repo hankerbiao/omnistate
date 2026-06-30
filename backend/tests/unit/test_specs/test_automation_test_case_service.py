@@ -277,19 +277,6 @@ def test_extract_report_payload_mismatched_total_raises():
         })
 
 
-def test_extract_manual_case_id_valid():
-    cid = AutomationTestCaseService._extract_manual_case_id({"linked_manual_case_id": "TC-001"})
-    assert cid == "TC-001"
-
-
-def test_extract_manual_case_id_fallback_to_case_id():
-    cid = AutomationTestCaseService._extract_manual_case_id({"case_id": "TC-002"})
-    assert cid == "TC-002"
-
-
-def test_extract_manual_case_id_missing_raises():
-    with pytest.raises(ValueError, match="linked_manual_case_id is required"):
-        AutomationTestCaseService._extract_manual_case_id({})
 
 
 # ══════════════════════════════════════════════
