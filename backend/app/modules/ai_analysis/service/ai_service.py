@@ -3,12 +3,11 @@ import json
 import time
 from typing import Any, Optional
 
-from openai import OpenAI
-
 from app.modules.system_config.service.config_service import ConfigService
 from app.modules.test_case_collection.repository.models import TestCaseCollectionDoc
 from app.modules.test_specs.repository.models.test_case import TestCaseDoc
 from app.modules.test_specs.repository.models.automation_test_case import AutomationTestCaseDoc
+from app.shared.ai.client import AIClient
 from app.shared.core.logger import log
 
 # 系统角色提示词
@@ -132,19 +131,80 @@ class AIService:
         )
 
     @staticmethod
-    async def _get_client() -> Optional[OpenAI]:
-        """根据系统配置创建LLM客户端"""
-        config = await ConfigService.get_ai_config()
+    async def analyze_collection(
+        collection_id: str,
+        cases_data: list[dict],
+        analysis_types: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """分析用例集
 
-        if not config.get("enabled", True):
-            log.warning("AI分析功能未启用（ai.enabled = false）")
-            return None
+        Args:
+            collection_id: 集合ID
+            cases_data: 用例数据列表
+            analysis_types: 分析类型，默认全部
 
-        return OpenAI(
-            base_url=config["base_url"],
-            api_key=config.get("api_key") or "ollama",
-            timeout=config.get("timeout", 60),
-        )
+        Returns:
+            分析结果字典
+        """
+        if analysis_types is None:
+            analysis_types = ["quality", "redundancy", "coverage"]
+
+        client = AIClient.get_instance()
+        ai_config = await client.get_config()
+
+        if not ai_config.get("enabled", True):
+            return {
+                "collection_id": collection_id,
+                "overall_score": 0,
+                "quality": {"score": 0, "issues": []},
+                "redundancy": {"score": 100, "duplicates": []},
+                "coverage": {"score": 0, "gaps": []},
+                "recommendations": ["AI分析服务未启用，请先在系统配置中设置LLM参数"],
+            }
+
+        try:
+            max_cases = int(await ConfigService.get_config("ai.max_cases", 20))
+            truncated = len(cases_data) > max_cases
+            limited_cases = cases_data[:max_cases]
+            if truncated:
+                log.warning(f"用例数({len(cases_data)})超过限制({max_cases})，仅分析前{max_cases}个")
+
+            prompt = AIService._build_prompt(limited_cases, analysis_types)
+            model = ai_config.get("model", "unknown")
+
+            log.info(f"正在调用LLM分析用例集 {collection_id}，模型={model}，用例数={len(limited_cases)}")
+
+            content = await client.simple_chat(
+                system_prompt=SYSTEM_PROMPT,
+                user_content=prompt,
+                temperature=float(ai_config.get("temperature", 0.3)),
+                max_tokens=int(ai_config.get("max_tokens", 4096)),
+            )
+
+            result = AIService._parse_response(content)
+            result["collection_id"] = collection_id
+            return result
+
+        except RuntimeError as e:
+            log.error(f"AI分析失败(配置): {e}")
+            return {
+                "collection_id": collection_id,
+                "overall_score": 0,
+                "quality": {"score": 0, "issues": [{"case_id": "", "field": "system", "severity": "error", "message": f"AI分析服务不可用: {str(e)}"}]},
+                "redundancy": {"score": 100, "duplicates": []},
+                "coverage": {"score": 0, "gaps": []},
+                "recommendations": [f"AI分析服务不可用: {str(e)}"],
+            }
+        except Exception as e:
+            log.error(f"AI分析失败: {e}")
+            return {
+                "collection_id": collection_id,
+                "overall_score": 0,
+                "quality": {"score": 0, "issues": [{"case_id": "", "field": "system", "severity": "error", "message": f"AI分析调用失败: {str(e)}"}]},
+                "redundancy": {"score": 100, "duplicates": []},
+                "coverage": {"score": 0, "gaps": []},
+                "recommendations": [f"AI分析失败: {str(e)}，请检查LLM配置"],
+            }
 
     @staticmethod
     def _build_prompt(cases_data: list[dict], analysis_types: list[str]) -> str:
@@ -180,92 +240,5 @@ class AIService:
 
     @staticmethod
     def _parse_response(content: str) -> dict[str, Any]:
-        """解析LLM返回的JSON"""
-
-        # 清理可能存在的 markdown 代码块标记
-        content = content.strip()
-        if content.startswith("```"):
-            # 移除开头的 ```json 或 ``` 
-            first_newline = content.find("\n")
-            if first_newline != -1:
-                content = content[first_newline + 1:]
-            # 移除结尾的 ```
-            if content.endswith("```"):
-                content = content[:-3].strip()
-            elif "```" in content:
-                content = content[: content.rfind("```")].strip()
-
-        return json.loads(content)
-
-    @staticmethod
-    async def analyze_collection(
-        collection_id: str,
-        cases_data: list[dict],
-        analysis_types: list[str] | None = None,
-    ) -> dict[str, Any]:
-        """分析用例集
-
-        Args:
-            collection_id: 集合ID
-            cases_data: 用例数据列表
-            analysis_types: 分析类型，默认全部
-
-        Returns:
-            分析结果字典
-        """
-        if analysis_types is None:
-            analysis_types = ["quality", "redundancy", "coverage"]
-
-        client = await AIService._get_client()
-        if client is None:
-            return {
-                "collection_id": collection_id,
-                "overall_score": 0,
-                "quality": {"score": 0, "issues": []},
-                "redundancy": {"score": 100, "duplicates": []},
-                "coverage": {"score": 0, "gaps": []},
-                "recommendations": ["AI分析服务未配置或未启用，请先在系统配置中设置LLM参数"],
-            }
-
-        try:
-            config = await ConfigService.get_ai_config()
-            max_cases = await ConfigService.get_config("ai.max_cases", 20)
-            truncated = len(cases_data) > max_cases
-            limited_cases = cases_data[:max_cases]
-            if truncated:
-                log.warning(f"用例数({len(cases_data)})超过限制({max_cases})，仅分析前{max_cases}个")
-
-            prompt = AIService._build_prompt(limited_cases, analysis_types)
-
-            log.info(f"正在调用LLM分析用例集 {collection_id}，模型={config['model']}，用例数={len(limited_cases)}")
-
-            start_time = time.time()
-
-            response = client.chat.completions.create(
-                model=config["model"],
-                messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": prompt},
-                ],
-                temperature=config.get("temperature", 0.3),
-                max_tokens=config.get("max_tokens", 4096),
-            )
-
-            elapsed = time.time() - start_time
-            content = response.choices[0].message.content
-            log.info(f"LLM分析完成，耗时={elapsed:.1f}s，token={response.usage.total_tokens if response.usage else 'N/A'}")
-
-            result = AIService._parse_response(content)
-            result["collection_id"] = collection_id
-            return result
-
-        except Exception as e:
-            log.error(f"AI分析失败: {e}")
-            return {
-                "collection_id": collection_id,
-                "overall_score": 0,
-                "quality": {"score": 0, "issues": [{"case_id": "", "field": "system", "severity": "error", "message": f"AI分析调用失败: {str(e)}"}]},
-                "redundancy": {"score": 100, "duplicates": []},
-                "coverage": {"score": 0, "gaps": []},
-                "recommendations": [f"AI分析失败: {str(e)}，请检查LLM配置"],
-            }
+        """解析LLM返回的JSON（委托给 AIClient._parse_json）。"""
+        return AIClient._parse_json(content)
