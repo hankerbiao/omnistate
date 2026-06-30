@@ -44,6 +44,7 @@ from app.shared.domain.exceptions import (
     PermissionDeniedError,
     ValidationError,
 )
+from app.shared.redis.service.exceptions import RedisConnectionError, RedisOperationError
 
 
 async def _make_error_response(status_code: int, exc: Exception) -> JSONResponse:
@@ -72,6 +73,10 @@ async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
         status_code = status.HTTP_403_FORBIDDEN
     elif isinstance(exc, ValidationError):
         status_code = status.HTTP_400_BAD_REQUEST
+    elif isinstance(exc, RedisConnectionError):
+        status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    elif isinstance(exc, RedisOperationError):
+        status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
     return await _make_error_response(status_code, exc)
 
 

@@ -1,9 +1,10 @@
+#!/usr/bin/env python3
 """
 初始化默认项目数据。
 
 运行方式：
-    python app/init_projects.py                  # 仅创建默认项目
-    python app/init_projects.py --migrate-existing  # 创建默认项目 + 迁移历史数据
+    python scripts/init/init_projects.py                  # 仅创建默认项目
+    python scripts/init/init_projects.py --migrate-existing  # 创建默认项目 + 迁移历史数据
 """
 from __future__ import annotations
 
@@ -12,7 +13,14 @@ import sys
 from pathlib import Path
 
 # 添加项目根目录到 path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from beanie import init_beanie
+from pymongo import AsyncMongoClient
+
+from app.shared.config import get_settings
 
 
 async def init_default_project() -> str:
@@ -75,23 +83,32 @@ async def migrate_existing_data(project_id: str) -> None:
 
 
 async def main():
-    # 连接数据库
-    from app.shared.db.connection import get_database
-    db = await get_database()
+    settings = get_settings()
+    client = AsyncMongoClient(settings.mongodb.uri)
 
-    # 注册 Beanie 模型
-    from app.shared.infrastructure.bootstrap import initialize_beanie
-    await initialize_beanie(db)
+    try:
+        await client.admin.command("ping")
+        print("[OK] MongoDB 连接成功")
 
-    # 创建默认项目
-    project_id = await init_default_project()
+        # 注册 Beanie 模型
+        from app.modules.project.repository.models import ProjectDoc
+        await init_beanie(
+            database=client[settings.mongodb.db_name],
+            document_models=[ProjectDoc],
+        )
 
-    # 迁移历史数据
-    if "--migrate-existing" in sys.argv:
-        print("\n开始迁移历史数据...")
-        await migrate_existing_data(project_id)
-    else:
-        print("\n提示: 传递 --migrate-existing 参数可迁移历史数据到默认项目")
+        # 创建默认项目
+        project_id = await init_default_project()
+
+        # 迁移历史数据
+        if "--migrate-existing" in sys.argv:
+            print("\n开始迁移历史数据...")
+            await migrate_existing_data(project_id)
+        else:
+            print("\n提示: 传递 --migrate-existing 参数可迁移历史数据到默认项目")
+
+    finally:
+        client.close()
 
 
 if __name__ == "__main__":

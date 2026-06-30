@@ -8,8 +8,8 @@ RBAC 权限与角色初始化由 scripts/init/init_rbac.py 独立管理。
 它是幂等的（Idempotent），可以重复运行。
 
 用法：
-  python app/init_mongodb.py              # 同步 workflow 配置 + 导航定义
-  python scripts/init/init_rbac.py        # 同步 RBAC 权限与角色
+  python scripts/init/init_mongodb.py       # 同步 workflow 配置 + 导航定义
+  python scripts/init/init_rbac.py          # 同步 RBAC 权限与角色
 """
 import asyncio
 import json
@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
@@ -291,7 +291,7 @@ async def init_config_data():
     """
     log.info("开始从配置文件初始化基础数据...")
 
-    config_dir = Path(__file__).parent / "configs"
+    config_dir = ROOT / "app" / "configs"
     if not config_dir.exists():
         log.warning(f"配置目录不存在: {config_dir}")
         return

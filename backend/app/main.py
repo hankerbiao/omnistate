@@ -62,16 +62,24 @@ async def lifespan(app: FastAPI):
         log.success("系统默认配置初始化完成")
 
         # 初始化 Redis 连接池
-        from app.modules.redis.service import init_redis
+        from app.shared.redis.service import init_redis
         init_redis()
         log.success("Redis 连接池初始化完成")
+
+        # 恢复未发送的通知批次
+        from app.modules.notification.service import NotificationService
+        try:
+            await NotificationService.recover_pending()
+            log.success("通知批次恢复完成")
+        except Exception as e:
+            log.warning("通知批次恢复失败（非阻塞）: {}", e)
 
         yield
     finally:
         log.info("FastAPI 服务已关闭")
 
         # 注销 Redis 服务注册并停止心跳
-        from app.modules.redis.service import unregister_service, stop_heartbeat
+        from app.shared.redis.service import unregister_service, stop_heartbeat
         stop_heartbeat()
         unregister_service()
         log.info("Redis 服务注册已注销")
