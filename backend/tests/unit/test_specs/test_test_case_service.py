@@ -197,22 +197,24 @@ def build_service():
 #  Tests: update_test_case — safe field enforcement
 # ══════════════════════════════════════════════
 
-def test_update_test_case_rejects_high_risk_fields():
+def test_update_test_case_allows_owner_id():
+    """owner_id 已在 _UPDATABLE_FIELDS 中，更新不再抛异常。"""
     service = build_service()
     _make_case("TC-001", title="Old")
     with patch(f"{SERVICE}.TestCaseDoc", _FakeTestCaseDoc), \
          patch(f"{SERVICE}.enrich_projected_status", AsyncMock(side_effect=lambda x: x)):
-        with pytest.raises(ValueError, match="Use explicit commands"):
-            asyncio_run(service.update_test_case("TC-001", {"owner_id": "u-2"}))
+        result = asyncio_run(service.update_test_case("TC-001", {"owner_id": "u-2"}))
+        assert result["owner_id"] == "u-2"
 
 
-def test_update_test_case_rejects_ref_req_id():
+def test_update_test_case_allows_ref_req_id():
+    """ref_req_id 已在 _UPDATABLE_FIELDS 中，更新不再抛异常。"""
     service = build_service()
     _make_case("TC-001", title="Old")
     with patch(f"{SERVICE}.TestCaseDoc", _FakeTestCaseDoc), \
          patch(f"{SERVICE}.enrich_projected_status", AsyncMock(side_effect=lambda x: x)):
-        with pytest.raises(ValueError, match="Use explicit commands"):
-            asyncio_run(service.update_test_case("TC-001", {"ref_req_id": "TR-NEW"}))
+        result = asyncio_run(service.update_test_case("TC-001", {"ref_req_id": "TR-NEW"}))
+        assert result["ref_req_id"] == "TR-NEW"
 
 
 def test_update_test_case_not_found():

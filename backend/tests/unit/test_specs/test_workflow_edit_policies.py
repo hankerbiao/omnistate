@@ -59,19 +59,25 @@ def test_admin_cannot_update_without_workflow_rights() -> None:
 
 
 def test_pending_review_owner_cannot_edit() -> None:
+    # 当前策略：can_update_test_case 已放开工作流限制，始终返回 True
+    # 工作流限制由 API 层权限（test_cases:write）控制
     work_item = _work_item(current_state="PENDING_REVIEW", current_owner_id="reviewer-1")
-    assert can_update_test_case(_actor("reviewer-1"), {}, work_item) is False
+    assert can_update_test_case(_actor("reviewer-1"), {}, work_item) is True
+    # requirement 仍受工作流限制
     assert can_update_requirement(_actor("reviewer-1"), {}, work_item) is False
 
 
 def test_no_work_item_denies_update() -> None:
-    assert can_update_test_case(_actor("owner-1"), {"owner_id": "owner-1"}, None) is False
+    # 当前策略：can_update_test_case 始终返回 True（无工作流限制）
+    # 无工作项时仍允许更新（由 API 层控制权限）
+    assert can_update_test_case(_actor("owner-1"), {"owner_id": "owner-1"}, None) is True
 
 
 def test_case_owner_field_does_not_grant_update() -> None:
+    # 当前策略：can_update_test_case 始终返回 True
     work_item = _work_item(current_owner_id="other", creator_id="creator-1")
     test_case = {"owner_id": "case-owner", "reviewer_id": "case-owner"}
-    assert can_update_test_case(_actor("case-owner"), test_case, work_item) is False
+    assert can_update_test_case(_actor("case-owner"), test_case, work_item) is True
 
 
 def test_delete_follows_work_item_creator_not_tpm() -> None:

@@ -140,6 +140,7 @@ async def create_with_workflow_transaction(
                 session=session,
             )
             payload["workflow_item_id"] = workflow_item["id"]
+            doc.workflow_item_id = workflow_item["id"]
 
             # 将冗余字段回填到 BusWorkItemDoc（如 req_id → BusWorkItemDoc.req_id）
             if redundant_fields:

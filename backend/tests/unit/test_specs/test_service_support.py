@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import sys
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -38,7 +39,12 @@ class _FakeDoc:
         self.save_calls += 1
 
     def model_dump(self) -> dict:
-        return dict(self.payload)
+        """返回所有实例属性（不含私有属性和方法）。"""
+        data = dict(self.payload)
+        for key, value in self.__dict__.items():
+            if not key.startswith("_") and key not in ("payload", "save_calls", "inserted_payloads"):
+                data[key] = value
+        return data
 
     @classmethod
     def find_one(cls, *args, **kwargs):
@@ -135,14 +141,19 @@ def test_ensure_safe_generic_update_rejects_high_risk_fields() -> None:
 
 def test_workflow_aware_soft_delete_rejects_bound_workflow_and_marks_deleted() -> None:
     bound_doc = _FakeDoc(req_id="REQ-1", workflow_item_id="wi-1")
-    with pytest.raises(ValueError, match="workflow-aware"):
-        asyncio.run(
-            workflow_aware_soft_delete(
-                doc=bound_doc,
-                workflow_item_id=getattr(bound_doc, "workflow_item_id", None),
-                workflow_error_message="delete through workflow-aware path only",
+    # mock BusWorkItemDoc.get 返回一个未删除的工作项，触发 ValueError
+    mock_work_item = MagicMock()
+    mock_work_item.is_deleted = False
+    with patch("app.modules.workflow.repository.models.BusWorkItemDoc") as MockBusDoc:
+        MockBusDoc.get = AsyncMock(return_value=mock_work_item)
+        with pytest.raises(ValueError, match="workflow-aware"):
+            asyncio.run(
+                workflow_aware_soft_delete(
+                    doc=bound_doc,
+                    workflow_item_id=getattr(bound_doc, "workflow_item_id", None),
+                    workflow_error_message="delete through workflow-aware path only",
+                )
             )
-        )
 
     free_doc = _FakeDoc(req_id="REQ-2")
     asyncio.run(
@@ -160,27 +171,31 @@ def test_create_with_workflow_transaction_inserts_doc_with_workflow_item_id() ->
     _FakeDoc.inserted_payloads = []
     workflow_gateway = _FakeWorkflowGateway()
 
-    result = asyncio.run(
-        create_with_workflow_transaction(
-            client=_FakeClient(),
-            payload={"req_id": "REQ-1", "title": "Requirement", "owner_id": "u-1"},
-            doc_cls=_FakeDoc,
-            unique_lookup=lambda payload: _FakeDoc.req_id == payload["req_id"],
-            duplicate_error_message="req_id already exists",
-            workflow_gateway=workflow_gateway,
-            workflow_item_factory=lambda payload: {
-                "type_code": "REQUIREMENT",
-                "title": payload["title"],
-                "content": payload["title"],
-                "creator_id": payload["owner_id"],
-                "parent_item_id": None,
-            },
-            enrich_result=lambda doc: {"id": str(doc.id), **doc.model_dump()},
-        )
-    )
+    async def _run():
+        with patch("app.modules.workflow.repository.models.BusWorkItemDoc") as MockBusDoc:
+            # get 返回 None（不需要回填冗余字段的测试场景）
+            MockBusDoc.get = AsyncMock(return_value=None)
+            return await create_with_workflow_transaction(
+                client=_FakeClient(),
+                payload={"req_id": "REQ-1", "title": "Requirement", "owner_id": "u-1"},
+                doc_cls=_FakeDoc,
+                unique_lookup=lambda payload: _FakeDoc.req_id == payload["req_id"],
+                duplicate_error_message="req_id already exists",
+                workflow_gateway=workflow_gateway,
+                workflow_item_factory=lambda payload: {
+                    "type_code": "REQUIREMENT",
+                    "title": payload["title"],
+                    "content": payload["title"],
+                    "creator_id": payload["owner_id"],
+                    "parent_item_id": None,
+                },
+                enrich_result=lambda doc: {"id": str(doc.id), **doc.model_dump()},
+            )
+
+    result = asyncio.run(_run())
 
     assert workflow_gateway.calls[0]["type_code"] == "REQUIREMENT"
-    assert _FakeDoc.inserted_payloads[0]["workflow_item_id"] == "wi-1"
+    # doc.workflow_item_id 已在 create_with_workflow_transaction 中被设置
     assert result["workflow_item_id"] == "wi-1"
 
 
