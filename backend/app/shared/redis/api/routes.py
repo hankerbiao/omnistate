@@ -5,12 +5,12 @@ from typing import Any
 
 from fastapi import APIRouter, Depends
 
-from app.modules.redis import service as redis_service
-from app.modules.redis.schemas.redis import KeyValueResponse, PingResponse, PublishRequest
+from app.shared.redis import service as redis_service
+from app.shared.redis.schemas.redis import KeyValueResponse, PingResponse, PublishRequest
 from app.shared.api.schemas.base import APIResponse
 from app.shared.auth import get_current_user
 
-router = APIRouter(prefix="/api/v1/redis", tags=["Redis"])
+router = APIRouter(prefix="/redis", tags=["Redis"])
 
 
 @router.get("/ping", response_model=APIResponse[PingResponse])

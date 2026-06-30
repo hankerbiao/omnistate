@@ -15,8 +15,8 @@ from typing import Any
 
 from redis.sentinel import Sentinel
 
-from app.modules.redis.service.constants import DEFAULT_EVENT_CHANNEL, KEY_NAMESPACE, PUBLISH_QUEUE_MAXSIZE
-from app.modules.redis.service.exceptions import RedisConnectionError
+from app.shared.redis.service.constants import DEFAULT_EVENT_CHANNEL, KEY_NAMESPACE, PUBLISH_QUEUE_MAXSIZE
+from app.shared.redis.service.exceptions import RedisConnectionError
 from app.shared.config import get_settings
 from app.shared.core.logger import log as logger
 
@@ -130,7 +130,7 @@ def build_key(domain: str, entity: str, key_id: str) -> str:
 
 def _bg_publisher() -> None:
     """后台线程：独立长连接消费发布队列。"""
-    import app.modules.redis.service as svc
+    import app.shared.redis.service as svc
     while True:
         try:
             channel, message = _publish_queue.get()
@@ -160,7 +160,7 @@ def _heartbeat_loop() -> None:
         if _heartbeat_stop.is_set():
             break
         try:
-            import app.modules.redis.service as svc
+            import app.shared.redis.service as svc
             cfg = get_settings()
             service_name = cfg.app.service_name
             host = _get_local_ip()

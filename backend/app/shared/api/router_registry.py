@@ -27,7 +27,7 @@ _API_MODULE_PATHS = [
     "app.modules.test_case_collection.api",
     "app.modules.system_config.api",
     "app.modules.ai_analysis.api",
-    "app.modules.redis.api",
+    "app.shared.redis.api",
     "app.modules.failure_analysis.api",
     "app.modules.project.api",
 ]

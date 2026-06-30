@@ -21,6 +21,7 @@ _DOCUMENT_MODULE_PATHS = [
     "app.modules.test_case_collection.repository.models",
     "app.modules.system_config.repository.models",
     "app.modules.project.repository.models",
+    "app.modules.notification.repository.models",
 ]
 
 
@@ -52,7 +53,7 @@ async def initialize_beanie(database: Any) -> None:
     if skip_indexes:
         log.info(
             "Beanie 索引同步已跳过（SKIP_INDEX_SYNC=1），"
-            "如需同步索引请运行: python app/init_mongodb.py 或设置 SKIP_INDEX_SYNC=0"
+            "如需同步索引请运行: python scripts/init/init_mongodb.py 或设置 SKIP_INDEX_SYNC=0"
         )
 
 
@@ -67,7 +68,7 @@ async def validate_workflow_consistency() -> None:
     if not work_types and not states and not configs:
         log.warning(
             "workflow consistency check skipped: workflow configs are empty, "
-            "run `python app/init_mongodb.py` to initialize"
+            "run `python scripts/init/init_mongodb.py` to initialize"
         )
         return
 
