@@ -1,6 +1,9 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
+from pathlib import Path
+
 from pymongo import AsyncMongoClient
 
 from app.shared.api.middleware.debug_http import DebugHttpLoggingMiddleware
@@ -129,6 +132,25 @@ setup_exception_handlers(app)
 
 app.include_router(api_router)
 app.include_router(health_router, prefix="/health", tags=["Health"])
+
+
+# ── AI 发现文件 ──────────────────────────────────────────────
+
+_LLMS_TXT_PATH = Path(__file__).resolve().parents[2] / "llms.txt"
+
+
+@app.get("/llms.txt", response_class=PlainTextResponse, include_in_schema=False)
+async def serve_llms_txt():
+    """提供 llms.txt — 项目级 AI 发现文件（标准格式，兼容 llmstxt.dev）。"""
+    if _LLMS_TXT_PATH.exists():
+        return PlainTextResponse(_LLMS_TXT_PATH.read_text(encoding="utf-8"))
+    return PlainTextResponse("", status_code=404)
+
+
+@app.get("/robots.txt", response_class=PlainTextResponse, include_in_schema=False)
+async def serve_robots_txt():
+    """提供 robots.txt。"""
+    return PlainTextResponse("User-agent: *\nAllow: /\nSitemap: /llms.txt\n")
 
 
 def main() -> None:
