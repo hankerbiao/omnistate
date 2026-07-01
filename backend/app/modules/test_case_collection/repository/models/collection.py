@@ -1,10 +1,8 @@
 """用例集合 Beanie ODM 文档模型。"""
 from typing import List, Optional
-from datetime import datetime, timezone
 
 from pydantic import Field
 from beanie import Document
-from pymongo import IndexModel
 
 from app.shared.core.document_mixins import TimestampedDocumentMixin, ProjectRelatedMixin
 

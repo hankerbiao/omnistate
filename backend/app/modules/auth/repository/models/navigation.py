@@ -1,5 +1,5 @@
 """导航页面模型（可配置导航定义）。"""
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Optional
 
 from beanie import Document

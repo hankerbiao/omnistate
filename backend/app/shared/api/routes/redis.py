@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends
 from app.shared.redis import service as redis_service
 from app.shared.redis.schemas.redis import KeyValueResponse, PingResponse, PublishRequest
 from app.shared.api.schemas.base import APIResponse
-from app.shared.auth import get_current_user
+from app.shared.auth import get_current_user, require_permission
 
 router = APIRouter(prefix="/redis", tags=["Redis"])
 
@@ -48,6 +48,7 @@ async def set_value(
     value: str,
     ex: int | None = None,
     current_user: dict[str, Any] = Depends(get_current_user),
+    _: None = Depends(require_permission("system:config")),
 ):
     """写入 Redis Key。"""
     key = redis_service.build_key(domain, entity, key_id)
@@ -61,6 +62,7 @@ async def delete_key(
     entity: str,
     key_id: str,
     current_user: dict[str, Any] = Depends(get_current_user),
+    _: None = Depends(require_permission("system:config")),
 ):
     """删除 Redis Key。"""
     key = redis_service.build_key(domain, entity, key_id)
@@ -72,6 +74,7 @@ async def delete_key(
 async def publish(
     request: PublishRequest,
     current_user: dict[str, Any] = Depends(get_current_user),
+    _: None = Depends(require_permission("system:config")),
 ):
     """非阻塞发布消息到 Redis 频道。"""
     redis_service.publish_event(request.message, request.channel)

@@ -1,8 +1,4 @@
-"""Redis 模块 API 路由。"""
-from .routes import router
+"""Redis 基础设施模块。
 
-from app.shared.api.router_registry import register_router
-
-register_router(router, prefix="/api/v1", tags=["Redis"])
-
-__all__ = ["router"]
+路由已迁移至 app/shared/api/routes/redis.py，此处仅保留基础设施服务。
+"""

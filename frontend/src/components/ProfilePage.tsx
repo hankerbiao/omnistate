@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { api } from '../services/api';
 import type { UserResponse, CurrentUserPermissionsResponse, PermissionResponse } from '../types';
 import { Dialog, DialogContent } from './ui/dialog';
+import { useAuth } from '../providers/AuthProvider';
 
 // 用户状态中文映射
 const USER_STATUS_LABELS: Record<string, string> = {
@@ -33,6 +34,7 @@ const CATEGORY_META: Record<string, CategoryMeta> = {
 };
 
 const ProfilePage: React.FC = () => {
+  const { currentUserData, userPermissions: contextPermissions } = useAuth();
   const [userInfo, setUserInfo] = useState<UserResponse | null>(null);
   const [permissionsInfo, setPermissionsInfo] = useState<CurrentUserPermissionsResponse | null>(null);
   const [allPermissions, setAllPermissions] = useState<PermissionResponse[]>([]);
@@ -52,43 +54,70 @@ const ProfilePage: React.FC = () => {
   const [itcodeError, setItcodeError] = useState<string | null>(null);
   const [savingSubscription, setSavingSubscription] = useState(false);
 
+  // 仅在组件挂载时一次性消费 AuthContext 的已有数据，避免重复请求
+  const initialDataLoaded = useRef(false);
+
   const fetchUserData = useCallback(async () => {
+    if (initialDataLoaded.current) return;
+    initialDataLoaded.current = true;
     setLoading(true);
     setError(null);
     try {
-      // 核心数据：个人信息 + 自己的权限 — 所有用户都能访问
-      const [userRes, permsRes] = await Promise.all([
-        api.getCurrentUser(),
-        api.getCurrentUserPermissions(),
-      ]);
+      // 尝试从 AuthContext 已有数据恢复
+      let userLoaded = false;
+      if (currentUserData) {
+        setUserInfo(currentUserData as UserResponse);
+        userLoaded = true;
+      }
+      if (contextPermissions.length > 0) {
+        setPermissionsInfo({ permissions: contextPermissions } as CurrentUserPermissionsResponse);
+      }
 
-      if (userRes.code === 0 || userRes.code === 200) {
-        setUserInfo(userRes.data);
-      } else {
-        setError(userRes.message || '获取用户信息失败');
+      if (userLoaded && contextPermissions.length > 0) {
         setLoading(false);
-        return;
-      }
-      if (permsRes.code === 0 || permsRes.code === 200) {
-        setPermissionsInfo(permsRes.data);
+      } else {
+        // 回退：AuthContext 数据尚未加载完成，直接发起 API 请求
+        const promises: Promise<any>[] = [];
+        if (!currentUserData) promises.push(api.getCurrentUser());
+        if (contextPermissions.length === 0) promises.push(api.getCurrentUserPermissions());
+
+        if (promises.length > 0) {
+          const results = await Promise.all(promises);
+          let idx = 0;
+          if (!currentUserData) {
+            const userRes = results[idx++];
+            if (userRes.code === 0 || userRes.code === 200) {
+              setUserInfo(userRes.data);
+            } else {
+              setError(userRes.message || '获取用户信息失败');
+              setLoading(false);
+              return;
+            }
+          }
+          if (contextPermissions.length === 0) {
+            const permsRes = results[idx];
+            if (permsRes.code === 0 || permsRes.code === 200) {
+              setPermissionsInfo(permsRes.data);
+            }
+          }
+        }
+        setLoading(false);
       }
 
-      // 扩展数据：全量权限和角色列表 — 仅管理员有权限，非管理员静默降级
+      // 扩展数据：全量权限列表 — 仅管理员有权限，静默降级
       try {
         const allPermsRes = await api.listPermissions();
         if (allPermsRes.code === 0 || allPermsRes.code === 200) {
           setAllPermissions(allPermsRes.data || []);
         }
-      } catch {
-        // 非管理员无权限查看全量权限列表，不影响页面展示
-      }
+      } catch { /* 非管理员无权限 */ }
     } catch (err) {
       setError('获取用户信息失败');
       console.error('Fetch user data error:', err);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [currentUserData, contextPermissions]);
 
   useEffect(() => { fetchUserData(); }, [fetchUserData]);
 

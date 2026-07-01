@@ -4,11 +4,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from beanie.odm.operators.find.comparison import In as InOp
-from pymongo import AGGREGATION_PIPELINE_MARKER
 
 from app.modules.audit.repository.models.audit_log import AuditLogDoc
-from app.shared.core.logger import log
 
 
 class AuditLogService:

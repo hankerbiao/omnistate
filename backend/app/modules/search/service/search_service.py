@@ -2,7 +2,6 @@
 import re
 from typing import List, Optional
 
-from beanie.odm.documents import Document
 
 from app.modules.execution.repository.models.execution import ExecutionTaskDoc
 from app.modules.test_specs.repository.models.automation_test_case import (
@@ -220,7 +219,7 @@ class SearchService:
                 subtitle=f"框架: {d.framework or '-'}",
                 type="automation_case",
                 type_label="自动化用例",
-                url=f"?page=testCases",
+                url="?page=testCases",
             )
             for d in docs
         ]

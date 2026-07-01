@@ -3,6 +3,10 @@
 读写分离：
 - PlanQueryServiceDep：纯读操作（列表、详情、统计）
 - PlanCommandServiceDep：写操作（CRUD、派发、改派、结果回填）
+
+权限策略：
+- 读操作：execution_tasks:read
+- 写操作：execution_tasks:write
 """
 from __future__ import annotations
 
@@ -28,9 +32,12 @@ from app.modules.execution_plan.schemas.execution_plan import (
     UpdatePlanRequest,
 )
 from app.shared.api.schemas.base import APIResponse
-from app.shared.auth import get_current_user
+from app.shared.auth import get_current_user, require_permission
 
 router = APIRouter(prefix="/execution-plans", tags=["ExecutionPlan"])
+
+READ_DEP = [Depends(require_permission("execution_tasks:read"))]
+WRITE_DEP = [Depends(require_permission("execution_tasks:write"))]
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -50,15 +57,17 @@ def _get_user_id(current_user: Dict[str, Any]) -> str:
     "/items/my-items",
     response_model=APIResponse[List[Dict[str, Any]]],
     summary="获取当前用户的计划任务列表（My Tasks）",
+    dependencies=READ_DEP,
 )
 async def list_my_plan_items(
     query_service: PlanQueryServiceDep,
     current_user: Dict[str, Any] = Depends(get_current_user),
     assignee_id: Optional[str] = Query(None, description="执行人 user_id，不传则默认当前用户"),
+    limit: int = Query(200, ge=1, le=1000, description="返回条目数量上限"),
 ):
     """返回当前用户被指派的计划条目列表，对齐前端 PlanTask 结构。"""
     uid = assignee_id or _get_user_id(current_user)
-    items = await query_service.list_my_items(uid)
+    items = await query_service.list_my_items(uid, limit=limit)
     return APIResponse(data=items)
 
 
@@ -66,6 +75,7 @@ async def list_my_plan_items(
     "/items",
     response_model=APIResponse[List[Dict[str, Any]]],
     summary="查询计划条目列表（支持状态/计划筛选，不限执行人）",
+    dependencies=READ_DEP,
 )
 async def list_plan_items(
     query_service: PlanQueryServiceDep,
@@ -83,6 +93,7 @@ async def list_plan_items(
     "/items/overview",
     response_model=APIResponse[Dict[str, Any]],
     summary="获取所有计划的运行总览",
+    dependencies=READ_DEP,
 )
 async def get_plan_overview(
     query_service: PlanQueryServiceDep,
@@ -97,6 +108,7 @@ async def get_plan_overview(
     "/items/{item_id}",
     response_model=APIResponse[Dict[str, Any]],
     summary="获取单条计划条目详情",
+    dependencies=READ_DEP,
 )
 async def get_plan_item(
     item_id: str,
@@ -119,6 +131,7 @@ async def get_plan_item(
     "/plans/{plan_id}/items/{item_id}",
     response_model=APIResponse[Dict[str, Any]],
     summary="更新计划条目（状态/指派人等）",
+    dependencies=WRITE_DEP,
 )
 async def update_plan_item(
     plan_id: str,
@@ -147,6 +160,7 @@ async def update_plan_item(
     "/items/{item_id}/result",
     response_model=APIResponse[Dict[str, Any]],
     summary="提交手工测试结果回填",
+    dependencies=WRITE_DEP,
 )
 async def submit_manual_result(
     item_id: str,
@@ -171,6 +185,7 @@ async def submit_manual_result(
     "/items/{item_id}/result",
     response_model=APIResponse[Dict[str, Any]],
     summary="获取已有的手工结果回填",
+    dependencies=READ_DEP,
 )
 async def get_manual_result(
     item_id: str,
@@ -189,10 +204,12 @@ async def get_manual_result(
     "/cases/{case_id}/execution-stats",
     response_model=APIResponse[Dict[str, Any]],
     summary="获取测试用例的执行统计",
+    dependencies=READ_DEP,
 )
 async def get_case_execution_stats(
     case_id: str,
     query_service: PlanQueryServiceDep,
+    current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """获取测试用例的历史执行统计（手工+自动化）。"""
     stats = await query_service.get_case_execution_stats(case_id)
@@ -207,6 +224,7 @@ async def get_case_execution_stats(
     "/items/{item_id}/dispatch",
     response_model=APIResponse[Dict[str, Any]],
     summary="单条自动化用例计划内下发",
+    dependencies=WRITE_DEP,
 )
 async def dispatch_single_item(
     item_id: str,
@@ -231,6 +249,7 @@ async def dispatch_single_item(
     "/items/{item_id}/cancel-execution",
     response_model=APIResponse[Dict[str, Any]],
     summary="取消自动化条目的执行",
+    dependencies=WRITE_DEP,
 )
 async def cancel_item_execution(
     item_id: str,
@@ -254,6 +273,7 @@ async def cancel_item_execution(
     response_model=APIResponse[Dict[str, Any]],
     status_code=201,
     summary="重新执行计划条目",
+    dependencies=WRITE_DEP,
 )
 async def rerun_plan_item(
     item_id: str,
@@ -284,6 +304,7 @@ async def rerun_plan_item(
     "/items/batch-dispatch",
     response_model=APIResponse[List[Dict[str, Any]]],
     summary="批量下发自动化用例",
+    dependencies=WRITE_DEP,
 )
 async def batch_dispatch_items(
     request: BatchDispatchRequest,
@@ -306,6 +327,7 @@ async def batch_dispatch_items(
     "/items/{item_id}/reassign",
     response_model=APIResponse[Dict[str, Any]],
     summary="改派计划条目执行人",
+    dependencies=WRITE_DEP,
 )
 async def reassign_plan_item(
     item_id: str,
@@ -333,16 +355,19 @@ async def reassign_plan_item(
 
 @router.get(
     "/plans",
-    response_model=APIResponse[List[Dict[str, Any]]],
-    summary="获取执行计划列表",
+    response_model=APIResponse[Dict[str, Any]],
+    summary="获取执行计划列表（分页）",
+    dependencies=READ_DEP,
 )
 async def list_plans(
     query_service: PlanQueryServiceDep,
     current_user: Dict[str, Any] = Depends(get_current_user),
     status: Optional[str] = Query(None, description="按状态筛选: active|done"),
+    page: int = Query(1, ge=1, description="页码，从 1 开始"),
+    page_size: int = Query(20, ge=1, le=100, description="每页数量"),
 ):
-    """返回所有执行计划列表（不含条目详情）。"""
-    plans = await query_service.list_plans(status=status)
+    """分页返回执行计划列表（不含条目详情）。"""
+    plans = await query_service.list_plans(status=status, page=page, page_size=page_size)
     return APIResponse(data=plans)
 
 
@@ -351,6 +376,7 @@ async def list_plans(
     response_model=APIResponse[Dict[str, Any]],
     status_code=201,
     summary="创建执行计划",
+    dependencies=WRITE_DEP,
 )
 async def create_plan(
     request: CreatePlanRequest,
@@ -373,6 +399,7 @@ async def create_plan(
     "/plans/{plan_id}",
     response_model=APIResponse[Dict[str, Any]],
     summary="获取执行计划详情（含条目列表）",
+    dependencies=READ_DEP,
 )
 async def get_plan_detail(
     plan_id: str,
@@ -391,6 +418,7 @@ async def get_plan_detail(
     "/plans/{plan_id}",
     response_model=APIResponse[Dict[str, Any]],
     summary="更新执行计划",
+    dependencies=WRITE_DEP,
 )
 async def update_plan(
     plan_id: str,
@@ -413,6 +441,7 @@ async def update_plan(
     "/plans/{plan_id}",
     response_model=APIResponse[Dict[str, Any]],
     summary="删除执行计划（软删除）",
+    dependencies=WRITE_DEP,
 )
 async def delete_plan(
     plan_id: str,
@@ -435,6 +464,7 @@ async def delete_plan(
     "/plans/{plan_id}/items",
     status_code=201,
     summary="为计划添加条目",
+    dependencies=WRITE_DEP,
 )
 async def add_plan_items(
     plan_id: str,
@@ -457,6 +487,7 @@ async def add_plan_items(
     "/plans/{plan_id}/items/{item_id}",
     response_model=APIResponse[Dict[str, Any]],
     summary="从计划中移除条目（软删除）",
+    dependencies=WRITE_DEP,
 )
 async def delete_plan_item(
     plan_id: str,
@@ -476,6 +507,7 @@ async def delete_plan_item(
     "/plans/{plan_id}/items/batch-assignee",
     response_model=APIResponse[Dict[str, Any]],
     summary="批量更新计划条目执行人",
+    dependencies=WRITE_DEP,
 )
 async def batch_update_assignee(
     plan_id: str,
@@ -503,15 +535,17 @@ async def batch_update_assignee(
     "/items/archived",
     response_model=APIResponse[List[Dict[str, Any]]],
     summary="获取已归档的计划任务列表（收纳箱）",
+    dependencies=READ_DEP,
 )
 async def list_archived_items(
     query_service: PlanQueryServiceDep,
     current_user: Dict[str, Any] = Depends(get_current_user),
     assignee_id: Optional[str] = Query(None, description="执行人 user_id，不传则默认当前用户"),
+    limit: int = Query(200, ge=1, le=1000, description="返回条目数量上限"),
 ):
     """返回当前用户已归档的计划条目列表。"""
     uid = assignee_id or _get_user_id(current_user)
-    items = await query_service.list_archived_items(uid)
+    items = await query_service.list_archived_items(uid, limit=limit)
     return APIResponse(data=items)
 
 
@@ -519,6 +553,7 @@ async def list_archived_items(
     "/items/{item_id}/archive",
     response_model=APIResponse[Dict[str, Any]],
     summary="归档计划条目（收纳）",
+    dependencies=WRITE_DEP,
 )
 async def archive_item(
     item_id: str,
@@ -538,6 +573,7 @@ async def archive_item(
     "/items/{item_id}/unarchive",
     response_model=APIResponse[Dict[str, Any]],
     summary="取消归档计划条目",
+    dependencies=WRITE_DEP,
 )
 async def unarchive_item(
     item_id: str,

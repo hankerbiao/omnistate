@@ -6,7 +6,8 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -86,3 +87,53 @@ class PlanNotificationPort(ABC):
         case_title: str,
     ) -> None:
         """通知条目被重新指派执行。"""
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  测试用例查询端口
+# ═══════════════════════════════════════════════════════════════════════
+
+@dataclass
+class CaseSnapshot:
+    """计划条目创建时所需的用例快照信息。"""
+    case_title: str
+    component: str
+    priority: str
+    manual_case_id: Optional[str]
+
+
+class CaseSnapshotResolverPort(ABC):
+    """测试用例快照解析端口。
+
+    由 test_specs 模块提供实现，解耦 execution_plan 对
+    TestCaseDoc / AutomationTestCaseDoc 的直接依赖。
+    """
+
+    @abstractmethod
+    async def resolve_case_snapshot(self, ref_type: str, case_id: str) -> CaseSnapshot:
+        """根据用例类型和 ID 解析快照信息。
+
+        Args:
+            ref_type: "manual" 或 "auto"
+            case_id: 手工用例 ID 或自动化用例 ID
+
+        Raises:
+            ValueError: 用例不存在时抛出
+        """
+        ...
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  用户查询端口
+# ═══════════════════════════════════════════════════════════════════════
+
+class UserQueryPort(ABC):
+    """用户查询端口。
+
+    由 auth 模块提供实现，解耦 execution_plan 对 UserDoc 的直接依赖。
+    """
+
+    @abstractmethod
+    async def is_admin(self, user_id: str) -> bool:
+        """判断用户是否拥有 ADMIN 角色。"""
+        ...

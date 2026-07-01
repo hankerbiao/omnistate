@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
+import { useQueries } from '@tanstack/react-query'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend, Line, Area, ComposedChart,
@@ -140,46 +141,30 @@ function buildTeamRows(requirements: RequirementResponse[], testCases: TestCaseR
 export default function DashboardPage({ onWorkflowNavigate }: DashboardPageProps) {
   const [range, setRange] = useState<RangeKey>('30d')
   const [demoMode, setDemoMode] = useState(true)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
   const demoData = useMemo(() => buildDemoDashboardData(), [])
-  const [data, setData] = useState<DashboardData>({
-    requirements: [],
-    testCases: [],
-    tasks: [],
-    agents: [],
-    automationCases: [],
+
+  // 使用 React Query useQueries 批量加载 5 个数据集，利用全局 30s staleTime 去重
+  const queries = useQueries({
+    queries: [
+      { queryKey: ['requirements'], queryFn: async () => (await api.listRequirements({ limit: 500 })).data || [], enabled: !demoMode },
+      { queryKey: ['testCases'], queryFn: async () => (await api.listTestCases({ limit: 500 })).data || [], enabled: !demoMode },
+      { queryKey: ['executionTasks'], queryFn: async () => (await api.listTasks({ limit: 500 })).data || [], enabled: !demoMode },
+      { queryKey: ['executionAgents'], queryFn: async () => (await api.listAgents({})).data || [], enabled: !demoMode },
+      { queryKey: ['automationTestCases'], queryFn: async () => (await api.listAutomationTestCases({ limit: 500 })).data || [], enabled: !demoMode },
+    ],
   })
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const [reqRes, caseRes, taskRes, agentRes, autoRes] = await Promise.all([
-        api.listRequirements({ limit: 500 }),
-        api.listTestCases({ limit: 500 }),
-        api.listTasks({ limit: 500 }),
-        api.listAgents({}),
-        api.listAutomationTestCases({ limit: 500 }),
-      ])
-      setData({
-        requirements: reqRes.data || [],
-        testCases: caseRes.data || [],
-        tasks: taskRes.data || [],
-        agents: agentRes.data || [],
-        automationCases: autoRes.data || [],
-      })
-    } catch (err) {
-      setError('加载统计数据失败')
-      console.error(err)
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+  const [reqQ, caseQ, taskQ, agentQ, autoQ] = queries
+  const anyLoading = queries.some((q) => q.isLoading)
+  const anyError = queries.find((q) => q.error)
 
-  useEffect(() => {
-    load()
-  }, [load])
+  const data: DashboardData = {
+    requirements: reqQ.data ?? [],
+    testCases: caseQ.data ?? [],
+    tasks: taskQ.data ?? [],
+    agents: agentQ.data ?? [],
+    automationCases: autoQ.data ?? [],
+  }
 
   const activeData = demoMode ? demoData : data
   const executive = DEMO_EXECUTIVE_METRICS
@@ -302,7 +287,7 @@ export default function DashboardPage({ onWorkflowNavigate }: DashboardPageProps
     { name: '进行中', value: displayRunning },
   ].filter((d) => d.value > 0)
 
-  const showContent = demoMode || !loading
+  const showContent = demoMode || !anyLoading
 
   return (
     <div className="page-content">
@@ -346,7 +331,7 @@ export default function DashboardPage({ onWorkflowNavigate }: DashboardPageProps
                 </button>
               ))}
             </div>
-            <button type="button" className="btn btn--secondary btn--sm" onClick={load} disabled={loading && !demoMode}>
+            <button type="button" className="btn btn--secondary btn--sm" onClick={() => queries.forEach(q => q.refetch?.())} disabled={demoMode}>
               刷新
             </button>
           </>
@@ -357,9 +342,9 @@ export default function DashboardPage({ onWorkflowNavigate }: DashboardPageProps
         <ExecutiveHero metrics={executive} />
       )}
 
-      {error && !demoMode && (
+      {anyError && !demoMode && (
         <div className="error-banner" style={{ marginBottom: 16 }}>
-          {error}
+          {anyError.message || '加载统计数据失败'}
         </div>
       )}
 

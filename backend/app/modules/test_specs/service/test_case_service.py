@@ -16,6 +16,7 @@
    - 要求：MongoDB必须支持事务（Replica Set或Sharded Cluster）
 """
 
+import asyncio
 from copy import deepcopy
 from typing import Dict, Any, Optional, List
 from datetime import datetime
@@ -40,7 +41,9 @@ from app.modules.test_specs.service.catalog_service import CatalogService
 from app.modules.workflow.application import WorkflowItemGateway
 from app.modules.workflow.repository.models.enums import WorkItemState
 from app.modules.attachments.repository.models import AttachmentDoc
+from app.modules.test_specs.domain.repositories import TestCaseRepositoryProtocol
 from app.modules.test_specs.domain.test_case_step_validator import validate_test_case_step_fields
+from app.modules.test_specs.repository.test_case_repository import TestCaseRepository
 from app.shared.core.mongo_client import get_mongo_client
 from app.shared.service import BaseService, SequenceIdService
 from app.shared.ai.embedding import EmbeddingService
@@ -90,9 +93,12 @@ class TestCaseService(BaseService):
         self,
         workflow_gateway: WorkflowItemGateway,
         catalog_service: CatalogService | None = None,
+        case_repository: TestCaseRepositoryProtocol | None = None,
     ) -> None:
         self._workflow_gateway = workflow_gateway
         self._catalog_service = catalog_service or CatalogService()
+        # 依赖仓储协议而非具体 Beanie Document，便于单测注入 Mock
+        self._case_repo = case_repository or TestCaseRepository()
 
     async def _enrich_test_case_status(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """使用工作流状态和关联信息补齐测试用例响应中的派生状态字段。"""
@@ -141,35 +147,24 @@ class TestCaseService(BaseService):
 
         # 仅使用事务模式，确保workflow与test_case原子写入
         result = await self._create_test_case_with_transaction(client, payload)
-        # 异步生成 embedding（不等待）
+        # 异步生成 embedding（不等待）：失败仅记录日志，不影响用例创建结果
         if result and "case_id" in result.get("data", {}):
             try:
                 doc = await TestCaseDoc.find_one(TestCaseDoc.case_id == result["data"]["case_id"])
                 if doc:
-                    import asyncio
                     asyncio.create_task(self._refresh_embedding(doc))
-            except Exception:
-                pass
+            except Exception as e:
+                log.warning("embedding: 触发异步刷新失败 case={} err={}", result["data"].get("case_id"), e)
         return result
 
     async def get_test_case(self, case_id: str) -> Dict[str, Any]:
         """根据case_id获取单个测试用例"""
-        doc = await TestCaseDoc.find_one(
-            TestCaseDoc.case_id == case_id,
-            {"is_deleted": False},
-        )
-        if not doc:
-            raise KeyError("test case not found")
+        doc = await self._get_active_case(case_id)
         return await self._enrich_test_case_status(self._doc_to_dict(doc))
 
     async def get_case_raw_dict(self, case_id: str) -> Dict[str, Any]:
         """获取未 enrich 的用例 dict，供变更 diff 使用。"""
-        doc = await TestCaseDoc.find_one(
-            TestCaseDoc.case_id == case_id,
-            {"is_deleted": False},
-        )
-        if not doc:
-            raise KeyError("test case not found")
+        doc = await self._get_active_case(case_id)
         return self._doc_to_dict(doc)
 
     async def list_test_cases(
@@ -224,6 +219,28 @@ class TestCaseService(BaseService):
                 else:
                     mongo_query["$and"] = missing_conditions
 
+        # 状态过滤下推到 DB 端：避免全量加载再内存过滤，支持直接分页
+        if status:
+            if status == DEFAULT_PROJECTED_STATUS:
+                # "未开始" = 未绑定 workflow（workflow_item_id 为空或不存在）
+                mongo_query["$or"] = [
+                    {"workflow_item_id": None},
+                    {"workflow_item_id": ""},
+                    {"workflow_item_id": {"$exists": False}},
+                ]
+            else:
+                # 其他状态：从 BusWorkItemDoc 反查该状态下的 work_item_ids，
+                # 用作 TestCaseDoc 的 $in 过滤条件，使查询可直接 skip/limit 分页
+                from app.modules.workflow.repository.models.business import BusWorkItemDoc
+                work_items = await BusWorkItemDoc.find(
+                    BusWorkItemDoc.current_state == status,
+                    BusWorkItemDoc.is_deleted == False,  # noqa: E712
+                ).to_list()
+                work_item_ids = [str(wi.id) for wi in work_items]
+                if not work_item_ids:
+                    return []
+                mongo_query["workflow_item_id"] = {"$in": work_item_ids}
+
         query = TestCaseDoc.find(mongo_query)
         if ref_req_id:
             query = query.find(TestCaseDoc.ref_req_id == ref_req_id)
@@ -236,33 +253,14 @@ class TestCaseService(BaseService):
         if is_active is not None:
             query = query.find(TestCaseDoc.is_active == is_active)
 
-        # 获取候选文档（如果需要状态过滤，先获取更大的集合）
-        workflow_states: Dict[str, str] = {}
-        if status:
-            docs = await query.sort("-created_at").to_list()
-            if not docs:
-                return []
-
-            case_ids = [doc.case_id for doc in docs]
-            workflow_states = await self._get_workflow_states_for_test_cases(case_ids)
-            filtered_docs = [
-                doc for doc in docs
-                if (
-                    workflow_states.get(doc.case_id) == status
-                    or (doc.case_id not in workflow_states and status == DEFAULT_PROJECTED_STATUS)
-                )
-            ]
-            docs = filtered_docs[offset:offset + limit]
-        else:
-            docs = await query.sort("-created_at").skip(offset).limit(limit).to_list()
-
-        # Phase 3B: 转换时确保使用工作流状态作为真实来源
+        # 统一分页查询（status 与非 status 均走 DB 端 skip/limit，避免全量加载）
+        docs = await query.sort("-created_at").skip(offset).limit(limit).to_list()
         if not docs:
             return []
 
-        if not workflow_states:
-            case_ids = [doc.case_id for doc in docs]
-            workflow_states = await self._get_workflow_states_for_test_cases(case_ids)
+        # 查 workflow states 用于状态 projection（只查当前页的 case_ids）
+        case_ids = [doc.case_id for doc in docs]
+        workflow_states = await self._get_workflow_states_for_test_cases(case_ids)
         return apply_workflow_status_projection(
             docs=docs,
             id_getter=lambda doc: doc.case_id,
@@ -299,12 +297,7 @@ class TestCaseService(BaseService):
             allowed_fields=self._UPDATABLE_FIELDS,
         )
 
-        doc = await TestCaseDoc.find_one(
-            TestCaseDoc.case_id == case_id,
-            {"is_deleted": False},
-        )
-        if not doc:
-            raise KeyError("test case not found")
+        doc = await self._get_active_case(case_id)
         old_lab_id = doc.lab_id
         old_path = list(doc.catalog_path or [])
         update_payload = validate_test_case_step_fields(deepcopy(data))
@@ -327,7 +320,6 @@ class TestCaseService(BaseService):
 
         self._apply_updates(doc, update_payload, self._UPDATABLE_FIELDS)
         await doc.save()
-        import asyncio
         asyncio.create_task(self._refresh_embedding(doc))
         return await self._enrich_test_case_status(self._doc_to_dict(doc))
 
@@ -337,12 +329,7 @@ class TestCaseService(BaseService):
         当前阶段要求已绑定 workflow 的用例必须走 workflow-aware 删除路径，
         避免业务文档与工作项出现分裂删除状态。
         """
-        doc = await TestCaseDoc.find_one(
-            TestCaseDoc.case_id == case_id,
-            {"is_deleted": False},
-        )
-        if not doc:
-            raise KeyError("test case not found")
+        doc = await self._get_active_case(case_id)
         if doc.catalog_path:
             await self._catalog_service.register_path(doc.lab_id, doc.catalog_path, delta=-1)
 
@@ -359,12 +346,7 @@ class TestCaseService(BaseService):
             version: Optional[str] = None,
     ) -> Dict[str, Any]:
         """将自动化测试用例关联到手工测试用例（双向写入）。"""
-        case_doc = await TestCaseDoc.find_one(
-            TestCaseDoc.case_id == case_id,
-            {"is_deleted": False},
-        )
-        if not case_doc:
-            raise KeyError("test case not found")
+        case_doc = await self._get_active_case(case_id)
 
         auto_doc = await AutomationTestCaseDoc.find_one(
             AutomationTestCaseDoc.auto_case_id == auto_case_id,
@@ -422,12 +404,7 @@ class TestCaseService(BaseService):
         if not any([owner_id, reviewer_id, auto_dev_id]):
             raise ValueError("at least one owner must be specified")
 
-        doc = await TestCaseDoc.find_one(
-            TestCaseDoc.case_id == case_id,
-            {"is_deleted": False},
-        )
-        if not doc:
-            raise KeyError("test case not found")
+        doc = await self._get_active_case(case_id)
 
         # 更新负责人字段（明确指定每个字段的更新）
         if owner_id is not None:
@@ -457,12 +434,7 @@ class TestCaseService(BaseService):
             ValueError: 目标需求ID与当前相同时抛出
         """
         # 验证测试用例存在
-        case_doc = await TestCaseDoc.find_one(
-            TestCaseDoc.case_id == case_id,
-            {"is_deleted": False},
-        )
-        if not case_doc:
-            raise KeyError("test case not found")
+        case_doc = await self._get_active_case(case_id)
 
         # 验证目标需求存在
         target_req = await TestRequirementDoc.find_one(
@@ -498,13 +470,7 @@ class TestCaseService(BaseService):
 
         for case_id in case_ids:
             try:
-                doc = await TestCaseDoc.find_one(
-                    TestCaseDoc.case_id == case_id,
-                    {"is_deleted": False},
-                )
-                if not doc:
-                    failures.append({"case_id": case_id, "reason": "not found"})
-                    continue
+                doc = await self._get_active_case(case_id)
 
                 update_data: Dict[str, Any] = {}
 
@@ -591,12 +557,7 @@ class TestCaseService(BaseService):
 
     async def unlink_automation_case(self, case_id: str) -> Dict[str, Any]:
         """解除自动化用例与手工用例的关联（双向清空）。"""
-        case_doc = await TestCaseDoc.find_one(
-            TestCaseDoc.case_id == case_id,
-            {"is_deleted": False},
-        )
-        if not case_doc:
-            raise KeyError("test case not found")
+        case_doc = await self._get_active_case(case_id)
 
         auto_doc = await AutomationTestCaseDoc.find_one(
             AutomationTestCaseDoc.linked_manual_case_id == case_id,
@@ -662,6 +623,16 @@ class TestCaseService(BaseService):
         except RuntimeError:
             return None
 
+    async def _get_active_case(self, case_id: str) -> TestCaseDoc:
+        """按 case_id 查询未删除的测试用例，不存在抛 KeyError。
+
+        通过仓储协议访问数据，便于单测注入 Mock 替换。
+        """
+        doc = await self._case_repo.find_active_by_case_id(case_id)
+        if not doc:
+            raise KeyError("test case not found")
+        return doc
+
     @staticmethod
     async def _ensure_requirement_exists(req_id: str, session=None) -> TestRequirementDoc:
         """验证需求是否存在"""
@@ -685,34 +656,45 @@ class TestCaseService(BaseService):
         1. 验证 file_id 对应的附件是否存在且未被删除
         2. 查询并补全完整的附件信息（storage_path, original_filename, size, content_type）
 
+        使用 $in 批量查询，避免循环内逐条查询造成的 N+1。
+
         Args:
             attachments: 附件列表，每个附件应包含 file_id 字段
             session: MongoDB 事务会话（可选）
 
         Returns:
-            补全后的附件列表
+            补全后的附件列表（保持入参顺序）
 
         Raises:
+            ValueError: 附件缺少 file_id 时抛出
             KeyError: 附件不存在或已被删除时抛出
         """
         if not attachments:
             return []
 
-        enriched_attachments = []
+        # 收集 file_id，并校验必填
+        file_ids: List[str] = []
         for att in attachments:
             file_id = att.get("file_id")
             if not file_id:
                 raise ValueError("attachment missing required field: file_id")
+            file_ids.append(file_id)
 
-            # 验证附件是否存在
-            attachment = await AttachmentDoc.find_one(
-                {"file_id": file_id, "is_deleted": False},
-                session=session,
-            )
+        # 一次批量查询所有附件，避免循环内 N+1
+        docs = await AttachmentDoc.find(
+            {"file_id": {"$in": file_ids}, "is_deleted": False},
+            session=session,
+        ).to_list()
+        doc_map = {doc.file_id: doc for doc in docs}
+
+        # 按入参顺序补全，缺失即抛错
+        enriched_attachments = []
+        for att in attachments:
+            file_id = att["file_id"]
+            attachment = doc_map.get(file_id)
             if not attachment:
                 raise KeyError(f"attachment not found or deleted: {file_id}")
 
-            # 补全附件信息
             enriched_attachments.append({
                 "file_id": attachment.file_id,
                 "original_filename": attachment.original_filename,

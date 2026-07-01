@@ -10,7 +10,7 @@ import json
 import time
 from typing import Any
 
-from openai import OpenAI
+from openai import AsyncOpenAI
 
 from app.shared.core.logger import log
 
@@ -53,7 +53,7 @@ class AIClient:
     """
 
     _instance: AIClient | None = None
-    _cached_client: OpenAI | None = None
+    _cached_client: AsyncOpenAI | None = None
     _cached_config_key: str | None = None
 
     def __init__(self) -> None:
@@ -78,13 +78,13 @@ class AIClient:
         from app.modules.system_config.service.config_service import ConfigService
         return await ConfigService.get_ai_config()
 
-    def _build_client(self, config: dict[str, Any]) -> OpenAI:
+    def _build_client(self, config: dict[str, Any]) -> AsyncOpenAI:
         base_url = config.get("base_url", "")
         api_key = config.get("api_key") or "ollama"
         timeout = int(config.get("timeout", 60))
-        return OpenAI(base_url=base_url, api_key=api_key, timeout=timeout)
+        return AsyncOpenAI(base_url=base_url, api_key=api_key, timeout=timeout)
 
-    async def get_client(self) -> OpenAI | None:
+    async def get_client(self) -> AsyncOpenAI | None:
         """获取 OpenAI 客户端。
 
         配置变更时自动重建（通过 config key 比对）。
@@ -147,7 +147,7 @@ class AIClient:
         for attempt in range(1, self._max_retries + 1):
             try:
                 start = time.monotonic()
-                response = client.chat.completions.create(
+                response = await client.chat.completions.create(
                     model=model,
                     messages=messages,
                     temperature=temp,

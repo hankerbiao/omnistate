@@ -1,11 +1,8 @@
 from enum import Enum
 
-
-class OwnerStrategy(str, Enum):
-    """处理人流转策略"""
-    KEEP = "KEEP"  # 保持当前处理人
-    TO_CREATOR = "TO_CREATOR"  # 流转回创建者
-    TO_SPECIFIC_USER = "TO_SPECIFIC_USER"  # 流转给指定用户
+# OwnerStrategy 定义在 domain 层（纯领域概念），此处 re-export 保持向后兼容。
+# 避免新增 repository.enums 的导入方破坏；同时消除 domain → repository 的反向依赖。
+from app.modules.workflow.domain.enums import OwnerStrategy  # noqa: F401
 
 
 class WorkItemState(str, Enum):

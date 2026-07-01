@@ -2,7 +2,6 @@
 系统配置模型
 """
 from typing import List, Dict, Any
-from datetime import datetime, timezone
 from pydantic import BaseModel, Field
 from beanie import Document
 from pymongo import IndexModel, ASCENDING

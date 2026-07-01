@@ -4,7 +4,7 @@ from typing import Any, Awaitable, Callable, Iterable
 
 from pymongo import AsyncMongoClient
 
-from app.modules.test_specs.service._workflow_status_support import get_workflow_states, get_workflow_details
+from app.modules.test_specs.service._workflow_status_support import get_workflow_states
 
 
 async def load_workflow_states_for_entities(

@@ -6,6 +6,7 @@ API 路由汇总入口
 from fastapi import APIRouter
 
 from app.shared.api.router_registry import get_registered_routers
+from app.shared.api.routes import redis_router
 from app.shared.enums import router as enums_router
 
 # 必须先构建一个空的 api_router，因为 main.py 需要导入它
@@ -15,6 +16,9 @@ api_router = APIRouter()
 # 从注册表加载所有模块注册的路由
 for router, prefix, tags in get_registered_routers():
     api_router.include_router(router, prefix=prefix, tags=tags)
+
+# 基础设施运维路由（Redis 管理）单独注册
+api_router.include_router(redis_router, prefix="/api/v1", tags=["Redis"])
 
 # 枚举路由单独注册
 api_router.include_router(enums_router, prefix="/api/v1", tags=["Enums"])

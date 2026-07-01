@@ -14,7 +14,7 @@ from app.modules.test_case_collection.service.exceptions import (
     CollectionNotFoundError,
 )
 from app.shared.api.schemas.base import APIResponse
-from app.shared.auth import get_current_user, require_permission
+from app.shared.auth import get_current_user
 
 router = APIRouter(prefix="/collections", tags=["TestCaseCollection"])
 

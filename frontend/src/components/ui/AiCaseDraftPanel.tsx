@@ -1,6 +1,6 @@
 /** AI 生成用例草稿预览面板 */
 import { useState } from 'react'
-import api from '../../services/api'
+import { api } from '../../services/api'
 import type { GeneratedCaseDraft } from '../../types/ai'
 
 interface Props {

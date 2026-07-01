@@ -120,6 +120,7 @@ async def test_generate_cases_with_requirement_id_not_found():
 async def test_analyze_failure_success():
     """AI 失败根因分析正常调用。"""
     from app.modules.failure_analysis.api.routes import AnalyzeFailureRequest
+    from app.modules.failure_analysis.service import FailureAnalysisService
 
     mock_raw = {
         "root_cause_category": "code_defect",
@@ -134,26 +135,24 @@ async def test_analyze_failure_success():
         "severity": "high",
     }
 
-    mock_tc_doc = None  # TestCaseDoc not found, fallback to empty steps
+    # 用例不存在时，service 返回 None，路由 fallback 到空步骤
+    mock_service = MagicMock(spec=FailureAnalysisService)
+    mock_service.fetch_case_for_ai_analysis = AsyncMock(return_value=None)
 
     with patch("app.shared.ai.client.AIClient.get_instance") as get_instance:
         client = MagicMock()
         client.chat_completion_json = AsyncMock(return_value=mock_raw)
         get_instance.return_value = client
 
-        with patch(
-            "app.modules.test_specs.repository.models.test_case.TestCaseDoc.find_one",
-            AsyncMock(return_value=mock_tc_doc),
-        ):
-            from app.modules.failure_analysis.api.routes import analyze_failure
-            req = AnalyzeFailureRequest(
-                task_id="TASK-001",
-                case_id="TC-001",
-                execution_log="AssertionError: expected 200 got 500",
-                failure_info="HTTP 500 Internal Server Error",
-                env_info="Python 3.12, Redis 7.0",
-            )
-            response = await analyze_failure(req)
+        from app.modules.failure_analysis.api.routes import analyze_failure
+        req = AnalyzeFailureRequest(
+            task_id="TASK-001",
+            case_id="TC-001",
+            execution_log="AssertionError: expected 200 got 500",
+            failure_info="HTTP 500 Internal Server Error",
+            env_info="Python 3.12, Redis 7.0",
+        )
+        response = await analyze_failure(req, mock_service)
 
     data = response.data
     assert data.root_cause_category == "code_defect"
@@ -177,6 +176,7 @@ async def test_analyze_failure_requires_input():
 async def test_analyze_failure_with_test_case_steps():
     """用例存在时，步骤信息应被包含在 prompt 中。"""
     from app.modules.failure_analysis.api.routes import AnalyzeFailureRequest
+    from app.modules.failure_analysis.service import FailureAnalysisService
 
     mock_raw = {
         "root_cause_category": "test_case",
@@ -188,15 +188,21 @@ async def test_analyze_failure_with_test_case_steps():
         "severity": "medium",
     }
 
-    mock_step = MagicMock()
-    mock_step.step_id = "step-1"
-    mock_step.name = "登录"
-    mock_step.action = "POST /api/login"
-    mock_step.expected = "成功"
-
-    mock_tc_doc = MagicMock()
-    mock_tc_doc.title = "登录测试"
-    mock_tc_doc.steps = [mock_step]
+    steps = [
+        {
+            "step_id": "step-1",
+            "name": "登录",
+            "action": "POST /api/login",
+            "expected": "成功",
+        }
+    ]
+    mock_service = MagicMock(spec=FailureAnalysisService)
+    mock_service.fetch_case_for_ai_analysis = AsyncMock(
+        return_value={
+            "case_title": "登录测试",
+            "steps_json": json.dumps(steps, ensure_ascii=False, indent=2),
+        }
+    )
 
     captured_user_content: list[str] = []
 
@@ -209,21 +215,14 @@ async def test_analyze_failure_with_test_case_steps():
         client.chat_completion_json = _capture_chat
         get_instance.return_value = client
 
-        with patch(
-            "app.modules.test_specs.repository.models.test_case.TestCaseDoc",
-        ) as MockTC:
-            MockTC.find_one = AsyncMock(return_value=mock_tc_doc)
-            MockTC.case_id = MagicMock()
-            MockTC.is_deleted = MagicMock()
-
-            from app.modules.failure_analysis.api.routes import analyze_failure
-            req = AnalyzeFailureRequest(
-                task_id="TASK-002",
-                case_id="TC-002",
-                execution_log="some log",
-                failure_info="test failed",
-            )
-            response = await analyze_failure(req)
+        from app.modules.failure_analysis.api.routes import analyze_failure
+        req = AnalyzeFailureRequest(
+            task_id="TASK-002",
+            case_id="TC-002",
+            execution_log="some log",
+            failure_info="test failed",
+        )
+        response = await analyze_failure(req, mock_service)
 
     assert "登录测试" in captured_user_content[0]
     assert "POST /api/login" in captured_user_content[0]

@@ -19,7 +19,7 @@ from app.modules.project.schemas.project import (
     UpdateProjectRequest,
 )
 from app.shared.api.schemas.base import APIResponse
-from app.shared.auth import get_current_user
+from app.shared.auth import get_current_user, require_permission
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
 
@@ -49,7 +49,7 @@ async def list_projects(
     return APIResponse(data=ProjectListResponse(**result))
 
 
-@router.post("", response_model=APIResponse[ProjectResponse], summary="创建项目")
+@router.post("", response_model=APIResponse[ProjectResponse], summary="创建项目", dependencies=[Depends(require_permission("test_cases:write"))])
 async def create_project(
     data: CreateProjectRequest,
     service: ProjectServiceDep,
@@ -77,7 +77,7 @@ async def get_project(
     return APIResponse(data=detail)
 
 
-@router.put("/{project_id}", response_model=APIResponse[ProjectResponse], summary="更新项目")
+@router.put("/{project_id}", response_model=APIResponse[ProjectResponse], summary="更新项目", dependencies=[Depends(require_permission("test_cases:write"))])
 async def update_project(
     project_id: str,
     data: UpdateProjectRequest,
@@ -95,7 +95,7 @@ async def update_project(
     )
 
 
-@router.delete("/{project_id}", response_model=APIResponse, summary="删除项目")
+@router.delete("/{project_id}", response_model=APIResponse, summary="删除项目", dependencies=[Depends(require_permission("test_cases:write"))])
 async def delete_project(
     project_id: str,
     service: ProjectServiceDep,
@@ -140,7 +140,7 @@ async def get_project_activities(
     return APIResponse(data=activities)
 
 
-@router.post("/{project_id}/generate-demo-data", response_model=APIResponse[GenerateDemoResponse], summary="生成项目演示数据")
+@router.post("/{project_id}/generate-demo-data", response_model=APIResponse[GenerateDemoResponse], summary="生成项目演示数据", dependencies=[Depends(require_permission("test_cases:write"))])
 async def generate_demo_data(
     project_id: str,
     service: ProjectServiceDep,

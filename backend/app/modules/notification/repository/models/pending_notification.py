@@ -1,8 +1,8 @@
 """通知持久化文档模型。"""
 from __future__ import annotations
 
-from datetime import datetime, timezone, timedelta
-from typing import Any, Optional
+from datetime import datetime
+from typing import Optional
 
 from beanie import Document, Indexed
 from pydantic import Field

@@ -2,7 +2,7 @@
 需求与用例定义层 - 测试用例模型 (Beanie ODM 版本)
 """
 from typing import Optional, Dict, Any, List
-from datetime import datetime, timezone
+from datetime import datetime
 from pydantic import BaseModel, Field, ConfigDict, field_validator
 from beanie import Document
 from pymongo import IndexModel, ASCENDING, DESCENDING

@@ -33,7 +33,6 @@ from app.shared.core.logger import log as logger
 from app.shared.core.mongo_client import get_mongo_client
 from app.shared.service import BaseService, SequenceIdService
 from app.shared.ai.embedding import EmbeddingService
-from app.shared.core.logger import log as logger
 
 
 class RequirementService(BaseService):

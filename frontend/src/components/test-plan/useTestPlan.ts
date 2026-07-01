@@ -120,7 +120,8 @@ export function useTestPlan() {
     setError(null);
     try {
       const res = await api.listPlans();
-      setPlans((res.data as unknown as PlanSummary[]) || []);
+      const plansData = res.data as Record<string, any> | null;
+      setPlans((plansData?.items as PlanSummary[]) || []);
     } catch {
       setError('获取计划列表失败');
     } finally {

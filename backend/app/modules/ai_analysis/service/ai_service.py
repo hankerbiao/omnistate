@@ -1,7 +1,6 @@
 """AI 分析服务 - 使用系统配置的LLM分析测试用例集"""
 import json
-import time
-from typing import Any, Optional
+from typing import Any
 
 from app.modules.system_config.service.config_service import ConfigService
 from app.modules.test_case_collection.repository.models import TestCaseCollectionDoc

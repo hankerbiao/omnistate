@@ -162,6 +162,51 @@ class _FakeAutomationDoc:
         return _coro()
 
 
+class _FakeTestCaseRepository:
+    """基于 _FakeTestCaseDoc 内存存储的测试用仓储。
+
+    实现 TestCaseRepositoryProtocol，供 TestCaseService 构造器注入，
+    避免单元测试触碰真实 Beanie Document（未 init_beanie 时类属性访问会报错）。
+    所有读写均委托给 _FakeTestCaseDoc 的类方法，与既有内存存储保持一致。
+    """
+
+    async def find_active_by_case_id(self, case_id: str):
+        return await _FakeTestCaseDoc.find_one(_FakeTestCaseDoc.case_id == case_id)
+
+    async def find_by_case_id(self, case_id: str):
+        for doc in _FakeTestCaseDoc.store.values():
+            if getattr(doc, "case_id", None) == case_id:
+                return doc
+        return None
+
+    async def insert(self, doc, session=None):
+        key = getattr(doc, "case_id", str(id(doc)))
+        _FakeTestCaseDoc.store[key] = doc
+        return doc
+
+    async def save(self, doc, session=None):
+        key = getattr(doc, "case_id", str(id(doc)))
+        _FakeTestCaseDoc.store[key] = doc
+        return doc
+
+    async def count(self, filter_doc):
+        docs = [d for d in _FakeTestCaseDoc.store.values()
+                if not getattr(d, "is_deleted", False)]
+        result = 0
+        for d in docs:
+            match = all(getattr(d, k, None) == v
+                        for k, v in filter_doc.items() if k != "is_deleted")
+            if match:
+                result += 1
+        return result
+
+    def build_find_query(self, mongo_query):
+        return _FakeTestCaseDoc.find(mongo_query)
+
+    async def get_mongo_client(self):
+        return None
+
+
 @pytest.fixture(autouse=True)
 def reset_stores():
     _FakeTestCaseDoc.reset()
@@ -190,7 +235,9 @@ def build_service():
     })
     catalog.adjust_path_on_update = AsyncMock()
     catalog.register_path = AsyncMock()
-    return TestCaseService(workflow_gateway=gw, catalog_service=catalog)
+    # 注入基于 _FakeTestCaseDoc 内存存储的仓储，避免触碰真实 Beanie Document
+    repo = _FakeTestCaseRepository()
+    return TestCaseService(workflow_gateway=gw, catalog_service=catalog, case_repository=repo)
 
 
 # ══════════════════════════════════════════════

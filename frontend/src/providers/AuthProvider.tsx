@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, useRef, type ReactNode } from 'react';
 import { api } from '../services/api';
 import { SWITCHABLE_USERS } from '../config/users';
 
@@ -6,6 +6,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   currentUsername: string;
   currentUserId: string;
+  currentUserData: Record<string, any> | null;  // 完整用户信息，供 ProfilePage 等组件消费
   currentUserRole: string;
   userPermissions: string[];
   handleLoginSuccess: () => Promise<void>;
@@ -36,7 +37,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [userPermissions, setUserPermissions] = useState<string[]>([]);
   const [currentUsername, setCurrentUsername] = useState<string>('');
   const [currentUserId, setCurrentUserId] = useState<string>('');
+  const [currentUserData, setCurrentUserData] = useState<Record<string, any> | null>(null);
   const [currentUserRole, setCurrentUserRole] = useState<string>('');
+
+  // 防重标志：登录流程正在进行中，阻止 useEffect 恢复逻辑重复触发
+  const _loginInProgress = useRef(false);
 
   const resolveUserRole = useCallback((userId: string) =>
     SWITCHABLE_USERS.find((u) => u.userId === userId)?.label || userId,
@@ -45,11 +50,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const clearUserState = useCallback(() => {
     setCurrentUsername('');
     setCurrentUserId('');
+    setCurrentUserData(null);
     setCurrentUserRole('');
     setUserPermissions([]);
   }, []);
 
   const setUserInfoFromResponse = useCallback((data: { username?: string; user_id?: string }) => {
+    setCurrentUserData(data as Record<string, any>);
     if (data.username) {
       setCurrentUsername(data.username);
     } else if (data.user_id) {
@@ -84,24 +91,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // 应用启动时（页面刷新或首次加载），从 token 恢复用户信息
   useEffect(() => {
-    if (isAuthenticated && !currentUserId) {
+    if (isAuthenticated && !currentUserId && !_loginInProgress.current) {
+      _loginInProgress.current = true;
       (async () => {
         const ok = await fetchAndSetCurrentUser();
         if (!ok) {
           api.clearToken();
           setIsAuthenticated(false);
           clearUserState();
+          _loginInProgress.current = false;
           return;
         }
-        fetchUserPermissions();
+        await fetchUserPermissions();
+        _loginInProgress.current = false;
       })();
     }
   }, [isAuthenticated, currentUserId, fetchAndSetCurrentUser, clearUserState, fetchUserPermissions]);
 
   const handleLoginSuccess = useCallback(async () => {
+    _loginInProgress.current = true;
     setIsAuthenticated(true);
     await fetchAndSetCurrentUser();
-    fetchUserPermissions();
+    await fetchUserPermissions();
+    _loginInProgress.current = false;
   }, [fetchAndSetCurrentUser, fetchUserPermissions]);
 
   const handleLogout = useCallback(() => {
@@ -132,6 +144,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isAuthenticated,
         currentUsername,
         currentUserId,
+        currentUserData,
         currentUserRole,
         userPermissions,
         handleLoginSuccess,

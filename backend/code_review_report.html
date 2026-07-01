@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DML V4 Backend 代码评审报告</title>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --card: #ffffff;
+    --border: #e5e7eb;
+    --text: #1f2937;
+    --text-muted: #6b7280;
+    --p0: #dc2626;
+    --p0-bg: #fef2f2;
+    --p1: #ea580c;
+    --p1-bg: #fff7ed;
+    --p2: #ca8a04;
+    --p2-bg: #fefce8;
+    --good: #059669;
+    --good-bg: #ecfdf5;
+    --accent: #2563eb;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 40px 24px 80px; }
+  /* Header */
+  .header {
+    background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%);
+    color: #fff;
+    border-radius: 16px;
+    padding: 36px 40px;
+    margin-bottom: 28px;
+    box-shadow: 0 10px 30px rgba(37,99,235,.18);
+  }
+  .header h1 { font-size: 28px; font-weight: 700; margin-bottom: 6px; }
+  .header .sub { font-size: 15px; opacity: .85; }
+  .meta { display: flex; flex-wrap: wrap; gap: 24px; margin-top: 20px; font-size: 13px; }
+  .meta span { display: inline-flex; align-items: center; gap: 6px; }
+  .meta b { font-weight: 600; }
+  /* Score */
+  .score-row { display: grid; grid-template-columns: 220px 1fr; gap: 24px; align-items: center; margin-top: 24px; background: rgba(255,255,255,.1); border-radius: 12px; padding: 20px 24px; }
+  .score-circle {
+    width: 140px; height: 140px; border-radius: 50%;
+    background: conic-gradient(#f59e0b 0deg 216deg, rgba(255,255,255,.18) 216deg 360deg);
+    display: flex; align-items: center; justify-content: center;
+    position: relative;
+  }
+  .score-circle::before { content:""; position:absolute; inset:12px; border-radius:50%; background:#1e3a5f; }
+  .score-val { position: relative; font-size: 38px; font-weight: 700; }
+  .score-val small { font-size: 16px; font-weight: 500; opacity:.7; }
+  .score-desc h3 { font-size: 17px; margin-bottom: 6px; }
+  .score-desc p { font-size: 13.5px; opacity: .85; }
+  /* Stats */
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 28px; }
+  .stat { background: var(--card); border-radius: 12px; padding: 18px 20px; border: 1px solid var(--border); }
+  .stat .num { font-size: 30px; font-weight: 700; line-height: 1; }
+  .stat .lbl { font-size: 13px; color: var(--text-muted); margin-top: 6px; }
+  .stat.p0 .num { color: var(--p0); }
+  .stat.p1 .num { color: var(--p1); }
+  .stat.p2 .num { color: var(--p2); }
+  .stat.good .num { color: var(--good); }
+  /* Section */
+  section { margin-bottom: 36px; }
+  .sec-title {
+    font-size: 20px; font-weight: 700; margin-bottom: 16px;
+    padding-bottom: 10px; border-bottom: 2px solid var(--border);
+    display: flex; align-items: center; gap: 10px;
+  }
+  .sec-title .badge { font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 20px; }
+  /* Issue card */
+  .issue {
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 20px 24px; margin-bottom: 14px; border-left: 4px solid var(--p0);
+  }
+  .issue.p1 { border-left-color: var(--p1); }
+  .issue.p2 { border-left-color: var(--p2); }
+  .issue.good { border-left-color: var(--good); }
+  .issue-head { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }
+  .tag {
+    font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 6px;
+    text-transform: uppercase; letter-spacing: .5px; white-space: nowrap;
+  }
+  .tag.p0 { background: var(--p0-bg); color: var(--p0); }
+  .tag.p1 { background: var(--p1-bg); color: var(--p1); }
+  .tag.p2 { background: var(--p2-bg); color: var(--p2); }
+  .tag.good { background: var(--good-bg); color: var(--good); }
+  .issue h3 { font-size: 16px; font-weight: 600; flex: 1; min-width: 200px; }
+  .issue .loc { font-family: "SF Mono", "Menlo", monospace; font-size: 12px; color: var(--text-muted); background: #f3f4f6; padding: 2px 8px; border-radius: 5px; }
+  .issue p { font-size: 14px; color: #374151; margin: 6px 0; }
+  .issue ul { margin: 8px 0 0 18px; font-size: 13.5px; color: #374151; }
+  .issue li { margin: 3px 0; }
+  pre {
+    background: #0f172a; color: #e2e8f0; border-radius: 8px;
+    padding: 14px 16px; font-size: 12.5px; line-height: 1.6;
+    overflow-x: auto; margin: 10px 0; font-family: "SF Mono","Menlo","Consolas",monospace;
+  }
+  pre .c { color: #94a3b8; }
+  pre .r { color: #fca5a5; }
+  pre .k { color: #7dd3fc; }
+  pre .s { color: #fcd34d; }
+  .fix { background: #eff6ff; border-left: 3px solid var(--accent); padding: 10px 14px; border-radius: 0 8px 8px 0; margin-top: 10px; font-size: 13.5px; }
+  .fix b { color: var(--accent); }
+  /* Table */
+  table { width: 100%; border-collapse: collapse; background: var(--card); border-radius: 10px; overflow: hidden; border: 1px solid var(--border); font-size: 13.5px; }
+  th { background: #f9fafb; text-align: left; padding: 11px 14px; font-weight: 600; color: #4b5563; border-bottom: 1px solid var(--border); }
+  td { padding: 10px 14px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #fafbfc; }
+  .pill { display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 12px; }
+  .pill.ok { background: var(--good-bg); color: var(--good); }
+  .pill.no { background: var(--p0-bg); color: var(--p0); }
+  .pill.warn { background: var(--p2-bg); color: var(--p2); }
+  /* Summary box */
+  .summary { background: var(--card); border-radius: 12px; padding: 24px 28px; border: 1px solid var(--border); margin-bottom: 28px; }
+  .summary h3 { font-size: 16px; margin-bottom: 10px; }
+  .summary p { font-size: 14px; color: #374151; margin-bottom: 8px; }
+  .toc { columns: 2; column-gap: 32px; font-size: 13.5px; }
+  .toc a { color: var(--accent); text-decoration: none; display: block; padding: 2px 0; }
+  .toc a:hover { text-decoration: underline; }
+  @media (max-width: 720px) {
+    .stats { grid-template-columns: repeat(2,1fr); }
+    .score-row { grid-template-columns: 1fr; }
+    .toc { columns: 1; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- Header -->
+  <div class="header">
+    <h1>DML V4 Backend 代码评审报告</h1>
+    <div class="sub">FastAPI 测试管理平台 · MongoDB / Redis / Kafka / RabbitMQ / MinIO</div>
+    <div class="meta">
+      <span>📅 <b>评审日期：</b>2026-07-01</span>
+      <span>📁 <b>代码规模：</b>316 个 Python 文件 / 13 个业务模块</span>
+      <span>🧪 <b>测试文件：</b>65 个（源码 217 个，覆盖比 ~30%）</span>
+      <span>🔧 <b>技术栈：</b>FastAPI + Beanie + loguru + LangChain</span>
+    </div>
+    <div class="score-row">
+      <div class="score-circle"><div class="score-val">60<small>/100</small></div></div>
+      <div class="score-desc">
+        <h3>综合评分：C（需重点整改）</h3>
+        <p>项目整体分层清晰、工程化基础扎实（日志/异常/路由注册/死信处理均有良好实践），但存在 <b>7 个严重安全/稳定性问题</b> 必须在上线前修复，尤其是密钥泄露、鉴权缺失与同步阻塞事件循环。建议优先处理 P0 后再推进新功能。</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats">
+    <div class="stat p0"><div class="num">7</div><div class="lbl">严重 P0（安全/数据/可用性）</div></div>
+    <div class="stat p1"><div class="num">14</div><div class="lbl">高危 P1（性能/可靠性）</div></div>
+    <div class="stat p2"><div class="num">12</div><div class="lbl">中等 P2（规范/健壮性）</div></div>
+    <div class="stat good"><div class="num">6</div><div class="lbl">设计亮点</div></div>
+  </div>
+
+  <!-- Summary -->
+  <div class="summary">
+    <h3>📌 核心结论</h3>
+    <p><b>架构层面良好：</b>采用模块化分层（api/service/repository/domain/schemas），共享层（shared）抽象合理，日志系统、异常处理分层、Kafka 死信机制、路由自动注册、配置热加载等工程质量较高。</p>
+    <p><b>安全是最大短板：</b>生产密钥明文提交到 Git；多个模块（execution_plan、project、ai_analysis、system_config）路由缺失鉴权；Redis 管理 API 任意登录用户可操作任意 key；附件无文件类型校验。</p>
+    <p><b>异步实践有硬伤：</b>AI 客户端与 RabbitMQ 生产者在 async 上下文中调用同步阻塞 API，会卡死整个事件循环，高并发下服务不可用。</p>
+    <p><b>性能隐患普遍：</b>N+1 查询、全量加载到内存、$regex 全表扫描、无流式 AI 响应等问题在大数据量下会暴露。</p>
+  </div>
+
+  <!-- 目录 -->
+  <div class="summary">
+    <h3>📑 目录</h3>
+    <div class="toc">
+      <a href="#p0">一、严重问题 P0（7 项，必须立即修复）</a>
+      <a href="#p1">二、高危问题 P1（14 项，上线前修复）</a>
+      <a href="#p2">三、中等问题 P2（12 项，迭代改进）</a>
+      <a href="#good">四、设计亮点</a>
+      <a href="#plan">五、修复优先级与行动建议</a>
+    </div>
+  </div>
+
+  <!-- P0 -->
+  <section id="p0">
+    <div class="sec-title">一、严重问题 P0 <span class="badge" style="background:var(--p0-bg);color:var(--p0)">安全/数据/可用性 · 立即修复</span></div>
+
+    <div class="issue">
+      <div class="issue-head">
+        <span class="tag p0">P0</span>
+        <h3>1. 生产密钥明文泄露到 Git 仓库</h3>
+        <span class="loc">config.yaml / config_dev.yaml</span>
+      </div>
+      <p><b>现象：</b><code>config.yaml</code> 和 <code>config_dev.yaml</code> 均被 git 跟踪（虽 .gitignore 列出 config.yaml，但已跟踪文件不生效；config_dev.yaml 完全未忽略）。文件中包含大量明文敏感信息：</p>
+      <ul>
+        <li>JWT secret_key：<code>fa5922eb...e5dc</code></li>
+        <li>RabbitMQ 密码：<code>admin@123+</code></li>
+        <li>MinIO secret_key：<code>kk123123</code></li>
+        <li>Redis 密码：<code>7GipPaqKHQNn37Vb</code></li>
+        <li>MongoDB / Kafka / Redis Sentinel / Git 仓库等内网 IP 与连接串</li>
+      </ul>
+      <div class="fix"><b>修复：</b>① 立即用 BFG Repo-Cleaner 或 git filter-repo 清除历史；② 轮换所有泄露密钥；③ 敏感配置改用环境变量/Vault 注入；④ .gitignore 补充 config_dev.yaml 并执行 <code>git rm --cached</code>。</div>
+    </div>
+
+    <div class="issue">
+      <div class="issue-head">
+        <span class="tag p0">P0</span>
+        <h3>2. AI 客户端同步阻塞事件循环</h3>
+        <span class="loc">app/shared/ai/client.py:13,85,150</span>
+      </div>
+      <p><code>AIClient</code> 使用同步 <code>OpenAI</code> 客户端，在 <code>async def chat_completion</code> 中直接调用 <code>client.chat.completions.create()</code>。LLM 调用耗时数秒至数十秒，期间整个事件循环被阻塞，所有其他请求被饿死。影响 ai_analysis、failure_analysis、system_config/ai_routes 全部 AI 端点。</p>
+      <pre><span class="c"># client.py:13</span>
+<span class="k">from</span> openai <span class="k">import</span> OpenAI   <span class="c"># 同步客户端，非 AsyncOpenAI</span>
+
+<span class="k">async def</span> chat_completion(...):
+    response = client.chat.completions.create(...)  <span class="r"># 同步阻塞！</span></pre>
+      <div class="fix"><b>修复：</b>改用 <code>openai.AsyncOpenAI</code>，或至少用 <code>await asyncio.to_thread(client.chat.completions.create, ...)</code> 包装。EmbeddingService 已正确用 httpx.AsyncClient，可参照。</div>
+    </div>
+
+    <div class="issue">
+      <div class="issue-head">
+        <span class="tag p0">P0</span>
+        <h3>3. RabbitMQ 生产者同步阻塞事件循环 + 线程不安全</h3>
+        <span class="loc">app/shared/rabbitmq/producer.py:173-254</span>
+      </div>
+      <p><code>RabbitMQProducerManager.send_task</code> 是同步方法，内部直接调用 <code>pika.BlockingConnection</code> 同步 API。从 async 路由调用会阻塞事件循环。且 <code>_ensure_connection_ready</code> 在连接断开时 stop()+start() 重建，多任务并发调用存在竞争条件。</p>
+      <div class="fix"><b>修复：</b>① 对外提供 async 接口，内部用 <code>asyncio.to_thread</code> 包装；② 加 <code>asyncio.Lock</code> 保护重连逻辑；③ 参考 Kafka 生产者的 <code>asyncio.to_thread</code> 封装模式。</div>
+    </div>
+
+    <div class="issue">
+      <div class="issue-head">
+        <span class="tag p0">P0</span>
+        <h3>4. Redis 管理 API 越权：任意登录用户可操作任意 key</h3>
+        <span class="loc">app/shared/api/routes/redis.py:43-68</span>
+      </div>
+      <p><code>/redis/set</code>、<code>/redis/del</code> 仅校验登录（<code>get_current_user</code>），不校验任何权限。<code>domain/entity/key_id</code> 均由用户传入，可操作 <code>dmlv4:</code> 命名空间下任意 key，包括覆盖服务注册信息、缓存数据。</p>
+      <div class="fix"><b>修复：</b>① 增加 <code>require_permission("system:redis:write")</code>；② 对 key 做白名单/前缀校验；③ 生产环境建议直接下线该管理 API。</div>
+    </div>
+
+    <div class="issue">
+      <div class="issue-head">
+        <span class="tag p0">P0</span>
+        <h3>5. execution 模块 agent 注册/心跳接口完全无鉴权</h3>
+        <span class="loc">app/modules/execution/api/routes.py:175-206</span>
+      </div>
+      <p>agent 注册、心跳上报、任务领取接口无任何鉴权。任何人可注册恶意 agent 窃取测试任务、上报虚假心跳干扰调度。</p>
+      <div class="fix"><b>修复：</b>引入 agent 令牌/共享密钥校验，或复用 JWT + 专用权限码。</div>
+    </div>
+
+    <div class="issue">
+      <div class="issue-head">
+        <span class="tag p0">P0</span>
+        <h3>6. execution_plan 模块几乎所有路由缺失权限校验</h3>
+        <span class="loc">app/modules/execution_plan/api/routes.py（全文）</span>
+      </div>
+      <p>该模块路由普遍缺少 <code>require_permission</code>，其中 <code>case_execution_stats</code>（routes.py:189-200）连 <code>get_current_user</code> 都没有——完全匿名可访问。执行计划数据可被任意查看/篡改。</p>
+      <div class="fix"><b>修复：</b>按读/写补齐 <code>require_permission</code>，至少所有端点要求登录。</div>
+    </div>
+
+    <div class="issue">
+      <div class="issue-head">
+        <span class="tag p0">P0</span>
+        <h3>7. project 模块 CRUD 无权限/归属校验 + 误用字段 bug</h3>
+        <span class="loc">app/modules/project/api/routes.py 全文 / service:59,112,546</span>
+      </div>
+      <p><b>安全问题：</b>项目增删改查无权限与归属校验，任何登录用户可删除任意项目。</p>
+      <p><b>数据 bug：</b><code>project_service.py</code> 查询 <code>UserDoc</code> 时误用 <code>is_deleted</code> 字段过滤（第 59/112/546 行），但 UserDoc 没有该字段，导致 owner 名称<b>永远解析失败</b>，这是确定的数据正确性 Bug。</p>
+      <div class="fix"><b>修复：</b>① 增删改加权限校验 + 归属校验；② 删除 UserDoc 查询中 <code>is_deleted</code> 条件，或确认正确字段名。</div>
+    </div>
+  </section>
+
+  <!-- P1 -->
+  <section id="p1">
+    <div class="sec-title">二、高危问题 P1 <span class="badge" style="background:var(--p1-bg);color:var(--p1)">性能/可靠性 · 上线前修复</span></div>
+
+    <div class="issue p1">
+      <div class="issue-head"><span class="tag p1">P1</span><h3>8. MinIO get_object 资源泄漏</h3><span class="loc">app/shared/minio/client.py:68-81</span></div>
+      <p><code>get_object</code> 返回的 HTTPResponse 在 <code>read()</code> 后从未 <code>close()</code>/<code>release_conn()</code>，HTTP 连接泄漏，长期运行连接池耗尽。且大文件全量读入内存，无流式下载。</p>
+      <div class="fix"><b>修复：</b>用 <code>try/finally</code> 关闭 response，大文件改为分块流式读取。</div>
+    </div>
+
+    <div class="issue p1">
+      <div class="issue-head"><span class="tag p1">P1</span><h3>9. RabbitMQ 日志泄露完整消息体</h3><span class="loc">app/shared/rabbitmq/producer.py:215-220</span></div>
+      <p>每次发送都 <code>log.info</code> 打印完整 <code>task_data</code>（JSON），含敏感数据时明文落盘，日志脱敏正则无法覆盖 JSON 结构。</p>
+      <div class="fix"><b>修复：</b>仅记录 task_id 与大小，移除 payload 明文；或经 logger 脱敏管线。</div>
+    </div>
+
+    <div class="issue p1">
+      <div class="issue-head"><span class="tag p1">P1</span><h3>10. 审计日志 fire-and-forget 可能丢失</h3><span class="loc">app/shared/middleware/audit_log.py:117-119</span></div>
+      <p>审计日志通过 <code>asyncio.create_task</code> 异步写入且未跟踪。进程崩溃或关闭时日志丢失；且跳过未认证请求（actor_id=="-"），暴力破解等未授权写操作无审计记录。</p>
+      <div class="fix"><b>修复：</b>关键写操作改为同步落盘或持久化队列；补充未认证写操作的审计。</div>
+    </div>
+
+    <div class="issue p1">
+      <div class="issue-head"><span class="tag p1">P1</span><h3>11. BaseHTTPMiddleware contextvars 传播问题</h3><span class="loc">app/shared/middleware/request_logging.py / audit_log.py</span></div>
+      <p>两个中间件继承 <code>BaseHTTPMiddleware</code>，其 <code>call_next</code> 在新 task context 中执行下游，导致 <code>set_trace_context()</code> 设置的 request_id/actor_id 可能无法传播到路由处理器——审计日志可能因 actor_id 为默认值而被跳过。</p>
+      <div class="fix"><b>修复：</b>改用纯 ASGI 中间件（实现 <code>__call__</code>）替代 BaseHTTPMiddleware。</div>
+    </div>
+
+    <div class="issue p1">
+      <div class="issue-head"><span class="tag p1">P1</span><h3>12. 附件上传无文件类型校验 + 先读后校验大小</h3><span class="loc">app/modules/attachments/api/routes.py:27-60</span></div>
+      <p>① 无白名单/黑名单校验，可上传 .exe/.sh/.jsp 等可执行文件；content_type 直接信任客户端。② <code>await file.read()</code> 先读全部到内存再校验大小（100MB），可被超大文件 OOM。③ 下载/删除端点不校验是否为上传者/管理员。</p>
+      <div class="fix"><b>修复：</b>① 扩展名+magic number 双重校验；② 分块读取累计校验大小；③ 下载删除加归属校验。</div>
+    </div>
+
+    <div class="issue p1">
+      <div class="issue-head"><span class="tag p1">P1</span><h3>13. system_config 配置搜索正则注入 + API 无鉴权</h3><span class="loc">config_service.py:132-135 / routes.py:43-56</span></div>
+      <p>① 配置列表 <code>search</code> 直接作为 <code>$regex</code>，未经 <code>re.escape</code>（对比 search/test_case_collection 模块都做了转义），存在 ReDoS 与全表扫描风险。② 配置读取全部无鉴权（含 ai.api_key 等敏感项）；更新仅要求登录不校验 <code>system:config</code> 权限。</p>
+      <div class="fix"><b>修复：</b>① <code>re.escape(search)</code>；② 读取加权限，更新加 <code>require_permission("system:config")</code>，敏感字段返回时脱敏。</div>
+    </div>
+
+    <div class="issue p1">
+      <div class="issue-head"><span class="tag p1">P1</span><h3>14. JWT secret_key 默认值 "CHANGE_ME" 无启动拦截</h3><span class="loc">app/shared/config/settings.py:140</span></div>
+      <p>若部署时忘记配置，服务用 <code>"CHANGE_ME"</code> 签名启动且无任何告警。</p>
+      <div class="fix"><b>修复：</b>启动时校验 secret_key 不等于默认值且长度足够，否则拒绝启动。</div>
+    </div>
+
+    <div class="issue p1">
+      <div class="issue-head"><span class="tag p1">P1</span><h3>15. AI 端点鉴权不一致：多组端点完全无鉴权</h3><span class="loc">ai_analysis / system_config/ai_routes / embedding_routes</span></div>
+      <p>ai_analysis 的 analyze、system_config 的 polish/generate-cases/review-case/recommend-cases、embedding 搜索端点全部无鉴权，任何未认证用户可触发 AI 调用消耗 LLM token（成本与滥用风险）。</p>
+      <table>
+        <tr><th>端点</th><th>鉴权</th></tr>
+        <tr><td>ai_analysis/analyze_collection</td><td><span class="pill no">无</span></td></tr>
+        <tr><td>system_config/ai_routes 全部</td><td><span class="pill no">无</span></td></tr>
+        <tr><td>system_config/embedding_routes 全部</td><td><span class="pill no">无</span></td></tr>
+        <tr><td>failure_analysis/analyze</td><td><span class="pill ok">require_permission</span></td></tr>
+      </table>
+      <div class="fix"><b>修复：</b>统一加 <code>require_permission</code>，AI 端点增加速率限制。</div>
+    </div>
+
+    <div class="issue p1">
+      <div class="issue-head"><span class="tag p1">P1</span><h3>16. notification 发送失败无重试却标记为已发送</h3><span class="loc">notification/service.py:224-227, 271-305</span></div>
+      <p><code>_delayed_flush</code> 中无论 <code>_do_flush</code> 是否成功都将 doc.status 设为 "sent"。HTTP 发送失败时仅记日志、不重试、不标记 failed，通知被永久丢失。fire-and-forget 任务异常也被 asyncio 静默吞没。</p>
+      <div class="fix"><b>修复：</b><code>_send_to_bot</code> 返回成功/失败；失败时标记 failed 并保留待补偿；create_task 添加 done_callback 记录异常。</div>
+    </div>
+
+    <div class="issue p1">
+      <div class="issue-head"><span class="tag p1">P1</span><h3>17. failure_analysis 全量加载失败用例到内存 + 重复分类</h3><span class="loc">failure_analysis_service.py:108-113, 121/159/183/301</span></div>
+      <p>90 天范围内所有失败用例一次性 <code>to_list()</code> 加载，日失败数千条时内存与超时压力大。同一批 failure_message 在 4 个统计方法中被重复分类 4 次。</p>
+      <div class="fix"><b>修复：</b>数据库侧聚合（<code>$group</code>）；分类结果用 dict 缓存复用。</div>
+    </div>
+
+    <div class="issue p1">
+      <div class="issue-head"><span class="tag p1">P1</span><h3>18. search 每个 $regex 查询执行两次 + 全表扫描</h3><span class="loc">search/service/search_service.py:106-127</span></div>
+      <p>5 个子搜索各执行 数据+count 两次查询（共 10 次）。无 <code>^</code> 锚定的 <code>$regex</code> 无法利用索引，全表扫描。异常被 <code>return_exceptions=True</code> 静默吞没。</p>
+      <div class="fix"><b>修复：</b>用 <code>$facet</code> 单次聚合取数据+总数；建文本索引或 Atlas Search；异常记日志而非静默跳过。</div>
+    </div>
+
+    <div class="issue p1">
+      <div class="issue-head"><span class="tag p1">P1</span><h3>19. Embedding 语义搜索全量加载向量做内存计算</h3><span class="loc">system_config/api/embedding_routes.py:96-128</span></div>
+      <p>将所有 embedding 向量加载到内存，Python 循环计算余弦相似度。用例数千条时极慢。</p>
+      <div class="fix"><b>修复：</b>用 MongoDB Atlas Vector Search 的 <code>$vectorSearch</code> 或 FAISS。</div>
+    </div>
+
+    <div class="issue p1">
+      <div class="issue-head"><span class="tag p1">P1</span><h3>20. ai_analysis 跨模块逐条查询用例（N+1）</h3><span class="loc">ai_analysis/service/ai_service.py:84-112</span></div>
+      <p>对 collection.case_ids 逐条 <code>find_one</code>，N 次查询。应 <code>$in</code> 批量查询（attachment_service.enrich_for_dispatch 已是正确范例）。</p>
+    </div>
+
+    <div class="issue p1">
+      <div class="issue-head"><span class="tag p1">P1</span><h3>21. AI 无流式响应</h3><span class="loc">app/shared/ai/client.py:150-155</span></div>
+      <p>所有 AI 调用非 <code>stream=True</code>，polish/generate-cases 等面向用户的端点无进度反馈，体验差。项目已引入 sse-starlette 依赖但未使用。</p>
+      <div class="fix"><b>修复：</b>面向用户端点支持 SSE 流式输出。</div>
+    </div>
+  </section>
+
+  <!-- P2 -->
+  <section id="p2">
+    <div class="sec-title">三、中等问题 P2 <span class="badge" style="background:var(--p2-bg);color:var(--p2)">规范/健壮性 · 迭代改进</span></div>
+
+    <div class="issue p2">
+      <div class="issue-head"><span class="tag p2">P2</span><h3>22. datetime.utcnow() 已弃用，时区处理不一致</h3><span class="loc">config_service.py:168 / status_store.py:42 / kafka/health.py:114 等</span></div>
+      <p>多处使用 Python 3.12+ 已弃用的 <code>datetime.utcnow()</code>（返回 naive datetime），与项目其他地方 <code>datetime.now(timezone.utc)</code> 不一致，易导致时区比较错误。kafka/health.py 剥离时区再比较的写法有 bug。项目已有 <code>ensure_utc_datetime</code> 工具但未统一使用。</p>
+    </div>
+
+    <div class="issue p2">
+      <div class="issue-head"><span class="tag p2">P2</span><h3>23. Admin 权限绕过基于角色名匹配，过于宽松</h3><span class="loc">app/shared/auth/jwt_auth.py:181-207</span></div>
+      <p>角色名归一化后等于 "ADMIN" 即跳过所有权限检查。应改为基于权限码（如 <code>*</code> 或 <code>system:admin</code>）而非角色名。</p>
+    </div>
+
+    <div class="issue p2">
+      <div class="issue-head"><span class="tag p2">P2</span><h3>24. 权限查询每请求 3-4 次 DB 查询，无缓存</h3><span class="loc">app/shared/auth/jwt_auth.py:131,156-178</span></div>
+      <p>get_current_user + get_user_permissions 每次请求查 UserDoc/Role/Permission，高并发 MongoDB 压力大。建议 Redis 缓存权限（TTL 短）。</p>
+    </div>
+
+    <div class="issue p2">
+      <div class="issue-head"><span class="tag p2">P2</span><h3>25. TimestampedDocumentMixin 未覆盖 Update 事件</h3><span class="loc">app/shared/core/document_mixins.py:29-32</span></div>
+      <p>仅监听 Insert/Replace/Save，未含 Update。<code>doc.update({...})</code> 局部更新时 updated_at 不刷新。</p>
+    </div>
+
+    <div class="issue p2">
+      <div class="issue-head"><span class="tag p2">P2</span><h3>26. 审计日志脱敏不完整：列表中的 dict 不脱敏</h3><span class="loc">audit_log.py:182-192</span></div>
+      <p><code>{"users":[{"password":"xxx"}]}</code> 中 users 是 list，不进入递归 _redact，password 被明文记录。</p>
+    </div>
+
+    <div class="issue p2">
+      <div class="issue-head"><span class="tag p2">P2</span><h3>27. Kafka DLQ 连续失败后强制提交 offset 丢消息</h3><span class="loc">kafka/consumer.py:159-169</span></div>
+      <p>死信发送连续失败 5 次后 sleep 5s 强制提交 offset，坏消息被跳过丢失。应至少持久化原始消息到本地/DB 补偿。</p>
+    </div>
+
+    <div class="issue p2">
+      <div class="issue-head"><span class="tag p2">P2</span><h3>28. Kafka handler 异常无重试，瞬时错误直接进死信</h3><span class="loc">kafka/consumer.py:143</span></div>
+      <p>所有异常（含网络抖动等可恢复错误）直接进死信，无重试。应先指数退避重试 N 次再进死信。</p>
+    </div>
+
+    <div class="issue p2">
+      <div class="issue-head"><span class="tag p2">P2</span><h3>29. reset_context 全量重置，嵌套场景不安全</h3><span class="loc">app/shared/context.py:120-127, 136-149</span></div>
+      <p>用 <code>set("-")</code> 而非 <code>reset(token)</code>；trace_scope 退出时清除所有上下文（含 operation），嵌套场景会误清用户信息。</p>
+    </div>
+
+    <div class="issue p2">
+      <div class="issue-head"><span class="tag p2">P2</span><h3>30. 路由注册失败被静默忽略</h3><span class="loc">app/shared/api/router_registry.py:36-43</span></div>
+      <p>模块导入失败只记 warning 不阻止启动，模块 API 静默变 404。且用标准 logging 而非 loguru。</p>
+    </div>
+
+    <div class="issue p2">
+      <div class="issue-head"><span class="tag p2">P2</span><h3>31. 两个同名 PermissionDeniedError 异类易混淆</h3><span class="loc">errors/handlers.py:20,44</span></div>
+      <p>workflow.domain 与 shared.domain.exceptions 各有一个 PermissionDeniedError，继承体系不同，维护易错。</p>
+    </div>
+
+    <div class="issue p2">
+      <div class="issue-head"><span class="tag p2">P2</span><h3>32. CORS 配置过宽 + dev_bypass_auth 残留</h3><span class="loc">config.yaml:5-6 / settings.py:51-52</span></div>
+      <p>cors_origins: ['*']；settings 中 dev_bypass_auth/dev_user_id 已废弃但代码残留。</p>
+    </div>
+
+    <div class="issue p2">
+      <div class="issue-head"><span class="tag p2">P2</span><h3>33. 测试覆盖偏低，测试/源码比约 30%</h3><span class="loc">tests/ 65 文件 vs app/ 217 文件</span></div>
+      <p>核心模块（execution、workflow、test_specs）有集成测试，但 shared 基础设施、ai_analysis、attachments、system_config 测试薄弱。建议补充鉴权、文件上传、AI 客户端的单元测试。</p>
+    </div>
+  </section>
+
+  <!-- Good -->
+  <section id="good">
+    <div class="sec-title">四、设计亮点 <span class="badge" style="background:var(--good-bg);color:var(--good)">值得保持</span></div>
+
+    <div class="issue good">
+      <div class="issue-head"><span class="tag good">✓</span><h3>日志系统质量最高</h3><span class="loc">app/shared/core/logger.py</span></div>
+      <p>结构化 JSON Lines、自动 .gz 压缩、敏感数据脱敏、追踪上下文注入、按域分文件、大字段截断、模块级日志级别控制，是整个 shared 目录中工程质量最高的模块。</p>
+    </div>
+
+    <div class="issue good">
+      <div class="issue-head"><span class="tag good">✓</span><h3>Kafka 死信与 offset 管理设计成熟</h3><span class="loc">kafka/consumer.py / dead_letter.py</span></div>
+      <p>手动提交保证至少一次语义；死信消息结构完整（保留 topic/key/payload/错误/元数据）；trace_scope 为每条消息创建独立追踪；连续失败保护防 tight loop。</p>
+    </div>
+
+    <div class="issue good">
+      <div class="issue-head"><span class="tag good">✓</span><h3>异常处理分层清晰</h3><span class="loc">app/shared/api/errors/handlers.py</span></div>
+      <p>业务异常 → AppError → HTTPException → 通用异常 的分层捕获，isinstance 链自动推断状态码，通用处理器隐藏内部错误细节。</p>
+    </div>
+
+    <div class="issue good">
+      <div class="issue-head"><span class="tag good">✓</span><h3>路由自动注册（插件式）</h3><span class="loc">app/shared/api/router_registry.py</span></div>
+      <p>各模块自动注册路由，消除 main.py 硬编码导入，新增模块零改动接入。</p>
+    </div>
+
+    <div class="issue good">
+      <div class="issue-head"><span class="tag good">✓</span><h3>notification 持久化 + 恢复机制完善</h3><span class="loc">notification/service.py</span></div>
+      <p>通知先落 MongoDB 再聚合发送；启动 recover_pending 恢复未发送批次；关闭 flush_all 立即发送；TTL 自动清理已发送记录。设计思路合理（仅发送失败处理需修）。</p>
+    </div>
+
+    <div class="issue good">
+      <div class="issue-head"><span class="tag good">✓</span><h3>test_case_collection 模块分层最规范</h3><span class="loc">app/modules/test_case_collection/</span></div>
+      <p>api(dependencies 注入) → service → repository/models + schemas + exceptions，去重、逻辑删除、权限校验、re.escape 搜索均正确，可作为其他模块的分层参考。</p>
+    </div>
+  </section>
+
+  <!-- Plan -->
+  <section id="plan">
+    <div class="sec-title">五、修复优先级与行动建议</div>
+    <table>
+      <tr><th style="width:90px">优先级</th><th>行动项</th><th style="width:120px">建议时限</th></tr>
+      <tr><td><span class="pill no">P0 · 立即</span></td><td>清除 Git 历史中的密钥泄露，轮换所有密钥（JWT/RabbitMQ/MinIO/Redis），敏感配置改环境变量注入</td><td>本周内</td></tr>
+      <tr><td><span class="pill no">P0 · 立即</span></td><td>AI 客户端改用 AsyncOpenAI；RabbitMQ 生产者加 async 包装 + 重连锁</td><td>本周内</td></tr>
+      <tr><td><span class="pill no">P0 · 立即</span></td><td>补齐鉴权：execution_plan 全模块、execution agent 接口、project CRUD、ai_analysis、system_config、Redis 管理 API</td><td>3 天内</td></tr>
+      <tr><td><span class="pill no">P0 · 立即</span></td><td>修复 project 模块 UserDoc is_deleted 字段误用 bug</td><td>1 天内</td></tr>
+      <tr><td><span class="pill warn">P1 · 上线前</span></td><td>MinIO get_object 资源泄漏；附件类型校验+流式校验大小；审计日志可靠性</td><td>2 周内</td></tr>
+      <tr><td><span class="pill warn">P1 · 上线前</span></td><td>性能优化：N+1 查询批量化、$regex 全表扫描、全量加载内存、AI 流式响应、向量检索</td><td>2 周内</td></tr>
+      <tr><td><span class="pill warn">P1 · 上线前</span></td><td>notification 发送失败重试与状态标记；JWT secret 启动校验；中间件改纯 ASGI</td><td>2 周内</td></tr>
+      <tr><td><span class="pill" style="background:#f3f4f6;color:#6b7280">P2 · 迭代</span></td><td>统一 datetime.now(timezone.utc)；权限缓存；同名异常收敛；reset_context token 化；补测试</td><td>持续迭代</td></tr>
+    </table>
+
+    <div class="summary" style="margin-top:20px">
+      <h3>💡 整改建议</h3>
+      <p>1. <b>安全优先：</b>密钥泄露与鉴权缺失是两类最危险的问题，建议成立安全整改专项，先扫一遍所有路由的鉴权依赖（可用脚本批量检测缺失 <code>Depends</code> 的写操作端点）。</p>
+      <p>2. <b>异步规范：</b>建立"async 函数内禁止直接调用同步阻塞 IO"的代码规范，CI 中用 <code>flake8-async</code> 或 lint 规则卡控。</p>
+      <p>3. <b>分层推广：</b>以 test_case_collection 模块为模板，统一各模块分层与依赖注入风格；failure_analysis 的 AI 逻辑应从路由下沉到 service。</p>
+      <p>4. <b>测试补强：</b>重点补鉴权测试（每个端点验证未认证/无权限/正常三种情况）、文件上传安全测试、AI 客户端 mock 测试。</p>
+    </div>
+  </section>
+
+</div>
+</body>
+</html>

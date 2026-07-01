@@ -5,7 +5,6 @@ API 地址和模型名从系统配置热加载（ai.embedding_base_url / ai.embe
 """
 from __future__ import annotations
 
-from typing import Any
 
 import httpx
 

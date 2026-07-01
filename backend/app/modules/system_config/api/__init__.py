@@ -1,6 +1,6 @@
 from app.modules.system_config.api.routes import router
 from app.modules.system_config.api.ai_routes import router as ai_router
-from app.shared.ai.embedding_routes import router as embedding_router
+from app.modules.system_config.api.embedding_routes import router as embedding_router
 
 from app.shared.api.router_registry import register_router
 

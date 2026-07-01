@@ -6,7 +6,7 @@ AI 友好注释说明：
 - Document 类负责数据库表结构与索引；Pydantic Model 用于 API 返回。
 """
 from typing import Optional, List
-from datetime import datetime, timezone
+from datetime import datetime
 from pydantic import BaseModel, Field, ConfigDict
 from beanie import Document
 from pymongo import IndexModel

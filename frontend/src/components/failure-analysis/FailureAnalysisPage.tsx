@@ -6,7 +6,7 @@ import {
 } from 'recharts'
 import PageToolbar, { StatPill } from '../ui/PageToolbar'
 import { getCatalogLabs } from '../../services/catalogLabsCache'
-import api from '../../services/api'
+import { api } from '../../services/api'
 import type { FailureAnalysisDashboard, FailurePattern, CatalogLab } from '../../types'
 import type { AnalyzeFailureResponse } from '../../types/ai'
 

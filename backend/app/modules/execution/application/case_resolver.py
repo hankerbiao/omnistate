@@ -10,10 +10,8 @@ from dataclasses import dataclass
 from typing import List
 
 from app.modules.test_specs.application.ports import (
-    AutoCaseDispatchInfo,
     TestCaseMetadataQueryPort,
 )
-from app.shared.domain.exceptions import NotFoundError, ValidationError
 
 
 @dataclass(frozen=True)

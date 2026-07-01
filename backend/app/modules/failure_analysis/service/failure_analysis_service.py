@@ -3,8 +3,9 @@
 聚合执行任务用例数据，生成失败模式分布、按代理统计、每日趋势、
 不稳定测试检测和高频失败列表等分析结果。
 """
+import json
 from datetime import datetime, timedelta, timezone
-from typing import Counter, Dict, List, Optional
+from typing import Any, Counter, Dict, List, Optional
 
 from app.modules.execution.repository.models.execution import (
     ExecutionAgentDoc,
@@ -20,6 +21,7 @@ from app.modules.failure_analysis.schemas.failure_analysis import (
     HighFrequencyFailure,
 )
 from app.modules.failure_analysis.service.pattern_classifier import FailurePatternClassifier
+from app.shared.core.logger import log
 
 
 class FailureAnalysisService:
@@ -288,12 +290,10 @@ class FailureAnalysisService:
         """
         from collections import Counter, defaultdict
 
-        # auto_case_id → fail count, latest time, pattern counter, duration total
+        # auto_case_id → fail count, latest time, pattern counter
         counter: Counter[str] = Counter()
         latest: Dict[str, datetime] = {}
         pattern_counter: Dict[str, Counter[str]] = defaultdict(Counter)
-        duration_total: Dict[str, float] = defaultdict(float)
-        duration_count: Dict[str, int] = defaultdict(int)
 
         for case in failed_cases:
             auto_id = self._get_auto_case_id(case)
@@ -337,3 +337,40 @@ class FailureAnalysisService:
             ))
 
         return result
+
+    # ─────────────────────────────────────────────────────────────────
+    #  AI 根因分析辅助：跨模块查询测试用例
+    # ─────────────────────────────────────────────────────────────────
+
+    async def fetch_case_for_ai_analysis(self, case_id: str) -> Optional[Dict[str, Any]]:
+        """按 case_id 查询测试用例的标题与步骤，供 AI 根因分析使用。
+
+        将对 test_specs.repository 的跨模块访问收敛在 service 层，
+        避免 API 层直接穿透到其他模块的 repository。
+        """
+        if not case_id:
+            return None
+        try:
+            from app.modules.test_specs.repository.models.test_case import TestCaseDoc
+            doc = await TestCaseDoc.find_one(
+                TestCaseDoc.case_id == case_id,
+                TestCaseDoc.is_deleted == False,  # noqa: E712
+            )
+            if not doc:
+                return None
+            steps = []
+            if doc.steps:
+                for s in doc.steps:
+                    steps.append({
+                        "step_id": s.step_id,
+                        "name": s.name,
+                        "action": s.action,
+                        "expected": s.expected,
+                    })
+            return {
+                "case_title": doc.title or "",
+                "steps_json": json.dumps(steps, ensure_ascii=False, indent=2),
+            }
+        except Exception as e:
+            log.warning("Failed to fetch test case {}: {}", case_id, e)
+            return None

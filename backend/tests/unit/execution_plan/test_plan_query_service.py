@@ -59,7 +59,8 @@ async def test_list_plans_delegates_to_plan_service(query_service, mock_service)
 
     result = await query_service.list_plans(status="active")
 
-    mock_service.list_plans.assert_awaited_once_with(status="active")
+    # list_plans 透传默认分页参数 page=1, page_size=20
+    mock_service.list_plans.assert_awaited_once_with(status="active", page=1, page_size=20)
     assert result == [{"plan_id": "EP-1"}, {"plan_id": "EP-2"}]
 
 
@@ -68,7 +69,7 @@ async def test_list_plans_without_status(query_service, mock_service):
 
     result = await query_service.list_plans()
 
-    mock_service.list_plans.assert_awaited_once_with(status=None)
+    mock_service.list_plans.assert_awaited_once_with(status=None, page=1, page_size=20)
     assert result == []
 
 
@@ -110,7 +111,8 @@ async def test_list_my_items_for_assignee(query_service, mock_service):
 
     result = await query_service.list_my_items("user-1")
 
-    mock_service.list_my_items.assert_awaited_once_with("user-1")
+    # list_my_items 透传默认 limit=200
+    mock_service.list_my_items.assert_awaited_once_with("user-1", limit=200)
     assert len(result) == 1
     assert result[0]["assignee_id"] == "user-1"
 
@@ -167,7 +169,8 @@ async def test_list_archived_items_for_assignee(query_service, mock_service):
 
     result = await query_service.list_archived_items("user-1")
 
-    mock_service.list_archived_items.assert_awaited_once_with("user-1")
+    # list_archived_items 透传默认 limit=200
+    mock_service.list_archived_items.assert_awaited_once_with("user-1", limit=200)
     assert len(result) == 1
 
 

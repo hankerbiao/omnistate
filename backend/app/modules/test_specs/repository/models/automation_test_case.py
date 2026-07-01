@@ -2,7 +2,7 @@
 需求与用例定义层 - 自动化测试用例模型
 """
 from typing import Optional, Dict, Any, List
-from datetime import datetime, timezone
+from datetime import datetime
 
 from pydantic import BaseModel, Field, ConfigDict
 from beanie import Document

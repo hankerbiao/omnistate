@@ -1,6 +1,6 @@
 /** AI 智能推荐用例面板 — 内嵌在创建计划向导的「选择用例」步骤 */
 import { useState } from 'react'
-import api from '../../services/api'
+import { api } from '../../services/api'
 import type { RecommendedCase, ExcludedCase } from '../../types/ai'
 
 interface Props {

@@ -13,9 +13,9 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import List
 
-from beanie import before_event, Document, Insert, Replace, Save
+from beanie import before_event, Insert, Replace, Save
 from pydantic import Field
 from pymongo import IndexModel
 

@@ -15,7 +15,7 @@ from typing import Any
 
 from redis.sentinel import Sentinel
 
-from app.shared.redis.service.constants import DEFAULT_EVENT_CHANNEL, KEY_NAMESPACE, PUBLISH_QUEUE_MAXSIZE
+from app.shared.redis.service.constants import DEFAULT_EVENT_CHANNEL, DEFAULT_SENTINEL_PORT, HEARTBEAT_INTERVAL_SEC, KEY_NAMESPACE, PUBLISH_QUEUE_MAXSIZE, SERVICE_REGISTRY_TTL_SEC
 from app.shared.redis.service.exceptions import RedisConnectionError
 from app.shared.config import get_settings
 from app.shared.core.logger import log as logger
@@ -43,7 +43,7 @@ class RedisManager:
             for host_str in cfg.sentinel_hosts:
                 parts = host_str.split(":")
                 host = parts[0]
-                port = int(parts[1]) if len(parts) > 1 else 26379
+                port = int(parts[1]) if len(parts) > 1 else DEFAULT_SENTINEL_PORT
                 sentinel_hosts.append((host, port))
 
             sentinel_timeout = cfg.sentinel_socket_timeout
@@ -156,33 +156,39 @@ _heartbeat_stop = threading.Event()
 def _heartbeat_loop() -> None:
     """每分钟更新一次服务注册信息（含 IP、端口、状态）。"""
     while not _heartbeat_stop.is_set():
-        _heartbeat_stop.wait(timeout=60)  # 1 分钟
+        _heartbeat_stop.wait(timeout=HEARTBEAT_INTERVAL_SEC)
         if _heartbeat_stop.is_set():
             break
         try:
             import app.shared.redis.service as svc
-            cfg = get_settings()
-            service_name = cfg.app.service_name
-            host = _get_local_ip()
-            port = cfg.app.port
-            instance_id = f"{service_name}@{host}:{port}"
-            ttl_sec = 600  # 10 分钟过期，心跳 1 分钟续一次足够
-
-            info = {
-                "service_name": service_name,
-                "host": host,
-                "port": port,
-                "instance_id": instance_id,
-                "status": "UP",
-            }
-            logger.debug("Redis heartbeat: key={} info={}", f"{SERVICE_REGISTRY_KEY}:{service_name}", info)
+            info = _build_instance_info(include_registered_at=False)
+            logger.debug("Redis heartbeat: key={} info={}", f"{SERVICE_REGISTRY_KEY}:{info['service_name']}", info)
             svc.redis_conn.setex(
-                f"{SERVICE_REGISTRY_KEY}:{service_name}",
-                ttl_sec,
+                f"{SERVICE_REGISTRY_KEY}:{info['service_name']}",
+                SERVICE_REGISTRY_TTL_SEC,
                 json.dumps(info),
             )
-        except Exception:
-            pass  # 心跳失败下次重试
+        except Exception as exc:
+            # 心跳失败不中断循环，下次重试；记录日志以便定位网络/Redis 抖动
+            logger.warning("Redis 心跳续期失败: {}", exc)
+
+
+def _build_instance_info(include_registered_at: bool = True) -> dict:
+    """构建本服务实例的注册信息字典，供注册与心跳复用。"""
+    cfg = get_settings()
+    service_name = cfg.app.service_name
+    host = _get_local_ip()
+    port = cfg.app.port
+    info = {
+        "service_name": service_name,
+        "host": host,
+        "port": port,
+        "instance_id": f"{service_name}@{host}:{port}",
+        "status": "UP",
+    }
+    if include_registered_at:
+        info["registered_at"] = int(time.time())
+    return info
 
 
 def _start_heartbeat() -> None:
@@ -227,25 +233,14 @@ def register_service() -> None:
 
     cfg = get_settings()
     service_name = cfg.app.service_name
-    host = _get_local_ip()
-    port = cfg.app.port
-    instance_id = f"{service_name}@{host}:{port}"
-    ttl_sec = 600  # 10 分钟过期，由定时心跳续期
 
-    info = {
-        "service_name": service_name,
-        "host": host,
-        "port": port,
-        "instance_id": instance_id,
-        "status": "UP",
-        "registered_at": int(time.time()),
-    }
+    info = _build_instance_info(include_registered_at=True)
     logger.debug("Redis register: key={} info={}", f"{SERVICE_REGISTRY_KEY}:{service_name}", info)
 
     try:
         redis_conn.setex(
             f"{SERVICE_REGISTRY_KEY}:{service_name}",
-            ttl_sec,
+            SERVICE_REGISTRY_TTL_SEC,
             json.dumps(info),
         )
         logger.success(f"服务实例已注册到 Redis: {service_name}")

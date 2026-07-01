@@ -1,5 +1,5 @@
 """AI 分析 API 路由"""
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 
 from app.modules.ai_analysis.schemas.analysis import (
     AnalyzeRequest,

@@ -12,7 +12,7 @@ from app.modules.test_specs.service.test_case_service import TestCaseService
 from app.modules.test_specs.service.requirement_service import RequirementService
 from app.shared.ai.embedding import EmbeddingService
 from app.shared.api.schemas.base import APIResponse
-from app.shared.auth import get_current_user, require_permission
+from app.shared.auth import require_permission
 from app.shared.core.logger import log
 
 router = APIRouter(prefix="/ai", tags=["AI Embedding"])
@@ -92,7 +92,6 @@ async def semantic_search(
         return dot / (na * nb)
 
     results: list[dict[str, Any]] = []
-    seen = 0
 
     if scope in ("all", "cases"):
         cases = await TestCaseDoc.find(

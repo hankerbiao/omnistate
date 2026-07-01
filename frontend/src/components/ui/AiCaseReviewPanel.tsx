@@ -1,6 +1,6 @@
 /** AI 用例评审面板 — 内嵌在用例详情弹窗中 */
 import { useState } from 'react'
-import api from '../../services/api'
+import { api } from '../../services/api'
 import type { ReviewCaseResponse } from '../../types/ai'
 
 interface Props {

@@ -41,6 +41,15 @@ API_CROSS_MODULE_MODEL_EXCEPTIONS = {
         "app/modules/system_config/api/ai_routes.py",
         "app.modules.test_specs.repository.models.test_case",
     ),
+    # embedding 重算/语义搜索端点，与 ai_routes 同性质（待后续下沉 service 治理）
+    (
+        "app/modules/system_config/api/embedding_routes.py",
+        "app.modules.test_specs.repository.models.requirement",
+    ),
+    (
+        "app/modules/system_config/api/embedding_routes.py",
+        "app.modules.test_specs.repository.models.test_case",
+    ),
     (
         "app/modules/failure_analysis/api/routes.py",
         "app.modules.test_specs.repository.models.test_case",

@@ -5,8 +5,8 @@
 """
 from typing import Any, Dict, Iterable, Optional
 
+from app.modules.workflow.domain.enums import OwnerStrategy
 from app.modules.workflow.domain.exceptions import MissingRequiredFieldError
-from app.modules.workflow.repository.models import OwnerStrategy
 
 
 def ensure_required_fields(required_fields: Iterable[str], form_data: Dict[str, Any]) -> None:

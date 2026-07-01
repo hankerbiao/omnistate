@@ -152,6 +152,68 @@ class _FakeDoc:
                 docs = [d for d in docs if getattr(d, field_name, None) in values]
         return _Query(docs)
 
+    @classmethod
+    def aggregate(cls, pipeline):
+        """简化版 aggregation pipeline 执行器，支持 $match + $group($sum/$cond)。
+
+        覆盖 get_overview 的状态计数 pipeline 语义；其他复杂 stage 暂不支持。
+        """
+        class _AggResult:
+            def __init__(self, rows):
+                self._rows = rows
+            def to_list(self):
+                async def _coro():
+                    return self._rows
+                return _coro()
+
+        docs = list(cls.store.values())
+        rows: list = []
+        for stage in pipeline:
+            if "$match" in stage:
+                cond = stage["$match"]
+                docs = [d for d in docs
+                        if all(getattr(d, k, None) == v for k, v in cond.items())]
+            elif "$group" in stage:
+                group_spec = stage["$group"]
+                id_expr = group_spec["_id"]
+                id_field = id_expr.lstrip("$") if isinstance(id_expr, str) else None
+                groups: dict = {}
+                for d in docs:
+                    key = getattr(d, id_field, None) if id_field else None
+                    groups.setdefault(key, []).append(d)
+                rows = []
+                for key, group_docs in groups.items():
+                    row: dict = {"_id": key}
+                    for field, acc in group_spec.items():
+                        if field == "_id":
+                            continue
+                        row[field] = cls._eval_accumulator(acc, group_docs)
+                    rows.append(row)
+                # $group 后续 stage 基于行（dict）而非 doc，当前 pipeline 到此结束
+                return _AggResult(rows)
+        return _AggResult(rows if rows else docs)
+
+    @staticmethod
+    def _eval_accumulator(acc, group_docs):
+        """计算 $group 累加器（支持 $sum: 1 与 $sum: {$cond: [...]}）。"""
+        if isinstance(acc, dict) and "$sum" in acc:
+            operand = acc["$sum"]
+            if operand == 1:
+                return len(group_docs)
+            if isinstance(operand, dict) and "$cond" in operand:
+                cond_args = operand["$cond"]
+                # 形如 [{"$eq": ["$status", "VALUE"]}, then_val, else_val]
+                cond_match, then_val, else_val = cond_args
+                if isinstance(cond_match, dict) and "$eq" in cond_match:
+                    field_expr, expected = cond_match["$eq"]
+                    fname = field_expr.lstrip("$") if isinstance(field_expr, str) else field_expr
+                    return sum(
+                        then_val if getattr(gd, fname, None) == expected else else_val
+                        for gd in group_docs
+                    )
+            return 0
+        return acc
+
 
 class _FakePlanDoc(_FakeDoc):
     store: dict[str, "_FakePlanDoc"] = {}

@@ -1,11 +1,12 @@
 """RabbitMQ 生产者运行时模块。
 
 负责 RabbitMQ 连接管理和消息发送功能。
-使用 pika 库实现同步的 AMQP 客户端。
+使用 pika 库实现同步的 AMQP 客户端，通过 asyncio.to_thread 导出异步接口。
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import ssl
 from datetime import UTC, datetime
@@ -47,6 +48,7 @@ class RabbitMQProducerManager:
         self.connection = None  # AMQP 连接对象
         self.channel = None     # AMQP 通道对象
         self.is_running = False # 运行状态标志
+        self._lock = asyncio.Lock()  # 保护重连逻辑的锁
 
     def _create_connection(self):
         """创建 AMQP 连接。
@@ -252,6 +254,22 @@ class RabbitMQProducerManager:
         except Exception as exc:
             log.error(f"RabbitMQ 发送失败, task_id={task_message.task_id}, error={exc}")
             return False
+
+    async def send_task_async(self, task_message: TaskMessage, priority: int | None = None) -> bool:
+        """异步发送任务消息到 RabbitMQ（async 安全包装）。
+
+        通过 asyncio.to_thread 将同步 pika 调用推到线程池执行，
+        避免在异步上下文中阻塞事件循环。
+
+        Args:
+            task_message: 任务消息对象
+            priority: 消息优先级，若为 None 则使用消息自身的优先级
+
+        Returns:
+            bool: 发送成功返回 True，失败返回 False
+        """
+        async with self._lock:
+            return await asyncio.to_thread(self.send_task, task_message, priority)
 
     def health_check(self) -> dict[str, Any]:
         """健康检查。

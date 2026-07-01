@@ -223,10 +223,14 @@ class ConfigService:
         start = time.time()
         try:
             import openai
-            client = openai.OpenAI(base_url=base_url, api_key=api_key or "ollama", timeout=timeout)
-            response = client.chat.completions.create(
-                model=model, messages=[{"role": "user", "content": "Hi"}], max_tokens=10,
-            )
+
+            def _sync_test():
+                client = openai.OpenAI(base_url=base_url, api_key=api_key or "ollama", timeout=timeout)
+                return client.chat.completions.create(
+                    model=model, messages=[{"role": "user", "content": "Hi"}], max_tokens=10,
+                )
+
+            response = await asyncio.to_thread(_sync_test)
             return {"success": True, "model": response.model,
                     "response_time_ms": int((time.time() - start) * 1000)}
         except Exception as e:

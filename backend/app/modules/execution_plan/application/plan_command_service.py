@@ -18,7 +18,6 @@ from app.modules.execution_plan.application.ports import (
 from app.modules.execution_plan.domain.constants import PlanItemStatus
 from app.modules.execution_plan.repository.models import (
     ExecutionPlanChangeLogDoc,
-    ExecutionPlanDoc,
     ExecutionPlanItemDoc,
     ManualExecutionResultDoc,
 )
@@ -42,13 +41,17 @@ class PlanCommandService:
         dispatch_port: ExecutionDispatchPort | None = None,
         notification_port: PlanNotificationPort | None = None,
     ) -> None:
-        from app.modules.execution_plan.application.adapters import (
-            ExecutionDispatchAdapter,
-            PlanNotificationAdapter,
-        )
         self._plan_service = plan_service or ExecutionPlanService()
-        self._dispatch_port = dispatch_port or ExecutionDispatchAdapter()
-        self._notification_port = notification_port or PlanNotificationAdapter()
+        # 端口实现由组合根（dependencies.py）注入，消除对 execution/notification 模块的编译期依赖。
+        # 若未注入则延迟加载默认实现（仅用于非 DI 场景，如脚本/测试）。
+        if dispatch_port is None:
+            from app.modules.execution.application.plan_dispatch_adapter import PlanDispatchAdapter
+            dispatch_port = PlanDispatchAdapter()
+        if notification_port is None:
+            from app.modules.notification.plan_notification_adapter import PlanNotificationAdapter
+            notification_port = PlanNotificationAdapter()
+        self._dispatch_port = dispatch_port
+        self._notification_port = notification_port
 
     # ─────────────────────────────────────────────────────────────────
     #  计划 CRUD（委托给核心服务）

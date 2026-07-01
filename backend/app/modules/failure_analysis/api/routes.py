@@ -79,7 +79,10 @@ class AnalyzeFailureResponse(BaseModel):
     summary="AI 分析执行失败根因",
     dependencies=[Depends(require_permission("execution_tasks:read"))],
 )
-async def analyze_failure(request: AnalyzeFailureRequest):
+async def analyze_failure(
+    request: AnalyzeFailureRequest,
+    service: FailureAnalysisServiceDep = None,
+):
     """AI 分析测试执行失败的根本原因。
 
     传入执行日志、用例信息和失败信息，AI 返回根因分类、置信度、
@@ -92,26 +95,10 @@ async def analyze_failure(request: AnalyzeFailureRequest):
     steps_json = "[]"
 
     if request.case_id:
-        try:
-            from app.modules.test_specs.repository.models.test_case import TestCaseDoc
-            doc = await TestCaseDoc.find_one(
-                TestCaseDoc.case_id == request.case_id,
-                TestCaseDoc.is_deleted == False,  # noqa: E712
-            )
-            if doc:
-                case_title = doc.title or ""
-                if doc.steps:
-                    steps = []
-                    for s in doc.steps:
-                        steps.append({
-                            "step_id": s.step_id,
-                            "name": s.name,
-                            "action": s.action,
-                            "expected": s.expected,
-                        })
-                    steps_json = json.dumps(steps, ensure_ascii=False, indent=2)
-        except Exception as e:
-            log.warning("Failed to fetch test case {}: {}", request.case_id, e)
+        case_info = await service.fetch_case_for_ai_analysis(request.case_id)
+        if case_info:
+            case_title = case_info["case_title"]
+            steps_json = case_info["steps_json"]
 
     user_content = FAILURE_ANALYSIS_USER_TEMPLATE.format(
         task_id=request.task_id,

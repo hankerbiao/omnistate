@@ -220,7 +220,12 @@ _ALLOWED_CROSS_MODULE_REPO_IMPORTS: dict[str, set[str]] = {
         "app.modules.execution.repository.models",
     },
     # ── failure_analysis ────────────────────────────────────
-    "app/modules/failure_analysis/service/failure_analysis_service.py": {"app.modules.execution.repository.models"},
+    # execution: dashboard 聚合查询执行任务数据（既有）
+    # test_specs: fetch_case_for_ai_analysis 收敛跨模块用例查询（第四轮 API 穿透修复）
+    "app/modules/failure_analysis/service/failure_analysis_service.py": {
+        "app.modules.execution.repository.models",
+        "app.modules.test_specs.repository.models",
+    },
     # ── lineage ──────────────────────────────────────────────
     "app/modules/lineage/service/lineage_service.py": {
         "app.modules.execution.repository.models",
@@ -252,6 +257,10 @@ _ALLOWED_CROSS_MODULE_REPO_IMPORTS: dict[str, set[str]] = {
     "app/modules/system_config/api/ai_routes.py": {
         "app.modules.test_specs.repository.models",
     },
+    # embedding 重算/语义搜索端点，与 ai_routes 同性质（待后续下沉 service 治理）
+    "app/modules/system_config/api/embedding_routes.py": {
+        "app.modules.test_specs.repository.models",
+    },
     "app/modules/failure_analysis/api/routes.py": {
         "app.modules.test_specs.repository.models",
     },
@@ -265,6 +274,7 @@ _ALLOWED_CROSS_MODULE_REPO_IMPORTS: dict[str, set[str]] = {
 _API_ALLOWED_REPO_IMPORTS: set[str] = {
     "app/modules/terminal/api/routes.py",
     "app/modules/system_config/api/ai_routes.py",
+    "app/modules/system_config/api/embedding_routes.py",
     "app/modules/failure_analysis/api/routes.py",
     "app/modules/audit/api/routes.py",
 }

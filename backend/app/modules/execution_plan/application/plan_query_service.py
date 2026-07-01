@@ -23,9 +23,14 @@ class PlanQueryService:
     ) -> None:
         self._plan_service = plan_service or ExecutionPlanService()
 
-    async def list_plans(self, status: Optional[str] = None) -> List[Dict[str, Any]]:
-        """获取执行计划列表。"""
-        return await self._plan_service.list_plans(status=status)
+    async def list_plans(
+        self,
+        status: Optional[str] = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> Dict[str, Any]:
+        """获取执行计划列表（分页）。"""
+        return await self._plan_service.list_plans(status=status, page=page, page_size=page_size)
 
     async def get_plan(self, plan_id: str) -> Dict[str, Any]:
         """获取执行计划详情（含条目列表）。"""
@@ -35,9 +40,9 @@ class PlanQueryService:
         """获取单条计划条目详情。"""
         return await self._plan_service.get_item(item_id)
 
-    async def list_my_items(self, assignee_id: str) -> List[Dict[str, Any]]:
+    async def list_my_items(self, assignee_id: str, limit: int = 200) -> List[Dict[str, Any]]:
         """获取用户被指派的计划条目列表。"""
-        return await self._plan_service.list_my_items(assignee_id)
+        return await self._plan_service.list_my_items(assignee_id, limit=limit)
 
     async def list_items(
         self,
@@ -52,9 +57,9 @@ class PlanQueryService:
         """获取所有执行计划的运行总览。"""
         return await self._plan_service.get_overview()
 
-    async def list_archived_items(self, assignee_id: str) -> List[Dict[str, Any]]:
+    async def list_archived_items(self, assignee_id: str, limit: int = 200) -> List[Dict[str, Any]]:
         """获取已归档的计划条目列表。"""
-        return await self._plan_service.list_archived_items(assignee_id)
+        return await self._plan_service.list_archived_items(assignee_id, limit=limit)
 
     async def get_result(self, item_id: str) -> Dict[str, Any]:
         """获取手工结果回填。"""

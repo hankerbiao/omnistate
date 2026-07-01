@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import importlib
 import random
+from abc import ABC, abstractmethod
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
-from app.modules.auth.repository.models import UserDoc
-from app.modules.execution_plan.repository.models import ExecutionPlanDoc, ExecutionPlanItemDoc
 from app.modules.project.domain.constants import (
     PROJECT_ID_PREFIX,
     PROJECT_RELATED_MODEL_PATHS,
@@ -31,9 +30,36 @@ from app.modules.project.schemas.project import (
     ProjectStatsResponse,
     StatsBreakdown,
 )
-from app.modules.workflow.repository.models.business import BusFlowLogDoc, BusWorkItemDoc
 from app.shared.core.logger import log as logger
 from app.shared.service.base import BaseService
+
+# 阻塞项 / 最近动态列表的默认返回条数上限
+DEFAULT_BLOCKER_LIMIT = 20
+DEFAULT_ACTIVITY_LIMIT = 20
+
+
+# ── 跨模块查询端口 ──────────────────────────────────────────────────
+
+
+class UserNameResolverPort(ABC):
+    """用户名解析端口，由 auth 模块提供实现。"""
+
+    @abstractmethod
+    async def resolve_username(self, user_id: str) -> Optional[str]:
+        """根据 user_id 查询用户名，不存在返回 None。"""
+        ...
+
+
+class _DefaultUserNameResolver(UserNameResolverPort):
+    """默认实现：延迟加载 auth 模块，消除编译期依赖。"""
+
+    async def resolve_username(self, user_id: str) -> Optional[str]:
+        try:
+            from app.modules.auth.repository.models import UserDoc
+            user = await UserDoc.find_one({"user_id": user_id})
+            return user.username if user else None
+        except Exception:
+            return None
 
 
 # ── 关联模型延迟加载 ──────────────────────────────────────────────────
@@ -69,17 +95,35 @@ def _find_model(related: list[type], name: str) -> type:
 async def _resolve_owner(owner_id: Optional[str]) -> Optional[OwnerBrief]:
     if not owner_id:
         return None
-    try:
-        user = await UserDoc.find_one({"user_id": owner_id, "is_deleted": False})
-        if user:
-            return OwnerBrief(user_id=user.user_id, username=user.username)
-    except Exception:
-        logger.warning("解析项目 owner 失败: owner_id={}", owner_id)
+    username = await _DefaultUserNameResolver().resolve_username(owner_id)
+    if username:
+        return OwnerBrief(user_id=owner_id, username=username)
     return None
+
+
+async def _batch_resolve_owners(owner_ids: set[str]) -> Dict[str, OwnerBrief]:
+    """批量查询用户并构建 OwnerBrief 映射"""
+    if not owner_ids:
+        return {}
+    try:
+        from app.modules.auth.repository.models import UserDoc
+
+        users = await UserDoc.find(
+            {"user_id": {"$in": list(owner_ids)}}
+        ).to_list()
+        return {
+            u.user_id: OwnerBrief(user_id=u.user_id, username=u.username)
+            for u in users
+            if u.username
+        }
+    except Exception as e:
+        logger.warning("批量查询 owner 信息失败: {}", e)
+        return {}
 
 
 async def _fetch_assignee_distribution(project_id: str) -> List[AssigneeDistribution]:
     try:
+        from app.modules.execution_plan.repository.models import ExecutionPlanItemDoc
         # ExecutionPlanItemDoc 没有 project_ids，需要通过 ExecutionPlanDoc 做 $lookup
         pipeline = [
             {"$lookup": {
@@ -148,6 +192,7 @@ async def _compute_pass_rates(project_id: str) -> tuple[StatsBreakdown, StatsBre
     manual = StatsBreakdown()
     auto = StatsBreakdown()
     try:
+        from app.modules.execution_plan.repository.models import ExecutionPlanItemDoc
         # ExecutionPlanItemDoc 没有 project_ids，需要通过 ExecutionPlanDoc 做 $lookup
         pipeline = [
             {"$lookup": {
@@ -199,8 +244,8 @@ class ProjectService(BaseService):
     # ── 响应构造 ──────────────────────────────────────────────────────
 
     @staticmethod
-    async def _to_project_response(doc) -> ProjectResponse:
-        owner = await _resolve_owner(doc.owner_id)
+    async def _to_project_response(doc, owner_map: Optional[Dict[str, OwnerBrief]] = None) -> ProjectResponse:
+        owner = owner_map.get(doc.owner_id) if owner_map else await _resolve_owner(doc.owner_id)
         return ProjectResponse(
             project_id=doc.project_id,
             key=doc.key,
@@ -254,7 +299,10 @@ class ProjectService(BaseService):
             .to_list()
         )
 
-        items = [await ProjectService._to_project_response(d) for d in docs]
+        # 批量解析 owner 信息（避免 N+1）
+        owner_ids = {d.owner_id for d in docs if d.owner_id}
+        owner_map = await _batch_resolve_owners(owner_ids)
+        items = [await ProjectService._to_project_response(d, owner_map=owner_map) for d in docs]
         return {"items": items, "total": total}
 
     # ── 创建 ──────────────────────────────────────────────────────────
@@ -406,6 +454,7 @@ class ProjectService(BaseService):
         """获取项目风险/阻塞项。"""
         blockers: List[BlockerItemResponse] = []
         try:
+            from app.modules.execution_plan.repository.models import ExecutionPlanItemDoc
             # 1. 从 ExecutionPlanItemDoc 查询失败的条目（通过 ExecutionPlanDoc 关联）
             pipeline = [
                 {"$lookup": {
@@ -425,7 +474,7 @@ class ProjectService(BaseService):
                     ],
                 }},
                 {"$sort": {"updated_at": -1}},
-                {"$limit": 20},
+                {"$limit": DEFAULT_BLOCKER_LIMIT},
             ]
             items = await ExecutionPlanItemDoc.aggregate(pipeline, projection_model=None).to_list()
             for item in items:
@@ -445,7 +494,7 @@ class ProjectService(BaseService):
                 {"project_ids": {"$in": [project_id]}, "is_deleted": False,
                  "overall_status": {"$in": ["FAILED", "ERROR"]}},
                 sort=[("updated_at", -1)],
-                limit=20,
+                limit=DEFAULT_BLOCKER_LIMIT,
             ).to_list()
             for t in failed_tasks:
                 blockers.append(BlockerItemResponse(
@@ -460,15 +509,16 @@ class ProjectService(BaseService):
         except Exception as e:
             logger.warning(f"获取项目阻塞项失败: {e}")
 
-        return blockers[:20]
+        return blockers[:DEFAULT_BLOCKER_LIMIT]
 
     # ── 最近动态 ───────────────────────────────────────────────────────
 
     @staticmethod
-    async def get_activities(project_id: str, limit: int = 20) -> List[ProjectActivityResponse]:
+    async def get_activities(project_id: str, limit: int = DEFAULT_ACTIVITY_LIMIT) -> List[ProjectActivityResponse]:
         """获取项目最近动态。"""
         activities: List[ProjectActivityResponse] = []
         try:
+            from app.modules.workflow.repository.models.business import BusFlowLogDoc
             # BusFlowLogDoc → $lookup BusWorkItemDoc → 按 project_ids 过滤
             pipeline = [
                 {"$lookup": {
@@ -486,15 +536,21 @@ class ProjectService(BaseService):
                 {"$limit": limit},
             ]
             logs = await BusFlowLogDoc.aggregate(pipeline, projection_model=None).to_list()
+            # 批量查询用户名（避免 N+1）
+            operator_ids = {log_entry.get("operator_id", "") for log_entry in logs if log_entry.get("operator_id")}
+            username_map: Dict[str, str] = {}
+            if operator_ids:
+                try:
+                    from app.modules.auth.repository.models import UserDoc
+                    users = await UserDoc.find(
+                        {"user_id": {"$in": list(operator_ids)}}
+                    ).to_list()
+                    username_map = {u.user_id: u.username for u in users if u.username}
+                except Exception:
+                    pass
             for log_entry in logs:
                 operator_id = log_entry.get("operator_id", "")
-                username = ""
-                try:
-                    user = await UserDoc.find_one({"user_id": operator_id})
-                    if user:
-                        username = user.username
-                except Exception:
-                    logger.warning("查询操作人用户名失败: operator_id={}", operator_id)
+                username = username_map.get(operator_id, "")
 
                 activities.append(ProjectActivityResponse(
                     id=str(log_entry.get("_id", "")),
@@ -515,10 +571,12 @@ class ProjectService(BaseService):
     @staticmethod
     async def generate_demo_data(project_id: str) -> GenerateDemoResponse:
         """生成演示数据。"""
-        # 确认项目存在
-        project = await ProjectService.get_project(project_id)
+        # 校验项目存在（不存在会抛 ProjectNotFoundError），返回值此处不需要
+        await ProjectService.get_project(project_id)
 
         # 查找或创建演示执行计划
+        from app.modules.execution_plan.repository.models import ExecutionPlanDoc, ExecutionPlanItemDoc
+        from app.modules.workflow.repository.models.business import BusFlowLogDoc, BusWorkItemDoc
         plan_id = f"DEMO-PLAN-{project_id[-6:]}"
         plan = await ExecutionPlanDoc.find_one({"plan_id": plan_id})
         if plan is None:
@@ -602,8 +660,6 @@ class ProjectService(BaseService):
         ]
 
         operators = ["admin001", "user002", "user003"]
-        type_labels = {"SUBMIT_REVIEW": "提交审核", "APPROVE": "审核通过", "START_DEVELOP": "开始开发",
-                       "SUBMIT_TEST": "提交测试", "PASS_TEST": "测试通过"}
 
         for w_item in demo_work_items:
             # 检查是否已存在

@@ -27,9 +27,9 @@ class ExecutionTaskDispatcher:
 
     async def dispatch(self, command: DispatchExecutionTaskCommand) -> DispatchResult:
         """通过 RabbitMQ 下发任务。"""
-        return self._dispatch_via_rabbitmq(command)
+        return await self._dispatch_via_rabbitmq(command)
 
-    def _dispatch_via_rabbitmq(self, command: DispatchExecutionTaskCommand) -> DispatchResult:
+    async def _dispatch_via_rabbitmq(self, command: DispatchExecutionTaskCommand) -> DispatchResult:
         """通过 RabbitMQ 下发任务。"""
         from app.shared.infrastructure import get_rabbitmq_manager
 
@@ -64,7 +64,7 @@ class ExecutionTaskDispatcher:
             "RabbitMQ execution dispatch payload",
             payload=task_data,
         )
-        success = rabbitmq_manager.send_task(task_message)
+        success = await rabbitmq_manager.send_task_async(task_message)
         if success:
             elog(
                 "info",

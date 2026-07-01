@@ -1,6 +1,6 @@
 """Redis 模块 Pydantic 模式定义。"""
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 class KeyValueResponse(BaseModel):
