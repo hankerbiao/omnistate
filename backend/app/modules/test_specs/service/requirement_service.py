@@ -10,6 +10,7 @@
    - 任一步失败，事务整体回滚，不产生孤儿数据。
    - 要求：MongoDB 必须支持事务（Replica Set 或 Sharded Cluster）
 """
+import asyncio
 from copy import deepcopy
 from typing import Dict, Any, Optional, List
 from datetime import date, datetime
@@ -31,6 +32,8 @@ from app.modules.workflow.application import WorkflowItemGateway
 from app.shared.core.logger import log as logger
 from app.shared.core.mongo_client import get_mongo_client
 from app.shared.service import BaseService, SequenceIdService
+from app.shared.ai.embedding import EmbeddingService
+from app.shared.core.logger import log as logger
 
 
 class RequirementService(BaseService):
@@ -138,7 +141,16 @@ class RequirementService(BaseService):
             )
 
             try:
-                return await self._create_requirement_with_transaction(client, payload)
+                result = await self._create_requirement_with_transaction(client, payload)
+                # 异步生成 embedding
+                if result and result.get("req_id"):
+                    try:
+                        doc = await TestRequirementDoc.find_one(TestRequirementDoc.req_id == result["req_id"])
+                        if doc:
+                            asyncio.create_task(self._refresh_embedding(result["req_id"], doc))
+                    except Exception:
+                        pass
+                return result
             except ValueError as e:
                 if str(e) != DUPLICATE_MSG:
                     raise  # 非重复冲突，直接抛出
@@ -255,6 +267,7 @@ class RequirementService(BaseService):
             raise KeyError("requirement not found")
         self._apply_updates(doc, data, self._UPDATABLE_FIELDS)
         await doc.save()
+        asyncio.create_task(self._refresh_embedding(req_id, doc))
         return await self._enrich_requirement_status(self._doc_to_dict(doc))
 
     async def assign_owners(self, req_id: str, tpm_owner_id: str | None = None, manual_dev_id: str | None = None, auto_dev_id: str | None = None) -> Dict[str, Any]:
@@ -390,6 +403,30 @@ class RequirementService(BaseService):
         next_seq = await SequenceIdService().next(counter_key)
 
         return f"{prefix}{str(next_seq).zfill(5)}"
+
+    # ── Embedding 自动生成 ──────────────────────────────────
+
+    @staticmethod
+    async def _refresh_embedding(req_id: str, doc) -> None:
+        """异步生成并更新需求的 embedding 向量。"""
+        try:
+            text = EmbeddingService.build_requirement_text(
+                title=doc.title or "",
+                description=doc.description or "",
+                acceptance_criteria=doc.acceptance_criteria or "",
+                category=doc.category or "",
+                tags=doc.tags or [],
+                risk_points=doc.risk_points or "",
+            )
+            vector = await EmbeddingService.embed_text(text)
+            if vector:
+                doc.embedding = vector
+                await doc.save()
+                logger.info("embedding: 已更新 req={}", req_id)
+            else:
+                logger.warning("embedding: 生成失败 req={}", req_id)
+        except Exception as e:
+            logger.error("embedding: 刷新失败 req={} err={}", req_id, e)
 
     @staticmethod
     async def _resolve_user_names(user_ids: List[str]) -> Dict[str, str | None]:

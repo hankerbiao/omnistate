@@ -66,6 +66,8 @@ class ConfigService:
         {"config_key": "ai.max_tokens", "config_value": "2048",                      "config_type": "integer", "category": "ai", "description": "最大生成token数"},
         {"config_key": "ai.timeout",    "config_value": "60",                        "config_type": "integer", "category": "ai", "description": "请求超时时间(秒)"},
         {"config_key": "ai.max_cases",  "config_value": "100",                       "config_type": "integer", "category": "ai", "description": "单次AI分析最大用例数"},
+        {"config_key": "ai.embedding_base_url", "config_value": "http://10.8.136.35:8002/v1", "config_type": "string", "category": "ai", "description": "Embedding API 基础URL"},
+        {"config_key": "ai.embedding_model",    "config_value": "qwen3-vl-embedding",        "config_type": "string", "category": "ai", "description": "Embedding 模型名称"},
     ]
 
     # 默认配置查找表（用于 set_config 创建新文档时填充元信息）
@@ -88,6 +90,8 @@ class ConfigService:
         "ai.temperature": "temperature",
         "ai.max_tokens": "max_tokens",
         "ai.timeout": "timeout",
+        "ai.embedding_base_url": "embedding_base_url",
+        "ai.embedding_model": "embedding_model",
     }
 
     # ── 配置读取 ────────────────────────────────────────────

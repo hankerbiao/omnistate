@@ -113,3 +113,5 @@ class AIConfig(BaseModel):
     temperature: float = 0.0
     max_tokens: int = 0
     timeout: int = 0
+    embedding_base_url: str = ""
+    embedding_model: str = ""

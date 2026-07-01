@@ -58,6 +58,7 @@ class TestCaseDoc(Document, TimestampedDocumentMixin, SoftDeleteDocumentMixin, P
     steps: List[TestCaseStepEmbedded] = Field(default_factory=list, description="执行步骤")
     cleanup_steps: List[TestCaseStepEmbedded] = Field(default_factory=list, description="清理步骤")
     linked_auto_case_id: Optional[str] = Field(default=None, description="关联的自动化用例 business id")
+    embedding: Optional[list[float]] = Field(default=None, description="语义向量（用于语义搜索）")
 
     @field_validator("cleanup_steps", mode="before")
     @classmethod

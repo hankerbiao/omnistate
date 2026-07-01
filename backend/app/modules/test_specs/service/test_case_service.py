@@ -43,6 +43,8 @@ from app.modules.attachments.repository.models import AttachmentDoc
 from app.modules.test_specs.domain.test_case_step_validator import validate_test_case_step_fields
 from app.shared.core.mongo_client import get_mongo_client
 from app.shared.service import BaseService, SequenceIdService
+from app.shared.ai.embedding import EmbeddingService
+from app.shared.core.logger import log
 
 
 class TestCaseService(BaseService):
@@ -138,7 +140,17 @@ class TestCaseService(BaseService):
             raise RuntimeError("MongoDB客户端未初始化，无法创建测试用例")
 
         # 仅使用事务模式，确保workflow与test_case原子写入
-        return await self._create_test_case_with_transaction(client, payload)
+        result = await self._create_test_case_with_transaction(client, payload)
+        # 异步生成 embedding（不等待）
+        if result and "case_id" in result.get("data", {}):
+            try:
+                doc = await TestCaseDoc.find_one(TestCaseDoc.case_id == result["data"]["case_id"])
+                if doc:
+                    import asyncio
+                    asyncio.create_task(self._refresh_embedding(doc))
+            except Exception:
+                pass
+        return result
 
     async def get_test_case(self, case_id: str) -> Dict[str, Any]:
         """根据case_id获取单个测试用例"""
@@ -315,6 +327,8 @@ class TestCaseService(BaseService):
 
         self._apply_updates(doc, update_payload, self._UPDATABLE_FIELDS)
         await doc.save()
+        import asyncio
+        asyncio.create_task(self._refresh_embedding(doc))
         return await self._enrich_test_case_status(self._doc_to_dict(doc))
 
     async def delete_test_case(self, case_id: str) -> None:
@@ -741,3 +755,30 @@ class TestCaseService(BaseService):
         next_seq = await SequenceIdService().next(counter_key)
 
         return f"{prefix}{str(next_seq).zfill(5)}"
+
+    # ── Embedding 自动生成 ──────────────────────────────────
+
+    @staticmethod
+    async def _refresh_embedding(doc) -> None:
+        """异步生成并更新用例的 embedding 向量。"""
+        try:
+            text = EmbeddingService.build_case_text(
+                title=doc.title,
+                test_category=doc.test_category or "",
+                tags=doc.tags,
+                pre_condition=doc.pre_condition or "",
+                post_condition=doc.post_condition or "",
+                steps=[
+                    {"name": s.name, "action": s.action, "expected": s.expected}
+                    for s in (doc.steps or [])
+                ],
+            )
+            vector = await EmbeddingService.embed_text(text)
+            if vector:
+                doc.embedding = vector
+                await doc.save()
+                log.info("embedding: 已更新 case={}", doc.case_id)
+            else:
+                log.warning("embedding: 生成失败 case={}", doc.case_id)
+        except Exception as e:
+            log.error("embedding: 刷新失败 case={} err={}", doc.case_id, e)

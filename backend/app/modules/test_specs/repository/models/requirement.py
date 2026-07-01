@@ -54,6 +54,7 @@ class TestRequirementDoc(Document, TimestampedDocumentMixin, SoftDeleteDocumentM
     manual_dev_id: Optional[str] = Field(None, description="测试用例开发工程师 ID")
     auto_dev_id: Optional[str] = Field(None, description="自动化脚本开发工程师 ID")
     attachments: List[Dict[str, Any]] = Field(default_factory=list, description="附件列表")
+    embedding: Optional[list[float]] = Field(default=None, description="语义向量（用于语义搜索）")
 
     class Settings:
         name = "test_requirements"
