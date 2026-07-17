@@ -24,12 +24,12 @@ describe('navigation config', () => {
     })
 
     it('hides permission-gated items when permission is missing', () => {
-      const noSearch = getVisibleNavItems([])
-      const withSearch = getVisibleNavItems(['search:global'])
-      const hasSearch = noSearch.find((i) => i.key === 'search')
-      const hasSearch2 = withSearch.find((i) => i.key === 'search')
-      expect(hasSearch).toBeUndefined()
-      expect(hasSearch2).toBeDefined()
+      const noPerms = getVisibleNavItems([])
+      const withPerms = getVisibleNavItems(['requirements:read'])
+      const hasRequirements = noPerms.find((i) => i.key === 'requirements')
+      const hasRequirements2 = withPerms.find((i) => i.key === 'requirements')
+      expect(hasRequirements).toBeUndefined()
+      expect(hasRequirements2).toBeDefined()
     })
 
     it('keeps items with no permission requirement visible for all users', () => {
@@ -60,19 +60,19 @@ describe('navigation config', () => {
       const page = resolveDefaultPage([
         { key: 'myTasks' },
         { key: 'dashboard' },
-        { key: 'search' },
+        { key: 'projects' },
       ])
       expect(page).toBe('dashboard')
     })
 
     it('falls back to myTasks when dashboard is not available', () => {
-      const page = resolveDefaultPage([{ key: 'myTasks' }, { key: 'search' }])
+      const page = resolveDefaultPage([{ key: 'myTasks' }, { key: 'projects' }])
       expect(page).toBe('myTasks')
     })
 
     it('returns first visible item when neither dashboard nor myTasks available', () => {
-      const page = resolveDefaultPage([{ key: 'search' }, { key: 'projects' }])
-      expect(page).toBe('search')
+      const page = resolveDefaultPage([{ key: 'projects' }, { key: 'permissions' }])
+      expect(page).toBe('projects')
     })
 
     it('returns profile when no visible items', () => {

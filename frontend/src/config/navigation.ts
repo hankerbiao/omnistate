@@ -1,8 +1,8 @@
 import type { ComponentType } from 'react'
 import {
-  ListTodo, Search, ClipboardList, Zap, FolderKanban, Layers3,
+  ListTodo, ClipboardList, Zap, FolderKanban, Layers3,
   Bot, CalendarClock, ShieldCheck, BarChart3, Users, Shield,
-  GroupIcon, KeyRound, FlaskConical, Settings, Bug,
+  GroupIcon, KeyRound, FlaskConical, Settings,
 } from 'lucide-react'
 import type { NavItem, NavSection, PageType } from '../types/app'
 
@@ -16,7 +16,6 @@ export interface NavItemDef extends Omit<NavItem, 'icon' | 'permission'> {
 
 const NAV_ITEM_DEFS: NavItemDef[] = [
   { key: 'myTasks',      label: '我的任务',         section: '概览',    icon: ListTodo },
-  { key: 'search',       label: '全局搜索',         section: '概览',    icon: Search, permission: 'search:global' },
 
   { key: 'requirements', label: '测试用例编写需求', section: '测试资产', icon: ClipboardList, permission: 'requirements:read' },
   { key: 'testCases',    label: '用例看板',         section: '测试资产', icon: Zap, permission: 'test_cases:read' },
@@ -26,7 +25,6 @@ const NAV_ITEM_DEFS: NavItemDef[] = [
   { key: 'agents',               label: '执行代理',   section: '执行', icon: Bot, permission: 'execution_agents:read' },
   { key: 'testPlanStudioDemo',   label: '执行计划',   section: '执行', icon: CalendarClock, permission: 'execution_plans:read' },
   { key: 'caseGovernance',       label: '用例治理',   section: '执行', icon: ShieldCheck, permission: 'case_governance:read' },
-  { key: 'failureAnalysis',      label: '失效分析',   section: '执行', icon: Bug, permission: 'execution_tasks:read' },
 
   { key: 'dashboard',    label: '数据统计',  section: '系统', icon: BarChart3, permission: 'nav:dashboard:view' },
   { key: 'users',        label: '用户管理',  section: '系统', icon: Users, permission: 'users:read' },

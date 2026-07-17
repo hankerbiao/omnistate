@@ -558,6 +558,14 @@ class ApiClient {
     });
   }
 
+  /** 用户自助修改密码（需提供旧密码验证） */
+  async changePassword(oldPassword: string, newPassword: string): Promise<ApiResponse<UserResponse>> {
+    return this.request<UserResponse>('/auth/users/me/password', {
+      method: 'POST',
+      body: JSON.stringify({ old_password: oldPassword, new_password: newPassword }),
+    });
+  }
+
   // User APIs
   async listUsers(params: ListUsersParams = {}): Promise<ApiResponse<UserResponse[]>> {
     const queryParams = new URLSearchParams();
@@ -716,16 +724,6 @@ class ApiClient {
   async getLineageGraph(entityType: string, entityId: string, maxNodes = 50): Promise<ApiResponse<LineageGraphResponse>> {
     const params = new URLSearchParams({ entity_type: entityType, entity_id: entityId, max_nodes: String(maxNodes) });
     return this.request<LineageGraphResponse>(`/lineage/graph?${params.toString()}`, { method: 'GET' });
-  }
-
-  // ── Global Search ────────────────────────────────────────────────
-
-  async search(q: string, options?: { types?: string; limit?: number; offset?: number }): Promise<ApiResponse<SearchResponse>> {
-    const params = new URLSearchParams({ q });
-    if (options?.types) params.set('types', options.types);
-    if (options?.limit) params.set('limit', String(options.limit));
-    if (options?.offset) params.set('offset', String(options.offset));
-    return this.request<SearchResponse>(`/search?${params.toString()}`, { method: 'GET' });
   }
 
   // ── TestCaseCollection ──────────────────────────────────────────
@@ -1081,14 +1079,6 @@ class ApiClient {
   /** AI 智能推荐执行计划用例 */
   async recommendCases(data: import('../types/ai').RecommendCasesRequest): Promise<ApiResponse<import('../types/ai').RecommendCasesResponse>> {
     return this.request<import('../types/ai').RecommendCasesResponse>('/ai/recommend-cases', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-  }
-
-  /** AI 分析执行失败根因 */
-  async analyzeFailure(data: import('../types/ai').AnalyzeFailureRequest): Promise<ApiResponse<import('../types/ai').AnalyzeFailureResponse>> {
-    return this.request<import('../types/ai').AnalyzeFailureResponse>('/failure-analysis/analyze', {
       method: 'POST',
       body: JSON.stringify(data),
     });

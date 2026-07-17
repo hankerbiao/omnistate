@@ -108,25 +108,3 @@ export interface RecommendCasesResponse {
   coverage_note: string;
   estimated_runtime_min: number;
 }
-
-// ═══════════════════════════════════════════════════════════════════════
-//  Failure Analysis (POST /failure-analysis/analyze)
-// ═══════════════════════════════════════════════════════════════════════
-
-export interface AnalyzeFailureRequest {
-  task_id: string;
-  case_id: string;
-  execution_log?: string;
-  failure_info?: string;
-  env_info?: string;
-}
-
-export interface AnalyzeFailureResponse {
-  root_cause_category: string;
-  confidence: number;
-  analysis: string;
-  probable_cause: string;
-  fix_suggestions: string[];
-  related_patterns: string[];
-  severity: string;
-}

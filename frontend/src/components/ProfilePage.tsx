@@ -53,6 +53,12 @@ const ProfilePage: React.FC = () => {
   const [itcodeSuccess, setItcodeSuccess] = useState<string | null>(null);
   const [itcodeError, setItcodeError] = useState<string | null>(null);
   const [savingSubscription, setSavingSubscription] = useState(false);
+  const [passwordOld, setPasswordOld] = useState('');
+  const [passwordNew, setPasswordNew] = useState('');
+  const [passwordConfirm, setPasswordConfirm] = useState('');
+  const [savingPassword, setSavingPassword] = useState(false);
+  const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
 
   // 仅在组件挂载时一次性消费 AuthContext 的已有数据，避免重复请求
   const initialDataLoaded = useRef(false);
@@ -268,6 +274,54 @@ const ProfilePage: React.FC = () => {
     } finally {
       setSavingItcode(false);
     }
+  };
+
+  const handleChangePassword = async () => {
+    if (!userInfo) return;
+    if (!passwordOld || !passwordNew || !passwordConfirm) {
+      setPasswordError('请填写所有密码字段');
+      return;
+    }
+    if (passwordNew !== passwordConfirm) {
+      setPasswordError('两次输入的新密码不一致');
+      return;
+    }
+    if (passwordNew.length < 6) {
+      setPasswordError('新密码至少 6 位');
+      return;
+    }
+    setSavingPassword(true);
+    setPasswordError(null);
+    setPasswordSuccess(null);
+    try {
+      const res = await api.changePassword(passwordOld, passwordNew);
+      if (res.code === 0 || res.code === 200) {
+        setPasswordSuccess('密码修改成功');
+        setPasswordOld('');
+        setPasswordNew('');
+        setPasswordConfirm('');
+        setTimeout(() => setPasswordSuccess(null), 3000);
+      } else {
+        setPasswordError(typeof res.data === 'string' ? res.data : (res.message || '密码修改失败'));
+      }
+    } catch (err: any) {
+      const msg = err?.message || '密码修改失败，请稍后重试';
+      if (msg.includes('401') || msg.includes('invalid credentials')) {
+        setPasswordError('旧密码不正确');
+      } else {
+        setPasswordError(msg);
+      }
+    } finally {
+      setSavingPassword(false);
+    }
+  };
+
+  const handleResetPasswordForm = () => {
+    setPasswordOld('');
+    setPasswordNew('');
+    setPasswordConfirm('');
+    setPasswordError(null);
+    setPasswordSuccess(null);
   };
 
   if (loading) {
@@ -498,6 +552,79 @@ const ProfilePage: React.FC = () => {
                   {new Date(userInfo.updated_at).toLocaleString('zh-CN')}
                 </span>
               </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Change Password Card ── */}
+        <div style={styles.card}>
+          <div style={styles.cardHeader}>
+            <h2 style={styles.cardTitle}>修改密码</h2>
+          </div>
+          <div style={styles.cardBody}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div style={styles.infoItem}>
+                <span style={styles.infoLabel}>旧密码</span>
+                <input
+                  className="form-input"
+                  type="password"
+                  style={{ width: 280, fontSize: 13, padding: '7px 10px' }}
+                  value={passwordOld}
+                  onChange={e => setPasswordOld(e.target.value)}
+                  placeholder="输入旧密码"
+                  disabled={savingPassword}
+                />
+              </div>
+              <div style={styles.infoItem}>
+                <span style={styles.infoLabel}>新密码</span>
+                <input
+                  className="form-input"
+                  type="password"
+                  style={{ width: 280, fontSize: 13, padding: '7px 10px' }}
+                  value={passwordNew}
+                  onChange={e => setPasswordNew(e.target.value)}
+                  placeholder="至少 6 位新密码"
+                  disabled={savingPassword}
+                />
+              </div>
+              <div style={styles.infoItem}>
+                <span style={styles.infoLabel}>确认新密码</span>
+                <input
+                  className="form-input"
+                  type="password"
+                  style={{ width: 280, fontSize: 13, padding: '7px 10px' }}
+                  value={passwordConfirm}
+                  onChange={e => setPasswordConfirm(e.target.value)}
+                  placeholder="再次输入新密码"
+                  disabled={savingPassword}
+                />
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 4 }}>
+                <button
+                  className="btn btn--primary btn--sm"
+                  onClick={handleChangePassword}
+                  disabled={savingPassword || !passwordOld || !passwordNew || !passwordConfirm}
+                  style={{ whiteSpace: 'nowrap', fontSize: 12, padding: '7px 16px' }}
+                >
+                  {savingPassword ? '修改中…' : '修改密码'}
+                </button>
+                {(passwordOld || passwordNew || passwordConfirm) && (
+                  <button
+                    className="btn btn--ghost btn--sm"
+                    onClick={handleResetPasswordForm}
+                    disabled={savingPassword}
+                    style={{ whiteSpace: 'nowrap', fontSize: 12, padding: '7px 16px' }}
+                  >
+                    重置
+                  </button>
+                )}
+              </div>
+              {passwordError && (
+                <span style={{ fontSize: 12, color: 'var(--status-error)' }}>{passwordError}</span>
+              )}
+              {passwordSuccess && (
+                <span style={{ fontSize: 12, color: 'var(--status-success)' }}>{passwordSuccess}</span>
+              )}
             </div>
           </div>
         </div>

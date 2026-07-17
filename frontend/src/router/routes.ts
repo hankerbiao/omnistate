@@ -6,7 +6,6 @@ import type { PageType } from '../types/app'
  */
 export const PAGE_ROUTES: Record<PageType, string> = {
   myTasks:              '/my-tasks',
-  search:               '/search',
   requirements:         '/requirements',
   testCases:            '/test-cases',
   collections:          '/collections',
@@ -24,7 +23,6 @@ export const PAGE_ROUTES: Record<PageType, string> = {
   profile:              '/profile',
   lineageView:          '/lineage',
   manualTestCases:      '/manual-test-cases',
-  failureAnalysis:      '/failure-analysis',
 }
 
 /** Reverse lookup: URL path -> PageType */

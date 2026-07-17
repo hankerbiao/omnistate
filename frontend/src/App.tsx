@@ -14,7 +14,6 @@ const TestCaseBoardPage = lazy(() => import('./components/TestCaseBoard').then(m
 const RequirementsPage = lazy(() => import('./components/RequirementsPage'))
 const TestCaseCollectionPage = lazy(() => import('./components/TestCaseCollectionPage'))
 const ProjectsPage = lazy(() => import('./components/ProjectsPage'))
-const SearchPage = lazy(() => import('./pages/SearchPage'))
 const SystemConfigPage = lazy(() => import('./pages/SystemConfig'))
 const AgentList = lazy(() => import('./components/AgentList'))
 const UserManagement = lazy(() => import('./components/UserManagement'))
@@ -26,7 +25,6 @@ const CaseGovernancePage = lazy(() => import('./components/CaseGovernancePage'))
 const TestExecutionPlanDemo = lazy(() => import('./components/TestExecutionPlanDemo'))
 const ProfilePage = lazy(() => import('./components/ProfilePage'))
 const LineageViewPage = lazy(() => import('./components/lineage/LineageViewPage'))
-const FailureAnalysisPage = lazy(() => import('./components/failure-analysis/FailureAnalysisPage'))
 
 function PageLoading() {
   return (
@@ -76,11 +74,6 @@ function CollectionsRoute() {
 function ProjectsRoute() {
   const { currentUserId } = useAuth()
   return <ProjectsPage key={currentUserId} />
-}
-function SearchRoute() {
-  const { currentUserId } = useAuth()
-  const { navigate } = useNavigation()
-  return <SearchPage key={currentUserId} onNavigate={navigate as (page: string) => void} />
 }
 function SystemConfigRoute() {
   const { currentUserId } = useAuth()
@@ -132,10 +125,6 @@ function LineageRoute() {
   return <LineageViewPage key={`${currentUserId}-${lineageEntityId}`} entityType={lineageEntityType} entityId={lineageEntityId} />
 }
 
-function FailureAnalysisRoute() {
-  return <FailureAnalysisPage />
-}
-
 function AppContent() {
   const { isAuthenticated, handleLoginSuccess } = useAuth()
 
@@ -153,7 +142,6 @@ function AppContent() {
         <Route path={PAGE_ROUTES.requirements} element={<RequirementsRoute />} />
         <Route path={PAGE_ROUTES.collections} element={<CollectionsRoute />} />
         <Route path={PAGE_ROUTES.projects} element={<ProjectsRoute />} />
-        <Route path={PAGE_ROUTES.search} element={<SearchRoute />} />
         <Route path={PAGE_ROUTES.systemConfig} element={<SystemConfigRoute />} />
         <Route path={PAGE_ROUTES.agents} element={<AgentsRoute />} />
         <Route path={PAGE_ROUTES.users} element={<UsersRoute />} />
@@ -166,7 +154,6 @@ function AppContent() {
         <Route path={PAGE_ROUTES.manualTestCases} element={<TestPlanRoute />} />
         <Route path={PAGE_ROUTES.profile} element={<ProfileRoute />} />
         <Route path={PAGE_ROUTES.lineageView} element={<LineageRoute />} />
-        <Route path={PAGE_ROUTES.failureAnalysis} element={<FailureAnalysisRoute />} />
         <Route path="*" element={<Navigate to={PAGE_ROUTES.myTasks} replace />} />
       </Route>
     </Routes>

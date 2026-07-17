@@ -4,7 +4,7 @@
  * 将 6 个弱测试（仅验证页面可访问无实质断言）合并为单个烟雾测试，
  * 在一个 describe 中以循环方式验证所有页面的可访问性。
  *
- * 覆盖：用例看板、用例治理、预制用例集、失效分析、项目、Lab 管理
+ * 覆盖：用例看板、用例治理、预制用例集、项目、Lab 管理
  */
 import { test, expect } from '@playwright/test';
 import { loginAs, navigateTo, closeDelay } from './helpers';
@@ -26,7 +26,6 @@ test.describe('页面冒烟测试（Smoke Test）', () => {
       { label: '用例看板',   urlPattern: /.*test-cases/ },
       { label: '用例治理',   urlPattern: /.*case-governance/ },
       { label: '预制用例集', urlPattern: /.*collections/ },
-      { label: '失效分析',   urlPattern: /.*failure/ },
       { label: '项目',       urlPattern: /.*projects/ },
       { label: 'Lab 管理',   urlPattern: /.*catalog-labs/ },
     ];

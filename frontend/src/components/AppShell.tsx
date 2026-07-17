@@ -21,7 +21,6 @@ const PAGE_TITLES: Record<string, { title: string; description?: string }> = {
   projects: { title: '项目', description: '管理项目和关联资源' },
   lineageView: { title: '测试血缘', description: '从结果追溯完整测试链路' },
   collections: { title: '预制用例集', description: '管理预制测试用例集' },
-  search: { title: '全局搜索', description: '跨模块搜索' },
 }
 
 interface AppShellProps {

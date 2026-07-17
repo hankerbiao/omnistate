@@ -920,35 +920,6 @@ export interface LineageGraphResponse {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-//  全局搜索（Global Search）
-// ═══════════════════════════════════════════════════════════════════════
-
-export interface SearchItem {
-  id: string;
-  title: string;
-  subtitle?: string | null;
-  type: string;
-  type_label: string;
-  highlight?: string | null;
-  url: string;
-  created_at?: string | null;
-  updated_at?: string | null;
-}
-
-export interface SearchGroup {
-  type: string;
-  type_label: string;
-  items: SearchItem[];
-  total: number;
-}
-
-export interface SearchResponse {
-  query: string;
-  total: number;
-  results: SearchGroup[];
-}
-
-// ═══════════════════════════════════════════════════════════════════════
 //  预制用例集（TestCaseCollection）
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -1233,70 +1204,6 @@ export interface BatchUpdateResult {
   updated_count: number;
   failed_count: number;
   failures: { case_id: string; reason: string }[];
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-//  失效分析（Failure Analysis）
-// ═══════════════════════════════════════════════════════════════════════
-
-export type FailurePattern =
-  | 'TIMEOUT'
-  | 'ASSERTION_ERROR'
-  | 'ENV_SETUP'
-  | 'DEPENDENCY'
-  | 'CONFIG_ERROR'
-  | 'NETWORK_ERROR'
-  | 'HARDWARE_ERROR'
-  | 'MEMORY_ERROR'
-  | 'SCRIPT_ERROR'
-  | 'UNKNOWN';
-
-export interface FailurePatternSummary {
-  pattern: FailurePattern;
-  count: number;
-  percentage: number;
-}
-
-export interface FailureByAgent {
-  agent_id: string;
-  hostname: string;
-  failure_count: number;
-  pattern_breakdown: Record<FailurePattern, number>;
-}
-
-export interface FailureDailyTrend {
-  date: string;
-  failure_count: number;
-  patterns: Record<FailurePattern, number>;
-}
-
-export interface FlakyTestCase {
-  auto_case_id: string;
-  case_id: string;
-  name: string;
-  total_runs: number;
-  flaky_ratio: number;
-  recent_results: Record<string, unknown>[];
-}
-
-export interface HighFrequencyFailure {
-  auto_case_id: string;
-  case_id: string;
-  name: string;
-  failure_count: number;
-  dominant_pattern: FailurePattern;
-  latest_failure_at?: string;
-  avg_duration_sec?: number;
-}
-
-export interface FailureAnalysisDashboard {
-  time_range: string;
-  total_failures: number;
-  pattern_distribution: FailurePatternSummary[];
-  by_agent: FailureByAgent[];
-  daily_trend: FailureDailyTrend[];
-  flaky_tests: FlakyTestCase[];
-  high_frequency_failures: HighFrequencyFailure[];
 }
 
 // ═══════════════════════════════════════════════════════════════════════
