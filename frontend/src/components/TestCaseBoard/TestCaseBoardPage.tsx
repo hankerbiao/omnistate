@@ -277,7 +277,7 @@ export default function TestCaseBoardPage() {
             {selectedIds.size > 0 && (
               <span style={{ fontSize: 12, color: 'var(--accent-primary)', fontWeight: 500 }}>已选 {selectedIds.size}</span>
             )}
-            <button onClick={() => setShowCreateManual(true)} style={{ ...btnStyle, background: 'var(--accent-primary)', color: '#fff', border: 'none' }}>
+            <button onClick={() => setShowCreateManual(true)} aria-label="创建手工用例" style={{ ...btnStyle, background: 'var(--accent-primary)', color: '#fff', border: 'none' }}>
               <IconPlus /> 手工
             </button>
             <button onClick={() => setShowCreateAuto(true)} style={{ ...btnStyle, background: 'var(--accent-secondary)', color: '#fff', border: 'none' }}>

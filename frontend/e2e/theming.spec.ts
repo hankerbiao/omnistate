@@ -1,7 +1,6 @@
 import { test, expect } from '@playwright/test';
 import {
-  DEFAULT_USER_ID,
-  DEFAULT_PASSWORD,
+  loginAs,
   humanDelay,
   thinkDelay,
   closeDelay,
@@ -18,13 +17,7 @@ test.describe('主题切换', () => {
   });
 
   test('完整主题流程：按钮存在 → 切换主题 → 刷新后保持', async ({ page }) => {
-    await page.goto('/');
-    await humanDelay(page);
-    await page.locator('#user_id').fill(DEFAULT_USER_ID);
-    await humanDelay(page);
-    await page.locator('#password').fill(DEFAULT_PASSWORD);
-    await thinkDelay(page);
-    await page.getByRole('button', { name: /^登录$/ }).click();
+    await loginAs(page);
     await expect(page.locator('.topbar__title')).toBeVisible({ timeout: 15000 });
     await thinkDelay(page);
 

@@ -64,10 +64,23 @@ async def lifespan(app: FastAPI):
         await ConfigService.init_default_configs()
         log.success("系统默认配置初始化完成")
 
-        # 初始化 Redis 连接池
-        from app.shared.redis.service import init_redis
-        init_redis()
-        log.success("Redis 连接池初始化完成")
+        # 初始化 Redis 连接池（非阻塞：超时或失败不阻断服务启动）
+        try:
+            from app.shared.redis.service import init_redis
+            import concurrent.futures
+            _executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+            _fut = _executor.submit(init_redis)
+            try:
+                _fut.result(timeout=8)
+                log.success("Redis 连接池初始化完成")
+            except concurrent.futures.TimeoutError:
+                log.warning("Redis 连接池初始化超时（非阻塞，将继续启动）")
+            except Exception as e:
+                log.warning("Redis 连接池初始化失败（非阻塞，将继续启动）: {}", e)
+            finally:
+                _executor.shutdown(wait=False)
+        except Exception as e:
+            log.warning("Redis 连接池初始化异常（非阻塞）: {}", e)
 
         # 恢复未发送的通知批次
         from app.modules.notification.service import NotificationService
@@ -81,11 +94,14 @@ async def lifespan(app: FastAPI):
     finally:
         log.info("FastAPI 服务已关闭")
 
-        # 注销 Redis 服务注册并停止心跳
-        from app.shared.redis.service import unregister_service, stop_heartbeat
-        stop_heartbeat()
-        unregister_service()
-        log.info("Redis 服务注册已注销")
+        # 注销 Redis 服务注册并停止心跳（安全：未初始化时自动跳过）
+        try:
+            from app.shared.redis.service import unregister_service, stop_heartbeat
+            stop_heartbeat()
+            unregister_service()
+            log.info("Redis 服务注册已注销")
+        except Exception as e:
+            log.debug("Redis 关闭（可忽略）: {}", e)
 
         # 刷新所有待处理的延迟通知
         from app.modules.notification.service import NotificationService

@@ -127,7 +127,7 @@ const TerminalPage: React.FC = () => {
       terminal.open(containerRef.current)
       isTerminalReadyRef.current = true
       scheduleFit()
-      terminal.writeln('\x1b[36mDML SSH Terminal\x1b[0m')
+      terminal.writeln('\x1b[36mDML Sentio Terminal\x1b[0m')
       terminal.writeln('填写远程服务器信息后点击“连接终端”。')
     }
 

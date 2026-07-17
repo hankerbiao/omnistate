@@ -103,9 +103,12 @@ class InfrastructureRegistry:
                     "ERROR",
                     error_message=f"Failed to initialize RabbitMQ producer manager: {e}",
                 )
-                logger.exception(f"Failed to initialize infrastructure: {e}")
-                await self.shutdown()
-                raise
+                logger.warning("RabbitMQ 初始化失败，以降级模式运行: {}", e)
+                # 不 raise，降级运行：调度器和 Kafka 不受影响
+                self.execution_scheduler_task = asyncio.create_task(self._run_execution_scheduler_loop())
+                self._set_component_status(EXECUTION_SCHEDULER_COMPONENT, "RUNNING")
+                self._is_initialized = True
+                logger.success("Application infrastructure initialized in degraded mode (RabbitMQ unavailable)")
 
     async def initialize_kafka_producer_only(self, bootstrap_servers: list[str] | None = None) -> None:
         """仅初始化 Kafka producer。

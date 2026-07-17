@@ -11,6 +11,7 @@ dependencies = [
     "sse-starlette>=2.3.5",
     "python-multipart>=0.0.22",
     "httpx>=0.28.1",
+    "mcp[cli]>=1.27,<2",
     # Database - MongoDB
     "beanie>=2.0.1",
     "pymongo>=4.15.5",
@@ -119,6 +120,7 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 asyncio_mode = "auto"
 
 [tool.flake8]

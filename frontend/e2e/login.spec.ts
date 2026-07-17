@@ -21,7 +21,7 @@ test.describe('登录认证核心用例', () => {
     await page.goto('/');
     await humanDelay(page);
 
-    await expect(page.locator('h1')).toContainText('TestHub');
+    await expect(page.locator('h1')).toContainText('DML Sentio');
     await expect(page.getByText('测试管理平台')).toBeVisible();
 
     await expect(page.locator('#user_id')).toHaveValue(DEFAULT_USER_ID);
@@ -49,7 +49,7 @@ test.describe('登录认证核心用例', () => {
     await thinkDelay(page);
     await page.getByRole('button', { name: '退出' }).click();
     await expect(page.locator('#user_id')).toBeVisible({ timeout: 10000 });
-    await expect(page.locator('h1')).toContainText('TestHub');
+    await expect(page.locator('h1')).toContainText('DML Sentio');
 
     const clearedToken = await page.evaluate(() => localStorage.getItem('jwt_token'));
     expect(clearedToken).toBeNull();

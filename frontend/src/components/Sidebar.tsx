@@ -15,10 +15,10 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, visibleItems
   return (
     <aside className="sidebar">
       <div className="sidebar__brand">
-        <div className="sidebar__logo" aria-hidden>TH</div>
+        <div className="sidebar__logo" aria-hidden>DS</div>
         <div>
-          <div className="sidebar__title">TestHub</div>
-          <div className="sidebar__version">测试运营平台</div>
+          <div className="sidebar__title">DML Sentio</div>
+          <div className="sidebar__version">测试管理平台</div>
         </div>
       </div>
 
@@ -56,7 +56,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, visibleItems
         })}
       </nav>
 
-      <div className="sidebar__footer">DML V4 · 研发运营</div>
+      <div className="sidebar__footer">DML Sentio</div>
     </aside>
   )
 }

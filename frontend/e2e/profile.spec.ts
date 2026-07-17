@@ -1,7 +1,6 @@
 import { test, expect } from '@playwright/test';
 import {
-  DEFAULT_USER_ID,
-  DEFAULT_PASSWORD,
+  loginAs,
   humanDelay,
   thinkDelay,
   closeDelay,
@@ -18,14 +17,7 @@ test.describe('个人信息页面', () => {
   });
 
   test('完整流程：直接访问 → Topbar 按钮访问', async ({ page }) => {
-    await page.goto('/');
-    await humanDelay(page);
-    await page.locator('#user_id').fill(DEFAULT_USER_ID);
-    await humanDelay(page);
-    await page.locator('#password').fill(DEFAULT_PASSWORD);
-    await thinkDelay(page);
-    await page.getByRole('button', { name: /^登录$/ }).click();
-    await expect(page).toBeDefined();
+    await loginAs(page);
     await thinkDelay(page);
 
     await page.goto('/profile');

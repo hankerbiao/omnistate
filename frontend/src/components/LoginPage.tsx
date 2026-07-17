@@ -74,7 +74,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
       <div style={styles.card}>
         <div style={styles.logoSection}>
           <Hexagon size={48} strokeWidth={1.5} style={{ color: 'var(--accent-primary)', display: 'block', margin: '0 auto 12px' }} />
-          <h1 style={styles.title}>TestHub</h1>
+          <h1 style={styles.title}>DML Sentio</h1>
           <p style={styles.subtitle}>测试管理平台</p>
         </div>
 

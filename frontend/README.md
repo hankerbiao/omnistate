@@ -1,6 +1,6 @@
-# DML V4 Frontend
+# DML Sentio Frontend
 
-DML V4 前端，基于 React 19 + TypeScript + Vite。
+DML Sentio 前端，基于 React 19 + TypeScript + Vite。
 
 ## 技术栈
 

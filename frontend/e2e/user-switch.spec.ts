@@ -1,7 +1,6 @@
 import { test, expect } from '@playwright/test';
 import {
-  DEFAULT_USER_ID,
-  DEFAULT_PASSWORD,
+  loginAs,
   humanDelay,
   thinkDelay,
   closeDelay,
@@ -19,13 +18,7 @@ test.describe('用户切换', () => {
 
   test('完整切换流程：用户列表展示 → 当前高亮禁用 → 切换后权限更新', async ({ page }) => {
     // 以 admin 登录
-    await page.goto('/');
-    await humanDelay(page);
-    await page.locator('#user_id').fill(DEFAULT_USER_ID);
-    await humanDelay(page);
-    await page.locator('#password').fill(DEFAULT_PASSWORD);
-    await thinkDelay(page);
-    await page.getByRole('button', { name: /^登录$/ }).click();
+    await loginAs(page);
     await expect(page.locator('.topbar__title')).toBeVisible({ timeout: 15000 });
     await thinkDelay(page);
 

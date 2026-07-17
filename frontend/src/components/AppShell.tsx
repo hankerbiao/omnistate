@@ -45,7 +45,7 @@ const AppShell: React.FC<AppShellProps> = ({ children }) => {
     navSections,
   } = useNavigation()
 
-  const pageInfo = PAGE_TITLES[currentPage] || { title: 'TestHub' }
+  const pageInfo = PAGE_TITLES[currentPage] || { title: 'DML Sentio' }
 
   return (
     <div style={styles.shell}>

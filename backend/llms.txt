@@ -1,0 +1,101 @@
+# DML V4 Backend
+
+> FastAPI 后端，提供测试需求、用例管理、执行编排、权限控制等统一服务。版本 v1.0.0，Python >=3.11，MongoDB 数据存储。
+
+重要说明：
+- API 前缀 `/api/v1`，统一响应格式 `{"code": 0, "message": "ok", "data": {}}`
+- 时间字段统一 UTC，软删除使用 `is_deleted` 字段
+- 代码行宽 110 字符，复杂度上限 12，优先绝对导入，使用 async/await
+- 代码检查：flake8 + ruff
+- 配置加载优先级：`config.yaml` → `config_dev.yaml`（DML_ENV=dev 时）→ 环境变量
+- RabbitMQ 用于任务下发（producer-only），Kafka 用于结果回传和事件消费
+- 后端已启动时访问 `http://localhost:8801/llms.txt` 可获取此文件
+
+## 快速开始
+
+- [README](README.md): 项目快速启动和概述
+- [docs/guide/quick-start.md](docs/guide/quick-start.md): 详细的本地开发环境搭建指南
+- [docs/guide/local-development.md](docs/guide/local-development.md): 本地开发配置说明
+- [config.yaml.example](config.yaml.example): 配置模板及各项说明
+- [config_dev.yaml.example](config_dev.yaml.example): 开发环境配置覆盖模板（debug、免认证等）
+- [pyproject.toml](pyproject.toml): Python 依赖和项目元数据
+
+## 架构总览
+
+- [docs/architecture/overview.md](docs/architecture/overview.md): 4 大核心模块 + 分层架构约束
+- [docs/guide/architecture-overview.md](docs/guide/architecture-overview.md): 架构图解说明
+- [app/shared/infrastructure/](app/shared/infrastructure/): 基础设施初始化、生命周期管理
+- [app/shared/middleware/](app/shared/middleware/): 中间件（请求日志、操作审计、调试 HTTP）
+
+## 业务模块
+
+- [app/modules/auth/](app/modules/auth/): 认证与 RBAC 权限控制（JWT、用户、角色、权限、导航页）
+- [app/modules/test_specs/](app/modules/test_specs/): 测试需求、测试用例、自动化测试用例库管理
+- [app/modules/execution/](app/modules/execution/): 测试任务编排与执行代理接入（RabbitMQ 下发 + Kafka 回传）
+- [app/modules/execution_plan/](app/modules/execution_plan/): 执行计划管理（计划条目、改派、状态流转）
+- [app/modules/workflow/](app/modules/workflow/): 配置驱动的工作流状态机（REQUIREMENT 8 状态 / TEST_CASE 5 状态）
+- [app/modules/ai_analysis/](app/modules/ai_analysis/): AI 分析能力（自然语言生成用例、步骤分析、用例评审等）
+- [app/modules/audit/](app/modules/audit/): 操作审计日志（中间件自动拦截所有写操作）
+- [app/modules/failure_analysis/](app/modules/failure_analysis/): 失败分析
+- [app/modules/test_case_collection/](app/modules/test_case_collection/): 测试用例集管理
+- [app/modules/notification/](app/modules/notification/): 通知服务（支持光闸通知推送）
+- [app/modules/attachments/](app/modules/attachments/): 附件管理（MinIO 文件存储）
+- [app/modules/search/](app/modules/search/): 搜索功能
+- [app/modules/system_config/](app/modules/system_config/): 系统配置管理
+- [app/modules/project/](app/modules/project/): 项目管理
+- [app/modules/terminal/](app/modules/terminal/): 终端能力
+
+## 基础设施
+
+- [app/shared/config/settings.py](app/shared/config/settings.py): 统一配置加载（Pydantic Settings）
+- [app/shared/auth/](app/shared/auth/): 认证相关工具
+- [app/shared/kafka/](app/shared/kafka/): Kafka producer/consumer/死信
+- [app/shared/rabbitmq/](app/shared/rabbitmq/): RabbitMQ producer 管理
+- [app/shared/redis/](app/shared/redis/): Redis 服务注册/心跳/连接池
+- [app/shared/minio/](app/shared/minio/): MinIO 文件存储
+- [app/shared/api/](app/shared/api/): API 路由注册、错误处理、统一响应封装
+- [app/shared/domain/](app/shared/domain/): 领域基础类
+- [app/shared/ai/](app/shared/ai/): AI 通用能力封装
+
+## 工作流配置
+
+- [app/configs/README.md](app/configs/README.md): 工作流配置详细说明
+- [app/configs/requirement.json](app/configs/requirement.json): 需求（REQUIREMENT）业务流程 8 个状态
+- [app/configs/test_case.json](app/configs/test_case.json): 测试用例（TEST_CASE）业务流程 5 个状态
+- [app/configs/global_config.json](app/configs/global_config.json): 全局共享状态配置
+
+## 文档
+
+- [docs/index.md](docs/index.md): 文档首页
+- [docs/guide/authentication.md](docs/guide/authentication.md): 认证与鉴权说明
+- [docs/guide/debugging-playbook.md](docs/guide/debugging-playbook.md): 排障手册
+- [docs/guide/how-to-change-backend.md](docs/guide/how-to-change-backend.md): 后端修改指南
+- [docs/design/](docs/design/): 设计文档（全局配置、自动化用例库、手动执行计划等）
+- [docs/handover/](docs/handover/): 交接文档（架构评审、冗余治理、变更检查清单）
+- [docs/modules/](docs/modules/): 各模块详细文档（AI、审计、认证、执行、工作流等）
+- [docs/reference/](docs/reference/): 规范和约定（编码、API、数据模型、测试、文档编写）
+- [docs/test_plan/](docs/test_plan/): 测试方案与覆盖度报告
+
+## 启动与部署
+
+- [server.sh](server.sh): 后端服务启动脚本（端口 8801，支持 start/stop/restart/dev）
+- [kafka_worker.sh](kafka_worker.sh): Kafka 消费者 Worker 启动脚本
+- [app/main.py](app/main.py): FastAPI 应用入口
+- [app/workers/kafka_worker_main.py](app/workers/kafka_worker_main.py): Kafka Worker 入口
+
+## 工具脚本
+
+- [scripts/init/init_mongodb.py](scripts/init/init_mongodb.py): 初始化 MongoDB 工作流配置（幂等）
+- [scripts/init/init_rbac.py](scripts/init/init_rbac.py): 初始化 RBAC 角色和权限（幂等）
+- [scripts/init/create_user.py](scripts/init/create_user.py): 创建单个 RBAC 用户
+- [scripts/init/seed_test_users.py](scripts/init/seed_test_users.py): 一键创建多个测试账号
+- [scripts/auth/create_token.py](scripts/auth/create_token.py): 为指定用户生成 JWT Token
+- [scripts/mock/generate_mock_test_cases.py](scripts/mock/generate_mock_test_cases.py): 批量创建模拟测试用例
+- [scripts/mock/seed_mock_data.py](scripts/mock/seed_mock_data.py): 种子模拟数据
+- [scripts/README.md](scripts/README.md): 脚本使用说明
+
+## 可选
+
+- [tests/](tests/): 单元测试和集成测试
+- [.flake8](.flake8): flake8 配置（max-line-length=110, max-complexity=12）
+- [pyproject.toml](pyproject.toml): ruff 配置（line-length=110, target py310）
