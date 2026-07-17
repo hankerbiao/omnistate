@@ -48,6 +48,7 @@ class AppConfig(BaseModel):
     port: int = 8801
     service_name: str
     cors_origins: list[str] = Field(default_factory=lambda: ["*"])
+    trusted_proxies: list[str] = Field(default_factory=list)
     dev_bypass_auth: bool = False
     dev_user_id: str = "dev_admin"
 

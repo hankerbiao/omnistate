@@ -17,6 +17,8 @@ from app.shared.context import (
     set_trace_context,
 )
 from app.shared.core.logger import log
+from app.shared.security.client_ip import get_client_ip
+from app.shared.security.redaction import redact_query_string, safe_body_preview
 
 # 不记录 DEBUG 日志的路径前缀
 SILENT_PATHS = {"/health", "/metrics", "/favicon.ico"}
@@ -36,7 +38,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         # ---- 请求前：创建追踪上下文 ----
         request_id = request.headers.get("X-Request-ID")
-        client_ip = self._get_client_ip(request)
+        client_ip = get_client_ip(request) or "unknown"
         set_trace_context(request_id=request_id, client_ip=client_ip)
 
         is_silent = request.url.path in SILENT_PATHS
@@ -44,12 +46,13 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
         if not is_silent:
             body_preview = await self._read_body_preview(request)
+            query_preview = redact_query_string(request.url.query) or "-"
             log.debug(
                 "HTTP {method} {path} — start | client={client} | query={query} | body={body}",
                 method=request.method,
                 path=request.url.path,
                 client=client_ip,
-                query=request.url.query or "-",
+                query=query_preview,
                 body=body_preview,
             )
 
@@ -59,7 +62,8 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         except Exception as exc:
             elapsed_ms = (perf_counter() - start) * 1000
             log.exception(
-                "HTTP {method} {path} — FAILED | client={client} | elapsed={elapsed_ms:.2f}ms | error={error}",
+                "HTTP {method} {path} — FAILED | client={client} | "
+                "elapsed={elapsed_ms:.2f}ms | error={error}",
                 method=request.method,
                 path=request.url.path,
                 client=client_ip,
@@ -96,29 +100,6 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
     # ================================================================
 
     @staticmethod
-    def _get_client_ip(request: Request) -> str:
-        """从请求中提取客户端 IP，优先使用 X-Forwarded-For。"""
-        forwarded = request.headers.get("X-Forwarded-For")
-        if forwarded:
-            return forwarded.split(",")[0].strip()
-        client = request.client
-        return client.host if client else "unknown"
-
-    @staticmethod
     async def _read_body_preview(request: Request) -> str:
-        """安全读取请求 body 预览（不破坏后续读取）。"""
-        if request.method.upper() in {"GET", "HEAD", "OPTIONS", "DELETE"}:
-            return "-"
-
-        content_type = (request.headers.get("content-type") or "").lower()
-        if not any(marker in content_type for marker in ("json", "text", "form", "xml")):
-            return "<binary>"
-
-        raw_body = await request.body()
-        if not raw_body:
-            return "-"
-
-        preview = raw_body.decode("utf-8", errors="replace").strip()
-        if len(preview) > RequestLoggingMiddleware.MAX_BODY_PREVIEW_CHARS:
-            preview = f"{preview[:RequestLoggingMiddleware.MAX_BODY_PREVIEW_CHARS]}...(truncated)"
-        return preview
+        """生成安全请求体预览，保留该入口以兼容现有调用与测试。"""
+        return await safe_body_preview(request, RequestLoggingMiddleware.MAX_BODY_PREVIEW_CHARS)

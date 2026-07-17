@@ -201,8 +201,9 @@ class RabbitMQProducerManager:
                 headers={
                     "task_type": task_message.task_type,
                     "source": task_message.source,
+                    "delivery_id": task_message.delivery_id or task_message.task_id,
                 },
-                message_id=task_message.task_id,
+                message_id=task_message.delivery_id or task_message.task_id,
                 timestamp=int(datetime.now(UTC).timestamp()),
             )
 

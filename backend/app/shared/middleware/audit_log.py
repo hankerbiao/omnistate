@@ -21,6 +21,11 @@ from starlette.requests import Request
 
 from app.shared.context import get_operation_context, get_trace_context
 from app.shared.core.logger import log
+from app.shared.security.redaction import (
+    redact_dict,
+    redact_query_params,
+    should_skip_body_logging,
+)
 
 
 # ── 配置 ────────────────────────────────────────────────────────────────
@@ -32,8 +37,6 @@ SKIP_PATHS = {
 }
 
 AUDITED_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
-
-REDACT_FIELDS = {"password", "api_key", "token", "secret", "authorization"}
 
 MAX_BODY_SIZE = 4096  # 请求体记录最大字节数
 
@@ -54,7 +57,6 @@ PATH_RESOURCE_MAP: dict[str, str] = {
     "/api/v1/ai/generate-cases": "ai_generate_cases",
     "/api/v1/ai/review-case": "ai_review_case",
     "/api/v1/ai/recommend-cases": "ai_recommend_cases",
-    "/api/v1/failure-analysis/analyze": "ai_failure_analysis",
     "/api/v1/ai-analyze": "ai_collection_analysis",
 }
 
@@ -134,8 +136,8 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
 
             path = request.url.path
 
-            # 解析请求体
-            request_body = self._parse_body(body_bytes)
+            # 解析请求体（高危路径不记录 body，避免密钥/口令/配置值入库）
+            request_body = None if should_skip_body_logging(path) else self._parse_body(body_bytes)
 
             # 推断资源类型和 ID
             resource_type, resource_id = self._infer_resource(path, request.path_params)
@@ -151,7 +153,7 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
                 request_id=trace.request_id,
                 method=request.method,
                 path=path,
-                query_params=dict(request.query_params),
+                query_params=redact_query_params(request.query_params),
                 action=action,
                 resource_type=resource_type,
                 resource_id=resource_id,
@@ -174,22 +176,10 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
         try:
             data = json.loads(body_bytes)
             if isinstance(data, dict):
-                return self._redact(data)
+                return redact_dict(data)
             return {"_raw": str(data)[:200]}
         except (json.JSONDecodeError, UnicodeDecodeError):
             return None
-
-    def _redact(self, data: dict[str, Any]) -> dict[str, Any]:
-        """脱敏请求体中的敏感字段。"""
-        result: dict[str, Any] = {}
-        for key, value in data.items():
-            if key.lower() in REDACT_FIELDS:
-                result[key] = "***REDACTED***"
-            elif isinstance(value, dict):
-                result[key] = self._redact(value)
-            else:
-                result[key] = value
-        return result
 
     def _infer_resource(self, path: str, path_params: dict) -> tuple[str, str | None]:
         """从路径推断资源类型和资源 ID。"""
