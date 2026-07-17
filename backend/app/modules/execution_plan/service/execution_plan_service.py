@@ -13,7 +13,6 @@ from beanie.odm.operators.find.comparison import In as InOp
 
 from app.modules.execution.repository.models import ExecutionTaskDoc
 from app.modules.execution_plan.application.ports import (
-    CaseSnapshot,
     CaseSnapshotResolverPort,
     UserQueryPort,
 )

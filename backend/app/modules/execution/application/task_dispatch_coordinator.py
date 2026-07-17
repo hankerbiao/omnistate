@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from time import perf_counter
-from typing import List
+from typing import TYPE_CHECKING, List
 
 from app.modules.execution.application.commands import DispatchExecutionTaskCommand
 from app.modules.execution.application.constants import DispatchStatus, OverallStatus, ScheduleStatus
@@ -14,9 +14,11 @@ from app.modules.execution.repository.models import (
     ExecutionTaskCaseDoc,
     ExecutionTaskDoc,
 )
-from app.modules.execution.service.task_dispatcher import ExecutionTaskDispatcher
 from app.modules.execution.shared.execution_context import execution_scope
 from app.modules.execution.shared.execution_log import ExecutionNode, elog
+
+if TYPE_CHECKING:
+    from app.modules.execution.service.task_dispatcher import ExecutionTaskDispatcher
 
 
 class ExecutionTaskDispatchCoordinator:
@@ -27,6 +29,9 @@ class ExecutionTaskDispatchCoordinator:
         dispatcher: ExecutionTaskDispatcher | None = None,
         case_coordinator: ExecutionTaskCaseCoordinator | None = None,
     ) -> None:
+        # 延迟导入，打破 service.task_dispatcher <-> application 之间的循环依赖。
+        from app.modules.execution.service.task_dispatcher import ExecutionTaskDispatcher
+
         self._dispatcher = dispatcher or ExecutionTaskDispatcher()
         self._case_coordinator = case_coordinator or ExecutionTaskCaseCoordinator()
 

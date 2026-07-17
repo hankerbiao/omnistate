@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict
+from typing import TYPE_CHECKING, Any, Dict
 
-from app.modules.execution.application.commands import DispatchExecutionTaskCommand
-from app.modules.execution.application.task_command_helpers import build_dispatch_task_data
 from app.modules.execution.shared.execution_log import ExecutionNode, elog
 from app.shared.kafka import TaskMessage
+
+if TYPE_CHECKING:
+    from app.modules.execution.application.commands import DispatchExecutionTaskCommand
 
 
 @dataclass
@@ -31,6 +32,7 @@ class ExecutionTaskDispatcher:
 
     async def _dispatch_via_rabbitmq(self, command: DispatchExecutionTaskCommand) -> DispatchResult:
         """通过 RabbitMQ 下发任务。"""
+        from app.modules.execution.application.task_command_helpers import build_dispatch_task_data
         from app.shared.infrastructure import get_rabbitmq_manager
 
         rabbitmq_manager = get_rabbitmq_manager()
@@ -43,11 +45,14 @@ class ExecutionTaskDispatcher:
                 error="RabbitMQ manager not available",
             )
 
+        delivery_id = f"{command.task_id}:{command.dispatch_case_id}"
         task_data = build_dispatch_task_data(command)
+        task_data["delivery_id"] = delivery_id
         task_message = TaskMessage(
             task_id=command.task_id,
             task_type="execution_task",
             task_data=task_data,
+            delivery_id=delivery_id,
             source="dmlv4-execution-api",
             priority=1,
         )

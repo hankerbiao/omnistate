@@ -8,15 +8,11 @@ from beanie import Document
 from pydantic import Field
 from pymongo import ASCENDING, DESCENDING, IndexModel
 
-
-def _get_constants():
-    """延迟导入常量，避免与 __init__.py 的注册表导入形成循环。"""
-    from app.modules.execution.application.constants import (  # noqa: F401
-        AgentStatus, CaseStatus, ConsumeStatus, DispatchStatus,
-        OverallStatus, ScheduleStatus,
-    )
-    return locals()
-from app.shared.core.document_mixins import TimestampedDocumentMixin, SoftDeleteDocumentMixin, ProjectRelatedMixin
+from app.shared.core.document_mixins import (
+    ProjectRelatedMixin,
+    SoftDeleteDocumentMixin,
+    TimestampedDocumentMixin,
+)
 
 
 class ExecutionTaskDoc(Document, TimestampedDocumentMixin, SoftDeleteDocumentMixin, ProjectRelatedMixin):
@@ -33,6 +29,19 @@ class ExecutionTaskDoc(Document, TimestampedDocumentMixin, SoftDeleteDocumentMix
     dedup_key: Optional[str] = Field(None, description="业务去重键")
     schedule_type: str = Field(default="IMMEDIATE", description="调度类型")
     schedule_status: str = Field(default="READY", description="调度状态，仅描述是否已到触发阶段")
+    claim_owner: Optional[str] = Field(
+        default=None,
+        description="调度 claim 归属实例标识，用于多实例间的租约与故障回收",
+    )
+    lease_until: Optional[datetime] = Field(
+        default=None,
+        description="调度租约到期时间；claim 成功后若未在租约内完成下发，"
+        "任务会被其他实例回收并重置为 PENDING 重新下发，避免永久卡死",
+    )
+    last_claimed_at: Optional[datetime] = Field(
+        default=None,
+        description="最近一次被调度器 claim 的时间（UTC）",
+    )
     dispatch_status: str = Field(default="PENDING", description="下发状态")
     consume_status: str = Field(default="PENDING", description="消费状态")
     overall_status: str = Field(default="QUEUED", description="总体执行状态")
@@ -78,6 +87,12 @@ class ExecutionTaskDoc(Document, TimestampedDocumentMixin, SoftDeleteDocumentMix
             IndexModel("created_by"),
             IndexModel([("dedup_key", ASCENDING), ("consume_status", ASCENDING)]),
             IndexModel([("schedule_status", ASCENDING), ("planned_at", ASCENDING)]),
+            IndexModel([
+                ("schedule_type", ASCENDING),
+                ("schedule_status", ASCENDING),
+                ("lease_until", ASCENDING),
+                ("is_deleted", ASCENDING),
+            ]),
             IndexModel([("created_by", ASCENDING), ("created_at", DESCENDING)]),
             IndexModel([("overall_status", ASCENDING), ("created_at", DESCENDING)]),
             IndexModel([("dispatch_status", ASCENDING), ("created_at", DESCENDING)]),
