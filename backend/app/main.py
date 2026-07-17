@@ -6,7 +6,6 @@ from pathlib import Path
 
 from pymongo import AsyncMongoClient
 
-from app.shared.api.middleware.debug_http import DebugHttpLoggingMiddleware
 from app.shared.api.errors.handlers import setup_exception_handlers
 from app.shared.api.main import api_router
 from app.shared.api.routes import health_router
@@ -63,6 +62,22 @@ async def lifespan(app: FastAPI):
         from app.modules.system_config.service import ConfigService
         await ConfigService.init_default_configs()
         log.success("系统默认配置初始化完成")
+
+        # 从数据库加载 Redis 配置覆盖（必须在 init_redis 之前调用）
+        try:
+            from app.shared.redis.service import load_redis_config_from_db
+            await load_redis_config_from_db()
+            log.success("Redis 数据库配置加载完成")
+        except Exception as e:
+            log.warning("Redis 数据库配置加载失败（使用 config.yaml 默认值）: {}", e)
+
+        # 从数据库加载 Kafka 配置覆盖（Kafka 是惰性初始化，提前加载以便后续使用）
+        try:
+            from app.shared.kafka.config import load_kafka_config_from_db
+            await load_kafka_config_from_db()
+            log.success("Kafka 数据库配置加载完成")
+        except Exception as e:
+            log.warning("Kafka 数据库配置加载失败（使用 config.yaml 默认值）: {}", e)
 
         # 初始化 Redis 连接池（非阻塞：超时或失败不阻断服务启动）
         try:
@@ -139,10 +154,6 @@ app.add_middleware(
 # 全链路追踪中间件（始终启用，不受 APP_DEBUG 控制）
 app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(AuditLogMiddleware)
-
-# 调试模式的 HTTP 详细日志中间件（仅 debug 模式开启）
-if get_settings().app.debug:
-    app.add_middleware(DebugHttpLoggingMiddleware)
 
 setup_exception_handlers(app)
 

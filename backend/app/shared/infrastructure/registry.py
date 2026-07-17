@@ -307,12 +307,6 @@ class InfrastructureRegistry:
             },
         }
 
-    def get_component_status(self, component_name: str) -> InfrastructureStatus | None:
-        return self._component_status.get(component_name)
-
-    def get_all_component_status(self) -> dict[str, InfrastructureStatus]:
-        return self._component_status.copy()
-
     @property
     def is_initialized(self) -> bool:
         return self._is_initialized

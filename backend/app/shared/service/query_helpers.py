@@ -24,17 +24,3 @@ def soft_delete(doc: Any) -> None:
         doc.deleted_at = datetime.now(timezone.utc)
     if hasattr(doc, "update_timestamp"):
         doc.update_timestamp()
-
-
-def model_to_public_dict(doc: Any) -> dict[str, Any]:
-    """将文档转换为字典并规范化 id 字段为字符串。
-
-    Args:
-        doc: Beanie Document 实例。
-
-    Returns:
-        包含字符串 id 的字典。
-    """
-    data = doc.model_dump()
-    data["id"] = str(doc.id)
-    return data

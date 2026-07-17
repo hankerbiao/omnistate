@@ -104,7 +104,7 @@ Keep route handlers thin: receive/validate inputs, apply auth dependencies, call
 - `auth`: login, JWT helpers, current-user dependencies, users, roles, permissions, and navigation authorization.
 - `attachments`: file/object-storage metadata and attachment API.
 - `search` and `lineage`: cross-module global search and graph/traceability views.
-- `terminal` and `failure_analysis`: terminal session and failure-analysis support modules; verify route registration before assuming they are exposed.
+- `terminal`: terminal session module; verify route registration before assuming it is exposed.
 
 ### Data and Workflow Notes
 

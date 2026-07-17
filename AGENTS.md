@@ -117,7 +117,7 @@ Backend modules live under `backend/app/modules/<module>/`. Most follow this sha
 
 **Layering rules**: API → Service/Application → Repository/Domain. No upward dependencies.
 
-**All 16 modules**:
+**All 15 modules**:
 
 | Module | Purpose |
 |--------|---------|
@@ -133,7 +133,6 @@ Backend modules live under `backend/app/modules/<module>/`. Most follow this sha
 | `ai_analysis` | AI-driven test case quality analysis (scoring, redundancy, coverage). |
 | `test_case_collection` | Predefined test case collections. |
 | `terminal` | Execution agent terminal management. |
-| `failure_analysis` | Test execution failure analysis. |
 | `notification` | Notifications (simplest module, constants + service only). |
 | `redis` | Redis service registry/management. |
 | `lineage` | Cross-module traceability graph views. |
@@ -246,7 +245,7 @@ QueryClientProvider (React Query, staleTime=30s, retry=1)
 ### Component Architecture
 
 - **Single-file page components**: Most pages are single `.tsx` files in `src/components/` (e.g., `DashboardPage.tsx` at 48K, `TestExecutionPlanDemo.tsx` at 131K)
-- **Subdirectory groups**: Complex features have subdirectories: `TestCaseBoard/`, `workflow/`, `lineage/`, `catalog/`, `projects/`, `test-plan/`, `failure-analysis/`
+- **Subdirectory groups**: Complex features have subdirectories: `TestCaseBoard/`, `workflow/`, `lineage/`, `catalog/`, `projects/`, `test-plan/`
 - **Shared UI**: `src/components/ui/` — `AIPolishButton`, `ModernCard`, `ModernStats`, `PageHero`, `PageToolbar`, `SplitDetailPanel`
 - **Navigation**: `src/config/navigation.ts` — 18 nav items in 4 sections, filtered by permissions via `getVisibleNavItems()`
 - **Types**: `src/types/app.ts` (PageType, NavItem), `src/types/index.ts` (~1406 lines, all domain types)

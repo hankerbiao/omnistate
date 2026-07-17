@@ -69,13 +69,6 @@ def generate_request_id() -> str:
     return f"req_{uuid.uuid4().hex[:20]}"
 
 
-def generate_trace_id() -> str:
-    """生成全局唯一追踪 ID（与 request_id 相同），
-    后续可扩展为独立的 trace_id 生成逻辑。
-    """
-    return generate_request_id()
-
-
 def set_trace_context(
     request_id: str | None = None,
     trace_id: str | None = None,

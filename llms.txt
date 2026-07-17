@@ -27,14 +27,12 @@
 - `POST /api/v1/ai/generate-cases` — 根据需求 AI 生成用例草稿
 - `POST /api/v1/ai/review-case` — 单条用例 AI 评审（四维度评分）
 - `POST /api/v1/ai/recommend-cases` — 根据变更描述推荐执行用例
-- `POST /api/v1/failure-analysis/analyze` — 执行失败根因 AI 分析
 - `POST /api/v1/ai-analyze/collections/{id}` — 用例集质量/冗余/覆盖分析
 - `POST /api/v1/system-configs/ai/test-connection` — LLM 连接测试
 
 ### 审计与监控
 
-- `GET /api/v1/audit-logs` — 操作审计日志（用户操作全记录）
-- `GET /api/v1/audit-logs/stats` — 审计日志统计
+- 操作审计日志由 `shared/middleware/audit_log.py` 中间件在每次写操作（POST/PUT/PATCH/DELETE）时异步写入 `audit_logs` 集合（90 天 TTL）；当前**仅写入、无对外查询/反馈 REST 接口**（读取侧 API 已下线的内部能力）。
 
 ### 系统
 

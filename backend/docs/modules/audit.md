@@ -1,6 +1,8 @@
 # 操作审计日志模块
 
 > 本文档覆盖 DML V4 系统中操作审计日志的架构、配置、接口和使用方式。
+>
+> ⚠️ **读取 / 反馈 REST 接口已下线**：原 `modules/audit/api/routes.py`、`modules/audit/service/audit_service.py` 与 `ai_feedback` 集合已移除。审计日志现仅由 `shared/middleware/audit_log.py` 中间件在写操作时异步写入 `audit_logs` 集合（90 天 TTL），**无对外查询 / 反馈接口**。下文第 5–7 节描述的接口均不再存在。
 
 ## 目录
 
@@ -38,8 +40,6 @@ Auth 依赖注入              ← 注入 OperationContext（actor_id/username/r
 
 - 审计中间件：`shared/middleware/audit_log.py`
 - 文档模型：`modules/audit/repository/models/audit_log.py`
-- 查询服务：`modules/audit/service/audit_service.py`
-- API 路由：`modules/audit/api/routes.py`
 
 ---
 
@@ -109,7 +109,6 @@ Auth 依赖注入              ← 注入 OperationContext（actor_id/username/r
 | `.../ai/generate-cases` | `ai_generate_cases` |
 | `.../ai/review-case` | `ai_review_case` |
 | `.../ai/recommend-cases` | `ai_recommend_cases` |
-| `.../failure-analysis/analyze` | `ai_analyze` |
 
 ### 资源类型自动推断
 
@@ -155,7 +154,7 @@ Auth 依赖注入              ← 注入 OperationContext（actor_id/username/r
 
 ---
 
-## 5. API 接口
+## 5. API 接口（已下线）
 
 ### 5.1 查询审计日志
 
@@ -228,7 +227,7 @@ Auth 依赖注入              ← 注入 OperationContext（actor_id/username/r
 
 ---
 
-## 6. AI 输出反馈
+## 6. AI 输出反馈（已下线）
 
 AI 输出反馈记录用户对 AI 生成/评审/分析结果的采纳、拒绝或编辑行为。
 
@@ -280,7 +279,7 @@ AI 输出反馈记录用户对 AI 生成/评审/分析结果的采纳、拒绝�
 
 ---
 
-## 7. 查询示例
+## 7. 查询示例（已下线）
 
 ### 查某个用户今天干了什么
 
