@@ -1,6 +1,6 @@
 """Kafka 消息管理模块。"""
 
-from .config import ConsumerSubscription, KafkaConfig, load_kafka_config
+from .config import ConsumerSubscription, KafkaConfig, load_kafka_config, load_kafka_config_from_db
 from .consumer import KafkaConsumerRunner
 from .dead_letter import DeadLetterMessage, KafkaDeadLetterPublisher
 from .producer import KafkaProducerManager, ResultMessage, TaskMessage

@@ -18,6 +18,7 @@ class SystemConfigDoc(Document):
     description: Optional[str] = None  # 配置描述
     is_encrypted: bool = False  # 是否加密存储
     is_active: bool = True  # 是否激活
+    needs_restart: bool = False  # 修改后是否需要重启生效
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     updated_by: Optional[str] = None  # 最后更新人
@@ -40,6 +41,7 @@ class SystemConfigDoc(Document):
                 "description": "LLM API基础URL",
                 "is_encrypted": False,
                 "is_active": True,
+                "needs_restart": False,
             }
         }
 

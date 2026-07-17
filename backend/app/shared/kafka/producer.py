@@ -42,6 +42,8 @@ class TaskMessage:
     task_type: str
     # 任务执行所需的业务参数，保持 dict 结构以兼容不同任务类型。
     task_data: dict[str, Any]
+    # 单次业务投递的稳定标识；重试必须保持一致，供消费者幂等去重。
+    delivery_id: str | None = None
     # 消息来源，便于排查跨系统调用链路。
     source: str = "dmlv4-system"
     # 任务优先级，数值含义由消费者侧调度策略解释。
@@ -53,6 +55,7 @@ class TaskMessage:
         """转换为可 JSON 序列化的字典结构。"""
         return {
             "task_id": self.task_id,
+            "delivery_id": self.delivery_id or self.task_id,
             "task_type": self.task_type,
             "task_data": self.task_data,
             "source": self.source,
@@ -63,19 +66,6 @@ class TaskMessage:
     def to_json(self) -> str:
         """转换为 Kafka 消息体使用的 JSON 字符串。"""
         return _json_dumps(self.to_dict())
-
-    @classmethod
-    def from_json(cls, json_str: str) -> "TaskMessage":
-        """从 Kafka 消息体反序列化为任务消息对象。"""
-        data = json.loads(json_str)
-        return cls(
-            task_id=data["task_id"],
-            task_type=data["task_type"],
-            task_data=data["task_data"],
-            source=data.get("source", "dmlv4-system"),
-            priority=data.get("priority", 1),
-            create_time=data.get("create_time", datetime.now(UTC).isoformat()),
-        )
 
 
 @dataclass(slots=True)
@@ -113,19 +103,6 @@ class ResultMessage:
     def to_json(self) -> str:
         """转换为 Kafka 消息体使用的 JSON 字符串。"""
         return _json_dumps(self.to_dict())
-
-    @classmethod
-    def from_json(cls, json_str: str) -> "ResultMessage":
-        """从 Kafka 消息体反序列化为结果消息对象。"""
-        data = json.loads(json_str)
-        return cls(
-            task_id=data["task_id"],
-            status=data["status"],
-            result_data=data.get("result_data") or {},
-            error_message=data.get("error_message"),
-            executor=data.get("executor", "unknown"),
-            complete_time=data.get("complete_time", datetime.now(UTC).isoformat()),
-        )
 
 
 class KafkaProducerManager:
@@ -209,18 +186,6 @@ class KafkaProducerManager:
         except Exception as exc:
             log.error(f"Kafka send failed, topic={topic}, key={key}, error={exc}")
             return False
-
-    async def send_result(self, result_message: ResultMessage) -> bool:
-        """发送任务执行结果消息到结果主题。"""
-        return await self._send_message(
-            topic=self.result_topic,
-            key=result_message.task_id,
-            value=result_message.to_json(),
-            headers=[
-                ("status", result_message.status.encode("utf-8")),
-                ("executor", result_message.executor.encode("utf-8")),
-            ],
-        )
 
     async def send_dead_letter(
         self,

@@ -1,13 +1,79 @@
 """Kafka 模块配置适配层。
 
-Kafka 的真实配置来源只保留 `config.yaml`，本模块只负责把统一配置对象
-转换为 Kafka runtime 需要的结构，并补充 consumer subscription 元数据。
+Kafka 的真实配置来源可以是 `config.yaml`（默认）或 MongoDB `system_configs`
+集合（动态覆盖）。本模块通过 `_dynamic_config` 机制支持运行时从数据库加载配置。
 """
 
 from dataclasses import dataclass, field
 from typing import Any
 
 from app.shared.config import KafkaConfig as BaseKafkaConfig, get_settings
+from app.shared.core.logger import log
+
+
+# ── 动态配置（启动时从 MongoDB 加载，覆盖 config.yaml）─────────
+_dynamic_config: dict[str, Any] | None = None
+
+
+def override_kafka_config(config: dict[str, Any]) -> None:
+    """设置动态 Kafka 配置（从 MongoDB 加载的覆盖值）。
+
+    必须在任何 load_kafka_config() 调用之前设置，由 lifespan 中的
+    load_kafka_config_from_db() 触发。
+    """
+    global _dynamic_config
+    _dynamic_config = config
+    log.info("Kafka 动态配置已设置: {}", list(config.keys()))
+
+
+def _parse_db_value(value: str, config_type: str) -> Any:
+    """解析 MongoDB 中存储的配置值为 Python 类型。"""
+    if config_type == "integer":
+        return int(value)
+    elif config_type == "float":
+        return float(value)
+    elif config_type == "boolean":
+        return value.lower() in ("true", "1", "yes", "on")
+    elif config_type == "json":
+        import json
+        return json.loads(value)
+    return value
+
+
+async def load_kafka_config_from_db() -> None:
+    """从 MongoDB system_configs 集合加载 Kafka 配置覆盖。
+
+    生命周期调用顺序：先连 MongoDB → 初始化 Beanie → 初始化默认配置
+    → 加载 Kafka 数据库配置。
+
+    仅在数据库中有 kafka.* 配置项且 is_active=True 时生效，
+    否则静默跳过，使用 config.yaml 中的配置。
+    """
+    try:
+        from app.modules.system_config.repository.models import SystemConfigDoc
+        from app.modules.system_config.service.config_crypto import decrypt_config_value
+
+        docs = await SystemConfigDoc.find(
+            {"config_key": {"$regex": r"^kafka\."}, "is_active": True}
+        ).to_list()
+
+        if not docs:
+            return
+
+        config: dict[str, Any] = {}
+        for doc in docs:
+            key = doc.config_key[len("kafka."):]
+            stored_value = (
+                decrypt_config_value(doc.config_value) if doc.is_encrypted else doc.config_value
+            )
+            value = _parse_db_value(stored_value, doc.config_type)
+            if value is not None:
+                config[key] = value
+
+        if config:
+            override_kafka_config(config)
+    except Exception as exc:
+        log.warning("从数据库加载 Kafka 配置失败（使用 config.yaml 默认值）: {}", exc)
 
 
 @dataclass(slots=True)
@@ -42,7 +108,6 @@ class KafkaConfig:
     consumer_subscriptions: dict[str, ConsumerSubscription] = field(default_factory=dict)
 
     def __post_init__(self):
-        """初始化后设置默认的 consumer_subscriptions。"""
         if not self.consumer_subscriptions:
             self.consumer_subscriptions = {
                 "execution_result": ConsumerSubscription(
@@ -74,8 +139,17 @@ def _to_runtime_config(base_config: BaseKafkaConfig) -> KafkaConfig:
 
 
 def load_kafka_config() -> KafkaConfig:
-    """从统一配置加载 Kafka 配置，并转换成 Kafka 模块运行时结构。"""
+    """从统一配置加载 Kafka 配置，并转换成 Kafka 模块运行时结构。
+
+    配置优先级：
+    1. 动态配置（从 MongoDB 加载，覆盖优先）
+    2. 静态配置（config.yaml）
+    """
+    global _dynamic_config
+    if _dynamic_config is not None:
+        log.debug("Kafka 使用数据库动态配置: {}", {k: v for k, v in _dynamic_config.items() if k not in ("producer_options", "consumer_options")})
+        return KafkaConfig(**_dynamic_config)
     return _to_runtime_config(get_settings().kafka)
 
 
-__all__ = ["KafkaConfig", "ConsumerSubscription", "load_kafka_config"]
+__all__ = ["KafkaConfig", "ConsumerSubscription", "load_kafka_config", "load_kafka_config_from_db", "override_kafka_config"]

@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import ConfigList from './components/ConfigList';
 import './styles/index.css';
 

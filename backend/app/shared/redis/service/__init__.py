@@ -18,7 +18,72 @@ from redis.sentinel import Sentinel
 from app.shared.redis.service.constants import DEFAULT_EVENT_CHANNEL, DEFAULT_SENTINEL_PORT, HEARTBEAT_INTERVAL_SEC, KEY_NAMESPACE, PUBLISH_QUEUE_MAXSIZE, SERVICE_REGISTRY_TTL_SEC
 from app.shared.redis.service.exceptions import RedisConnectionError
 from app.shared.config import get_settings
+from app.shared.config.settings import RedisConfig
 from app.shared.core.logger import log as logger
+
+
+# ── 动态配置（启动时从 MongoDB 加载，覆盖 config.yaml）─────────
+_dynamic_config: dict[str, Any] | None = None
+
+
+def override_redis_config(config: dict[str, Any]) -> None:
+    """设置动态 Redis 配置（从 MongoDB 加载的覆盖值）。
+
+    必须在 RedisManager 首次初始化之前调用，由 lifespan 中的
+    load_redis_config_from_db() 触发。
+    """
+    global _dynamic_config
+    _dynamic_config = config
+    logger.info("Redis 动态配置已设置: {}", list(config.keys()))
+
+
+def _parse_db_value(value: str, config_type: str) -> Any:
+    """解析 MongoDB 中存储的配置值为 Python 类型。"""
+    if config_type == "integer":
+        return int(value)
+    elif config_type == "float":
+        return float(value)
+    elif config_type == "boolean":
+        return value.lower() in ("true", "1", "yes", "on")
+    elif config_type == "json":
+        return json.loads(value)
+    return value
+
+
+async def load_redis_config_from_db() -> None:
+    """从 MongoDB system_configs 集合加载 Redis 配置覆盖。
+
+    生命周期调用顺序：先连 MongoDB → 初始化 Beanie → 初始化默认配置
+    → 加载 Redis 数据库配置 → 初始化 Redis 连接池。
+
+    仅在数据库中有 redis.* 配置项且 is_active=True 时生效，
+    否则静默跳过，使用 config.yaml 中的配置。
+    """
+    try:
+        from app.modules.system_config.repository.models import SystemConfigDoc
+        from app.modules.system_config.service.config_crypto import decrypt_config_value
+
+        docs = await SystemConfigDoc.find(
+            {"config_key": {"$regex": r"^redis\."}, "is_active": True}
+        ).to_list()
+
+        if not docs:
+            return
+
+        config: dict[str, Any] = {}
+        for doc in docs:
+            key = doc.config_key[len("redis."):]
+            stored_value = (
+                decrypt_config_value(doc.config_value) if doc.is_encrypted else doc.config_value
+            )
+            value = _parse_db_value(stored_value, doc.config_type)
+            if value is not None:
+                config[key] = value
+
+        if config:
+            override_redis_config(config)
+    except Exception as exc:
+        logger.warning("从数据库加载 Redis 配置失败（使用 config.yaml 默认值）: {}", exc)
 
 
 class RedisManager:
@@ -38,7 +103,12 @@ class RedisManager:
             return
 
         try:
-            cfg = get_settings().redis
+            # 优先使用从数据库加载的动态配置，否则回退到 config.yaml
+            if _dynamic_config is not None:
+                cfg = RedisConfig(**_dynamic_config)
+                logger.info("Redis 使用数据库动态配置: {}", cfg.model_dump(exclude={"password"}))
+            else:
+                cfg = get_settings().redis
             sentinel_hosts: list[tuple[str, int]] = []
             for host_str in cfg.sentinel_hosts:
                 parts = host_str.split(":")

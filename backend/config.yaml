@@ -22,6 +22,12 @@ rabbitmq:
   task_exchange: ''
   task_routing_key: dml_task_queue
   prefetch_count: 10
+# =============================================================================
+# Kafka 配置 — 兜底值（system_config 数据库配置优先）
+# =============================================================================
+# 正常情况下由 MongoDB system_configs 集合中的 kafka.* 配置项覆盖。
+# 以下配置仅在数据库不可用时作为 fallback 生效。
+# -----------------------------------------------------------------------------
 kafka:
   bootstrap_servers:
   - 10.17.154.252:9092
@@ -63,6 +69,12 @@ execution:
   kafka_worker_agent_id: execution-kafka-worker
   kafka_worker_heartbeat_ttl_sec: 30
   kafka_worker_heartbeat_interval_sec: 10
+# =============================================================================
+# Redis 配置 — 兜底值（system_config 数据库配置优先）
+# =============================================================================
+# 正常情况下由 MongoDB system_configs 集合中的 redis.* 配置项覆盖。
+# 以下配置仅在数据库不可用时作为 fallback 生效。
+# -----------------------------------------------------------------------------
 redis:
   sentinel_hosts:
   - 10.17.152.51:26379

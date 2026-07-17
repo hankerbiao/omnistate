@@ -16,10 +16,17 @@ from app.modules.system_config.schemas import (
     ConfigHistoryResponse,
 )
 from app.modules.system_config.service import ConfigService, ConfigValidator
+from app.modules.system_config.service.config_crypto import mask_config_value
 from app.shared.api.schemas.base import APIResponse
-from app.shared.auth import get_current_user
+from app.shared.auth import get_current_user, require_permission
 
-router = APIRouter(prefix="/system-configs", tags=["SystemConfig"])
+require_system_config_permission = require_permission("system:config")
+
+router = APIRouter(
+    prefix="/system-configs",
+    tags=["SystemConfig"],
+    dependencies=[Depends(require_system_config_permission)],
+)
 
 
 def _doc_to_response(doc) -> SystemConfigResponse:
@@ -27,13 +34,13 @@ def _doc_to_response(doc) -> SystemConfigResponse:
     return SystemConfigResponse(
         id=str(doc.id),
         config_key=doc.config_key,
-        config_value=doc.config_value,
+        config_value=(mask_config_value(doc.config_value) if doc.is_encrypted else doc.config_value),
         config_type=doc.config_type,
         category=doc.category,
         description=doc.description,
         is_encrypted=doc.is_encrypted,
         is_active=doc.is_active,
-        needs_restart=False,
+        needs_restart=doc.needs_restart,
         created_at=doc.created_at,
         updated_at=doc.updated_at,
         updated_by=doc.updated_by,
@@ -70,12 +77,24 @@ async def get_config_history(
 ) -> APIResponse[list[ConfigHistoryResponse]]:
     """获取配置历史记录"""
     docs = await ConfigService.get_history(config_key=config_key, limit=limit)
+    sensitive_keys = {
+        doc.config_key
+        for doc in await ConfigService.get_sensitive_configs()
+    }
     items = [
         ConfigHistoryResponse(
             id=str(doc.id),
             config_key=doc.config_key,
-            old_value=doc.old_value,
-            new_value=doc.new_value,
+            old_value=(
+                mask_config_value(doc.old_value)
+                if doc.config_key in sensitive_keys
+                else doc.old_value
+            ),
+            new_value=(
+                mask_config_value(doc.new_value)
+                if doc.config_key in sensitive_keys
+                else doc.new_value
+            ),
             changed_by=doc.changed_by,
             changed_at=doc.changed_at,
             remark=doc.remark,
@@ -92,6 +111,24 @@ async def get_config(config_key: str) -> APIResponse[SystemConfigResponse]:
     if not doc:
         raise HTTPException(status_code=404, detail=f"配置项不存在: {config_key}")
     return APIResponse(data=_doc_to_response(doc))
+
+
+@router.put("/batch", response_model=APIResponse[BatchUpdateResponse], summary="批量更新配置")
+async def batch_update_configs(
+    data: BatchUpdateRequest,
+    current_user=Depends(get_current_user),
+) -> APIResponse[BatchUpdateResponse]:
+    """批量更新配置"""
+    items = [{"config_key": item.config_key, "config_value": item.config_value} for item in data.items]
+    updated_count = await ConfigService.batch_update(
+        items=items,
+        changed_by=current_user.get("username"),
+        remark=data.remark,
+    )
+    return APIResponse(
+        data=BatchUpdateResponse(updated_count=updated_count),
+        message="批量更新成功",
+    )
 
 
 @router.put("/{config_key}", response_model=APIResponse[SystemConfigResponse], summary="更新配置")
@@ -116,25 +153,11 @@ async def update_config(
     return APIResponse(data=_doc_to_response(doc), message="配置更新成功")
 
 
-@router.put("/batch", response_model=APIResponse[BatchUpdateResponse], summary="批量更新配置")
-async def batch_update_configs(
-    data: BatchUpdateRequest,
-    current_user=Depends(get_current_user),
-) -> APIResponse[BatchUpdateResponse]:
-    """批量更新配置"""
-    items = [{"config_key": item.config_key, "config_value": item.config_value} for item in data.items]
-    updated_count = await ConfigService.batch_update(
-        items=items,
-        changed_by=current_user.get("username"),
-        remark=data.remark,
-    )
-    return APIResponse(
-        data=BatchUpdateResponse(updated_count=updated_count),
-        message="批量更新成功",
-    )
-
-
-@router.post("/ai/test-connection", response_model=APIResponse[TestConnectionResponse], summary="测试 AI 服务连接")
+@router.post(
+    "/ai/test-connection",
+    response_model=APIResponse[TestConnectionResponse],
+    summary="测试 AI 服务连接",
+)
 async def test_ai_connection(data: TestConnectionRequest) -> APIResponse[TestConnectionResponse]:
     """测试AI服务连接"""
     result = await ConfigService.test_ai_connection(

@@ -5,7 +5,8 @@
 
 配置唯一入口原则：
 - 运行时可热修改的配置（ai.*, system.*）存储在 MongoDB system_configs 集合
-- 需要重启生效的基础设施配置（execution.*, jwt.*, logging.*, app.*）存储在 config.yaml
+- 需要重启生效的基础设施配置（redis.*, execution.*, jwt.*, logging.*, app.*）
+  部分托管在 system_configs（如 redis.*），部分仍在 config.yaml，统一通过前端页面查看
 - 系统配置 API 不会修改 config.yaml，避免运行时 YAML 写入导致的配置漂移
 """
 import asyncio
@@ -16,6 +17,12 @@ from typing import Any, Optional
 
 from app.modules.system_config.repository.models import SystemConfigDoc, SystemConfigHistoryDoc
 from app.modules.system_config.schemas import AIConfig
+from app.modules.system_config.service.config_crypto import (
+    MASKED_CONFIG_VALUE,
+    decrypt_config_value,
+    encrypt_config_value,
+)
+from app.shared.config import get_settings
 from app.shared.core.logger import log
 
 
@@ -60,7 +67,7 @@ class ConfigService:
     DEFAULT_CONFIGS: list[dict[str, str]] = [
         {"config_key": "ai.base_url",   "config_value": "http://localhost:11434/v1", "config_type": "string",  "category": "ai", "description": "LLM API基础URL"},
         {"config_key": "ai.model",      "config_value": "qwen2.5:latest",           "config_type": "string",  "category": "ai", "description": "LLM模型名称"},
-        {"config_key": "ai.api_key",    "config_value": "",                          "config_type": "string",  "category": "ai", "description": "API密钥（如需要）"},
+        {"config_key": "ai.api_key",    "config_value": "",                          "config_type": "string",  "category": "ai", "description": "API密钥（如需要）", "is_encrypted": True},
         {"config_key": "ai.enabled",    "config_value": "true",                      "config_type": "boolean", "category": "ai", "description": "是否启用AI分析"},
         {"config_key": "ai.temperature","config_value": "0.7",                       "config_type": "float",   "category": "ai", "description": "生成温度参数"},
         {"config_key": "ai.max_tokens", "config_value": "2048",                      "config_type": "integer", "category": "ai", "description": "最大生成token数"},
@@ -70,8 +77,84 @@ class ConfigService:
         {"config_key": "ai.embedding_model",    "config_value": "qwen3-vl-embedding",        "config_type": "string", "category": "ai", "description": "Embedding 模型名称"},
     ]
 
+    # ── Redis 基础设施配置 ──────────────────────────────────
+    # 存储在 system_configs 中，可通过前端页面查看和修改。
+    # 修改后需要重启服务才能生效，因为 Redis 连接池只在大屏启动时初始化一次。
+    REDIS_DEFAULT_CONFIGS: list[dict[str, Any]] = [
+        {"config_key": "redis.sentinel_hosts",  "config_value": '["localhost:26379"]',           "config_type": "json",    "category": "system", "description": "Redis Sentinel 节点列表（JSON 数组，格式：[host:port, ...]）", "needs_restart": True},
+        {"config_key": "redis.master_name",     "config_value": "redis_master",                  "config_type": "string",  "category": "system", "description": "Redis Sentinel Master 名称", "needs_restart": True},
+        {"config_key": "redis.username",        "config_value": "",                               "config_type": "string",  "category": "system", "description": "Redis 用户名", "needs_restart": True},
+        {"config_key": "redis.password",        "config_value": "",                               "config_type": "string",  "category": "system", "description": "Redis 密码", "is_encrypted": True, "needs_restart": True},
+        {"config_key": "redis.db",              "config_value": "0",                              "config_type": "integer", "category": "system", "description": "Redis 数据库编号", "needs_restart": True},
+        {"config_key": "redis.socket_timeout",  "config_value": "2",                              "config_type": "integer", "category": "system", "description": "Socket 超时时间（秒）", "needs_restart": True},
+        {"config_key": "redis.max_connections", "config_value": "100",                            "config_type": "integer", "category": "system", "description": "连接池最大连接数", "needs_restart": True},
+        {"config_key": "redis.service_registry_key", "config_value": "dmlv4:service_registry",    "config_type": "string",  "category": "system", "description": "服务注册 Redis Key 前缀", "needs_restart": True},
+    ]
+
+    # ── Kafka 基础设施配置 ──────────────────────────────────
+    # 存储在 system_configs 中，可通过前端页面查看和修改。
+    # bootstrap_servers / client_id 修改后需要重启服务才能生效，
+    # 其余 topic/group/option 参数可热加载（新 producer/consumer 自动使用新值）。
+    KAFKA_DEFAULT_CONFIGS: list[dict[str, Any]] = [
+        {"config_key": "kafka.bootstrap_servers",         "config_value": '["localhost:9092"]',               "config_type": "json",    "category": "system", "description": "Kafka Broker 节点列表（JSON 数组）", "needs_restart": True},
+        {"config_key": "kafka.client_id",                 "config_value": "dmlv4-shard",                      "config_type": "string",  "category": "system", "description": "Kafka 客户端 ID", "needs_restart": True},
+        {"config_key": "kafka.result_topic",               "config_value": "dmlv4.results",                    "config_type": "string",  "category": "system", "description": "执行结果 Topic 名称"},
+        {"config_key": "kafka.dead_letter_topic",          "config_value": "dmlv4.deadletter",                 "config_type": "string",  "category": "system", "description": "死信 Topic 名称"},
+        {"config_key": "kafka.test_events_topic",          "config_value": "dml-test-event",                   "config_type": "string",  "category": "system", "description": "测试事件 Topic 名称"},
+        {"config_key": "kafka.execution_result_group_id",  "config_value": "dmlv4-execution-result-consumers", "config_type": "string",  "category": "system", "description": "执行结果 Consumer Group ID"},
+        {"config_key": "kafka.test_events_group_id",       "config_value": "dmlv4-test-events-consumers",      "config_type": "string",  "category": "system", "description": "测试事件 Consumer Group ID"},
+        {"config_key": "kafka.producer_options",           "config_value": '{"acks":"all","retries":3,"batch_size":16384,"linger_ms":10}', "config_type": "json", "category": "system", "description": "Producer 选项（JSON）"},
+        {"config_key": "kafka.consumer_options",           "config_value": '{"auto_offset_reset":"earliest","enable_auto_commit":true,"session_timeout_ms":30000,"heartbeat_interval_ms":3000,"max_poll_records":100,"consumer_timeout_ms":1000}', "config_type": "json", "category": "system", "description": "Consumer 选项（JSON）"},
+    ]
+
     # 默认配置查找表（用于 set_config 创建新文档时填充元信息）
-    _DEFAULTS_MAP: dict[str, dict[str, str]] = {c["config_key"]: c for c in DEFAULT_CONFIGS}
+    _DEFAULTS_MAP: dict[str, dict[str, Any]] = {
+        **{c["config_key"]: c for c in DEFAULT_CONFIGS},
+        **{c["config_key"]: c for c in REDIS_DEFAULT_CONFIGS},
+        **{c["config_key"]: c for c in KAFKA_DEFAULT_CONFIGS},
+    }
+
+    @staticmethod
+    def _serialize_setting(value: Any) -> str:
+        if hasattr(value, "model_dump"):
+            value = value.model_dump()
+        if isinstance(value, (dict, list)):
+            return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+        if isinstance(value, bool):
+            return "true" if value else "false"
+        return str(value)
+
+    @classmethod
+    def _infrastructure_default_configs(cls) -> list[dict[str, Any]]:
+        """使用当前 config.yaml 值初始化数据库，避免 localhost 模板反向覆盖部署配置。"""
+        settings = get_settings()
+        current_values = {
+            "redis.sentinel_hosts": settings.redis.sentinel_hosts,
+            "redis.master_name": settings.redis.master_name,
+            "redis.username": settings.redis.username,
+            "redis.password": settings.redis.password,
+            "redis.db": settings.redis.db,
+            "redis.socket_timeout": settings.redis.socket_timeout,
+            "redis.max_connections": settings.redis.max_connections,
+            "redis.service_registry_key": settings.redis.service_registry_key,
+            "kafka.bootstrap_servers": settings.kafka.bootstrap_servers,
+            "kafka.client_id": settings.kafka.client_id,
+            "kafka.result_topic": settings.kafka.result_topic,
+            "kafka.dead_letter_topic": settings.kafka.dead_letter_topic,
+            "kafka.test_events_topic": settings.kafka.test_events_topic,
+            "kafka.execution_result_group_id": settings.kafka.execution_result_group_id,
+            "kafka.test_events_group_id": settings.kafka.test_events_group_id,
+            "kafka.producer_options": settings.kafka.producer_options,
+            "kafka.consumer_options": settings.kafka.consumer_options,
+        }
+        configs = []
+        for template in cls.REDIS_DEFAULT_CONFIGS + cls.KAFKA_DEFAULT_CONFIGS:
+            config = dict(template)
+            config["config_value"] = cls._serialize_setting(current_values[config["config_key"]])
+            if config.get("is_encrypted") and config["config_value"]:
+                config["config_value"] = encrypt_config_value(config["config_value"])
+            configs.append(config)
+        return configs
 
     # 值类型解析器
     _PARSERS: dict[str, Any] = {
@@ -107,7 +190,10 @@ class ConfigService:
         if doc is None or not doc.is_active:
             return default
 
-        value = ConfigService._parse_value(doc.config_value, doc.config_type)
+        stored_value = (
+            decrypt_config_value(doc.config_value) if doc.is_encrypted else doc.config_value
+        )
+        value = ConfigService._parse_value(stored_value, doc.config_type)
         await ConfigCache.set(key, value)
         return value
 
@@ -144,6 +230,11 @@ class ConfigService:
         return sorted(set(doc.category for doc in docs)) or ["ai", "system", "general"]
 
     @staticmethod
+    async def get_sensitive_configs() -> list[SystemConfigDoc]:
+        """获取敏感配置元数据，供 API 历史响应统一脱敏。"""
+        return await SystemConfigDoc.find({"is_encrypted": True}).to_list()
+
+    @staticmethod
     async def get_ai_config() -> dict[str, Any]:
         """获取AI相关配置（用于LLM调用）"""
         config = AIConfig()
@@ -160,21 +251,39 @@ class ConfigService:
         key: str, value: Any,
         changed_by: Optional[str] = None, remark: Optional[str] = None,
     ) -> SystemConfigDoc:
-        """设置配置值（自动记录历史）"""
+        """设置配置值（自动记录历史，敏感值加密存储）。"""
         doc = await SystemConfigDoc.find_one(SystemConfigDoc.config_key == key)
+        default = ConfigService._DEFAULTS_MAP.get(key, {})
+        is_encrypted = doc.is_encrypted if doc else default.get("is_encrypted", False)
+        if is_encrypted and value == MASKED_CONFIG_VALUE:
+            if doc is None:
+                raise ValueError("敏感配置不能使用掩码创建")
+            return doc
+
+        serialized_value = ConfigService._serialize_setting(value)
+        stored_value = (
+            encrypt_config_value(serialized_value) if is_encrypted and serialized_value else serialized_value
+        )
         if doc:
-            await ConfigService._save_history(key, doc.config_value, str(value), changed_by, remark)
-            doc.config_value = str(value)
+            await ConfigService._save_history(
+                key,
+                doc.config_value,
+                stored_value,
+                changed_by,
+                remark,
+            )
+            doc.config_value = stored_value
             doc.updated_at = datetime.utcnow()
             doc.updated_by = changed_by
         else:
-            default = ConfigService._DEFAULTS_MAP.get(key, {})
             doc = SystemConfigDoc(
-                config_key=key, config_value=str(value),
+                config_key=key,
+                config_value=stored_value,
                 config_type=default.get("config_type", "string"),
                 category=default.get("category", "general"),
                 description=default.get("description"),
-                is_encrypted=default.get("is_encrypted", False),
+                is_encrypted=is_encrypted,
+                needs_restart=default.get("needs_restart", False),
                 updated_by=changed_by,
             )
 
@@ -205,12 +314,17 @@ class ConfigService:
 
     @staticmethod
     async def init_default_configs() -> None:
-        """初始化默认配置（仅创建缺失的）"""
-        for cfg in ConfigService.DEFAULT_CONFIGS:
+        """初始化默认配置（仅创建缺失项，基础设施值来自当前静态配置）。"""
+        defaults = ConfigService.DEFAULT_CONFIGS + ConfigService._infrastructure_default_configs()
+        for template in defaults:
+            cfg = dict(template)
+            if cfg.get("is_encrypted") and cfg["config_value"]:
+                cfg["config_value"] = encrypt_config_value(cfg["config_value"])
             existing = await SystemConfigDoc.find_one(SystemConfigDoc.config_key == cfg["config_key"])
             if not existing:
                 await SystemConfigDoc(**cfg).insert()
-                log.info(f"Initialized config: {cfg['config_key']} = {cfg['config_value']}")
+                displayed = MASKED_CONFIG_VALUE if cfg.get("is_encrypted") else cfg["config_value"]
+                log.info("Initialized config: {} = {}", cfg["config_key"], displayed)
 
     # ── AI 连接测试 ─────────────────────────────────────────
 

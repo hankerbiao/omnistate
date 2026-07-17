@@ -53,6 +53,3 @@ class KafkaTopicHandlerRegistry:
 
     def has_topic(self, topic: str) -> bool:
         return topic in self._registrations
-
-    def list_topics(self) -> list[str]:
-        return sorted(self._registrations.keys())

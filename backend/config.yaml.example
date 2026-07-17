@@ -14,6 +14,8 @@ app:
   service_name: "dmlv4-backend"
   cors_origins:
     - "http://localhost:3000"
+  # 只有来自这些代理 IP/CIDR 的请求才信任 X-Forwarded-For
+  trusted_proxies: []
 
 # =============================================================================
 # MongoDB 配置
@@ -44,8 +46,14 @@ rabbitmq:
   prefetch_count: 10
 
 # =============================================================================
-# Kafka 配置
+# Kafka 配置（惰性初始化）
 # =============================================================================
+# 初次部署时设置，之后可以通过 system_config 模块在运行时管理。
+# 如果 system_configs 集合中有 kafka.* 配置项，会优先使用数据库中的值。
+#
+# bootstrap_servers / client_id 修改后需要**重启服务**才能生效。
+# 其余 topic / group / option 参数支持热加载（新 Producer/Consumer 自动使用新值）。
+# -----------------------------------------------------------------------------
 kafka:
   bootstrap_servers:
     - "localhost:9092"
@@ -73,6 +81,24 @@ kafka:
     consumer_timeout_ms: 1000
 
 # =============================================================================
+# Redis 配置（Sentinel 高可用模式）
+# =============================================================================
+# 初次部署时设置，之后可以通过 system_config 模块在运行时管理。
+# 如果 system_configs 集合中有 redis.* 配置项，会优先使用数据库中的值。
+# 修改 Redis 配置需要**重启服务**才能生效（连接池只初始化一次）。
+# -----------------------------------------------------------------------------
+redis:
+  sentinel_hosts:
+  - "localhost:26379"
+  master_name: "redis_master"
+  username: ""
+  password: ""
+  db: 0
+  socket_timeout: 2
+  max_connections: 100
+  service_registry_key: "dmlv4:service_registry"
+
+# =============================================================================
 # MinIO 配置
 # =============================================================================
 minio:
@@ -92,6 +118,10 @@ jwt:
   expire_minutes: 480
   issuer: "tcm-backend"
   audience: "tcm-frontend"
+
+# =============================================================================
+# 敏感系统配置写入前需设置 Fernet 密钥：
+# export DML_SYSTEM_CONFIG_ENCRYPTION_KEY="$(python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')"
 
 # =============================================================================
 # 任务执行配置

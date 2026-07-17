@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { Server } from 'lucide-react';
 import { api } from '../services/api';
 import type { PlanItemDispatchRequest, PlanItemDispatchConfig, AutomationConfigField } from '../types';
+import type { ServerResource } from '../services/serverResourceService';
 import { Dialog, DialogContent } from './ui/dialog';
+import ServerResourceBoard from './ServerResourceBoard';
 
 /** 将字符串值按字段 type 转换为对应类型 */
 function convertParamValue(val: string, field: AutomationConfigField): unknown {
@@ -16,6 +19,23 @@ function convertParamValue(val: string, field: AutomationConfigField): unknown {
   if (t === 'float' || t === 'number') return parseFloat(val);
   if (t === 'bool' || t === 'boolean') return val === 'true';
   return val; // string / default
+}
+
+type BmcFieldKind = 'ip' | 'user' | 'password';
+
+/** 识别属于「目标 BMC」的参数（IP / 用户名 / 密码） */
+function matchBmcField(p: AutomationConfigField): BmcFieldKind | null {
+  const hay = `${p.label || ''} ${p.name || ''}`.toLowerCase();
+  if (!/bmc/i.test(hay)) return null;
+  if (/(ip|地址)/.test(hay)) return 'ip';
+  if (/(user|用户名)/.test(hay)) return 'user';
+  if (/(pass|密码)/.test(hay)) return 'password';
+  return null;
+}
+
+function isPasswordField(p: AutomationConfigField): boolean {
+  const hay = `${p.label || ''} ${p.name || ''}`.toLowerCase();
+  return /(pass|密码)/.test(hay);
 }
 
 interface Props {
@@ -49,6 +69,10 @@ const SingleDispatchModal: React.FC<Props> = ({
   const [loadingCase, setLoadingCase] = useState(false);
   const [paramValues, setParamValues] = useState<Record<string, string>>({});
 
+  // 服务器资源看板（BMC 参数回填）
+  const [boardOpen, setBoardOpen] = useState(false);
+  const [selectedServer, setSelectedServer] = useState<ServerResource | null>(null);
+
   useEffect(() => {
     if (!open) return;
     setLoadingCase(true);
@@ -57,9 +81,10 @@ const SingleDispatchModal: React.FC<Props> = ({
     setParamValues({});
     setStrategy('immediate');
     setPlannedAt('');
+    setSelectedServer(null);
     api.listAutomationTestCases({ limit: 200 })
       .then(res => {
-        const found = (res.data || []).find((tc: any) => tc.auto_case_id === caseId);
+        const found = (res.data || []).find((tc) => tc.auto_case_id === caseId);
         if (found) {
           setAutoCase({
             repo_url: found.repo_url,
@@ -101,7 +126,31 @@ const SingleDispatchModal: React.FC<Props> = ({
     setError(null);
     setAutoCase(null);
     setParamValues({});
+    setBoardOpen(false);
+    setSelectedServer(null);
   };
+
+  // 从 param_spec 中识别 BMC 三个字段
+  const bmcFields = React.useMemo(() => {
+    const spec = autoCase?.param_spec || [];
+    const ip = spec.find((p) => matchBmcField(p) === 'ip');
+    const user = spec.find((p) => matchBmcField(p) === 'user');
+    const password = spec.find((p) => matchBmcField(p) === 'password');
+    return { ip, user, password, hasAny: !!(ip || user || password) };
+  }, [autoCase]);
+
+  const handleSelectServer = useCallback((s: ServerResource) => {
+    setParamValues((prev) => {
+      const next = { ...prev };
+      if (bmcFields.ip) next[bmcFields.ip.name] = s.bmc_ip;
+      if (bmcFields.user) next[bmcFields.user.name] = s.bmc_username;
+      if (bmcFields.password) next[bmcFields.password.name] = s.bmc_password;
+      return next;
+    });
+    setSelectedServer(s);
+    setBoardOpen(false);
+    setError(null);
+  }, [bmcFields]);
 
   const renderConfigField = (p: AutomationConfigField) => {
     const val = paramValues[p.name] ?? '';
@@ -114,7 +163,7 @@ const SingleDispatchModal: React.FC<Props> = ({
       return (
         <select className="form-input form-select" style={fieldStyle} value={val} onChange={e => setVal(e.target.value)}>
           <option value="">{p.required ? '请选择' : '可选'}</option>
-          {p.options.map((opt: any) => (
+          {p.options.map((opt) => (
             <option key={opt.value} value={String(opt.value)}>{opt.label || opt.value}</option>
           ))}
         </select>
@@ -134,6 +183,11 @@ const SingleDispatchModal: React.FC<Props> = ({
     // Number
     if (p.type === 'int' || p.type === 'float' || p.type === 'number') {
       return <input type="number" className="form-input" style={fieldStyle} value={val} onChange={e => setVal(e.target.value)} placeholder={p.description || ''} />;
+    }
+
+    // Password (masked)
+    if (isPasswordField(p)) {
+      return <input type="password" className="form-input" style={fieldStyle} value={val} onChange={e => setVal(e.target.value)} placeholder={p.description || p.label || ''} autoComplete="new-password" />;
     }
 
     // Text / default
@@ -274,6 +328,41 @@ const SingleDispatchModal: React.FC<Props> = ({
                 </div>
               )}
 
+              {/* ── 服务器资源看板（BMC 参数回填） ── */}
+              {bmcFields.hasAny && (
+                <div style={{ border: '1px dashed var(--border-subtle)', borderRadius: 10, padding: '12px 14px', background: 'var(--surface-tertiary)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                      <Server size={13} /> 服务器资源回填
+                    </span>
+                    <button
+                      className="btn btn--ghost btn--sm"
+                      style={{ fontSize: 12, padding: '3px 10px' }}
+                      onClick={() => setBoardOpen(true)}
+                    >
+                      打开资源看板
+                    </button>
+                  </div>
+
+                  {selectedServer ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
+                        <span style={{ fontSize: 11, color: 'var(--text-tertiary)', width: 56, flexShrink: 0 }}>已选资源</span>
+                        <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{selectedServer.hostname}</span>
+                        <span style={{ fontFamily: 'monospace', color: 'var(--text-secondary)' }}>({selectedServer.bmc_ip})</span>
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
+                        已回填：BMC IP / 用户名 / 密码（可在下方参数配置中修改）
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
+                      从 TMMS 服务选择可用服务器，自动回填目标 BMC IP、用户名与密码。
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* ── Per-case parameters from param_spec ── */}
               {hasParams && (
                 <div>
@@ -318,6 +407,14 @@ const SingleDispatchModal: React.FC<Props> = ({
           </button>
         </div>
       </DialogContent>
+
+      {boardOpen && (
+        <ServerResourceBoard
+          currentBmcIp={bmcFields.ip ? paramValues[bmcFields.ip.name] : undefined}
+          onClose={() => setBoardOpen(false)}
+          onSelect={handleSelectServer}
+        />
+      )}
     </Dialog>
   );
 };
