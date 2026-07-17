@@ -157,7 +157,7 @@ async def test_chat_completion_success():
     mock_response.usage = MagicMock(
         prompt_tokens=10, completion_tokens=5, total_tokens=15,
     )
-    mock_openai_client.chat.completions.create = MagicMock(return_value=mock_response)
+    mock_openai_client.chat.completions.create = AsyncMock(return_value=mock_response)
 
     with patch.object(client, "get_config", AsyncMock(return_value=config)):
         with patch.object(client, "get_client", AsyncMock(return_value=mock_openai_client)):
@@ -194,7 +194,7 @@ async def test_chat_completion_retries_on_failure():
     mock_response.usage = None
 
     # 第一次抛异常，第二次成功
-    mock_openai_client.chat.completions.create = MagicMock(
+    mock_openai_client.chat.completions.create = AsyncMock(
         side_effect=[Exception("network error"), mock_response]
     )
 
