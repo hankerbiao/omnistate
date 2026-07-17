@@ -47,7 +47,6 @@ dmlv4/
 │   │   │   ├── ai_analysis/     # AI 分析
 │   │   │   ├── terminal/        # 终端管理
 │   │   │   ├── test_case_collection/ # 预制用例集
-│   │   │   └── failure_analysis/     # 失败分析
 │   │   └── shared/
 │   │       ├── api/             # 统一路由、错误处理、响应模型
 │   │       ├── auth/            # JWT 与权限依赖
@@ -149,10 +148,6 @@ AI 驱动的用例集质量分析。
 ### 11. `test_case_collection` — 预制用例集
 
 预制测试用例集合管理。
-
-### 12. `failure_analysis` — 失败分析
-
-测试执行失败分析模块。
 
 ## API 路由
 

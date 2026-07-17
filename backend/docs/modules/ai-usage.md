@@ -14,7 +14,7 @@
    - [5.3 需求→用例生成](#53-需求用例生成-post-aigenerate-cases)
    - [5.4 用例评审](#54-用例评审-post-aireview-case)
    - [5.5 智能用例选择](#55-智能用例选择-post-airecommend-cases)
-   - [5.6 失败根因分析](#56-失败根因分析-post-failure-analysisanalyze)
+   - [5.6 失败根因分析（已下线）](#56-失败根因分析-post-failure-analysisanalyze)
    - [5.7 用例集分析](#57-用例集分析-post-ai-analyze-collectionsid)
    - [5.8 连接测试](#58-连接测试-post-system-configsaitest-connection)
 6. [AI 输出反馈](#6-ai-输出反馈)
@@ -31,7 +31,6 @@
 shared/ai/client.py         ← AIClient 单例（统一入口）
 shared/ai/prompts.py        ← Prompt 模板（版本化管理）
 modules/system_config/api/ai_routes.py  ← AI 路由（润色/步骤分析/生成/评审/推荐）
-modules/failure_analysis/api/routes.py  ← 失败根因分析路由
 modules/ai_analysis/        ← 用例集分析服务
 ```
 
@@ -52,7 +51,7 @@ modules/ai_analysis/        ← 用例集分析服务
 | 配置存储 | MongoDB `system_configs` 集合 |
 | 配置缓存 | 内存 TTL 缓存（5 分钟） |
 | 后端框架 | FastAPI |
-| 路由前缀 | `/api/v1/ai`（除 failure-analysis 外） |
+| 路由前缀 | `/api/v1/ai` |
 
 相关核心代码：
 
@@ -183,7 +182,6 @@ content = await client.simple_chat(
 | `/api/v1/ai/generate-cases` | POST | 需求→用例生成 | `system_config` | `AiCaseDraftPanel` |
 | `/api/v1/ai/review-case` | POST | 用例评审 | `system_config` | `AiCaseReviewPanel` |
 | `/api/v1/ai/recommend-cases` | POST | 智能用例选择 | `system_config` | `AiRecommendCasesPanel` |
-| `/api/v1/failure-analysis/analyze` | POST | 失败根因分析 | `failure_analysis` | `FailureAnalysisPage` |
 | `/api/v1/ai-analyze/collections/{id}` | POST | 用例集分析 | `ai_analysis` | `AIAnalysisPanel` |
 | `/api/v1/system-configs/ai/test-connection` | POST | LLM 连接测试 | `system_config` | 系统配置页 |
 
@@ -406,7 +404,9 @@ content = await client.simple_chat(
 
 ---
 
-### 5.6 失败根因分析 `POST /failure-analysis/analyze`
+### 5.6 失败根因分析（已下线）
+
+> 该端点所属的 `failure_analysis` 模块已下线：后端目录已删除，前端无 `FailureAnalysisPage` 入口，无生产消费者。下文接口描述仅作历史参考。
 
 **功能**：AI 分析测试执行失败的根本原因，返回根因分类、置信度、修复建议。
 
@@ -485,7 +485,9 @@ content = await client.simple_chat(
 
 ---
 
-## 6. AI 输出反馈
+## 6. AI 输出反馈（已下线）
+
+> 原 `POST /api/v1/audit-logs/ai-feedback`、`GET /api/v1/audit-logs/ai-feedback` 与 `ai_feedback` 集合已随 `audit` 模块读取侧一同下线；AI 输出的采纳 / 拒绝 / 编辑反馈当前不再持久化。下文接口描述仅作历史参考。
 
 AI 输出反馈记录用户对 AI 生成结果的采纳/拒绝/编辑行为，用于持续改进 prompt 质量和评估 AI 效果。
 
