@@ -45,7 +45,7 @@ class KafkaConsumerRunner:
         """初始化 Kafka consumer runner。
 
         Args:
-            config: Kafka 运行时配置，默认从 config.yaml 统一加载。
+            config: Kafka 运行时配置，默认从 config/config.yaml 统一加载。
             router: topic handler 注册表，用于根据 topic 分发消息。
             producer_manager: Kafka producer，用于 handler 失败时发送死信消息。
         """
@@ -68,7 +68,7 @@ class KafkaConsumerRunner:
         如果 handler 失败，则先写入死信 topic，再提交原消息，避免坏消息反复阻塞。
         """
         consumer_options = dict(self.config.consumer_options)
-        # 统一改为手动提交，覆盖 config.yaml 中可能设置的 enable_auto_commit。
+        # 统一改为手动提交，覆盖 config/config.yaml 中可能设置的 enable_auto_commit。
         consumer_options["enable_auto_commit"] = False
         consumer = KafkaConsumer(
             bootstrap_servers=self.config.bootstrap_servers,

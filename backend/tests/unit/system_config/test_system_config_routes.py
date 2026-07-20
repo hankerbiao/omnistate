@@ -91,7 +91,7 @@ def test_batch_update_uses_static_batch_route(monkeypatch):
     ]
 
 
-def _config_doc(*, key: str, value: str, encrypted: bool):
+def _config_doc(*, key: str, value: str):
     now = datetime.now(timezone.utc)
     return SimpleNamespace(
         id="cfg-1",
@@ -100,7 +100,6 @@ def _config_doc(*, key: str, value: str, encrypted: bool):
         config_type="string",
         category="system",
         description="secret",
-        is_encrypted=encrypted,
         is_active=True,
         needs_restart=True,
         created_at=now,
@@ -109,9 +108,9 @@ def _config_doc(*, key: str, value: str, encrypted: bool):
     )
 
 
-def test_sensitive_config_detail_is_masked(monkeypatch):
+def test_config_detail_returns_plain_value(monkeypatch):
     async def fake_get_config_by_key(_key):
-        return _config_doc(key="redis.password", value="enc:v1:ciphertext", encrypted=True)
+        return _config_doc(key="redis.password", value="plain-secret")
 
     monkeypatch.setattr(ConfigService, "get_config_by_key", fake_get_config_by_key)
     client = _build_client(fake_admin_user)
@@ -119,10 +118,10 @@ def test_sensitive_config_detail_is_masked(monkeypatch):
     response = client.get("/system-configs/redis.password")
 
     assert response.status_code == 200
-    assert response.json()["data"]["config_value"] == "******"
+    assert response.json()["data"]["config_value"] == "plain-secret"
 
 
-def test_sensitive_config_history_is_masked(monkeypatch):
+def test_config_history_returns_plain_values(monkeypatch):
     now = datetime.now(timezone.utc)
 
     async def fake_history(*, config_key, limit):
@@ -138,15 +137,11 @@ def test_sensitive_config_history_is_masked(monkeypatch):
             )
         ]
 
-    async def fake_sensitive_configs():
-        return [_config_doc(key="redis.password", value="ciphertext", encrypted=True)]
-
     monkeypatch.setattr(ConfigService, "get_history", fake_history)
-    monkeypatch.setattr(ConfigService, "get_sensitive_configs", fake_sensitive_configs)
     client = _build_client(fake_admin_user)
 
     response = client.get("/system-configs/history")
 
     assert response.status_code == 200
-    assert response.json()["data"][0]["old_value"] == "******"
-    assert response.json()["data"][0]["new_value"] == "******"
+    assert response.json()["data"][0]["old_value"] == "old-secret"
+    assert response.json()["data"][0]["new_value"] == "new-secret"

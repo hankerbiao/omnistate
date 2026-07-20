@@ -175,7 +175,7 @@ python scripts/mock/generate_mock_test_cases.py --dry-run
 
 **使用方法：**
 ```bash
-# 启动消费（自动从 config.yaml 读取配置）
+# 启动消费（自动从 config/config.yaml 读取配置）
 python scripts/mock/mock_rabbitmq_consumer.py
 ```
 

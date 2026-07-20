@@ -16,7 +16,6 @@ from app.modules.system_config.schemas import (
     ConfigHistoryResponse,
 )
 from app.modules.system_config.service import ConfigService, ConfigValidator
-from app.modules.system_config.service.config_crypto import mask_config_value
 from app.shared.api.schemas.base import APIResponse
 from app.shared.auth import get_current_user, require_permission
 
@@ -34,11 +33,10 @@ def _doc_to_response(doc) -> SystemConfigResponse:
     return SystemConfigResponse(
         id=str(doc.id),
         config_key=doc.config_key,
-        config_value=(mask_config_value(doc.config_value) if doc.is_encrypted else doc.config_value),
+        config_value=doc.config_value,
         config_type=doc.config_type,
         category=doc.category,
         description=doc.description,
-        is_encrypted=doc.is_encrypted,
         is_active=doc.is_active,
         needs_restart=doc.needs_restart,
         created_at=doc.created_at,
@@ -77,24 +75,12 @@ async def get_config_history(
 ) -> APIResponse[list[ConfigHistoryResponse]]:
     """获取配置历史记录"""
     docs = await ConfigService.get_history(config_key=config_key, limit=limit)
-    sensitive_keys = {
-        doc.config_key
-        for doc in await ConfigService.get_sensitive_configs()
-    }
     items = [
         ConfigHistoryResponse(
             id=str(doc.id),
             config_key=doc.config_key,
-            old_value=(
-                mask_config_value(doc.old_value)
-                if doc.config_key in sensitive_keys
-                else doc.old_value
-            ),
-            new_value=(
-                mask_config_value(doc.new_value)
-                if doc.config_key in sensitive_keys
-                else doc.new_value
-            ),
+            old_value=doc.old_value,
+            new_value=doc.new_value,
             changed_by=doc.changed_by,
             changed_at=doc.changed_at,
             remark=doc.remark,

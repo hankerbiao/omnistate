@@ -7,7 +7,7 @@
 - 时间字段统一 UTC，软删除使用 `is_deleted` 字段
 - 代码行宽 110 字符，复杂度上限 12，优先绝对导入，使用 async/await
 - 代码检查：flake8 + ruff
-- 配置加载优先级：`config.yaml` → `config_dev.yaml`（DML_ENV=dev 时）→ 环境变量
+- 配置加载优先级：`config/config.yaml` → `config/config_dev.yaml`（DML_ENV=dev 时）→ 环境变量
 - RabbitMQ 用于任务下发（producer-only），Kafka 用于结果回传和事件消费
 - 后端已启动时访问 `http://localhost:8801/llms.txt` 可获取此文件
 
@@ -16,8 +16,8 @@
 - [README](README.md): 项目快速启动和概述
 - [docs/guide/quick-start.md](docs/guide/quick-start.md): 详细的本地开发环境搭建指南
 - [docs/guide/local-development.md](docs/guide/local-development.md): 本地开发配置说明
-- [config.yaml.example](config.yaml.example): 配置模板及各项说明
-- [config_dev.yaml.example](config_dev.yaml.example): 开发环境配置覆盖模板（debug、免认证等）
+- [config/config.yaml.example](config/config.yaml.example): 配置模板及各项说明
+- [config/config_dev.yaml.example](config/config_dev.yaml.example): 开发环境配置覆盖模板（debug、免认证等）
 - [pyproject.toml](pyproject.toml): Python 依赖和项目元数据
 
 ## 架构总览

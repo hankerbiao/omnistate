@@ -1,6 +1,6 @@
-# 开发环境配置（覆盖 config.yaml）
+# 开发环境配置（覆盖 config/config.yaml）
 # 设置 DML_ENV=dev 时自动加载此文件
-# 仅需填写与 config.yaml 不同的字段
+# 仅需填写与 config/config.yaml 不同的字段
 
 app:
   debug: true

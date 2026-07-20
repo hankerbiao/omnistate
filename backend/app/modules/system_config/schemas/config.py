@@ -15,7 +15,6 @@ class SystemConfigBase(BaseModel):
     config_type: str = Field(default="string", description="值类型: string/integer/float/boolean/json")
     category: str = Field(default="general", description="分类: ai/system/general")
     description: Optional[str] = Field(None, description="配置描述")
-    is_encrypted: bool = Field(default=False, description="是否加密")
     is_active: bool = Field(default=True, description="是否激活")
     needs_restart: bool = Field(default=False, description="修改后是否需要重启生效")
 

@@ -65,7 +65,7 @@ sequenceDiagram
 
 ## 配置项（摘录）
 
-见 `backend/config.yaml` 中 `execution:` 段：
+见 `backend/config/config.yaml` 中 `execution:` 段：
 
 - `scheduler_interval_sec`：定时任务扫描间隔
 - `default_repo_url`：默认代码仓库地址

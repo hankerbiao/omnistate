@@ -16,7 +16,6 @@ class SystemConfigDoc(Document):
     config_type: str = "string"  # string, integer, float, boolean, json
     category: str = "general"  # ai, system, general
     description: Optional[str] = None  # 配置描述
-    is_encrypted: bool = False  # 是否加密存储
     is_active: bool = True  # 是否激活
     needs_restart: bool = False  # 修改后是否需要重启生效
     created_at: datetime = Field(default_factory=datetime.utcnow)
@@ -39,7 +38,6 @@ class SystemConfigDoc(Document):
                 "config_type": "string",
                 "category": "ai",
                 "description": "LLM API基础URL",
-                "is_encrypted": False,
                 "is_active": True,
                 "needs_restart": False,
             }

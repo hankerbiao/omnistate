@@ -68,7 +68,7 @@ flowchart TB
 
 ## 配置
 
-`backend/config.yaml`：
+`backend/config/config.yaml`：
 
 ```yaml
 logging:

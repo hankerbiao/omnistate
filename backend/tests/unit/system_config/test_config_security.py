@@ -1,18 +1,11 @@
-"""系统配置默认值、加密存储与响应脱敏测试。"""
+"""系统配置默认值与明文存储测试。"""
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
 
 import pytest
-from cryptography.fernet import Fernet
 
 import app.modules.system_config.service.config_service as service_mod
-from app.modules.system_config.service.config_crypto import (
-    MASKED_CONFIG_VALUE,
-    decrypt_config_value,
-    encrypt_config_value,
-)
 from app.modules.system_config.service.config_service import ConfigService
 
 
@@ -22,7 +15,7 @@ def test_infrastructure_defaults_follow_static_settings(monkeypatch):
             sentinel_hosts=["redis-a:26379", "redis-b:26379"],
             master_name="prod-master",
             username="svc",
-            password="",
+            password="plain-password",
             db=4,
             socket_timeout=5,
             max_connections=250,
@@ -48,33 +41,87 @@ def test_infrastructure_defaults_follow_static_settings(monkeypatch):
     }
 
     assert defaults["redis.sentinel_hosts"] == '["redis-a:26379","redis-b:26379"]'
+    assert defaults["redis.password"] == "plain-password"
     assert defaults["kafka.bootstrap_servers"] == '["kafka-a:9092","kafka-b:9092"]'
     assert "localhost" not in defaults["redis.sentinel_hosts"]
     assert "localhost" not in defaults["kafka.bootstrap_servers"]
 
 
-def test_sensitive_config_encrypts_and_decrypts(monkeypatch):
-    key = Fernet.generate_key().decode()
-    monkeypatch.setenv("DML_SYSTEM_CONFIG_ENCRYPTION_KEY", key)
-
-    stored = encrypt_config_value("secret-value")
-
-    assert stored != "secret-value"
-    assert decrypt_config_value(stored) == "secret-value"
-
-
 @pytest.mark.asyncio
-async def test_masked_sensitive_update_keeps_existing_value(monkeypatch):
-    doc = SimpleNamespace(is_encrypted=True, config_value="enc:v1:existing")
+async def test_set_config_stores_plain_text(monkeypatch):
+    inserted: list[dict] = []
 
-    # 用轻量替身替换 Beanie Document：仅让 `SystemConfigDoc.config_key == key`
-    # 可求值，且 find_one 被 mock，避免未初始化集合时触发类属性访问异常。
     class _FakeConfigDoc:
         config_key: str = "config_key"
-        find_one = staticmethod(AsyncMock(return_value=doc))
+
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+            self.id = None
+
+        @staticmethod
+        async def find_one(_query):
+            return None
+
+        async def insert(self):
+            inserted.append(self.kwargs)
+            return self
 
     monkeypatch.setattr(service_mod, "SystemConfigDoc", _FakeConfigDoc)
 
-    result = await ConfigService.set_config("redis.password", MASKED_CONFIG_VALUE)
+    async def fake_invalidate(_key=None):
+        return None
 
-    assert result is doc
+    monkeypatch.setattr(service_mod.ConfigCache, "invalidate", staticmethod(fake_invalidate))
+    monkeypatch.setattr(
+        ConfigService,
+        "_DEFAULTS_MAP",
+        {"redis.password": {"config_type": "string", "category": "system", "needs_restart": True}},
+    )
+
+    await ConfigService.set_config("redis.password", "secret")
+
+    assert inserted == [
+        {
+            "config_key": "redis.password",
+            "config_value": "secret",
+            "config_type": "string",
+            "category": "system",
+            "description": None,
+            "needs_restart": True,
+            "updated_by": None,
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_init_defaults_inserts_sensitive_values_as_plain_text(monkeypatch):
+    inserted: list[dict] = []
+
+    class _FakeConfigDoc:
+        config_key: str = "config_key"
+
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+        @staticmethod
+        async def find_one(_query):
+            return None
+
+        async def insert(self):
+            inserted.append(self.kwargs)
+
+    monkeypatch.setattr(service_mod, "SystemConfigDoc", _FakeConfigDoc)
+    monkeypatch.setattr(
+        ConfigService,
+        "DEFAULT_CONFIGS",
+        [
+            {"config_key": "plain.key", "config_value": "plain", "config_type": "string", "category": "test"},
+            {"config_key": "secret.key", "config_value": "secret", "config_type": "string", "category": "test"},
+        ],
+    )
+    monkeypatch.setattr(ConfigService, "_infrastructure_default_configs", classmethod(lambda cls: []))
+
+    await ConfigService.init_default_configs()
+
+    assert [item["config_key"] for item in inserted] == ["plain.key", "secret.key"]
+    assert inserted[1]["config_value"] == "secret"

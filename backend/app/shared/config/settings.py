@@ -1,4 +1,4 @@
-"""统一配置模块 - 从 config.yaml 加载所有服务配置。"""
+"""统一配置模块 - 从 config/config.yaml 加载所有服务配置。"""
 
 import os
 from functools import lru_cache
@@ -18,23 +18,42 @@ def get_config_path() -> Path:
 
     查找顺序：
     1. 环境变量 CONFIG_PATH 指定的路径
-    2. 项目根目录的 config.yaml
+    2. 项目根目录的 config/config.yaml
+    3. 兼容旧位置：项目根目录的 config.yaml
     """
     env_path = os.getenv("CONFIG_PATH")
     if env_path:
         return Path(env_path)
 
-    # 向上查找项目根目录（包含 config.yaml 的目录）
+    # 向上查找项目根目录（包含 requirements.txt 的 backend 目录），优先使用 config/ 子目录。
     current = Path(__file__).resolve()
     for parent in [current.parent, *current.parents]:
-        config_path = parent / "config.yaml"
+        backend_root = _find_backend_root(parent)
+        if backend_root is None:
+            continue
+        config_path = backend_root / "config" / "config.yaml"
         if config_path.exists():
-            # 确保找到的是 backend 目录或上级目录
-            if (parent / "requirements.txt").exists() or (parent.parent / "requirements.txt").exists():
-                return config_path
+            return config_path
+        legacy_config_path = backend_root / "config.yaml"
+        if legacy_config_path.exists():
+            return legacy_config_path
 
     # 默认使用当前工作目录
-    return Path.cwd() / "config.yaml"
+    cwd_config_path = Path.cwd() / "config" / "config.yaml"
+    if cwd_config_path.exists():
+        return cwd_config_path
+    return Path.cwd() / "config" / "config.yaml"
+
+
+def _find_backend_root(path: Path) -> Path | None:
+    """识别 backend 项目根目录。"""
+    candidates = [path, path.parent]
+    for candidate in candidates:
+        if (candidate / "app").is_dir() and (
+            (candidate / "pyproject.toml").exists() or (candidate / "requirements.txt").exists()
+        ):
+            return candidate
+    return None
 
 
 # =============================================================================
@@ -263,7 +282,7 @@ def load_yaml_config(config_path: Path | str | None = None) -> dict[str, Any]:
     if not config_path.exists():
         raise FileNotFoundError(
             f"配置文件不存在: {config_path}\n"
-            f"请复制 config.yaml.example 为 config.yaml 并修改配置"
+            f"请复制 config/config.yaml.example 为 config/config.yaml 并修改配置"
         )
 
     with open(config_path, "r", encoding="utf-8") as f:
@@ -275,8 +294,8 @@ def get_settings() -> Settings:
     """获取应用配置单例。
 
     配置加载顺序（后者覆盖前者）：
-    1. config.yaml（基础配置）
-    2. config_dev.yaml（存在时自动加载，覆盖基础配置，可配置 debug: true 开启调试模式）
+    1. config/config.yaml（基础配置）
+    2. 同目录 config_dev.yaml（存在时自动加载，覆盖基础配置，可配置 debug: true 开启调试模式）
     3. 环境变量覆盖（如 DML_APP_PORT）
 
     Returns:
@@ -284,7 +303,7 @@ def get_settings() -> Settings:
     """
     config_data = load_yaml_config()
 
-    # 如 config_dev.yaml 存在，则自动加载并覆盖基础配置（dev 模式开关）
+    # 如同目录 config_dev.yaml 存在，则自动加载并覆盖基础配置（dev 模式开关）
     dev_config_path = get_config_path().with_name("config_dev.yaml")
     if dev_config_path.exists():
         with open(dev_config_path, "r", encoding="utf-8") as f:
@@ -310,4 +329,3 @@ def _deep_merge(base: dict, override: dict) -> dict:
         else:
             result[key] = value
     return result
-

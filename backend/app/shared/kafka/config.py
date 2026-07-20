@@ -1,6 +1,6 @@
 """Kafka 模块配置适配层。
 
-Kafka 的真实配置来源可以是 `config.yaml`（默认）或 MongoDB `system_configs`
+Kafka 的真实配置来源可以是 `config/config.yaml`（默认）或 MongoDB `system_configs`
 集合（动态覆盖）。本模块通过 `_dynamic_config` 机制支持运行时从数据库加载配置。
 """
 
@@ -11,7 +11,7 @@ from app.shared.config import KafkaConfig as BaseKafkaConfig, get_settings
 from app.shared.core.logger import log
 
 
-# ── 动态配置（启动时从 MongoDB 加载，覆盖 config.yaml）─────────
+# ── 动态配置（启动时从 MongoDB 加载，覆盖 config/config.yaml）─────────
 _dynamic_config: dict[str, Any] | None = None
 
 
@@ -47,11 +47,10 @@ async def load_kafka_config_from_db() -> None:
     → 加载 Kafka 数据库配置。
 
     仅在数据库中有 kafka.* 配置项且 is_active=True 时生效，
-    否则静默跳过，使用 config.yaml 中的配置。
+    否则静默跳过，使用 config/config.yaml 中的配置。
     """
     try:
         from app.modules.system_config.repository.models import SystemConfigDoc
-        from app.modules.system_config.service.config_crypto import decrypt_config_value
 
         docs = await SystemConfigDoc.find(
             {"config_key": {"$regex": r"^kafka\."}, "is_active": True}
@@ -63,17 +62,14 @@ async def load_kafka_config_from_db() -> None:
         config: dict[str, Any] = {}
         for doc in docs:
             key = doc.config_key[len("kafka."):]
-            stored_value = (
-                decrypt_config_value(doc.config_value) if doc.is_encrypted else doc.config_value
-            )
-            value = _parse_db_value(stored_value, doc.config_type)
+            value = _parse_db_value(doc.config_value, doc.config_type)
             if value is not None:
                 config[key] = value
 
         if config:
             override_kafka_config(config)
     except Exception as exc:
-        log.warning("从数据库加载 Kafka 配置失败（使用 config.yaml 默认值）: {}", exc)
+        log.warning("从数据库加载 Kafka 配置失败（使用 config/config.yaml 默认值）: {}", exc)
 
 
 @dataclass(slots=True)
@@ -91,7 +87,7 @@ class KafkaConfig:
     """Kafka 运行时配置。
 
     该对象不再定义 Kafka 默认值，避免与 `app.shared.config.settings.KafkaConfig`
-    形成第二套配置来源。所有字段都由 `config.yaml` 经统一 settings 加载后传入。
+    形成第二套配置来源。所有字段都由 `config/config.yaml` 经统一 settings 加载后传入。
     """
 
     bootstrap_servers: list[str]
@@ -143,7 +139,7 @@ def load_kafka_config() -> KafkaConfig:
 
     配置优先级：
     1. 动态配置（从 MongoDB 加载，覆盖优先）
-    2. 静态配置（config.yaml）
+    2. 静态配置（config/config.yaml）
     """
     global _dynamic_config
     if _dynamic_config is not None:

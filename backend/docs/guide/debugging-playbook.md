@@ -77,7 +77,7 @@
 优先检查：
 
 - `execution/service/task_dispatcher.py`
-- `config.yaml` 中 `rabbitmq` 连接与队列配置
+- `config/config.yaml` 中 `rabbitmq` 连接与队列配置
 - 日志节点 `task.dispatch`
 - RabbitMQ 队列是否可达、Agent 是否正常消费
 

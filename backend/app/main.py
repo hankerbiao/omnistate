@@ -69,7 +69,7 @@ async def lifespan(app: FastAPI):
             await load_redis_config_from_db()
             log.success("Redis 数据库配置加载完成")
         except Exception as e:
-            log.warning("Redis 数据库配置加载失败（使用 config.yaml 默认值）: {}", e)
+            log.warning("Redis 数据库配置加载失败（使用 config/config.yaml 默认值）: {}", e)
 
         # 从数据库加载 Kafka 配置覆盖（Kafka 是惰性初始化，提前加载以便后续使用）
         try:
@@ -77,7 +77,7 @@ async def lifespan(app: FastAPI):
             await load_kafka_config_from_db()
             log.success("Kafka 数据库配置加载完成")
         except Exception as e:
-            log.warning("Kafka 数据库配置加载失败（使用 config.yaml 默认值）: {}", e)
+            log.warning("Kafka 数据库配置加载失败（使用 config/config.yaml 默认值）: {}", e)
 
         # 初始化 Redis 连接池（非阻塞：超时或失败不阻断服务启动）
         try:

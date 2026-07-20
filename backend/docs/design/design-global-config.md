@@ -29,7 +29,6 @@ CREATE TABLE system_configs (
     config_type VARCHAR(50) NOT NULL DEFAULT 'string',
     category VARCHAR(50) NOT NULL DEFAULT 'general',
     description TEXT,
-    is_encrypted BOOLEAN DEFAULT 0,
     is_active BOOLEAN DEFAULT 1,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -119,7 +118,6 @@ Query参数:
         "config_type": "string",
         "category": "ai",
         "description": "LLM API基础URL",
-        "is_encrypted": false,
         "is_active": true,
         "updated_at": "2026-06-09T10:00:00"
       }
@@ -144,7 +142,6 @@ GET /api/v1/system-configs/{config_key}
     "config_type": "string",
     "category": "ai",
     "description": "LLM API基础URL",
-    "is_encrypted": false,
     "is_active": true
   }
 }
@@ -540,13 +537,13 @@ const ConfigList: React.FC = () => {
               <td>
                 {editingKey === config.config_key ? (
                   <input 
-                    type={config.is_encrypted ? 'password' : 'text'}
+                    type="text"
                     defaultValue={config.config_value}
                     onBlur={(e) => handleSave(config, e.target.value)}
                   />
                 ) : (
                   <span>
-                    {config.is_encrypted ? '••••••' : config.config_value}
+                    {config.config_value}
                   </span>
                 )}
               </td>
@@ -622,26 +619,8 @@ const ConfigList: React.FC = () => {
 
 ## 6. 技术要点
 
-### 6.1 配置加密
-对于敏感配置（如API密钥），使用AES加密存储：
-
-```python
-# backend/app/core/security.py
-
-from cryptography.fernet import Fernet
-
-def encrypt_value(value: str) -> str:
-    """加密配置值"""
-    key = os.getenv('CONFIG_ENCRYPTION_KEY', Fernet.generate_key())
-    f = Fernet(key)
-    return f.encrypt(value.encode()).decode()
-
-def decrypt_value(encrypted_value: str) -> str:
-    """解密配置值"""
-    key = os.getenv('CONFIG_ENCRYPTION_KEY')
-    f = Fernet(key)
-    return f.decrypt(encrypted_value.encode()).decode()
-```
+### 6.1 明文存储
+系统配置值以明文存储，适用于个人或内网部署场景。请通过后端鉴权、MongoDB 访问控制和部署网络隔离保护配置数据。
 
 ### 6.2 配置验证
 在保存配置前进行验证：
@@ -800,7 +779,6 @@ export interface SystemConfig {
   config_type: 'string' | 'integer' | 'float' | 'boolean' | 'json';
   category: 'ai' | 'system' | 'general';
   description: string;
-  is_encrypted: boolean;
   is_active: boolean;
   created_at: string;
   updated_at: string;

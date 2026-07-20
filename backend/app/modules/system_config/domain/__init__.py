@@ -7,8 +7,3 @@ class ConfigNotFoundError(Exception):
 class ConfigValidationError(Exception):
     """配置验证失败"""
     pass
-
-
-class ConfigEncryptionError(Exception):
-    """配置加密/解密失败"""
-    pass

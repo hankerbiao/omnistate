@@ -73,7 +73,7 @@ app/shared/minio/
 2. **单文件上限 100MB**：API 层在读取 body 后校验，超限返回 HTTP 413
 3. **软删除**：`delete_attachment` 仅标记 `is_deleted=True`，不立即删除 MinIO 对象（物理删除代码已注释，可按策略开启）
 4. **引用校验**：业务写入时若 `file_id` 不存在或已删除，抛出 `KeyError` / `ValueError`，事务回滚
-5. **预签名 URL 有效期**：默认 7 天（`presigned_url_expires_seconds`，见 `config.yaml` 的 `minio` 段）
+5. **预签名 URL 有效期**：默认 7 天（`presigned_url_expires_seconds`，见 `config/config.yaml` 的 `minio` 段）
 6. **SHA256**：上传时计算并持久化，供 execution 下发时在 `files` 字段传递完整性校验
 
 ## 与其它模块的关系
@@ -87,7 +87,7 @@ app/shared/minio/
 
 ## 配置项
 
-`backend/config.yaml` 中 `minio` 段：
+`backend/config/config.yaml` 中 `minio` 段：
 
 | 字段 | 默认值 | 说明 |
 |------|--------|------|

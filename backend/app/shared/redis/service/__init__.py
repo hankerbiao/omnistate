@@ -22,7 +22,7 @@ from app.shared.config.settings import RedisConfig
 from app.shared.core.logger import log as logger
 
 
-# ── 动态配置（启动时从 MongoDB 加载，覆盖 config.yaml）─────────
+# ── 动态配置（启动时从 MongoDB 加载，覆盖 config/config.yaml）─────────
 _dynamic_config: dict[str, Any] | None = None
 
 
@@ -57,11 +57,10 @@ async def load_redis_config_from_db() -> None:
     → 加载 Redis 数据库配置 → 初始化 Redis 连接池。
 
     仅在数据库中有 redis.* 配置项且 is_active=True 时生效，
-    否则静默跳过，使用 config.yaml 中的配置。
+    否则静默跳过，使用 config/config.yaml 中的配置。
     """
     try:
         from app.modules.system_config.repository.models import SystemConfigDoc
-        from app.modules.system_config.service.config_crypto import decrypt_config_value
 
         docs = await SystemConfigDoc.find(
             {"config_key": {"$regex": r"^redis\."}, "is_active": True}
@@ -73,17 +72,14 @@ async def load_redis_config_from_db() -> None:
         config: dict[str, Any] = {}
         for doc in docs:
             key = doc.config_key[len("redis."):]
-            stored_value = (
-                decrypt_config_value(doc.config_value) if doc.is_encrypted else doc.config_value
-            )
-            value = _parse_db_value(stored_value, doc.config_type)
+            value = _parse_db_value(doc.config_value, doc.config_type)
             if value is not None:
                 config[key] = value
 
         if config:
             override_redis_config(config)
     except Exception as exc:
-        logger.warning("从数据库加载 Redis 配置失败（使用 config.yaml 默认值）: {}", exc)
+        logger.warning("从数据库加载 Redis 配置失败（使用 config/config.yaml 默认值）: {}", exc)
 
 
 class RedisManager:
@@ -103,7 +99,7 @@ class RedisManager:
             return
 
         try:
-            # 优先使用从数据库加载的动态配置，否则回退到 config.yaml
+            # 优先使用从数据库加载的动态配置，否则回退到 config/config.yaml
             if _dynamic_config is not None:
                 cfg = RedisConfig(**_dynamic_config)
                 logger.info("Redis 使用数据库动态配置: {}", cfg.model_dump(exclude={"password"}))

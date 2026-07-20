@@ -8,7 +8,7 @@
 
 ## 配置来源
 
-模块只认一套配置来源：项目根目录的 `config.yaml`。
+模块只认一套配置来源：`backend/config/config.yaml`。
 
 `app/shared/config/settings.py` 负责读取和校验 YAML，`app/shared/kafka/config.py`
 只把统一配置对象转换成 Kafka runtime 需要的结构，并派生 consumer subscription

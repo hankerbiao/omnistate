@@ -33,7 +33,7 @@ docs/                        # 文档
 | `AGENTS.md` | 开发规范、命令速查 |
 | `app/modules/*/README.md` | 各模块详细说明 |
 | `docs/test_plan/` | 测试方案与覆盖度报告 |
-| `config.yaml.example` | 配置模板 |
+| `config/config.yaml.example` | 配置模板 |
 
 ## 命令速查
 
