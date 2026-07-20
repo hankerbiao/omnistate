@@ -8,6 +8,8 @@ from .jwt_auth import (
     create_access_token,
     decode_token,
     get_current_user,
+    get_user_permissions,
+    is_admin_role,
     require_permission,
     require_any_permission,
 )
@@ -17,6 +19,8 @@ __all__ = [
     "create_access_token",
     "decode_token",
     "get_current_user",
+    "get_user_permissions",
+    "is_admin_role",
     "require_permission",
     "require_any_permission",
     "hash_password",

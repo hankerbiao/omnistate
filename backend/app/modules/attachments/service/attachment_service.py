@@ -1,29 +1,53 @@
 import asyncio
 import hashlib
 import uuid
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
 from typing import List, Optional
 
 from app.modules.attachments.repository.models import AttachmentDoc
 from app.modules.attachments.schemas.attachment import AttachmentInfo, UploadResponse
+from app.shared.domain.exceptions import ConflictError
 from app.shared.minio import get_minio_client
+
+AttachmentReferenceChecker = Callable[[str], Awaitable[bool]]
+
+
+async def _no_references(_: str) -> bool:
+    return False
 
 
 class AttachmentService:
     """附件服务"""
 
-    def __init__(self):
+    def __init__(self, reference_checker: AttachmentReferenceChecker | None = None):
         self.minio_client = get_minio_client()
+        self._reference_checker = reference_checker or _no_references
+
+    def resolve_expires_seconds(self, expires_seconds: int | None = None) -> int:
+        if expires_seconds is not None:
+            return expires_seconds
+        return self.minio_client.config.presigned_url_expires_seconds
+
+    @staticmethod
+    def to_info(attachment: AttachmentDoc, download_url: str | None = None) -> AttachmentInfo:
+        return AttachmentInfo(
+            file_id=attachment.file_id,
+            original_filename=attachment.original_filename,
+            storage_path=f"{attachment.bucket}/{attachment.object_name}",
+            size=attachment.size,
+            content_type=attachment.content_type,
+            sha256=attachment.sha256,
+            uploaded_by=attachment.uploaded_by,
+            uploaded_at=attachment.uploaded_at,
+            download_url=download_url,
+        )
 
     async def enrich_for_dispatch(
         self,
         file_ids: List[str],
     ) -> List[dict]:
-        """批量校验附件并补充 MinIO 元数据，供任务下发使用。
-
-        与逐条查询不同，这里一次 find 批量加载，避免 N+1。
-        缺失或已删除的附件会触发 KeyError。
-        """
+        """批量校验附件并补充 MinIO 元数据，供任务下发使用。"""
         if not file_ids:
             return []
 
@@ -79,36 +103,24 @@ class AttachmentService:
         content_type: str,
         uploaded_by: str,
     ) -> UploadResponse:
-        """上传文件
-
-        Args:
-            filename: 原始文件名
-            content: 文件内容
-            content_type: MIME类型
-            uploaded_by: 上传人ID
-
-        Returns:
-            上传响应
-        """
-        # 生成唯一文件ID和对象名
+        """上传文件到 MinIO，并保存附件元数据。"""
         file_id = str(uuid.uuid4())
         extension = filename.rsplit(".", 1)[-1] if "." in filename else ""
         object_name = f"attachments/{file_id}.{extension}" if extension else f"attachments/{file_id}"
-
-        # 计算 SHA256 校验和
         sha256_hash = hashlib.sha256(content).hexdigest()
-
-        # 上传到MinIO
         bucket = self.minio_client.get_bucket()
+        uploaded = False
+
         try:
-            self.minio_client.put_object(
+            await asyncio.to_thread(
+                self.minio_client.put_object,
                 object_name=object_name,
                 data=content,
                 content_type=content_type,
                 length=len(content),
             )
+            uploaded = True
 
-            # 保存元数据到MongoDB
             attachment = AttachmentDoc(
                 file_id=file_id,
                 original_filename=filename,
@@ -123,11 +135,11 @@ class AttachmentService:
             )
             await attachment.create()
         except Exception as e:
-            # 回滚：删除已上传的MinIO对象
-            try:
-                self.minio_client.remove_object(object_name)
-            except Exception:
-                pass  # 忽略删除失败，避免掩盖原始错误
+            if uploaded:
+                try:
+                    await asyncio.to_thread(self.minio_client.remove_object, object_name)
+                except Exception:
+                    pass
             raise RuntimeError(
                 f"Failed to upload file {file_id} for user {uploaded_by}: {e}"
             ) from e
@@ -143,14 +155,7 @@ class AttachmentService:
         )
 
     async def get_attachment(self, file_id: str) -> Optional[AttachmentDoc]:
-        """获取附件信息
-
-        Args:
-            file_id: 文件ID
-
-        Returns:
-            附件文档（未删除），不存在返回None
-        """
+        """获取未删除附件文档。"""
         return await AttachmentDoc.find_one(
             {"file_id": file_id, "is_deleted": False}
         )
@@ -161,16 +166,7 @@ class AttachmentService:
         limit: int = 100,
         skip: int = 0,
     ) -> List[AttachmentDoc]:
-        """列出附件
-
-        Args:
-            uploaded_by: 上传人ID（可选）
-            limit: 限制数量
-            skip: 跳过数量
-
-        Returns:
-            附件列表
-        """
+        """列出未删除附件。"""
         query = {"is_deleted": False}
         if uploaded_by:
             query["uploaded_by"] = uploaded_by
@@ -178,14 +174,7 @@ class AttachmentService:
         return await AttachmentDoc.find(query).skip(skip).limit(limit).to_list()
 
     async def count_attachments(self, uploaded_by: Optional[str] = None) -> int:
-        """统计附件数量
-
-        Args:
-            uploaded_by: 上传人ID（可选）
-
-        Returns:
-            数量
-        """
+        """统计未删除附件数量。"""
         query = {"is_deleted": False}
         if uploaded_by:
             query["uploaded_by"] = uploaded_by
@@ -193,26 +182,16 @@ class AttachmentService:
         return await AttachmentDoc.find(query).count()
 
     async def delete_attachment(self, file_id: str) -> bool:
-        """删除附件（逻辑删除）
-
-        Args:
-            file_id: 文件ID
-
-        Returns:
-            是否删除成功
-        """
+        """逻辑删除未被业务引用的附件。"""
         attachment = await self.get_attachment(file_id)
         if not attachment:
             return False
+        if await self._reference_checker(file_id):
+            raise ConflictError(f"附件 {file_id} 已被业务数据引用，不能删除")
 
-        # 逻辑删除
         attachment.is_deleted = True
         attachment.deleted_at = datetime.now(timezone.utc)
         await attachment.update()
-
-        # 可选：物理删除MinIO中的文件（根据需求决定是否立即删除）
-        # self.minio_client.remove_object(attachment.object_name)
-
         return True
 
     async def get_download_url(
@@ -220,46 +199,22 @@ class AttachmentService:
         file_id: str,
         expires_seconds: int | None = None,
     ) -> Optional[str]:
-        """获取下载链接
-
-        Args:
-            file_id: 文件ID
-            expires_seconds: 过期时间（秒）
-
-        Returns:
-            预签名下载链接，不存在返回None
-        """
+        """获取预签名下载链接。"""
         attachment = await self.get_attachment(file_id)
         if not attachment:
             return None
 
-        return self.minio_client.presigned_get_object(
+        return await asyncio.to_thread(
+            self.minio_client.presigned_get_object,
             attachment.object_name,
-            expires_seconds=expires_seconds,
+            expires_seconds=self.resolve_expires_seconds(expires_seconds),
         )
 
     async def get_attachment_info(self, file_id: str) -> Optional[AttachmentInfo]:
-        """获取附件详细信息（含下载链接）
-
-        Args:
-            file_id: 文件ID
-
-        Returns:
-            附件信息，不存在返回None
-        """
+        """获取附件详细信息（含下载链接）。"""
         attachment = await self.get_attachment(file_id)
         if not attachment:
             return None
 
         download_url = await self.get_download_url(file_id)
-
-        return AttachmentInfo(
-            file_id=attachment.file_id,
-            original_filename=attachment.original_filename,
-            storage_path=f"{attachment.bucket}/{attachment.object_name}",
-            size=attachment.size,
-            content_type=attachment.content_type,
-            uploaded_by=attachment.uploaded_by,
-            uploaded_at=attachment.uploaded_at,
-            download_url=download_url,
-        )
+        return self.to_info(attachment, download_url=download_url)

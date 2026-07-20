@@ -1,6 +1,6 @@
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 
 from app.modules.attachments.schemas.attachment import (
     AttachmentInfo,
@@ -10,164 +10,146 @@ from app.modules.attachments.schemas.attachment import (
     UploadResponse,
 )
 from app.modules.attachments.service import AttachmentService
-from app.shared.auth import get_current_user
+from app.modules.attachments.application import is_attachment_referenced
+from app.shared.auth import get_current_user, get_user_permissions, is_admin_role, require_permission
 
 router = APIRouter(prefix="/attachments", tags=["附件管理"])
 
-# 当前用户类型（从JWT获取）
 CurrentUser = Annotated[dict, Depends(get_current_user)]
+MAX_UPLOAD_SIZE = 100 * 1024 * 1024
+READ_PERMISSION = Depends(require_permission("attachments:read"))
+UPLOAD_PERMISSION = Depends(require_permission("attachments:upload"))
+DELETE_PERMISSION = Depends(require_permission("attachments:delete"))
 
 
 def get_service() -> AttachmentService:
-    """获取服务实例"""
-    return AttachmentService()
+    return AttachmentService(reference_checker=is_attachment_referenced)
 
 
-@router.post("/upload", response_model=UploadResponse, status_code=status.HTTP_201_CREATED, summary="上传附件")
+async def _can_manage_attachments(current_user: dict) -> bool:
+    if is_admin_role(current_user.get("role_ids", [])):
+        return True
+    permissions = set(await get_user_permissions(current_user["user_id"]))
+    return "attachments:manage" in permissions
+
+
+async def _ensure_attachment_access(attachment, current_user: dict) -> None:
+    if attachment.uploaded_by == current_user["user_id"]:
+        return
+    if await _can_manage_attachments(current_user):
+        return
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="permission denied")
+
+
+async def _read_limited_file(file: UploadFile, max_size: int = MAX_UPLOAD_SIZE) -> bytes:
+    content = bytearray()
+    while chunk := await file.read(1024 * 1024):
+        content.extend(chunk)
+        if len(content) > max_size:
+            raise HTTPException(
+                status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                detail=f"文件大小超过限制（最大 {max_size // (1024 * 1024)}MB）",
+            )
+    return bytes(content)
+
+
+@router.post(
+    "/upload",
+    response_model=UploadResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="上传附件",
+    dependencies=[UPLOAD_PERMISSION],
+)
 async def upload_attachment(
     file: UploadFile = File(..., description="要上传的文件"),
     current_user: CurrentUser = None,
 ):
-    """上传附件
-
-    将文件上传到MinIO并保存元数据到MongoDB
-
-    - **file**: 文件内容（FormData）
-    """
-    # 读取文件内容
-    content = await file.read()
-
-    # 限制文件大小（100MB）
-    max_size = 100 * 1024 * 1024
-    if len(content) > max_size:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"文件大小超过限制（最大 {max_size // (1024 * 1024)}MB）",
-        )
-
-    # 获取用户ID
-    user_id = current_user.get("user_id", "anonymous") if current_user else "anonymous"
-
-    # 上传文件
+    """上传附件到 MinIO 并保存元数据。"""
+    content = await _read_limited_file(file)
     attachment_service = get_service()
-    result = await attachment_service.upload_file(
+    return await attachment_service.upload_file(
         filename=file.filename or "unknown",
         content=content,
         content_type=file.content_type or "application/octet-stream",
-        uploaded_by=user_id,
+        uploaded_by=current_user["user_id"],
     )
 
-    return result
 
-
-@router.get("/{file_id}", response_model=AttachmentInfo, summary="获取附件信息")
+@router.get("/{file_id}", response_model=AttachmentInfo, summary="获取附件信息", dependencies=[READ_PERMISSION])
 async def get_attachment(
     file_id: str,
     current_user: CurrentUser = None,
 ):
-    """获取附件信息
-
-    根据文件ID获取附件详细信息
-
-    - **file_id**: 文件唯一标识
-    """
+    """根据文件 ID 获取附件详细信息。"""
     attachment_service = get_service()
-    info = await attachment_service.get_attachment_info(file_id)
+    attachment = await attachment_service.get_attachment(file_id)
+    if not attachment:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"附件 {file_id} 不存在")
 
-    if not info:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"附件 {file_id} 不存在",
-        )
-
-    return info
+    await _ensure_attachment_access(attachment, current_user)
+    download_url = await attachment_service.get_download_url(file_id)
+    return attachment_service.to_info(attachment, download_url=download_url)
 
 
-@router.get("/{file_id}/download", response_model=DownloadResponse, summary="获取附件下载链接")
+@router.get(
+    "/{file_id}/download",
+    response_model=DownloadResponse,
+    summary="获取附件下载链接",
+    dependencies=[READ_PERMISSION],
+)
 async def get_download_url(
     file_id: str,
-    expires_seconds: int | None = None,
+    expires_seconds: int | None = Query(None, ge=1, le=604800),
     current_user: CurrentUser = None,
 ):
-    """获取下载链接
-
-    生成预签名下载链接
-
-    - **file_id**: 文件唯一标识
-    - **expires_seconds**: 链接有效期（秒），默认604800秒（7天）
-    """
+    """生成预签名下载链接。"""
     attachment_service = get_service()
-    download_url = await attachment_service.get_download_url(
-        file_id, expires_seconds=expires_seconds
-    )
+    attachment = await attachment_service.get_attachment(file_id)
+    if not attachment:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"附件 {file_id} 不存在")
 
-    if not download_url:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"附件 {file_id} 不存在",
-        )
-
-    return DownloadResponse(download_url=download_url, expires_in=expires_seconds)
+    await _ensure_attachment_access(attachment, current_user)
+    resolved_expires = attachment_service.resolve_expires_seconds(expires_seconds)
+    download_url = await attachment_service.get_download_url(file_id, expires_seconds=resolved_expires)
+    return DownloadResponse(download_url=download_url, expires_in=resolved_expires)
 
 
-@router.delete("/{file_id}", response_model=DeleteResponse, summary="删除附件")
+@router.delete("/{file_id}", response_model=DeleteResponse, summary="删除附件", dependencies=[DELETE_PERMISSION])
 async def delete_attachment(
     file_id: str,
     current_user: CurrentUser = None,
 ):
-    """删除附件
-
-    逻辑删除附件
-
-    - **file_id**: 文件唯一标识
-    """
+    """逻辑删除附件。"""
     attachment_service = get_service()
+    attachment = await attachment_service.get_attachment(file_id)
+    if not attachment:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"附件 {file_id} 不存在")
+
+    await _ensure_attachment_access(attachment, current_user)
     deleted = await attachment_service.delete_attachment(file_id)
-
     if not deleted:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"附件 {file_id} 不存在",
-        )
-
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"附件 {file_id} 不存在")
     return DeleteResponse(file_id=file_id, deleted=True)
 
 
-@router.get("", response_model=AttachmentListResponse, summary="列出附件列表")
+@router.get("", response_model=AttachmentListResponse, summary="列出附件列表", dependencies=[READ_PERMISSION])
 async def list_attachments(
     uploaded_by: Optional[str] = None,
-    limit: int = 100,
-    skip: int = 0,
+    limit: int = Query(100, ge=1, le=100),
+    skip: int = Query(0, ge=0),
     current_user: CurrentUser = None,
 ):
-    """列出附件
+    """列出附件，普通用户只能查看本人附件。"""
+    can_manage = await _can_manage_attachments(current_user)
+    if not can_manage:
+        if uploaded_by and uploaded_by != current_user["user_id"]:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="permission denied")
+        uploaded_by = current_user["user_id"]
 
-    获取附件列表，支持按上传人筛选
-
-    - **uploaded_by**: 上传人ID（可选）
-    - **limit**: 返回数量限制，默认100
-    - **skip**: 跳过数量，默认0
-    """
     attachment_service = get_service()
-    attachments = await attachment_service.list_attachments(
-        uploaded_by=uploaded_by,
-        limit=limit,
-        skip=skip,
-    )
+    attachments = await attachment_service.list_attachments(uploaded_by=uploaded_by, limit=limit, skip=skip)
     total = await attachment_service.count_attachments(uploaded_by=uploaded_by)
-
-    items = [
-        AttachmentInfo(
-            file_id=att.file_id,
-            original_filename=att.original_filename,
-            storage_path=f"{att.bucket}/{att.object_name}",
-            size=att.size,
-            content_type=att.content_type,
-            uploaded_by=att.uploaded_by,
-            uploaded_at=att.uploaded_at,
-            download_url=None,  # 列表不返回下载链接，需要单独请求
-        )
-        for att in attachments
-    ]
-
-    return AttachmentListResponse(items=items, total=total)
+    return AttachmentListResponse(
+        items=[attachment_service.to_info(att) for att in attachments],
+        total=total,
+    )
