@@ -1,36 +1,23 @@
-"""
-用户、角色、权限模型 (Beanie ODM)
-
-AI 友好注释说明：
-- 这是 RBAC 的基础数据层，用于持久化用户、角色与权限。
-- Document 类负责数据库表结构与索引；Pydantic Model 用于 API 返回。
-"""
-from typing import Optional, List
+"""User and role Beanie models."""
 from datetime import datetime
-from pydantic import BaseModel, Field, ConfigDict
+from typing import List, Optional
+
 from beanie import Document
+from pydantic import BaseModel, ConfigDict, Field
 from pymongo import IndexModel
 
 from app.shared.core.document_mixins import TimestampedDocumentMixin
 
 
-# ========== Beanie 文档模型 ==========
-
 class UserDoc(Document, TimestampedDocumentMixin):
-    """用户 - 数据库模型（保存用户与角色绑定信息）"""
-    # user_id 是业务主键，避免直接暴露 ObjectId
+    """User account with role assignments."""
+
     user_id: str = Field(..., description="用户唯一 ID")
     username: str = Field(..., description="用户名")
     email: Optional[str] = Field(None, description="邮箱")
-    # 密码存储为 hash + salt（避免明文）
     password_hash: str = Field(..., description="密码哈希")
     password_salt: str = Field(..., description="密码盐")
-    # 一个用户可绑定多个角色
     role_ids: List[str] = Field(default_factory=list, description="角色 ID 列表")
-    # 用户级额外权限（与角色权限取并集），用于临时授权或系统角色例外
-    extra_permission_ids: List[str] = Field(default_factory=list, description="用户独立额外权限 ID 列表")
-    # 用户级导航可见页面覆盖（为空时按角色/权限默认）
-    allowed_nav_views: List[str] = Field(default_factory=list, description="用户允许访问的导航页面")
     status: str = Field(default="ACTIVE", description="用户状态")
     itcode: str = Field(default="", description="光圈通知 itcode")
     subscribe_notifications: bool = Field(default=False, description="是否订阅光圈通知")
@@ -46,12 +33,12 @@ class UserDoc(Document, TimestampedDocumentMixin):
 
 
 class RoleDoc(Document, TimestampedDocumentMixin):
-    """角色 - 数据库模型（角色聚合多个权限）"""
+    """Role with a static permission-code selection."""
+
     role_id: str = Field(..., description="角色唯一 ID")
     name: str = Field(..., description="角色名称")
     description: Optional[str] = Field(None, description="角色描述")
     is_system: bool = Field(default=False, description="是否系统角色（系统角色不可删除）")
-    # 角色绑定权限集合
     permission_ids: List[str] = Field(default_factory=list, description="权限 ID 列表")
 
     class Settings:
@@ -62,34 +49,14 @@ class RoleDoc(Document, TimestampedDocumentMixin):
         ]
 
 
-class PermissionDoc(Document, TimestampedDocumentMixin):
-    """权限 - 数据库模型（最小授权单元）"""
-    perm_id: str = Field(..., description="权限唯一 ID")
-    # code 建议格式：资源:动作（例如 requirements:write）
-    code: str = Field(..., description="权限编码")
-    name: str = Field(..., description="权限名称")
-    description: Optional[str] = Field(None, description="权限描述")
-
-    class Settings:
-        name = "permissions"
-        indexes = [
-            IndexModel("perm_id", unique=True),
-            IndexModel("code", unique=True),
-            IndexModel("name"),
-        ]
-
-
-# ========== Pydantic 响应模型 (API) ==========
-
 class UserModel(BaseModel):
-    """API 返回用用户模型（不含敏感字段）"""
+    """API user response without password fields."""
+
     id: Optional[str] = Field(None, description="文档唯一标识 ID")
     user_id: str = Field(..., description="用户唯一 ID")
     username: str = Field(..., description="用户名")
     email: Optional[str] = Field(None, description="邮箱")
     role_ids: List[str] = Field(..., description="角色 ID 列表")
-    extra_permission_ids: List[str] = Field(default_factory=list, description="用户独立额外权限 ID 列表")
-    allowed_nav_views: List[str] = Field(default_factory=list, description="用户允许访问的导航页面")
     status: str = Field(..., description="用户状态")
     created_at: datetime = Field(..., description="创建时间")
     updated_at: datetime = Field(..., description="更新时间")
@@ -98,26 +65,14 @@ class UserModel(BaseModel):
 
 
 class RoleModel(BaseModel):
-    """API 返回用角色模型"""
+    """API role response."""
+
     id: Optional[str] = Field(None, description="文档唯一标识 ID")
     role_id: str = Field(..., description="角色唯一 ID")
     name: str = Field(..., description="角色名称")
     description: Optional[str] = Field(None, description="角色描述")
     is_system: bool = Field(False, description="是否系统角色")
     permission_ids: List[str] = Field(..., description="权限 ID 列表")
-    created_at: datetime = Field(..., description="创建时间")
-    updated_at: datetime = Field(..., description="更新时间")
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-class PermissionModel(BaseModel):
-    """API 返回用权限模型"""
-    id: Optional[str] = Field(None, description="文档唯一标识 ID")
-    perm_id: str = Field(..., description="权限唯一 ID")
-    code: str = Field(..., description="权限编码")
-    name: str = Field(..., description="权限名称")
-    description: Optional[str] = Field(None, description="权限描述")
     created_at: datetime = Field(..., description="创建时间")
     updated_at: datetime = Field(..., description="更新时间")
 

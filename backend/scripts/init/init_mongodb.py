@@ -4,12 +4,12 @@ MongoDB 数据库初始化脚本
 
 功能说明：
 该脚本用于将代码中的配置（configs/*.json）同步到 MongoDB 数据库。
-RBAC 权限与角色初始化由 scripts/init/init_rbac.py 独立管理。
+RBAC 角色初始化由 scripts/init/init_rbac.py 独立管理。
 它是幂等的（Idempotent），可以重复运行。
 
 用法：
-  python scripts/init/init_mongodb.py       # 同步 workflow 配置 + 导航定义
-  python scripts/init/init_rbac.py          # 同步 RBAC 权限与角色
+  python scripts/init/init_mongodb.py       # 同步 workflow 配置
+  python scripts/init/init_rbac.py          # 同步 RBAC 角色
 """
 import asyncio
 import json
@@ -33,8 +33,6 @@ from app.modules.workflow.repository.models import (
     SysWorkflowStateDoc,
     SysWorkflowConfigDoc,
 )
-from app.modules.auth.repository.models import NavigationPageDoc
-from app.modules.auth.service.navigation_page_service import DEFAULT_NAVIGATION_PAGES
 
 
 def _parse_state_entry(entry: Any) -> Optional[tuple[str, str, Optional[bool]]]:
@@ -313,37 +311,6 @@ async def init_config_data():
     log.success("基础数据初始化完成")
 
 
-async def init_navigation_pages():
-    """初始化默认导航页面定义。"""
-    log.info("开始初始化导航页面定义...")
-
-    for item in DEFAULT_NAVIGATION_PAGES:
-        view = item["view"]
-        await NavigationPageDoc.find_one(NavigationPageDoc.view == view).upsert(
-            {
-                "$set": {
-                    "label": item["label"],
-                    "permission": item.get("permission"),
-                    "description": item.get("description"),
-                    "order": item.get("order", 0),
-                    "is_active": bool(item.get("is_active", True)),
-                    "is_deleted": False,
-                    "updated_at": datetime.now(timezone.utc),
-                }
-            },
-            on_insert=NavigationPageDoc(
-                view=view,
-                label=item["label"],
-                permission=item.get("permission"),
-                description=item.get("description"),
-                order=item.get("order", 0),
-                is_active=bool(item.get("is_active", True)),
-            ),
-        )
-
-    log.success("导航页面初始化完成")
-
-
 async def main():
     """
     主函数
@@ -351,7 +318,7 @@ async def main():
     功能：
     1. 连接 MongoDB。
     2. 初始化 Beanie ODM。
-    3. 同步 workflow 配置 + 导航页面定义。
+    3. 同步 workflow 配置。
     4. 优雅关闭连接。
 
     注意：RBAC 初始化由 scripts/init/init_rbac.py 独立完成。
@@ -372,14 +339,12 @@ async def main():
                 SysWorkTypeDoc,
                 SysWorkflowStateDoc,
                 SysWorkflowConfigDoc,
-                NavigationPageDoc,
             ]
         )
         log.success("Beanie 初始化完成")
 
         # 执行核心同步逻辑
         await init_config_data()
-        await init_navigation_pages()
 
         log.success("MongoDB 初始化完成!")
     except Exception as e:

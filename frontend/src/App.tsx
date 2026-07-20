@@ -18,8 +18,6 @@ const SystemConfigPage = lazy(() => import('./pages/SystemConfig'))
 const AgentList = lazy(() => import('./components/AgentList'))
 const UserManagement = lazy(() => import('./components/UserManagement'))
 const RoleManagement = lazy(() => import('./components/RoleManagement'))
-const RoleGroupManagement = lazy(() => import('./components/RoleGroupManagement'))
-const PermissionManagement = lazy(() => import('./components/PermissionManagement'))
 const CatalogLabsPage = lazy(() => import('./components/CatalogLabsPage'))
 const CaseGovernancePage = lazy(() => import('./components/CaseGovernancePage'))
 const TestExecutionPlanDemo = lazy(() => import('./components/TestExecutionPlanDemo'))
@@ -94,15 +92,6 @@ function RolesRoute() {
   const { navigate } = useNavigation()
   return <RoleManagement key={currentUserId} onNavigate={navigate as (page: string) => void} />
 }
-function RoleGroupRoute() {
-  const { currentUserId } = useAuth()
-  const { navigate } = useNavigation()
-  return <RoleGroupManagement key={currentUserId} onNavigate={navigate as (page: string) => void} />
-}
-function PermissionsRoute() {
-  const { currentUserId } = useAuth()
-  return <PermissionManagement key={currentUserId} />
-}
 function CatalogLabsRoute() {
   const { currentUserId } = useAuth()
   return <CatalogLabsPage key={currentUserId} />
@@ -146,8 +135,6 @@ function AppContent() {
         <Route path={PAGE_ROUTES.agents} element={<AgentsRoute />} />
         <Route path={PAGE_ROUTES.users} element={<UsersRoute />} />
         <Route path={PAGE_ROUTES.roles} element={<RolesRoute />} />
-        <Route path={PAGE_ROUTES.roleGroup} element={<RoleGroupRoute />} />
-        <Route path={PAGE_ROUTES.permissions} element={<PermissionsRoute />} />
         <Route path={PAGE_ROUTES.catalogLabs} element={<CatalogLabsRoute />} />
         <Route path={PAGE_ROUTES.caseGovernance} element={<CaseGovernanceRoute />} />
         <Route path={PAGE_ROUTES.testPlanStudioDemo} element={<TestPlanRoute />} />

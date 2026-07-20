@@ -22,8 +22,7 @@ Before running tests, ensure test_admin user exists in MongoDB (recommended: cd 
     salt, pwd_hash = hash_password('Admin@123')
     db['users'].insert_one({
         'user_id': 'test_admin', 'username': 'Test Admin', 'email': 'test_admin@test.local',
-        'password_salt': salt, 'password_hash': pwd_hash, 'role_ids': ['ADMIN'],
-        'allowed_nav_views': [], 'status': 'ACTIVE'
+        'password_salt': salt, 'password_hash': pwd_hash, 'role_ids': ['ADMIN'], 'status': 'ACTIVE'
     })
   "
 
@@ -63,8 +62,6 @@ class TestDataRegistry:
         self._case_ids: list[str] = []
         self._req_ids: list[str] = []
         self._relation_ids: list[str] = []
-        self._perm_ids: list[str] = []
-        self._nav_views: list[str] = []
         self._lab_ids: list[str] = []
         self._role_ids: list[str] = []
 
@@ -87,14 +84,6 @@ class TestDataRegistry:
     def register_relation(self, relation_id: str):
         """Register a relation for cleanup."""
         self._relation_ids.append(relation_id)
-
-    def register_permission(self, perm_id: str):
-        """Register a permission for cleanup."""
-        self._perm_ids.append(perm_id)
-
-    def register_navigation_page(self, view: str):
-        """Register a navigation page for cleanup."""
-        self._nav_views.append(view)
 
     def register_lab(self, lab_id: str):
         """Register a catalog lab for cleanup."""
@@ -169,20 +158,6 @@ class TestDataRegistry:
                     db["users"].delete_many({"user_id": user_id})
                 except Exception as exc:
                     _warn("user", user_id, exc)
-
-        # Cleanup integration-test permissions (test_perm_* etc.)
-        for perm_id in self._perm_ids:
-            try:
-                db["permissions"].delete_many({"perm_id": perm_id})
-            except Exception as exc:
-                _warn("permission", perm_id, exc)
-
-        # Cleanup integration-test navigation pages
-        for view in self._nav_views:
-            try:
-                db["navigation_pages"].delete_many({"view": view})
-            except Exception as exc:
-                _warn("navigation_page", view, exc)
 
         # Cleanup catalog labs (after test cases are soft-deleted)
         for lab_id in self._lab_ids:

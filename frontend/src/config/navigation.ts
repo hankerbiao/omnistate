@@ -2,7 +2,7 @@ import type { ComponentType } from 'react'
 import {
   ListTodo, ClipboardList, Zap, FolderKanban, Layers3,
   Bot, CalendarClock, ShieldCheck, BarChart3, Users, Shield,
-  GroupIcon, KeyRound, FlaskConical, Settings,
+  FlaskConical, Settings,
 } from 'lucide-react'
 import type { NavItem, NavSection, PageType } from '../types/app'
 
@@ -29,8 +29,6 @@ const NAV_ITEM_DEFS: NavItemDef[] = [
   { key: 'dashboard',    label: '数据统计',  section: '系统', icon: BarChart3, permission: 'nav:dashboard:view' },
   { key: 'users',        label: '用户管理',  section: '系统', icon: Users, permission: 'users:read' },
   { key: 'roles',        label: '角色管理',  section: '系统', icon: Shield, permission: 'roles:read' },
-  { key: 'roleGroup',    label: '用户组管理', section: '系统', icon: GroupIcon, permission: 'roles:read' },
-  { key: 'permissions',  label: '权限管理',  section: '系统', icon: KeyRound, permission: 'permissions:read' },
   { key: 'catalogLabs',  label: 'Lab 管理',  section: '系统', icon: FlaskConical, permission: 'catalog:labs:manage' },
   { key: 'systemConfig', label: '系统配置',  section: '系统', icon: Settings, permission: 'system:config' },
 ]

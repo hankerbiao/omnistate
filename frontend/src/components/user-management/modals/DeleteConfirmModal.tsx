@@ -2,7 +2,6 @@
  * DeleteConfirmModal — shadcn AlertDialog for delete confirmation.
  */
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { Button } from '@/components/ui/button';
 
 interface DeleteConfirmModalProps {
   open: boolean;

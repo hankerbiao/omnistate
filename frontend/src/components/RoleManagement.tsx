@@ -15,12 +15,11 @@ import { rlmStyles as styles } from './RoleManagement.styles';
 import { getErrorMessage } from '../utils/errors';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from './ui/dialog';
 import { Button } from './ui/button';
-import { Input } from './ui/input';
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogAction, AlertDialogCancel } from './ui/alert-dialog';
 import { queryKeys } from '../providers/queryKeys';
 
 const getPermissionKey = (perm: PermissionResponse) =>
-  perm.perm_id || perm.permission_id || perm.id;
+  perm.perm_id || perm.id;
 
 const groupPermissions = (perms: PermissionResponse[]) => {
   const groups = new Map<string, PermissionResponse[]>();
@@ -38,7 +37,7 @@ interface RoleManagementProps {
   onNavigate?: (page: string) => void;
 }
 
-const RoleManagement: React.FC<RoleManagementProps> = ({ onNavigate }) => {
+const RoleManagement: React.FC<RoleManagementProps> = () => {
   const queryClient = useQueryClient();
 
   const [selectedRole, setSelectedRole] = useState<RoleResponse | null>(null);
@@ -584,15 +583,6 @@ const RoleManagement: React.FC<RoleManagementProps> = ({ onNavigate }) => {
                     <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
                       {selectedPermissionIds.size} / {permissions.length} 已选
                     </span>
-                    {onNavigate && (
-                      <button
-                        type="button"
-                        style={{ fontSize: 11, color: 'var(--accent-primary)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
-                        onClick={(e) => { e.stopPropagation(); onNavigate('permissions'); }}
-                      >
-                        管理权限
-                      </button>
-                    )}
                   </div>
                   <div style={{ display: 'flex', gap: 8 }}>
                     <input
@@ -719,7 +709,7 @@ const RoleManagement: React.FC<RoleManagementProps> = ({ onNavigate }) => {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setDeleteConfirm(null)}>取消</AlertDialogCancel>
-            <AlertDialogAction onClick={() => deleteMutation.mutate(deleteConfirm)} disabled={deleteMutation.isPending}>
+            <AlertDialogAction onClick={() => { if (deleteConfirm) deleteMutation.mutate(deleteConfirm); }} disabled={deleteMutation.isPending || !deleteConfirm}>
               {deleteMutation.isPending ? '删除中...' : '确认删除'}
             </AlertDialogAction>
           </AlertDialogFooter>

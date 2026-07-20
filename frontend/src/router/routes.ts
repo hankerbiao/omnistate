@@ -16,8 +16,6 @@ export const PAGE_ROUTES: Record<PageType, string> = {
   dashboard:            '/dashboard',
   users:                '/users',
   roles:                '/roles',
-  roleGroup:            '/role-groups',
-  permissions:          '/permissions',
   catalogLabs:          '/catalog-labs',
   systemConfig:         '/system-config',
   profile:              '/profile',

@@ -563,8 +563,6 @@
   密码盐
 - `role_ids`
   角色 ID 列表
-- `allowed_nav_views`
-  用户级导航覆盖
 - `status`
   用户状态
 - `created_at`
@@ -595,53 +593,8 @@
 
 - 保存角色主体和角色绑定的权限集合
 
-### `permissions`
 
-对应模型：`PermissionDoc`
-
-- `perm_id`
-  权限业务 ID
-- `code`
-  权限码，例如 `requirements:read`
-- `name`
-  权限名称
-- `description`
-  权限描述
-- `created_at`
-  创建时间
-- `updated_at`
-  更新时间
-
-用途：
-
-- 保存最小权限单元
-
-### `navigation_pages`
-
-对应模型：`NavigationPageDoc`
-
-- `view`
-  页面视图标识
-- `label`
-  页面名称
-- `permission`
-  页面访问权限码
-- `description`
-  页面说明
-- `order`
-  页面排序
-- `is_active`
-  是否启用
-- `is_deleted`
-  是否逻辑删除
-- `created_at`
-  创建时间
-- `updated_at`
-  更新时间
-
-用途：
-
-- 保存导航定义与导航访问控制元数据
+说明：权限定义已经改为代码内静态清单，`permissions` 和 `navigation_pages` 集合不再使用。重新初始化数据库时不用创建这两张表。
 
 ## Attachments 相关表
 

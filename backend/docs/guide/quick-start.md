@@ -76,7 +76,7 @@
 
 RBAC 相关能力主要由 `auth` 模块和 `app/shared/auth/*` 共同完成：
 
-- `auth` 模块负责用户、角色、权限、导航等资源管理
+- `auth` 模块负责用户、角色管理和静态权限列表查询
 - `app/shared/auth/jwt_auth.py` 负责 JWT 解析、当前用户获取和权限校验依赖
 
 你可以把它理解成两层：
@@ -96,8 +96,6 @@ RBAC 相关能力主要由 `auth` 模块和 `app/shared/auth/*` 共同完成：
   登录名或展示名
 - `role_ids`
   用户绑定的角色列表，RBAC 权限计算从这里开始
-- `allowed_nav_views`
-  用户级导航可见范围覆盖；为空时通常回退到角色/权限默认逻辑
 - `status`
   用户状态，当前用户校验时会检查是否为 `ACTIVE`
 
@@ -108,25 +106,12 @@ RBAC 相关能力主要由 `auth` 模块和 `app/shared/auth/*` 共同完成：
 - `permission_ids`
   角色绑定的权限 ID 列表，用于聚合用户有效权限
 
-### 权限（`PermissionDoc`）
+### 权限（静态清单）
 
-- `perm_id`
-  权限业务主键
-- `code`
-  权限码，当前后端约定采用 `resource:action` 形式，例如 `requirements:read`
-- `name`
-  权限名称，偏展示用途
-
-### 导航（`NavigationPageDoc`）
-
-- `view`
-  导航页面唯一标识
-- `permission`
-  页面访问权限码；可以是公共页面，也可以要求特定权限
-- `is_active`
-  页面是否启用
-- `is_deleted`
-  逻辑删除标记
+- 定义位置：`app/modules/auth/permissions.py`
+- 角色中的 `permission_ids` 直接保存权限码
+- 不再有 `PermissionDoc` / `permissions` 集合
+- 不再有 `NavigationPageDoc` / `navigation_pages` 集合
 
 ## JWT / RBAC 相关配置项
 
@@ -153,7 +138,7 @@ RBAC 相关能力主要由 `auth` 模块和 `app/shared/auth/*` 共同完成：
 
 - 权限码采用 `resource:action` 形式，例如 `requirements:read`
 - 管理员权限有显式放行逻辑，不完全走普通权限集合判断
-- 导航访问控制也是 `auth` 模块的一部分，不只是接口权限
+- 导航可见性由前端根据当前用户权限过滤，不再由后端导航表控制
 - 如果你改了业务接口，但没有补对应权限依赖，等于绕开了 RBAC
 
 ## 最短接手路径

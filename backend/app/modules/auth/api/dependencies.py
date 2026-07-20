@@ -4,12 +4,7 @@ from typing import Annotated
 
 from fastapi import Depends, HTTPException
 
-from app.modules.auth.service import (
-    NavigationAccessService,
-    PermissionService,
-    RoleService,
-    UserService,
-)
+from app.modules.auth.service import PermissionService, RoleService, UserService
 from app.shared.auth import get_current_user
 from app.shared.auth.jwt_auth import is_admin_role
 
@@ -33,16 +28,6 @@ def get_permission_service() -> PermissionService:
 
 
 PermissionServiceDep = Annotated[PermissionService, Depends(get_permission_service)]
-
-
-def get_navigation_access_service() -> NavigationAccessService:
-    return NavigationAccessService()
-
-
-NavigationAccessServiceDep = Annotated[
-    NavigationAccessService,
-    Depends(get_navigation_access_service),
-]
 
 
 def is_admin_user(current_user: dict) -> bool:

@@ -24,7 +24,7 @@ from app.modules.execution.application.worker_presence import (
     upsert_kafka_worker_presence,
     mark_kafka_worker_offline,
 )
-from app.modules.auth.repository.models import NavigationPageDoc, PermissionDoc, RoleDoc, UserDoc
+from app.modules.auth.repository.models import RoleDoc, UserDoc
 from app.modules.execution.application.kafka_handlers import register_execution_kafka_handlers
 from app.modules.execution.repository.models import (
     ExecutionAgentDoc,
@@ -86,8 +86,6 @@ DOCUMENT_MODELS = [
     ExecutionTaskCaseDoc,
     UserDoc,
     RoleDoc,
-    PermissionDoc,
-    NavigationPageDoc,
 ]
 
 _mongo_client: AsyncMongoClient | None = None

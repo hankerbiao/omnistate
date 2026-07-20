@@ -4,21 +4,14 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from app.modules.auth.api.dependencies import (
-    NavigationAccessServiceDep,
-    UserServiceDep,
-    require_admin_user,
-)
+from app.modules.auth.api.dependencies import UserServiceDep, require_admin_user
 from app.modules.auth.schemas import (
-    UpdateUserNavigationRequest,
+    CreateUserRequest,
     UpdateUserPasswordRequest,
     UpdateUserRequest,
     UpdateUserRolesRequest,
-    UpdateUserExtraPermissionsRequest,
-    UserExtraPermissionsResponse,
-    UserNavigationResponse,
+    UserPermissionsResponse,
     UserResponse,
-    CreateUserRequest,
 )
 from app.modules.auth.service import RoleNotFoundError, UserNotFoundError
 from app.shared.api.schemas.base import APIResponse
@@ -111,8 +104,8 @@ async def update_user_roles(
 
 @router.get(
     "/users/{user_id}/permissions",
-    response_model=APIResponse[UserExtraPermissionsResponse],
-    summary="获取用户生效权限详情（含来源标注）",
+    response_model=APIResponse[UserPermissionsResponse],
+    summary="获取用户生效权限详情",
 )
 async def get_user_permissions_detail(
     user_id: str,
@@ -121,25 +114,7 @@ async def get_user_permissions_detail(
 ):
     try:
         data = await service.get_effective_permissions(user_id)
-        return APIResponse(data=UserExtraPermissionsResponse(**data))
-    except UserNotFoundError:
-        raise HTTPException(status_code=404, detail="user not found")
-
-
-@router.put(
-    "/users/{user_id}/permissions/extra",
-    response_model=APIResponse[UserResponse],
-    summary="更新用户额外权限",
-)
-async def update_user_extra_permissions(
-    user_id: str,
-    request: UpdateUserExtraPermissionsRequest,
-    service: UserServiceDep,
-    _=Depends(require_permission("users:write")),
-):
-    try:
-        data = await service.update_user_extra_permissions(user_id, request.extra_permission_ids)
-        return APIResponse(data=data)
+        return APIResponse(data=UserPermissionsResponse(**data))
     except UserNotFoundError:
         raise HTTPException(status_code=404, detail="user not found")
 
@@ -157,7 +132,7 @@ async def update_user_password(
         raise HTTPException(status_code=404, detail="user not found")
 
 
-@router.delete("/users/{user_id}", status_code=204, summary="删除用户（软删除）")
+@router.delete("/users/{user_id}", status_code=204, summary="删除用户（禁用）")
 async def delete_user(
     user_id: str,
     service: UserServiceDep,
@@ -166,42 +141,6 @@ async def delete_user(
 ):
     try:
         await service.delete_user(user_id, current_user["user_id"])
-    except UserNotFoundError:
-        raise HTTPException(status_code=404, detail="user not found")
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-
-
-@router.get(
-    "/admin/users/{user_id}/navigation",
-    response_model=APIResponse[UserNavigationResponse],
-    summary="获取用户导航访问权限（管理员）",
-)
-async def get_user_navigation(
-    user_id: str,
-    service: NavigationAccessServiceDep,
-    _=Depends(require_admin_user),
-):
-    try:
-        return APIResponse(data=UserNavigationResponse(**(await service.get_user_navigation(user_id))))
-    except UserNotFoundError:
-        raise HTTPException(status_code=404, detail="user not found")
-
-
-@router.put(
-    "/admin/users/{user_id}/navigation",
-    response_model=APIResponse[UserNavigationResponse],
-    summary="更新用户导航访问权限（管理员）",
-)
-async def update_user_navigation(
-    user_id: str,
-    request: UpdateUserNavigationRequest,
-    service: NavigationAccessServiceDep,
-    _=Depends(require_admin_user),
-):
-    try:
-        data = await service.update_user_navigation(user_id, request.allowed_nav_views)
-        return APIResponse(data=UserNavigationResponse(**data))
     except UserNotFoundError:
         raise HTTPException(status_code=404, detail="user not found")
     except ValueError as exc:

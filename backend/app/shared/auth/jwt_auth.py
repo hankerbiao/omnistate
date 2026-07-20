@@ -14,7 +14,8 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.shared.config import get_settings
 from app.shared.context import set_operation_context
-from app.modules.auth.repository.models import UserDoc, RoleDoc, PermissionDoc
+from app.modules.auth.permissions import permission_codes_by_ids
+from app.modules.auth.repository.models import RoleDoc, UserDoc
 
 
 def _b64url_encode(data: bytes) -> str:
@@ -147,20 +148,15 @@ async def get_current_user(
 
 async def get_permissions_by_ids(perm_ids: List[str]) -> List[str]:
     """根据 perm_id 列表解析权限码并排序。"""
-    if not perm_ids:
-        return []
-    perms = await PermissionDoc.find({"perm_id": {"$in": list(set(perm_ids))}}).to_list()
-    return sorted({perm.code for perm in perms})
+    return permission_codes_by_ids(perm_ids)
 
 
 async def get_user_permissions(user_id: str) -> List[str]:
-    """根据 user_id 解析权限码列表（角色权限 ∪ 用户额外权限）"""
+    """根据 user_id 解析角色权限码列表。"""
     user = await UserDoc.find_one(UserDoc.user_id == user_id)
     if not user:
         return []
-    role_codes = await get_permissions_by_role_ids(user.role_ids or [])
-    extra_codes = await get_permissions_by_ids(user.extra_permission_ids or [])
-    return sorted(set(role_codes) | set(extra_codes))
+    return await get_permissions_by_role_ids(user.role_ids or [])
 
 
 async def get_permissions_by_role_ids(role_ids: List[str]) -> List[str]:
@@ -172,10 +168,7 @@ async def get_permissions_by_role_ids(role_ids: List[str]) -> List[str]:
     perm_ids: List[str] = []
     for role in roles:
         perm_ids.extend(role.permission_ids)
-    if not perm_ids:
-        return []
-    perms = await PermissionDoc.find({"perm_id": {"$in": list(set(perm_ids))}}).to_list()
-    return sorted({perm.code for perm in perms})
+    return permission_codes_by_ids(perm_ids)
 
 
 def _normalize_role_id(role_id: str) -> str:

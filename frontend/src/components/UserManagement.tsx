@@ -1,168 +1,107 @@
-import { useState, useEffect, useMemo } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMemo, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../services/api';
-import type { UserResponse, PermissionResponse } from '../types';
+import type { UserResponse } from '../types';
 import PageToolbar, { StatPill } from './ui/PageToolbar';
 import { getErrorMessage } from '../utils/errors';
 import { queryKeys } from '../providers/queryKeys';
 import { CreateUserModal } from './user-management/modals/CreateUserModal';
 import { PasswordResetModal } from './user-management/modals/PasswordResetModal';
-import { DeleteConfirmModal, BatchDeleteConfirmModal } from './user-management/modals/DeleteConfirmModal';
-
-type EditableUserField = 'username' | 'email';
-
-const emptyNewUser = {
-  user_id: '',
-  username: '',
-  password: '',
-  email: '',
-  role_ids: [] as string[],
-};
+import { DeleteConfirmModal } from './user-management/modals/DeleteConfirmModal';
 
 interface UserManagementProps {
   onNavigate?: (page: string) => void;
 }
 
-
 const UserManagement: React.FC<UserManagementProps> = ({ onNavigate }) => {
   const queryClient = useQueryClient();
-
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
-  const [editingField, setEditingField] = useState<EditableUserField | null>(null);
-  const [editValue, setEditValue] = useState('');
+  const [filterStatus, setFilterStatus] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   const [selectedRoleIds, setSelectedRoleIds] = useState<Set<string>>(new Set());
   const [createModalOpen, setCreateModalOpen] = useState(false);
-  const [newUser, setNewUser] = useState(emptyNewUser);
-  const [filterStatus, setFilterStatus] = useState<string>('');
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [batchDeleteConfirm, setBatchDeleteConfirm] = useState(false);
   const [passwordModal, setPasswordModal] = useState(false);
-  const [passwordValue, setPasswordValue] = useState('');
-  const [selectedNavViews, setSelectedNavViews] = useState<Set<string>>(new Set());
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [mutationError, setMutationError] = useState<string | null>(null);
 
   const usersQuery = useQuery({
     queryKey: [...queryKeys.users.all, filterStatus, searchQuery],
     queryFn: async () => {
       const params: { status?: string; search?: string; limit?: number } = { limit: 200 };
-      if (filterStatus) {
-        params.status = filterStatus;
-      }
-      if (searchQuery.trim()) {
-        params.search = searchQuery.trim();
-      }
-      const response = await api.listUsers(params);
-      return response.data || [];
+      if (filterStatus) params.status = filterStatus;
+      if (searchQuery.trim()) params.search = searchQuery.trim();
+      return (await api.listUsers(params)).data || [];
     },
   });
-  const users = useMemo(() => usersQuery.data ?? [], [usersQuery.data]);
-  const selectedUser = useMemo(() => {
-    if (!selectedUserId) return null;
-    return users.find(u => u.user_id === selectedUserId) || null;
-  }, [users, selectedUserId]);
-  const loading = usersQuery.isLoading;
 
   const rolesQuery = useQuery({
     queryKey: queryKeys.roles.all,
     queryFn: async () => (await api.listRoles()).data || [],
   });
+
+  const users = usersQuery.data ?? [];
   const roles = rolesQuery.data ?? [];
+  const selectedUser = useMemo(
+    () => users.find(user => user.user_id === selectedUserId) || null,
+    [selectedUserId, users],
+  );
 
-  const navPagesQuery = useQuery({
-    queryKey: ['navigationPages'],
-    queryFn: async () => {
-      const response = await api.listNavigationPages({ include_inactive: false });
-      return (response.data || []).slice().sort((a, b) => a.order - b.order || a.view.localeCompare(b.view));
-    },
-  });
-  const navPages = navPagesQuery.data ?? [];
+  const activeCount = users.filter(user => user.status === 'ACTIVE').length;
+  const displayError = usersQuery.error ? getErrorMessage(usersQuery.error, '获取用户列表失败') : mutationError;
 
-  const userNavQuery = useQuery({
-    queryKey: ['userNavigation', selectedUser?.user_id],
-    queryFn: async () => {
-      const response = await api.getUserNavigation(selectedUser!.user_id);
-      return response.data || null;
-    },
-    enabled: !!selectedUser,
-  });
-  const userNav = userNavQuery.data ?? null;
-  const navLoading = userNavQuery.isLoading;
+  const invalidateUsers = () => queryClient.invalidateQueries({ queryKey: queryKeys.users.all });
 
-  // Combine fetch error and mutation error for display
-  const error = usersQuery.error
-    ? getErrorMessage(usersQuery.error, '获取用户列表失败')
-    : mutationError;
-
-  // Sync selectedNavViews when userNav data changes
-  /* eslint-disable react-hooks/set-state-in-effect */
-  useEffect(() => {
-    if (selectedUser && userNav) {
-      setSelectedNavViews(new Set(userNav.allowed_nav_views || []));
-    } else if (!selectedUser) {
-      setSelectedNavViews(new Set());
-    }
-  }, [selectedUser, userNav]);
-  /* eslint-enable react-hooks/set-state-in-effect */
-
-  const fetchUsers = () => {
-    usersQuery.refetch();
-  };
-
-  const updateFieldMutation = useMutation({
-    mutationFn: async () => {
-      if (!selectedUser || !editingField) return;
-      const data = { [editingField]: editValue.trim() };
-      await api.updateUser(selectedUser.user_id, data);
+  const createUserMutation = useMutation({
+    mutationFn: async (data: { user_id: string; username: string; password: string; email: string; role_ids: string[] }) => {
+      await api.createUser({
+        user_id: data.user_id.trim(),
+        username: data.username.trim(),
+        password: data.password,
+        email: data.email.trim() || undefined,
+        role_ids: data.role_ids,
+      });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.users.all });
-      setEditingField(null);
-      setEditValue('');
+      setCreateModalOpen(false);
       setMutationError(null);
+      invalidateUsers();
     },
-    onError: (err) => {
-      setMutationError(getErrorMessage(err, '保存失败'));
+    onError: err => setMutationError(getErrorMessage(err, '创建用户失败')),
+  });
+
+  const updateUserMutation = useMutation({
+    mutationFn: async (payload: { userId: string; data: Partial<Pick<UserResponse, 'username' | 'email' | 'status'>> }) => {
+      await api.updateUser(payload.userId, payload.data);
     },
+    onSuccess: () => {
+      setMutationError(null);
+      invalidateUsers();
+    },
+    onError: err => setMutationError(getErrorMessage(err, '更新用户失败')),
   });
 
   const updateRolesMutation = useMutation({
     mutationFn: async () => {
       if (!selectedUser) return;
-      await api.updateUserRoles(selectedUser.user_id, {
-        role_ids: Array.from(selectedRoleIds),
-      });
+      await api.updateUserRoles(selectedUser.user_id, { role_ids: Array.from(selectedRoleIds) });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.users.all });
-      queryClient.invalidateQueries({ queryKey: ['userNavigation', selectedUser?.user_id] });
       setMutationError(null);
+      invalidateUsers();
     },
-    onError: (err) => {
-      setMutationError(getErrorMessage(err, '保存角色失败'));
-    },
+    onError: err => setMutationError(getErrorMessage(err, '保存角色失败')),
   });
 
-  const createUserMutation = useMutation({
-    mutationFn: async () => {
-      await api.createUser({
-        user_id: newUser.user_id.trim(),
-        username: newUser.username.trim(),
-        password: newUser.password,
-        email: newUser.email.trim() || undefined,
-        role_ids: newUser.role_ids,
-      });
+  const passwordResetMutation = useMutation({
+    mutationFn: async (password: string) => {
+      if (!selectedUser) return;
+      await api.updateUserPassword(selectedUser.user_id, { new_password: password });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.users.all });
-      setCreateModalOpen(false);
-      setNewUser(emptyNewUser);
+      setPasswordModal(false);
       setMutationError(null);
     },
-    onError: (err) => {
-      setMutationError(getErrorMessage(err, '创建用户失败'));
-    },
+    onError: err => setMutationError(getErrorMessage(err, '密码重置失败')),
   });
 
   const deleteUserMutation = useMutation({
@@ -171,284 +110,30 @@ const UserManagement: React.FC<UserManagementProps> = ({ onNavigate }) => {
       await api.deleteUser(deleteConfirm);
     },
     onSuccess: () => {
+      if (selectedUserId === deleteConfirm) setSelectedUserId(null);
       setDeleteConfirm(null);
-      if (selectedUser && deleteConfirm === selectedUser.user_id) setSelectedUserId(null);
-      queryClient.invalidateQueries({ queryKey: queryKeys.users.all });
       setMutationError(null);
+      invalidateUsers();
     },
-    onError: (err) => {
-      setMutationError(getErrorMessage(err, '删除用户失败'));
-    },
+    onError: err => setMutationError(getErrorMessage(err, '删除用户失败')),
   });
-
-  const batchDeleteMutation = useMutation({
-    mutationFn: async () => {
-      const deletePromises = Array.from(selectedIds).map(id => api.deleteUser(id));
-      await Promise.all(deletePromises);
-    },
-    onSuccess: () => {
-      setBatchDeleteConfirm(false);
-      setSelectedIds(new Set());
-      if (selectedUser && selectedIds.has(selectedUser.user_id)) {
-        setSelectedUserId(null);
-      }
-      queryClient.invalidateQueries({ queryKey: queryKeys.users.all });
-      setMutationError(null);
-    },
-    onError: (err) => {
-      setMutationError(getErrorMessage(err, '批量删除失败'));
-    },
-  });
-
-  const passwordResetMutation = useMutation({
-    mutationFn: async () => {
-      if (!selectedUser || !passwordValue.trim()) return;
-      await api.updateUserPassword(selectedUser.user_id, { new_password: passwordValue.trim() });
-    },
-    onSuccess: () => {
-      setPasswordModal(false);
-      setPasswordValue('');
-      setMutationError(null);
-    },
-    onError: (err) => {
-      setMutationError(getErrorMessage(err, '密码重置失败'));
-    },
-  });
-
-  const toggleStatusMutation = useMutation({
-    mutationFn: async () => {
-      if (!selectedUser) return;
-      const newStatus = selectedUser.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
-      await api.updateUser(selectedUser.user_id, { status: newStatus });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.users.all });
-      setMutationError(null);
-    },
-    onError: (err) => {
-      setMutationError(getErrorMessage(err, '状态切换失败'));
-    },
-  });
-
-  const saveNavMutation = useMutation({
-    mutationFn: async () => {
-      if (!selectedUser) throw new Error('No user selected');
-      const response = await api.updateUserNavigation(selectedUser.user_id, {
-        allowed_nav_views: Array.from(selectedNavViews),
-      });
-      return response.data || null;
-    },
-    onSuccess: (data) => {
-      queryClient.setQueryData(['userNavigation', selectedUser?.user_id], data);
-      setSelectedNavViews(new Set(data?.allowed_nav_views || []));
-      setMutationError(null);
-    },
-    onError: (err) => {
-      setMutationError(getErrorMessage(err, '保存导航权限失败'));
-    },
-  });
-
-  const resetNavMutation = useMutation({
-    mutationFn: async () => {
-      if (!selectedUser) throw new Error('No user selected');
-      const response = await api.updateUserNavigation(selectedUser.user_id, {
-        allowed_nav_views: [],
-      });
-      return response.data || null;
-    },
-    onSuccess: (data) => {
-      queryClient.setQueryData(['userNavigation', selectedUser?.user_id], data);
-      setSelectedNavViews(new Set(data?.allowed_nav_views || []));
-      setMutationError(null);
-    },
-    onError: (err) => {
-      setMutationError(getErrorMessage(err, '恢复角色默认导航失败'));
-    },
-  });
-
-  const saving = updateFieldMutation.isPending || updateRolesMutation.isPending;
-  const creating = createUserMutation.isPending;
-  const deleting = deleteUserMutation.isPending;
-  const batchDeleting = batchDeleteMutation.isPending;
-  const resetting = passwordResetMutation.isPending;
-  const togglingStatus = toggleStatusMutation.isPending;
-  const navSaving = saveNavMutation.isPending || resetNavMutation.isPending;
 
   const handleSelectUser = (user: UserResponse) => {
     setSelectedUserId(user.user_id);
-    setSelectedRoleIds(new Set(user.role_ids));
-    setEditingField(null);
-  };
-
-  const handleEditField = (field: EditableUserField, currentValue: string) => {
-    setEditingField(field);
-    setEditValue(currentValue || '');
+    setSelectedRoleIds(new Set(user.role_ids || []));
     setMutationError(null);
   };
 
-  const handleSaveField = () => {
-    if (!selectedUser || !editingField) return;
-    const value = editValue.trim();
-    if (editingField === 'username' && !value) {
-      setMutationError('用户名不能为空');
-      return;
-    }
-    updateFieldMutation.mutate();
-  };
-
-  const handleCancelEdit = () => {
-    setEditingField(null);
-    setEditValue('');
-  };
-
-  const handleToggleRole = (roleId: string) => {
-    setMutationError(null);
+  const toggleRole = (roleId: string) => {
     setSelectedRoleIds(prev => {
       const next = new Set(prev);
-      if (next.has(roleId)) {
-        next.delete(roleId);
-      } else {
-        next.add(roleId);
-      }
+      if (next.has(roleId)) next.delete(roleId);
+      else next.add(roleId);
       return next;
     });
   };
 
-  const handleSaveRoles = () => {
-    if (!selectedUser) return;
-    updateRolesMutation.mutate();
-  };
-
-  const handleCreateUser = (data: { user_id: string; username: string; password: string; email: string; role_ids: string[] }) => {
-    if (!data.user_id.trim() || !data.username.trim() || !data.password.trim()) {
-      setMutationError('请填写必填字段');
-      return;
-    }
-    setNewUser(data);
-    createUserMutation.mutate();
-  };
-
-  const handleDeleteUser = () => {
-    if (!deleteConfirm) return;
-    deleteUserMutation.mutate();
-  };
-
-  const toggleSelect = (userId: string) => {
-    setSelectedIds(prev => {
-      const next = new Set(prev);
-      if (next.has(userId)) {
-        next.delete(userId);
-      } else {
-        next.add(userId);
-      }
-      return next;
-    });
-  };
-
-  const toggleSelectAll = () => {
-    if (selectedIds.size === users.length) {
-      setSelectedIds(new Set());
-    } else {
-      setSelectedIds(new Set(users.map(u => u.user_id)));
-    }
-  };
-
-  const handleBatchDelete = () => {
-    if (selectedIds.size === 0) return;
-    batchDeleteMutation.mutate();
-  };
-
-  const handlePasswordReset = (password: string) => {
-    if (!selectedUser || !password.trim()) return;
-    if (password.trim().length < 6) {
-      setMutationError('密码长度至少6位');
-      return;
-    }
-    setPasswordValue(password.trim());
-    passwordResetMutation.mutate();
-  };
-
-  const handleToggleStatus = () => {
-    if (!selectedUser) return;
-    toggleStatusMutation.mutate();
-  };
-
-  const handleToggleNavView = (view: string) => {
-    setMutationError(null);
-    setSelectedNavViews(prev => {
-      const next = new Set(prev);
-      if (next.has(view)) {
-        next.delete(view);
-      } else {
-        next.add(view);
-      }
-      return next;
-    });
-  };
-
-  const handleSaveNavigation = () => {
-    if (!selectedUser) return;
-    if (selectedNavViews.size === 0) {
-      setMutationError('至少保留一个可访问导航');
-      return;
-    }
-    saveNavMutation.mutate();
-  };
-
-  const handleResetNavigationToRole = () => {
-    if (!selectedUser || !userNav) return;
-    resetNavMutation.mutate();
-  };
-
-  const handleApplyRoleDerivedNavigation = () => {
-    if (!userNav) return;
-    setSelectedNavViews(new Set(userNav.role_derived_nav_views));
-    setMutationError(null);
-  };
-
-  const getStatusStyle = (status: string) => {
-    if (status === 'ACTIVE') {
-      return {
-        bg: 'var(--status-success-bg)',
-        color: 'var(--accent-green)',
-        text: '启用',
-      };
-    }
-    return {
-      bg: 'var(--status-error-bg)',
-      color: 'var(--accent-red)',
-      text: '禁用',
-    };
-  };
-
-  const getRoleName = (roleId: string) => {
-    const role = roles.find(r => r.role_id === roleId);
-    return role?.name || roleId;
-  };
-
-  const activeCount = users.filter(u => u.status === 'ACTIVE').length;
-
-  const isSelectedUserAdmin = useMemo(
-    () => selectedUser?.role_ids.includes('ADMIN') ?? false,
-    [selectedUser?.role_ids],
-  );
-
-  const navViewsDirty = useMemo(() => {
-    if (!userNav) return false;
-    const current = Array.from(selectedNavViews).sort();
-    const effective = [...userNav.allowed_nav_views].sort();
-    return current.join(',') !== effective.join(',');
-  }, [selectedNavViews, userNav]);
-
-  const getNavPageLabel = (view: string) => {
-    const page = navPages.find(item => item.view === view);
-    return page?.label || view;
-  };
-
-  const getNavPagePermission = (view: string) => {
-    const page = navPages.find(item => item.view === view);
-    return page?.permission || '—';
-  };
+  const getRoleName = (roleId: string) => roles.find(role => role.role_id === roleId)?.name || roleId;
 
   return (
     <div className={`split-workspace${selectedUser ? ' split-workspace--has-selection' : ''}`}>
@@ -459,1167 +144,135 @@ const UserManagement: React.FC<UserManagementProps> = ({ onNavigate }) => {
               <>
                 <StatPill label="用户" value={users.length} />
                 <StatPill label="启用" value={activeCount} tone="success" />
-                {selectedIds.size > 0 && (
-                  <StatPill label="已选" value={selectedIds.size} tone="info" />
-                )}
               </>
             )}
-            actions={(
-              <>
-                {selectedIds.size > 0 && (
-                  <button
-                    type="button"
-                    className="btn btn--danger btn--sm"
-                    onClick={() => setBatchDeleteConfirm(true)}
-                  >
-                    删除 ({selectedIds.size})
-                  </button>
-                )}
-                <button type="button" className="btn btn--primary btn--sm" onClick={() => setCreateModalOpen(true)}>
-                  + 新建
-                </button>
-              </>
-            )}
+            actions={<button type="button" className="btn btn--primary btn--sm" onClick={() => setCreateModalOpen(true)}>+ 新建</button>}
           />
         </div>
 
         <div className="filter-strip">
           <input
             className="form-input"
-            placeholder="搜索用户名或 ID…"
+            placeholder="搜索用户名或 ID..."
             value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
+            onChange={event => setSearchQuery(event.target.value)}
             aria-label="搜索用户"
           />
-          <select
-            className="form-input form-select"
-            value={filterStatus}
-            onChange={e => setFilterStatus(e.target.value)}
-            aria-label="按状态筛选"
-          >
+          <select className="form-input form-select" value={filterStatus} onChange={event => setFilterStatus(event.target.value)}>
             <option value="">全部状态</option>
             <option value="ACTIVE">启用</option>
-            <option value="INACTIVE">禁用</option>
+            <option value="DISABLED">禁用</option>
           </select>
-          <button type="button" className="btn btn--secondary btn--sm" onClick={fetchUsers} disabled={loading}>
-            刷新
-          </button>
+          <button type="button" className="btn btn--secondary btn--sm" onClick={() => usersQuery.refetch()} disabled={usersQuery.isLoading}>刷新</button>
         </div>
 
-        {loading && users.length === 0 ? (
-          <div className="loading-overlay">
-            <div className="loading-spinner" />
-          </div>
-        ) : (
-          <div className="split-list-scroll" style={styles.userList}>
-            <div style={styles.selectAllRow}>
-              <label style={styles.checkboxLabel}>
-                <input
-                  type="checkbox"
-                  checked={selectedIds.size === users.length && users.length > 0}
-                  onChange={toggleSelectAll}
-                  style={styles.checkbox}
-                />
-                <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>全选</span>
-              </label>
-            </div>
-            {users.map(user => {
-              const status = getStatusStyle(user.status);
-              return (
-                <div
-                  key={user.user_id}
-                  style={{
-                    ...styles.userItem,
-                    ...(selectedUser?.user_id === user.user_id ? styles.userItemSelected : {}),
-                  }}
-                  onClick={() => handleSelectUser(user)}
-                >
-                  <div style={styles.itemHeader}>
-                    <div style={styles.itemHeaderLeft}>
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.has(user.user_id)}
-                        onChange={() => toggleSelect(user.user_id)}
-                        onClick={e => e.stopPropagation()}
-                        style={styles.checkbox}
-                      />
-                      <span style={styles.userName}>{user.username}</span>
-                    </div>
-                    <span
-                      style={{
-                        ...styles.statusBadge,
-                        backgroundColor: status.bg,
-                        color: status.color,
-                      }}
-                    >
-                      {status.text}
-                    </span>
-                  </div>
-                  <div style={styles.userId}>{user.user_id}</div>
-                  <div style={styles.userRoles}>
-                    {user.role_ids.slice(0, 2).map(rid => (
-                      <button
-                        key={rid}
-                        type="button"
-                        style={{ ...styles.roleTag, cursor: onNavigate ? 'pointer' : 'default', border: 'none' }}
-                        title="点击查看角色配置"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onNavigate?.('roles');
-                        }}
-                      >
-                        {getRoleName(rid)}
-                      </button>
-                    ))}
-                    {user.role_ids.length > 2 && (
-                      <span style={styles.roleTagMore}>+{user.role_ids.length - 2}</span>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+        {displayError && !selectedUser && <div className="error-banner" style={{ margin: '0 var(--space-4) var(--space-3)' }}>{displayError}</div>}
+
+        <div className="split-list-scroll" style={{ padding: 0 }}>
+          {usersQuery.isLoading && users.length === 0 ? (
+            <div className="loading-overlay"><div className="loading-spinner" /></div>
+          ) : users.length === 0 ? (
+            <div className="empty-state"><p className="empty-state__text">暂无用户</p></div>
+          ) : (
+            <table className="data-table">
+              <thead>
+                <tr><th>用户</th><th style={{ width: 80 }}>状态</th></tr>
+              </thead>
+              <tbody>
+                {users.map(user => (
+                  <tr key={user.user_id} className={selectedUserId === user.user_id ? 'selected' : ''} onClick={() => handleSelectUser(user)} style={{ cursor: 'pointer' }}>
+                    <td>
+                      <span style={{ fontWeight: 500 }}>{user.username}</span>
+                      <span className="mono" style={{ display: 'block', fontSize: 11, color: 'var(--text-tertiary)' }}>{user.user_id}</span>
+                      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 6 }}>
+                        {(user.role_ids || []).slice(0, 3).map(roleId => <span key={roleId} className="status-badge status-badge--neutral">{getRoleName(roleId)}</span>)}
+                      </div>
+                    </td>
+                    <td><span className={`status-badge ${user.status === 'ACTIVE' ? 'status-badge--success' : 'status-badge--danger'}`}>{user.status === 'ACTIVE' ? '启用' : '禁用'}</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
       </aside>
 
       <main className="split-workspace__main">
         {selectedUser ? (
-          <div className="surface-card split-detail-scroll data-panel" style={{ margin: 'var(--space-5)', height: 'calc(100% - 40px)' }}>
-            <button
-              type="button"
-              className="split-workspace__back"
-              onClick={() => setSelectedUserId(null)}
-            >
-              ← 返回列表
-            </button>
-            <div className="data-panel-header">
+          <div className="split-detail-scroll" style={{ padding: 24 }}>
+            <button type="button" className="split-workspace__back" onClick={() => setSelectedUserId(null)}>← 返回列表</button>
+            <div className="data-panel-header" style={{ paddingLeft: 0 }}>
               <h3 className="data-panel-title">用户详情 - {selectedUser.username}</h3>
             </div>
 
-            {error && (
-              <div className="error-banner" style={{ marginBottom: '16px' }}>
-                <span>⚠</span> {error}
-                <button style={styles.errorClose} onClick={() => setMutationError(null)}>×</button>
-              </div>
-            )}
+            {displayError && <div className="error-banner" style={{ marginBottom: 16 }}>{displayError}</div>}
 
-            <div style={styles.detailSection}>
-              <label style={styles.label}>用户ID</label>
-              <div style={styles.readonlyField}>{selectedUser.user_id}</div>
-            </div>
-
-            <div style={styles.detailSection}>
-              <label style={styles.label}>用户名</label>
-              {editingField === 'username' ? (
-                <div style={styles.editRow}>
-                  <input
-                    style={styles.input}
-                    value={editValue}
-                    onChange={e => setEditValue(e.target.value)}
-                    autoFocus
-                  />
-                  <button style={styles.saveBtn} onClick={handleSaveField} disabled={saving}>
-                    {saving ? '保存中...' : '保存'}
-                  </button>
-                  <button style={styles.cancelBtn} onClick={handleCancelEdit}>取消</button>
-                </div>
-              ) : (
-                <div style={styles.editFieldRow}>
-                  <span style={styles.fieldValue}>{selectedUser.username}</span>
-                  <button style={styles.editBtn} onClick={() => handleEditField('username', selectedUser.username)}>
-                    编辑
-                  </button>
-                </div>
-              )}
-            </div>
-
-            <div style={styles.detailSection}>
-              <label style={styles.label}>邮箱</label>
-              {editingField === 'email' ? (
-                <div style={styles.editRow}>
-                  <input
-                    style={styles.input}
-                    value={editValue}
-                    onChange={e => setEditValue(e.target.value)}
-                    placeholder="请输入邮箱"
-                    autoFocus
-                  />
-                  <button style={styles.saveBtn} onClick={handleSaveField} disabled={saving}>
-                    {saving ? '保存中...' : '保存'}
-                  </button>
-                  <button style={styles.cancelBtn} onClick={handleCancelEdit}>取消</button>
-                </div>
-              ) : (
-                <div style={styles.editFieldRow}>
-                  <span style={styles.fieldValue}>{selectedUser.email || '未设置'}</span>
-                  <button style={styles.editBtn} onClick={() => handleEditField('email', selectedUser.email || '')}>
-                    编辑
-                  </button>
-                </div>
-              )}
-            </div>
-
-            <div style={styles.detailSection}>
-              <label style={styles.label}>状态</label>
-              <div style={styles.statusRow}>
-                {selectedUser.status === 'ACTIVE' ? (
-                  <span style={{ ...styles.statusBadge, backgroundColor: 'var(--status-success-bg)', color: 'var(--accent-green)' }}>
-                    启用
-                  </span>
-                ) : (
-                  <span style={{ ...styles.statusBadge, backgroundColor: 'var(--status-error-bg)', color: 'var(--accent-red)' }}>
-                    禁用
-                  </span>
-                )}
-              </div>
-            </div>
-
-            <div style={styles.detailSection}>
-              <label style={styles.label}>操作</label>
-              <div style={styles.actionRow}>
-                <button
-                  style={{
-                    ...styles.actionBtn,
-                    backgroundColor: selectedUser.status === 'ACTIVE'
-                      ? 'var(--status-warning-bg)' : 'var(--status-success-bg)',
-                    color: selectedUser.status === 'ACTIVE'
-                      ? 'var(--status-warning)' : 'var(--status-success)',
+            <section className="surface-card" style={{ padding: 16, marginBottom: 16 }}>
+              <div className="split-detail-form-grid__fields">
+                <label className="text-sm font-medium text-[var(--text-secondary)]">用户 ID</label>
+                <div className="form-input" style={{ background: 'var(--surface-secondary)' }}>{selectedUser.user_id}</div>
+                <label className="text-sm font-medium text-[var(--text-secondary)]">用户名</label>
+                <input
+                  className="form-input"
+                  defaultValue={selectedUser.username}
+                  onBlur={event => {
+                    const value = event.target.value.trim();
+                    if (value && value !== selectedUser.username) updateUserMutation.mutate({ userId: selectedUser.user_id, data: { username: value } });
                   }}
-                  onClick={handleToggleStatus}
-                  disabled={togglingStatus}
-                >
-                  {togglingStatus ? '处理中...' : selectedUser.status === 'ACTIVE' ? '禁用' : '启用'}
-                </button>
-                <button
-                  style={{ ...styles.actionBtn, backgroundColor: 'var(--status-info-bg)', color: 'var(--status-info)' }}
-                  onClick={() => { setPasswordValue(''); setPasswordModal(true); }}
-                >
-                  重置密码
-                </button>
-                <button
-                  style={{ ...styles.actionBtn, backgroundColor: 'var(--status-error-bg)', color: 'var(--status-error)' }}
-                  onClick={() => setDeleteConfirm(selectedUser.user_id)}
-                >
-                  删除用户
-                </button>
+                />
+                <label className="text-sm font-medium text-[var(--text-secondary)]">邮箱</label>
+                <input
+                  className="form-input"
+                  defaultValue={selectedUser.email || ''}
+                  onBlur={event => {
+                    const value = event.target.value.trim();
+                    if (value !== (selectedUser.email || '')) updateUserMutation.mutate({ userId: selectedUser.user_id, data: { email: value || undefined } });
+                  }}
+                />
               </div>
-            </div>
+            </section>
 
-            <div style={styles.detailSection}>
-              <label style={styles.label}>所属角色</label>
-              <div style={styles.roleList}>
-                {roles.map(role => (
-                  <div
-                    key={role.role_id}
-                    style={{
-                      ...styles.roleItem,
-                      ...(selectedRoleIds.has(role.role_id) ? styles.roleItemSelected : {}),
-                    }}
-                    onClick={() => handleToggleRole(role.role_id)}
-                    className="role-item"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selectedRoleIds.has(role.role_id)}
-                      onClick={e => e.stopPropagation()}
-                      onChange={() => handleToggleRole(role.role_id)}
-                      style={styles.checkbox}
-                    />
-                    <span style={styles.roleName}>{role.name}</span>
-                    {onNavigate && (
-                      <button
-                        type="button"
-                        style={{ ...styles.roleNavBtn }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onNavigate('roles');
-                        }}
-                        title="查看角色配置"
-                      >
-                        ↗
-                      </button>
-                    )}
-                  </div>
-                ))}
+            <section className="surface-card" style={{ padding: 16, marginBottom: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
+                <h4 style={{ margin: 0, fontSize: 14 }}>角色</h4>
+                {onNavigate && <button type="button" className="btn btn--secondary btn--sm" onClick={() => onNavigate('roles')}>角色管理</button>}
               </div>
-              <button
-                style={{
-                  ...styles.saveRolesBtn,
-                  ...(saving ? styles.saveRolesBtnDisabled : {}),
-                }}
-                onClick={handleSaveRoles}
-                disabled={saving}
-              >
-                {saving ? '保存中...' : '保存角色'}
-              </button>
-            </div>
-
-            <div style={styles.detailSection}>
-              <label style={styles.label}>可访问导航</label>
-              <p style={styles.navHint}>
-                {isSelectedUserAdmin
-                  ? '管理员角色自动拥有全部导航，无需单独配置。'
-                  : userNav?.has_nav_override
-                    ? '当前使用用户级自定义导航（覆盖角色默认）。修改角色后请点击「同步角色导航」或「恢复角色默认」。'
-                    : '当前导航由角色权限自动推导；勾选后保存可设置用户级覆盖。'}
-              </p>
-
-              {navLoading ? (
-                <div style={styles.navLoading}>加载导航权限...</div>
-              ) : (
-                <>
-                  <div style={styles.navMetaRow}>
-                    <span style={styles.navMetaBadge}>
-                      生效 {userNav?.allowed_nav_views.length ?? 0} 项
-                    </span>
-                    <span style={styles.navMetaBadge}>
-                      角色推导 {userNav?.role_derived_nav_views.length ?? 0} 项
-                    </span>
-                    {userNav?.has_nav_override && (
-                      <span style={{ ...styles.navMetaBadge, ...styles.navMetaBadgeOverride }}>
-                        已自定义
-                      </span>
-                    )}
-                  </div>
-
-                  <div style={styles.navList}>
-                    {navPages.map(page => {
-                      const roleDerived = userNav?.role_derived_nav_views.includes(page.view) ?? false;
-                      const isSelected = selectedNavViews.has(page.view);
-                      return (
-                        <div
-                          key={page.view}
-                          style={{
-                            ...styles.navItem,
-                            ...(isSelected ? styles.navItemSelected : {}),
-                            ...(isSelectedUserAdmin ? styles.navItemDisabled : {}),
-                          }}
-                          onClick={() => !isSelectedUserAdmin && handleToggleNavView(page.view)}
-                          className="nav-item"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            disabled={isSelectedUserAdmin}
-                            onClick={e => e.stopPropagation()}
-                            onChange={() => handleToggleNavView(page.view)}
-                            style={styles.checkbox}
-                          />
-                          <div style={styles.navItemContent}>
-                            <span style={styles.navItemLabel}>{page.label}</span>
-                            <span style={styles.navItemMeta}>
-                              {page.view}
-                              {page.permission ? ` · ${page.permission}` : ''}
-                              {roleDerived ? ' · 角色可访问' : ''}
-                            </span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {!isSelectedUserAdmin && (
-                    <div style={styles.navActionRow}>
-                      <button
-                        type="button"
-                        style={{
-                          ...styles.navSecondaryBtn,
-                          ...(navSaving ? styles.saveRolesBtnDisabled : {}),
-                        }}
-                        onClick={handleApplyRoleDerivedNavigation}
-                        disabled={navSaving || !userNav}
-                      >
-                        同步角色导航
-                      </button>
-                      <button
-                        type="button"
-                        style={{
-                          ...styles.navSecondaryBtn,
-                          ...(navSaving ? styles.saveRolesBtnDisabled : {}),
-                        }}
-                        onClick={handleResetNavigationToRole}
-                        disabled={navSaving || !userNav?.has_nav_override}
-                      >
-                        恢复角色默认
-                      </button>
-                      <button
-                        type="button"
-                        style={{
-                          ...styles.saveRolesBtn,
-                          ...((navSaving || !navViewsDirty) ? styles.saveRolesBtnDisabled : {}),
-                        }}
-                        onClick={handleSaveNavigation}
-                        disabled={navSaving || !navViewsDirty}
-                      >
-                        {navSaving ? '保存中...' : '保存导航'}
-                      </button>
-                    </div>
-                  )}
-
-                  {selectedNavViews.size > 0 && (
-                    <div style={styles.navSummary}>
-                      <span style={styles.navSummaryLabel}>已选导航：</span>
-                      {Array.from(selectedNavViews).map(view => (
-                        <span key={view} style={styles.navSummaryTag} title={getNavPagePermission(view)}>
-                          {getNavPageLabel(view)}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-
-            {/* ── 生效权限与额外权限 ── */}
-            <div style={styles.detailSection}>
-              <label style={styles.label}>额外权限</label>
-              <ExtraPermissionsSection
-                userId={selectedUser.user_id}
-                currentRoleIds={selectedUser.role_ids}
-                onError={setMutationError}
-              />
-            </div>
-
-            <div style={styles.detailSection}>
-              <label style={styles.label}>创建时间</label>
-              <div style={styles.readonlyField}>
-                {new Date(selectedUser.created_at).toLocaleString('zh-CN')}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {roles.map(role => {
+                  const checked = selectedRoleIds.has(role.role_id);
+                  return (
+                    <label key={role.role_id} className="form-input" style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', background: checked ? 'var(--status-info-bg)' : 'transparent' }}>
+                      <input type="checkbox" checked={checked} onChange={() => toggleRole(role.role_id)} />
+                      <span>{role.name}</span>
+                      {role.is_system && <span className="status-badge status-badge--info">系统</span>}
+                    </label>
+                  );
+                })}
               </div>
-            </div>
+              <button type="button" className="btn btn--primary btn--sm" style={{ marginTop: 12 }} onClick={() => updateRolesMutation.mutate()} disabled={updateRolesMutation.isPending}>保存角色</button>
+            </section>
+
+            <section className="surface-card" style={{ padding: 16 }}>
+              <h4 style={{ margin: '0 0 12px', fontSize: 14 }}>操作</h4>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button type="button" className="btn btn--secondary btn--sm" onClick={() => updateUserMutation.mutate({ userId: selectedUser.user_id, data: { status: selectedUser.status === 'ACTIVE' ? 'DISABLED' : 'ACTIVE' } })}>
+                  {selectedUser.status === 'ACTIVE' ? '禁用' : '启用'}
+                </button>
+                <button type="button" className="btn btn--secondary btn--sm" onClick={() => setPasswordModal(true)}>重置密码</button>
+                <button type="button" className="btn btn--danger btn--sm" onClick={() => setDeleteConfirm(selectedUser.user_id)}>删除用户</button>
+              </div>
+            </section>
           </div>
         ) : (
-          <div className="empty-state" style={{ height: '100%' }}>
-            <div className="empty-state__icon">👤</div>
-            <p className="empty-state__text">选择左侧用户查看详情</p>
-          </div>
+          <div className="empty-state" style={{ height: '100%' }}><p className="empty-state__text">选择左侧用户查看详情</p></div>
         )}
       </main>
 
-      <CreateUserModal
-        open={createModalOpen}
-        onClose={() => setCreateModalOpen(false)}
-        roles={roles}
-        creating={creating}
-        onCreateUser={handleCreateUser}
-      />
-
-      <DeleteConfirmModal
-        open={!!deleteConfirm}
-        onClose={() => setDeleteConfirm(null)}
-        onConfirm={handleDeleteUser}
-        title="确认删除"
-        description={`确定要删除用户 ${deleteConfirm || ''} 吗？此操作不可恢复。`}
-        deleting={deleting}
-      />
-
-      <BatchDeleteConfirmModal
-        open={batchDeleteConfirm}
-        count={selectedIds.size}
-        onClose={() => setBatchDeleteConfirm(false)}
-        onConfirm={handleBatchDelete}
-        deleting={batchDeleting}
-      />
-
-      <PasswordResetModal
-        open={passwordModal}
-        username={selectedUser?.username || ''}
-        onClose={() => setPasswordModal(false)}
-        resetting={resetting}
-        onReset={handlePasswordReset}
-        error={mutationError}
-      />
-
-      <style>{`
-        @keyframes spin {
-          to { transform: rotate(360deg); }
-        }
-        .role-item:hover {
-          background-color: var(--bg-tertiary);
-          border-color: var(--accent-cyan);
-        }
-        .nav-item:hover:not([style*="opacity"]) {
-          background-color: var(--bg-tertiary);
-          border-color: var(--accent-cyan);
-        }
-      `}</style>
+      <CreateUserModal open={createModalOpen} onClose={() => setCreateModalOpen(false)} roles={roles} creating={createUserMutation.isPending} onCreateUser={data => createUserMutation.mutate(data)} />
+      <PasswordResetModal open={passwordModal} username={selectedUser?.username || ''} onClose={() => setPasswordModal(false)} resetting={passwordResetMutation.isPending} onReset={password => passwordResetMutation.mutate(password)} error={mutationError} />
+      <DeleteConfirmModal open={!!deleteConfirm} onClose={() => setDeleteConfirm(null)} onConfirm={() => deleteUserMutation.mutate()} title="确认删除" description={`确定要删除用户 ${deleteConfirm || ''} 吗？此操作会禁用该账号。`} deleting={deleteUserMutation.isPending} />
     </div>
   );
-};
-
-/** 用户额外权限与生效权限展示组件 */
-interface ExtraPermissionsSectionProps {
-  userId: string;
-  currentRoleIds: string[];
-  onError: (msg: string | null) => void;
-}
-
-const ExtraPermissionsSection: React.FC<ExtraPermissionsSectionProps> = ({ userId, onError }) => {
-  const queryClient = useQueryClient();
-  const [extraIds, setExtraIds] = useState<Set<string>>(new Set());
-
-  const permsQuery = useQuery({
-    queryKey: queryKeys.permissions.all,
-    queryFn: async () => (await api.listPermissions()).data || [],
-  });
-
-  const effPermsQuery = useQuery({
-    queryKey: ['effectivePermissions', userId],
-    queryFn: async () => (await api.getUserEffectivePermissions(userId)).data || null,
-  });
-
-  const allPerms = useMemo(() => permsQuery.data ?? [], [permsQuery.data]);
-  const effectivePerms = effPermsQuery.data ?? null;
-  const loading = permsQuery.isLoading || effPermsQuery.isLoading;
-
-  // Sync extraIds when effective permissions data loads
-  /* eslint-disable react-hooks/set-state-in-effect */
-  useEffect(() => {
-    if (effPermsQuery.data) {
-      setExtraIds(new Set(effPermsQuery.data.extra_permission_ids || []));
-    }
-  }, [effPermsQuery.data]);
-  /* eslint-enable react-hooks/set-state-in-effect */
-
-  const saveMutation = useMutation({
-    mutationFn: async () => {
-      await api.updateUserExtraPermissions(userId, { extra_permission_ids: Array.from(extraIds) });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['effectivePermissions', userId] });
-    },
-    onError: (err) => {
-      onError(getErrorMessage(err, '保存额外权限失败'));
-    },
-  });
-
-  const saving = saveMutation.isPending;
-
-  const handleSave = () => saveMutation.mutate();
-
-  const groupedPerms = useMemo(() => {
-    const groups = new Map<string, PermissionResponse[]>();
-    for (const perm of allPerms) {
-      const group = perm.code.includes(':') ? perm.code.split(':')[0] : '其他';
-      if (!groups.has(group)) groups.set(group, []);
-      groups.get(group)!.push(perm);
-    }
-    return Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b));
-  }, [allPerms]);
-
-  // 角色权限的 perm_id 集合（用于判断预选）
-  const rolePermIdSet = useMemo(() => {
-    if (!effectivePerms) return new Set<string>();
-    // 通过 allPerms 反向查找 role_permissions 对应的 perm_id
-    const codeToId = new Map<string, string>();
-    for (const perm of allPerms) {
-      codeToId.set(perm.code, perm.perm_id);
-    }
-    const ids = new Set<string>();
-    for (const code of effectivePerms.role_permissions) {
-      const pid = codeToId.get(code);
-      if (pid) ids.add(pid);
-    }
-    return ids;
-  }, [effectivePerms, allPerms]);
-
-  const togglePerm = (permId: string) => {
-    // 如果该权限来自角色，不允许取消选中（角色权限不可通过 extra 移除）
-    if (rolePermIdSet.has(permId)) return;
-    setExtraIds(prev => {
-      const next = new Set(prev);
-      if (next.has(permId)) next.delete(permId);
-      else next.add(permId);
-      return next;
-    });
-  };
-
-  if (loading) {
-    return <div style={{ fontSize: 12, color: 'var(--text-tertiary)', padding: '8px 0' }}>加载权限信息...</div>;
-  }
-
-  return (
-    <div>
-      {/* 生效权限一览 */}
-      <div style={{ marginBottom: 12, fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.8 }}>
-        <div style={{ fontWeight: 500, marginBottom: 6, color: 'var(--text-primary)' }}>
-          生效权限（并集）
-          <span style={{ fontWeight: 400, color: 'var(--text-tertiary)', marginLeft: 6 }}>
-            {effectivePerms?.permissions.length || 0} 项
-          </span>
-        </div>
-        {effectivePerms && effectivePerms.role_permissions.length === 0 && effectivePerms.extra_permissions.length === 0 ? (
-          <div style={{ color: 'var(--text-tertiary)', padding: '8px 0' }}>暂无权限</div>
-        ) : (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-            {effectivePerms?.permissions.map(code => {
-              const fromRole = effectivePerms?.role_permissions.includes(code);
-              const fromExtra = effectivePerms?.extra_permissions.includes(code);
-              const bg = fromExtra && fromRole ? '#e0f2fe' : fromRole ? '#f0fdf4' : '#fef3c7';
-              const fg = fromExtra && fromRole ? '#0369a1' : fromRole ? '#166534' : '#92400e';
-              const label = fromRole && fromExtra ? '组+个人' : fromRole ? '来自组' : '个人';
-              return (
-                <span key={code} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: bg, color: fg, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-                  {code}
-                  <span style={{ fontSize: 9, opacity: 0.7 }}>{label}</span>
-                </span>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* 统一权限总览：角色权限预选 + 个人额外可配置 */}
-      <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-          <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-primary)' }}>
-            权限总览
-            <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text-tertiary)', marginLeft: 6 }}>
-              角色权限已预选
-              {extraIds.size > 0 && ` · 额外 ${extraIds.size} 项`}
-            </span>
-          </span>
-          <button
-            type="button"
-            style={{
-              fontSize: 11, padding: '4px 14px', borderRadius: 6, border: 'none',
-              background: saving ? '#93c5fd' : '#2563eb', color: '#fff',
-              cursor: 'pointer', fontWeight: 500,
-            }}
-            onClick={handleSave}
-            disabled={saving}
-          >
-            {saving ? '保存中...' : '保存'}
-          </button>
-        </div>
-        {groupedPerms.length === 0 ? (
-          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', padding: '4px 0' }}>暂无权限数据</div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 240, overflowY: 'auto' }}>
-            {groupedPerms.map(([groupName, perms]) => {
-              const groupAllFromRole = perms.every(p => rolePermIdSet.has(p.perm_id));
-              return (
-                <div key={groupName} style={{
-                  display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center',
-                  padding: '6px 8px', borderRadius: 6,
-                  background: 'var(--bg-secondary)',
-                }}>
-                  <span style={{ fontSize: 10, fontWeight: 600, color: groupAllFromRole ? 'var(--text-tertiary)' : 'var(--text-secondary)', minWidth: 48 }}>
-                    {groupName}
-                  </span>
-                  {perms.map(perm => {
-                    const isRolePerm = rolePermIdSet.has(perm.perm_id);
-                    const isExtra = extraIds.has(perm.perm_id);
-                    const checked = isRolePerm || isExtra;
-                    return (
-                      <label key={perm.perm_id} style={{
-                        fontSize: 11, padding: '2px 8px', borderRadius: 12, cursor: isRolePerm ? 'default' : 'pointer',
-                        border: checked ? '0.5px solid var(--accent-primary)' : '0.5px solid var(--border-subtle)',
-                        background: isRolePerm
-                          ? 'color-mix(in srgb, var(--accent-primary) 6%, transparent)'
-                          : isExtra
-                            ? 'color-mix(in srgb, #f59e0b 10%, transparent)'
-                            : 'transparent',
-                        color: isRolePerm ? 'var(--accent-primary)' : isExtra ? '#b45309' : 'var(--text-secondary)',
-                        fontWeight: checked ? 500 : 400,
-                        display: 'inline-flex', alignItems: 'center', gap: 3,
-                        opacity: isRolePerm && !isExtra ? 0.75 : 1,
-                        transition: 'all 0.1s',
-                      }}>
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() => togglePerm(perm.perm_id)}
-                          style={{ display: 'none' }}
-                        />
-                        {perm.name}
-                        {isRolePerm && <span style={{ fontSize: 9, opacity: 0.6 }}>🔒</span>}
-                      </label>
-                    );
-                  })}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
-
-const styles = {
-  container: {
-    display: 'flex',
-    height: 'calc(100vh - 64px)',
-    animation: 'fadeIn 0.3s ease',
-  } as const,
-  leftPanel: {
-    width: '380px',
-    minWidth: '380px',
-    backgroundColor: 'var(--bg-secondary)',
-    borderRight: '1px solid var(--border-default)',
-    display: 'flex',
-    flexDirection: 'column' as const,
-  },
-  rightPanel: {
-    flex: 1,
-    padding: '28px 32px',
-    overflowY: 'auto' as const,
-  },
-  panelHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: '20px 24px',
-    borderBottom: '1px solid var(--border-muted)',
-  },
-  panelTitle: {
-    fontSize: '18px',
-    fontWeight: 600,
-    color: 'var(--text-primary)',
-    margin: 0,
-  },
-  panelHint: {
-    fontSize: '12px',
-    color: 'var(--text-tertiary)',
-    marginTop: '2px',
-    display: 'block',
-  },
-  createBtn: {
-    padding: '8px 14px',
-    fontSize: '13px',
-    fontWeight: 500,
-    color: 'var(--accent-cyan)',
-    backgroundColor: 'transparent',
-    border: '1px solid var(--accent-cyan)',
-    borderRadius: 'var(--radius-md)',
-    cursor: 'pointer',
-  },
-  filterRow: {
-    display: 'flex',
-    gap: '10px',
-    padding: '12px 16px',
-    borderBottom: '1px solid var(--border-muted)',
-  },
-  searchInput: {
-    flex: '1 1 160px',
-    padding: '8px 12px',
-    fontSize: '13px',
-    color: 'var(--text-primary)',
-    backgroundColor: 'var(--bg-primary)',
-    border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-md)',
-    outline: 'none',
-    minWidth: 0,
-  },
-  filterSelect: {
-    flex: '0 0 auto',
-    padding: '8px 12px',
-    fontSize: '13px',
-    color: 'var(--text-primary)',
-    backgroundColor: 'var(--bg-primary)',
-    border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-md)',
-    cursor: 'pointer',
-  },
-  refreshBtn: {
-    padding: '8px 14px',
-    fontSize: '13px',
-    color: 'var(--text-secondary)',
-    backgroundColor: 'var(--bg-primary)',
-    border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-md)',
-    cursor: 'pointer',
-  },
-  loadingState: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '12px',
-    padding: '60px',
-    color: 'var(--text-secondary)',
-  },
-  spinner: {
-    width: '32px',
-    height: '32px',
-    border: '3px solid var(--border-default)',
-    borderTopColor: 'var(--accent-cyan)',
-    borderRadius: '50%',
-    animation: 'spin 0.8s linear infinite',
-  },
-  userList: {
-    flex: 1,
-    overflowY: 'auto' as const,
-    padding: '12px',
-  },
-  selectAllRow: {
-    display: 'flex',
-    alignItems: 'center',
-    padding: '8px 4px',
-    marginBottom: '8px',
-    borderBottom: '1px solid var(--border-muted)',
-  },
-  checkboxLabel: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '6px',
-    cursor: 'pointer',
-  },
-  itemHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '6px',
-  },
-  itemHeaderLeft: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-  },
-  userItem: {
-    padding: '14px 16px',
-    marginBottom: '8px',
-    backgroundColor: 'var(--bg-primary)',
-    border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-md)',
-    cursor: 'pointer',
-    transition: 'all var(--transition-fast)',
-  },
-  userItemSelected: {
-    border: '1px solid var(--accent-cyan)',
-    backgroundColor: 'var(--bg-tertiary)',
-  },
-  userItemHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '6px',
-  },
-  userName: {
-    fontSize: '14px',
-    fontWeight: 600,
-    color: 'var(--text-primary)',
-  },
-  statusBadge: {
-    padding: '3px 10px',
-    fontSize: '11px',
-    fontWeight: 600,
-    borderRadius: '10px',
-  },
-  userId: {
-    fontSize: '12px',
-    fontFamily: "'JetBrains Mono', monospace",
-    color: 'var(--text-muted)',
-    marginBottom: '6px',
-  },
-  userRoles: {
-    display: 'flex',
-    flexWrap: 'wrap' as const,
-    gap: '4px',
-  },
-  roleTag: {
-    fontSize: '11px',
-    padding: '2px 8px',
-    backgroundColor: 'var(--bg-tertiary)',
-    borderRadius: '4px',
-    color: 'var(--text-secondary)',
-  },
-  roleTagMore: {
-    fontSize: '11px',
-    padding: '2px 6px',
-    color: 'var(--text-muted)',
-  },
-  detailSection: {
-    marginBottom: '24px',
-  },
-  label: {
-    display: 'block',
-    fontSize: '12px',
-    fontWeight: 600,
-    color: 'var(--text-secondary)',
-    marginBottom: '8px',
-    textTransform: 'uppercase' as const,
-    letterSpacing: '0.5px',
-  },
-  readonlyField: {
-    fontSize: '14px',
-    color: 'var(--text-secondary)',
-    fontFamily: "'JetBrains Mono', monospace",
-  },
-  fieldValue: {
-    fontSize: '16px',
-    color: 'var(--text-primary)',
-    fontWeight: 500,
-  },
-  editFieldRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-  },
-  editRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
-  },
-  input: {
-    flex: 1,
-    padding: '10px 14px',
-    fontSize: '14px',
-    color: 'var(--text-primary)',
-    backgroundColor: 'var(--bg-primary)',
-    border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-md)',
-    outline: 'none',
-  },
-  saveBtn: {
-    padding: '10px 18px',
-    fontSize: '13px',
-    fontWeight: 500,
-    color: 'var(--bg-primary)',
-    backgroundColor: 'var(--accent-cyan)',
-    border: 'none',
-    borderRadius: 'var(--radius-md)',
-    cursor: 'pointer',
-  },
-  cancelBtn: {
-    padding: '10px 18px',
-    fontSize: '13px',
-    fontWeight: 500,
-    color: 'var(--text-secondary)',
-    backgroundColor: 'transparent',
-    border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-md)',
-    cursor: 'pointer',
-  },
-  dangerBtn: {
-    padding: '10px 18px',
-    fontSize: '13px',
-    fontWeight: 500,
-    color: 'white',
-    backgroundColor: 'var(--status-error)',
-    border: 'none',
-    borderRadius: 'var(--radius-md)',
-    cursor: 'pointer',
-  },
-  actionRow: {
-    display: 'flex',
-    gap: '10px',
-    flexWrap: 'wrap' as const,
-  },
-  actionBtn: {
-    padding: '8px 16px',
-    fontSize: '13px',
-    fontWeight: 500,
-    border: 'none',
-    borderRadius: 'var(--radius-md)',
-    cursor: 'pointer',
-  },
-  editBtn: {
-    padding: '6px 12px',
-    fontSize: '12px',
-    fontWeight: 500,
-    color: 'var(--text-secondary)',
-    backgroundColor: 'var(--bg-secondary)',
-    border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-sm)',
-    cursor: 'pointer',
-  },
-  statusRow: {
-    display: 'flex',
-    gap: '10px',
-  },
-  roleList: {
-    display: 'flex',
-    flexWrap: 'wrap' as const,
-    gap: '10px',
-    marginBottom: '16px',
-  },
-  roleItem: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    padding: '10px 14px',
-    backgroundColor: 'var(--bg-secondary)',
-    border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-md)',
-    cursor: 'pointer',
-    transition: 'all var(--transition-fast)',
-  },
-  roleItemSelected: {
-    border: '1px solid var(--accent-green)',
-    backgroundColor: 'rgba(72, 199, 142, 0.08)',
-  },
-  roleName: {
-    fontSize: '13px',
-    color: 'var(--text-primary)',
-  },
-  roleNavBtn: {
-    fontSize: '11px',
-    color: 'var(--accent-primary)',
-    backgroundColor: 'transparent',
-    border: 'none',
-    cursor: 'pointer',
-    padding: '2px 6px',
-    borderRadius: '4px',
-    opacity: 0.5,
-    marginLeft: 'auto',
-  },
-  checkbox: {
-    width: '16px',
-    height: '16px',
-    cursor: 'pointer',
-    accentColor: 'var(--accent-cyan)',
-  },
-  saveRolesBtn: {
-    padding: '10px 18px',
-    fontSize: '13px',
-    fontWeight: 500,
-    color: 'var(--bg-primary)',
-    backgroundColor: 'var(--accent-cyan)',
-    border: 'none',
-    borderRadius: 'var(--radius-md)',
-    cursor: 'pointer',
-  },
-  saveRolesBtnDisabled: {
-    opacity: 0.5,
-    cursor: 'not-allowed',
-  },
-  navHint: {
-    fontSize: '13px',
-    color: 'var(--text-tertiary)',
-    margin: '0 0 12px',
-    lineHeight: 1.5,
-  },
-  navLoading: {
-    fontSize: '13px',
-    color: 'var(--text-secondary)',
-    padding: '12px 0',
-  },
-  navMetaRow: {
-    display: 'flex',
-    flexWrap: 'wrap' as const,
-    gap: '8px',
-    marginBottom: '12px',
-  },
-  navMetaBadge: {
-    fontSize: '11px',
-    padding: '4px 10px',
-    borderRadius: '999px',
-    backgroundColor: 'var(--bg-tertiary)',
-    color: 'var(--text-secondary)',
-  },
-  navMetaBadgeOverride: {
-    backgroundColor: 'var(--status-info-bg)',
-    color: 'var(--status-info)',
-  },
-  navList: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: '8px',
-    marginBottom: '16px',
-  },
-  navItem: {
-    display: 'flex',
-    alignItems: 'flex-start',
-    gap: '10px',
-    padding: '12px 14px',
-    backgroundColor: 'var(--bg-secondary)',
-    border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-md)',
-    cursor: 'pointer',
-    transition: 'all var(--transition-fast)',
-  },
-  navItemSelected: {
-    border: '1px solid var(--accent-green)',
-    backgroundColor: 'rgba(72, 199, 142, 0.08)',
-  },
-  navItemDisabled: {
-    opacity: 0.65,
-    cursor: 'not-allowed',
-  },
-  navItemContent: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: '4px',
-    minWidth: 0,
-  },
-  navItemLabel: {
-    fontSize: '14px',
-    fontWeight: 500,
-    color: 'var(--text-primary)',
-  },
-  navItemMeta: {
-    fontSize: '11px',
-    color: 'var(--text-muted)',
-    fontFamily: "'JetBrains Mono', monospace",
-  },
-  navActionRow: {
-    display: 'flex',
-    flexWrap: 'wrap' as const,
-    gap: '10px',
-    marginBottom: '12px',
-  },
-  navSecondaryBtn: {
-    padding: '10px 18px',
-    fontSize: '13px',
-    fontWeight: 500,
-    color: 'var(--text-secondary)',
-    backgroundColor: 'transparent',
-    border: '1px solid var(--border-default)',
-    borderRadius: 'var(--radius-md)',
-    cursor: 'pointer',
-  },
-  navSummary: {
-    display: 'flex',
-    flexWrap: 'wrap' as const,
-    alignItems: 'center',
-    gap: '6px',
-  },
-  navSummaryLabel: {
-    fontSize: '12px',
-    color: 'var(--text-secondary)',
-  },
-  navSummaryTag: {
-    fontSize: '11px',
-    padding: '3px 8px',
-    borderRadius: '4px',
-    backgroundColor: 'var(--bg-tertiary)',
-    color: 'var(--text-secondary)',
-  },
-  emptyDetail: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: '100%',
-    color: 'var(--text-muted)',
-  },
-  emptyIcon: {
-    fontSize: '64px',
-    opacity: 0.3,
-    marginBottom: '16px',
-  },
-  errorBanner: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
-    padding: '14px 18px',
-    backgroundColor: 'var(--status-error-bg)',
-    border: '1px solid var(--status-error)',
-    borderRadius: 'var(--radius-md)',
-    color: 'var(--accent-red)',
-    fontSize: '14px',
-    marginBottom: '20px',
-  },
-  errorClose: {
-    marginLeft: 'auto',
-    padding: '0 8px',
-    fontSize: '18px',
-    background: 'none',
-    border: 'none',
-    color: 'var(--accent-red)',
-    cursor: 'pointer',
-  },
 };
 
 export default UserManagement;

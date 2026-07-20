@@ -82,8 +82,6 @@ export interface UserResponse {
   username: string;
   email?: string;
   role_ids: string[];
-  extra_permission_ids?: string[];
-  allowed_nav_views?: string[];
   status: string;
   itcode?: string;
   subscribe_notifications?: boolean;
@@ -113,16 +111,10 @@ export interface UpdateUserRolesRequest {
   role_ids: string[];
 }
 
-export interface UpdateUserExtraPermissionsRequest {
-  extra_permission_ids: string[];
-}
-
 export interface UserEffectivePermissionsResponse {
   user_id: string;
   role_ids: string[];
-  extra_permission_ids: string[];
   role_permissions: string[];
-  extra_permissions: string[];
   permissions: string[];
 }
 
@@ -144,13 +136,9 @@ export interface PermissionResponse {
   id: string;
   /** 业务权限 ID，与角色 permission_ids 一致 */
   perm_id: string;
-  /** @deprecated 使用 perm_id */
-  permission_id?: string;
   name: string;
   code: string;
   description?: string;
-  created_at: string;
-  updated_at: string;
 }
 
 export interface RoleResponse {
@@ -186,33 +174,6 @@ export interface CurrentUserPermissionsResponse {
     role_id: string;
     role_name: string;
   }[];
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-//  导航相关（Navigation）
-// ═══════════════════════════════════════════════════════════════════════
-
-export interface NavigationPageResponse {
-  id?: string;
-  view: string;
-  label: string;
-  permission?: string | null;
-  description?: string | null;
-  order: number;
-  is_active: boolean;
-}
-
-export interface UserNavigationResponse {
-  user_id: string;
-  role_ids: string[];
-  permissions: string[];
-  allowed_nav_views: string[];
-  role_derived_nav_views: string[];
-  has_nav_override: boolean;
-}
-
-export interface UpdateUserNavigationRequest {
-  allowed_nav_views: string[];
 }
 
 // ═══════════════════════════════════════════════════════════════════════

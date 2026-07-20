@@ -2,18 +2,17 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.modules.auth.api.dependencies import NavigationAccessServiceDep, UserServiceDep
+from app.modules.auth.api.dependencies import UserServiceDep
 from app.modules.auth.schemas import (
     ChangePasswordRequest,
     LoginRequest,
     LoginResponse,
     MePermissionsResponse,
-    UserNavigationResponse,
     UserResponse,
 )
 from app.modules.auth.service import UserNotFoundError
 from app.shared.api.schemas.base import APIResponse
-from app.shared.auth import create_access_token, get_current_user, require_permission
+from app.shared.auth import create_access_token, get_current_user
 
 router = APIRouter()
 
@@ -62,22 +61,5 @@ async def get_my_permissions(service: UserServiceDep, current_user=Depends(get_c
     try:
         data = await service.get_effective_permissions(current_user["user_id"])
         return APIResponse(data=MePermissionsResponse(**data))
-    except UserNotFoundError:
-        raise HTTPException(status_code=404, detail="user not found")
-
-
-@router.get(
-    "/users/me/navigation",
-    response_model=APIResponse[UserNavigationResponse],
-    summary="获取当前用户导航访问权限",
-)
-async def get_my_navigation(
-    service: NavigationAccessServiceDep,
-    current_user=Depends(get_current_user),
-    _=Depends(require_permission("navigation:read")),
-):
-    try:
-        data = await service.get_user_navigation(current_user["user_id"])
-        return APIResponse(data=UserNavigationResponse(**data))
     except UserNotFoundError:
         raise HTTPException(status_code=404, detail="user not found")

@@ -1,4 +1,4 @@
-import type { LoginRequest, LoginResponse, ApiResponse, CreateRequirementRequest, RequirementResponse, ListRequirementsParams, CreateTestCaseRequest, UpdateTestCaseRequest, TestCaseResponse, TestCaseChangeLogListResponse, ListTestCasesParams, CatalogLab, CreateCatalogLabRequest, UpdateCatalogLabRequest, CatalogTreeResponse, DispatchTaskRequest, DispatchTaskResponse, ExecutionAgent, AgentCleanupOfflineResponse, ListAgentsParams, CreateAutomationTestCaseRequest, AutomationTestCaseResponse, ListAutomationTestCasesParams, ExecutionTask, ListTasksParams, TaskStatus, RerunTaskRequest, AttachmentInfo, WorkflowTransitionRequest, WorkflowTransitionResponse, WorkflowTransitionsResponse, WorkflowTransitionLog, RoleResponse, PermissionResponse, CreateRoleRequest, UpdateRoleRequest, UpdateRolePermissionsRequest, CurrentUserPermissionsResponse, UserResponse, CreateUserRequest, UpdateUserRequest, UpdateUserRolesRequest, UpdateUserPasswordRequest, ListUsersParams, NavigationPageResponse, UserNavigationResponse, UpdateUserNavigationRequest, WorkItem, LineageGraphResponse, CommentListResponse, CreateCommentRequest, TestCaseComment, PlanTaskItemResponse, SubmitManualResultRequest, PlanItemDispatchRequest, PlanItemRerunRequest, BatchDispatchPlanItemsRequest, CreatePlanRequest, AddPlanItemsRequest, BatchUpdateAssigneeRequest, UserEffectivePermissionsResponse, UpdateUserExtraPermissionsRequest, SystemConfigListResponse, SystemConfig, BatchUpdateConfigRequest, TestConnectionRequest, TestConnectionResponse, ConfigHistory, ExecutionStatsResponse, CollectionResponse, CollectionListItem, CreateCollectionRequest, UpdateCollectionRequest, AddCasesRequest, RemoveCasesRequest, CollectionAnalysisResult, TaskTimeline } from '../types';
+import type { LoginRequest, LoginResponse, ApiResponse, CreateRequirementRequest, RequirementResponse, ListRequirementsParams, CreateTestCaseRequest, UpdateTestCaseRequest, TestCaseResponse, TestCaseChangeLogListResponse, ListTestCasesParams, CatalogLab, CreateCatalogLabRequest, UpdateCatalogLabRequest, CatalogTreeResponse, DispatchTaskRequest, DispatchTaskResponse, ExecutionAgent, AgentCleanupOfflineResponse, ListAgentsParams, CreateAutomationTestCaseRequest, AutomationTestCaseResponse, ListAutomationTestCasesParams, ExecutionTask, ListTasksParams, TaskStatus, RerunTaskRequest, AttachmentInfo, WorkflowTransitionRequest, WorkflowTransitionResponse, WorkflowTransitionsResponse, WorkflowTransitionLog, RoleResponse, PermissionResponse, CreateRoleRequest, UpdateRoleRequest, UpdateRolePermissionsRequest, CurrentUserPermissionsResponse, UserResponse, CreateUserRequest, UpdateUserRequest, UpdateUserRolesRequest, UpdateUserPasswordRequest, ListUsersParams, WorkItem, LineageGraphResponse, CommentListResponse, CreateCommentRequest, TestCaseComment, PlanTaskItemResponse, SubmitManualResultRequest, PlanItemDispatchRequest, PlanItemRerunRequest, BatchDispatchPlanItemsRequest, CreatePlanRequest, AddPlanItemsRequest, BatchUpdateAssigneeRequest, UserEffectivePermissionsResponse, SystemConfigListResponse, SystemConfig, BatchUpdateConfigRequest, TestConnectionRequest, TestConnectionResponse, ConfigHistory, ExecutionStatsResponse, CollectionResponse, CollectionListItem, CreateCollectionRequest, UpdateCollectionRequest, AddCasesRequest, RemoveCasesRequest, CollectionAnalysisResult, TaskTimeline } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
 
@@ -180,7 +180,7 @@ class ApiClient {
   }
 
   async deleteComment(caseId: string, commentId: string): Promise<void> {
-    return this.request<void>(`/test-cases/${caseId}/comments/${commentId}`, {
+    await this.request<void>(`/test-cases/${caseId}/comments/${commentId}`, {
       method: 'DELETE',
     });
   }
@@ -526,26 +526,6 @@ class ApiClient {
     });
   }
 
-  async createPermission(data: { perm_id: string; code: string; name: string; description?: string }): Promise<ApiResponse<PermissionResponse>> {
-    return this.request<PermissionResponse>('/auth/permissions', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-  }
-
-  async deletePermission(permId: string): Promise<void> {
-    await this.request<void>(`/auth/permissions/${permId}`, {
-      method: 'DELETE',
-    });
-  }
-
-  async updatePermission(permId: string, data: { name?: string; description?: string }): Promise<ApiResponse<PermissionResponse>> {
-    return this.request<PermissionResponse>(`/auth/permissions/${permId}`, {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    });
-  }
-
   async getCurrentUserPermissions(): Promise<ApiResponse<CurrentUserPermissionsResponse>> {
     return this.request<CurrentUserPermissionsResponse>('/auth/users/me/permissions', {
       method: 'GET',
@@ -627,41 +607,6 @@ class ApiClient {
   async getUserEffectivePermissions(userId: string): Promise<ApiResponse<UserEffectivePermissionsResponse>> {
     return this.request<UserEffectivePermissionsResponse>(`/auth/users/${userId}/permissions`, {
       method: 'GET',
-    });
-  }
-
-  async updateUserExtraPermissions(userId: string, data: UpdateUserExtraPermissionsRequest): Promise<ApiResponse<UserResponse>> {
-    return this.request<UserResponse>(`/auth/users/${userId}/permissions/extra`, {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    });
-  }
-
-  async listNavigationPages(params: { include_inactive?: boolean } = {}): Promise<ApiResponse<NavigationPageResponse[]>> {
-    const query = new URLSearchParams();
-    if (params.include_inactive === false) {
-      query.append('include_inactive', 'false');
-    }
-    const qs = query.toString();
-    return this.request<NavigationPageResponse[]>(
-      `/auth/admin/navigation/pages${qs ? `?${qs}` : ''}`,
-      { method: 'GET' },
-    );
-  }
-
-  async getUserNavigation(userId: string): Promise<ApiResponse<UserNavigationResponse>> {
-    return this.request<UserNavigationResponse>(`/auth/admin/users/${userId}/navigation`, {
-      method: 'GET',
-    });
-  }
-
-  async updateUserNavigation(
-    userId: string,
-    data: UpdateUserNavigationRequest,
-  ): Promise<ApiResponse<UserNavigationResponse>> {
-    return this.request<UserNavigationResponse>(`/auth/admin/users/${userId}/navigation`, {
-      method: 'PUT',
-      body: JSON.stringify(data),
     });
   }
 

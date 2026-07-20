@@ -71,7 +71,7 @@ describe('navigation config', () => {
     })
 
     it('returns first visible item when neither dashboard nor myTasks available', () => {
-      const page = resolveDefaultPage([{ key: 'projects' }, { key: 'permissions' }])
+      const page = resolveDefaultPage([{ key: 'projects' }, { key: 'roles' }])
       expect(page).toBe('projects')
     })
 

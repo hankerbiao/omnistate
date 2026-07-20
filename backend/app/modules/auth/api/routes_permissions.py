@@ -1,96 +1,24 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 
 from app.modules.auth.api.dependencies import PermissionServiceDep
-from app.modules.auth.schemas import (
-    CreatePermissionRequest,
-    PermissionResponse,
-    UpdatePermissionRequest,
-)
-from app.modules.auth.service import PermissionNotFoundError
+from app.modules.auth.schemas import PermissionResponse
 from app.shared.api.schemas.base import APIResponse
-from app.shared.auth import get_current_user, require_permission
+from app.shared.auth import get_current_user
 
 router = APIRouter()
-
-
-@router.post(
-    "/permissions",
-    response_model=APIResponse[PermissionResponse],
-    status_code=201,
-    summary="创建权限",
-)
-async def create_permission(
-    request: CreatePermissionRequest,
-    service: PermissionServiceDep,
-    _=Depends(require_permission("permissions:write")),
-):
-    try:
-        return APIResponse(data=await service.create_permission(request.model_dump()))
-    except ValueError as exc:
-        raise HTTPException(status_code=409, detail=str(exc))
-
-
-@router.get(
-    "/permissions/{perm_id}",
-    response_model=APIResponse[PermissionResponse],
-    summary="获取权限详情",
-)
-async def get_permission(
-    perm_id: str,
-    service: PermissionServiceDep,
-    _=Depends(require_permission("permissions:read")),
-):
-    try:
-        return APIResponse(data=await service.get_permission(perm_id))
-    except PermissionNotFoundError:
-        raise HTTPException(status_code=404, detail="permission not found")
 
 
 @router.get(
     "/permissions",
     response_model=APIResponse[list[PermissionResponse]],
-    summary="查询权限列表",
+    summary="查询静态权限列表",
 )
 async def list_permissions(
     service: PermissionServiceDep,
-    _=Depends(get_current_user),  # 任何登录用户都可以查看权限列表
+    _=Depends(get_current_user),
     limit: int = Query(100, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ):
     return APIResponse(data=await service.list_permissions(limit=limit, offset=offset))
-
-
-@router.put(
-    "/permissions/{perm_id}",
-    response_model=APIResponse[PermissionResponse],
-    summary="更新权限",
-)
-async def update_permission(
-    perm_id: str,
-    request: UpdatePermissionRequest,
-    service: PermissionServiceDep,
-    _=Depends(require_permission("permissions:write")),
-):
-    try:
-        payload = request.model_dump(exclude_unset=True)
-        if not payload:
-            raise HTTPException(status_code=400, detail="no fields to update")
-        return APIResponse(data=await service.update_permission(perm_id, payload))
-    except PermissionNotFoundError:
-        raise HTTPException(status_code=404, detail="permission not found")
-
-
-@router.delete("/permissions/{perm_id}", status_code=204, summary="删除权限")
-async def delete_permission(
-    perm_id: str,
-    service: PermissionServiceDep,
-    _=Depends(require_permission("permissions:write")),
-):
-    try:
-        await service.delete_permission(perm_id)
-    except PermissionNotFoundError:
-        raise HTTPException(status_code=404, detail="permission not found")
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))

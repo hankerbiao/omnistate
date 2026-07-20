@@ -117,7 +117,6 @@ def test_auth_routes_do_not_depend_on_rbac_service_facade() -> None:
         "app/modules/auth/api/routes_users.py",
         "app/modules/auth/api/routes_roles.py",
         "app/modules/auth/api/routes_permissions.py",
-        "app/modules/auth/api/routes_navigation.py",
     ]
 
     for relative_path in route_files:
