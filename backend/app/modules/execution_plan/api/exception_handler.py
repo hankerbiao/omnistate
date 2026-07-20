@@ -13,12 +13,15 @@ from app.modules.execution_plan.domain.exceptions import (
     ResultNotFoundError,
 )
 from app.shared.core.logger import log as logger
+from app.shared.domain.exceptions import PermissionDeniedError
 
 
 def handle_service_error(exc: Exception) -> None:
     """统一处理领域异常为 HTTP 错误，无返回值（总是 raise）。"""
     if isinstance(exc, (PlanNotFoundError, ItemNotFoundError, ResultNotFoundError)):
         raise HTTPException(status_code=404, detail=str(exc))
+    if isinstance(exc, PermissionDeniedError):
+        raise HTTPException(status_code=403, detail=str(exc))
     if isinstance(exc, ValueError):
         raise HTTPException(status_code=400, detail=str(exc))
     if isinstance(exc, ExecutionPlanError):

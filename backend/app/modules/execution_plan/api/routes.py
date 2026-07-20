@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.modules.execution_plan.api.dependencies import (
     PlanCommandServiceDep,
@@ -32,7 +32,7 @@ from app.modules.execution_plan.schemas.execution_plan import (
     UpdatePlanRequest,
 )
 from app.shared.api.schemas.base import APIResponse
-from app.shared.auth import get_current_user, require_permission
+from app.shared.auth import get_current_user, is_admin_role, require_permission
 
 router = APIRouter(prefix="/execution-plans", tags=["ExecutionPlan"])
 
@@ -47,6 +47,16 @@ WRITE_DEP = [Depends(require_permission("execution_tasks:write"))]
 def _get_user_id(current_user: Dict[str, Any]) -> str:
     """从当前用户信息中提取 user_id。"""
     return current_user.get("user_id") or current_user.get("id") or ""
+
+
+def _resolve_assignee_id(current_user: Dict[str, Any], assignee_id: Optional[str]) -> str:
+    """普通用户只能查询本人，管理员可按 assignee_id 代查。"""
+    current_user_id = _get_user_id(current_user)
+    if not assignee_id or assignee_id == current_user_id:
+        return current_user_id
+    if is_admin_role(current_user.get("role_ids", [])):
+        return assignee_id
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="只能查询自己的计划任务")
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -66,7 +76,7 @@ async def list_my_plan_items(
     limit: int = Query(200, ge=1, le=1000, description="返回条目数量上限"),
 ):
     """返回当前用户被指派的计划条目列表，对齐前端 PlanTask 结构。"""
-    uid = assignee_id or _get_user_id(current_user)
+    uid = _resolve_assignee_id(current_user, assignee_id)
     items = await query_service.list_my_items(uid, limit=limit)
     return APIResponse(data=items)
 
@@ -146,6 +156,7 @@ async def update_plan_item(
             plan_id=plan_id,
             item_id=item_id,
             data=data.model_dump(exclude_none=True),
+            actor_id=_get_user_id(current_user),
         )
         return APIResponse(data=item)
     except Exception as exc:
@@ -431,6 +442,7 @@ async def update_plan(
         plan = await command_service.update_plan(
             plan_id=plan_id,
             data=request.model_dump(exclude_none=True),
+            actor_id=_get_user_id(current_user),
         )
         return APIResponse(data=plan)
     except Exception as exc:
@@ -450,7 +462,7 @@ async def delete_plan(
 ):
     """软删除执行计划及其所有条目。"""
     try:
-        await command_service.delete_plan(plan_id=plan_id)
+        await command_service.delete_plan(plan_id=plan_id, actor_id=_get_user_id(current_user))
         return APIResponse(data={"plan_id": plan_id, "deleted": True})
     except Exception as exc:
         handle_service_error(exc)
@@ -477,6 +489,7 @@ async def add_plan_items(
         plan = await command_service.add_items(
             plan_id=plan_id,
             items_data=[item.model_dump() for item in request.items],
+            actor_id=_get_user_id(current_user),
         )
         return APIResponse(data=plan)
     except Exception as exc:
@@ -497,7 +510,7 @@ async def delete_plan_item(
 ):
     """从执行计划中移除单个条目（软删除）。"""
     try:
-        await command_service.delete_item(plan_id=plan_id, item_id=item_id)
+        await command_service.delete_item(plan_id=plan_id, item_id=item_id, actor_id=_get_user_id(current_user))
         return APIResponse(data={"plan_id": plan_id, "item_id": item_id, "deleted": True})
     except Exception as exc:
         handle_service_error(exc)
@@ -521,6 +534,7 @@ async def batch_update_assignee(
             plan_id=plan_id,
             item_ids=request.item_ids,
             assignee_id=request.assignee_id,
+            actor_id=_get_user_id(current_user),
         )
         return APIResponse(data=result)
     except Exception as exc:
@@ -544,7 +558,7 @@ async def list_archived_items(
     limit: int = Query(200, ge=1, le=1000, description="返回条目数量上限"),
 ):
     """返回当前用户已归档的计划条目列表。"""
-    uid = assignee_id or _get_user_id(current_user)
+    uid = _resolve_assignee_id(current_user, assignee_id)
     items = await query_service.list_archived_items(uid, limit=limit)
     return APIResponse(data=items)
 

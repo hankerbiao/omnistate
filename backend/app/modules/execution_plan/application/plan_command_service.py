@@ -18,12 +18,14 @@ from app.modules.execution_plan.application.ports import (
 from app.modules.execution_plan.domain.constants import PlanItemStatus
 from app.modules.execution_plan.repository.models import (
     ExecutionPlanChangeLogDoc,
+    ExecutionPlanDoc,
     ExecutionPlanItemDoc,
     ManualExecutionResultDoc,
 )
 from app.modules.execution_plan.schemas.execution_plan import DispatchConfig
 from app.modules.execution_plan.service.execution_plan_service import ExecutionPlanService
 from app.shared.core.logger import log as logger
+from app.shared.domain.exceptions import PermissionDeniedError
 from app.shared.service import SequenceIdService
 
 
@@ -60,10 +62,12 @@ class PlanCommandService:
     async def create_plan(self, data: Dict[str, Any], actor_id: str) -> Dict[str, Any]:
         return await self._plan_service.create_plan(data, actor_id)
 
-    async def update_plan(self, plan_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    async def update_plan(self, plan_id: str, data: Dict[str, Any], actor_id: str) -> Dict[str, Any]:
+        await self._ensure_plan_manager(plan_id, actor_id)
         return await self._plan_service.update_plan(plan_id, data)
 
-    async def delete_plan(self, plan_id: str) -> None:
+    async def delete_plan(self, plan_id: str, actor_id: str) -> None:
+        await self._ensure_plan_manager(plan_id, actor_id)
         return await self._plan_service.delete_plan(plan_id)
 
     # ─────────────────────────────────────────────────────────────────
@@ -74,9 +78,10 @@ class PlanCommandService:
         self,
         plan_id: str,
         items_data: List[Dict[str, Any]],
+        actor_id: str,
     ) -> Dict[str, Any]:
         """添加条目到计划，并通知被指派人。"""
-        await self._plan_service.get_plan_or_raise(plan_id)
+        await self._ensure_plan_manager(plan_id, actor_id)
         if not items_data:
             raise ValueError("items 不能为空")
 
@@ -139,9 +144,10 @@ class PlanCommandService:
 
         return await self._plan_service.get_plan(plan_id)
 
-    async def delete_item(self, plan_id: str, item_id: str) -> None:
+    async def delete_item(self, plan_id: str, item_id: str, actor_id: str) -> None:
         """软删除计划条目。"""
         item = await self._plan_service.get_item_or_raise(plan_id, item_id)
+        await self._ensure_item_manager(item, actor_id)
         item.is_deleted = True
         await item.save()
         await self._plan_service.recalculate_plan_progress(plan_id)
@@ -151,9 +157,11 @@ class PlanCommandService:
         plan_id: str,
         item_id: str,
         data: Dict[str, Any],
+        actor_id: str,
     ) -> Dict[str, Any]:
         """更新计划条目字段，必要时记录审计日志。"""
         item = await self._plan_service.get_item_or_raise(plan_id, item_id)
+        await self._ensure_item_manager(item, actor_id)
         allowed = {"assignee_id", "status", "component", "order_no"}
         updates = self._plan_service._filter_updates(data, allowed)
         if "status" in updates:
@@ -181,6 +189,7 @@ class PlanCommandService:
     ) -> Dict[str, Any]:
         """改派计划条目执行人，记录审计日志并通知。"""
         item = await self._plan_service.get_item_by_id_or_raise(item_id)
+        await self._ensure_item_manager(item, operator_id)
         old = item.assignee_id
         if old == assignee_id:
             return await self._plan_service.item_to_response(item)
@@ -206,15 +215,27 @@ class PlanCommandService:
         plan_id: str,
         item_ids: List[str],
         assignee_id: Optional[str],
+        actor_id: str,
     ) -> Dict[str, Any]:
         """批量更新计划条目的执行人。"""
-        await self._plan_service.get_plan_or_raise(plan_id)
+        await self._ensure_plan_manager(plan_id, actor_id)
         if not item_ids:
             raise ValueError("item_ids 不能为空")
+        unique_item_ids = list(dict.fromkeys(item_ids))
+
+        docs = await ExecutionPlanItemDoc.find(
+            InOp(ExecutionPlanItemDoc.item_id, unique_item_ids),
+            ExecutionPlanItemDoc.is_deleted == False,  # noqa: E712
+        ).to_list()
+        docs_by_id = {doc.item_id: doc for doc in docs}
+        invalid_ids = [item_id for item_id in unique_item_ids if item_id not in docs_by_id]
+        cross_plan_ids = [doc.item_id for doc in docs if doc.plan_id != plan_id]
+        if invalid_ids or cross_plan_ids:
+            raise ValueError("item_ids 包含不存在、已删除或不属于该计划的条目")
 
         result = await ExecutionPlanItemDoc.find(
             ExecutionPlanItemDoc.plan_id == plan_id,
-            InOp(ExecutionPlanItemDoc.item_id, item_ids),
+            InOp(ExecutionPlanItemDoc.item_id, unique_item_ids),
             ExecutionPlanItemDoc.is_deleted == False,  # noqa: E712
         ).update({"$set": {"assignee_id": assignee_id, "updated_at": datetime.now(timezone.utc)}})
 
@@ -248,20 +269,13 @@ class PlanCommandService:
     ) -> Dict[str, Any]:
         """提交手工测试结果回填。"""
         item = await self._plan_service.get_item_by_id_or_raise(item_id)
+        await self._ensure_item_actor(item, actor_id)
         if item.ref_type != "manual":
             raise ValueError("仅手工条目支持结果回填")
         year = datetime.now().year
         seq = await SequenceIdService().next(f"manual_execution_result:{year}")
         result_id = f"MER-{year}-{str(seq).zfill(6)}"
-        if item.result_id:
-            existing = await ManualExecutionResultDoc.find_one(
-                ManualExecutionResultDoc.result_id == item.result_id,
-                ManualExecutionResultDoc.is_deleted == False,
-            )
-            if existing:
-                existing.is_deleted = True
-                await existing.save()
-                logger.debug("[RESULT] replace previous result_id={}", item.result_id)
+        previous_result_id = item.result_id
         result_doc = ManualExecutionResultDoc(
             result_id=result_id,
             item_id=item.item_id,
@@ -284,6 +298,15 @@ class PlanCommandService:
         item.result_id = result_id
         item.status = PlanItemStatus.DONE.value if request.passed else PlanItemStatus.FAIL.value
         await item.save()
+        if previous_result_id:
+            existing = await ManualExecutionResultDoc.find_one(
+                ManualExecutionResultDoc.result_id == previous_result_id,
+                ManualExecutionResultDoc.is_deleted == False,  # noqa: E712
+            )
+            if existing:
+                existing.is_deleted = True
+                await existing.save()
+                logger.debug("[RESULT] replace previous result_id={}", previous_result_id)
         await self._plan_service.recalculate_plan_progress(item.plan_id)
         logger.info("[RESULT] submit_result item={} result={} passed={} actor={}", item_id, result_id, request.passed, actor_id)
         return self._plan_service.result_to_dict(result_doc)
@@ -300,6 +323,7 @@ class PlanCommandService:
     ) -> Dict[str, Any]:
         """派发单条自动化用例到执行引擎。"""
         item = await self._plan_service.get_item_by_id_or_raise(item_id)
+        await self._ensure_item_actor(item, actor_id)
         if item.ref_type != "auto":
             raise ValueError("仅自动化条目支持计划内下发")
         if item.status != PlanItemStatus.PENDING.value:
@@ -342,6 +366,7 @@ class PlanCommandService:
     ) -> Dict[str, Any]:
         """取消计划条目的自动化执行。"""
         item = await self._plan_service.get_item_by_id_or_raise(item_id)
+        await self._ensure_item_actor(item, actor_id)
         if item.ref_type != "auto":
             raise ValueError("仅自动化条目支持取消执行")
         if not item.execution_task_id:
@@ -363,6 +388,7 @@ class PlanCommandService:
     ) -> Dict[str, Any]:
         """重新执行计划条目。"""
         item = await self._plan_service.get_item_by_id_or_raise(item_id)
+        await self._ensure_item_actor(item, actor_id)
         if item.status not in (PlanItemStatus.FAIL.value, PlanItemStatus.DONE.value):
             raise ValueError(f"仅 fail/done 状态的条目支持重新执行，当前状态: {item.status}")
 
@@ -425,9 +451,7 @@ class PlanCommandService:
     async def archive_item(self, item_id: str, actor_id: str) -> None:
         """归档计划条目。"""
         item = await self._plan_service.get_item_by_id_or_raise(item_id)
-        if item.assignee_id and item.assignee_id != actor_id:
-            if not await self._plan_service.is_admin_user(actor_id):
-                raise ValueError("只能归档分配给自己的条目")
+        await self._ensure_item_actor(item, actor_id)
         item.archived_at = datetime.now(timezone.utc)
         await item.save()
         await self._plan_service.recalculate_plan_progress(item.plan_id)
@@ -435,9 +459,7 @@ class PlanCommandService:
     async def unarchive_item(self, item_id: str, actor_id: str) -> None:
         """取消归档计划条目。"""
         item = await self._plan_service.get_item_by_id_or_raise(item_id)
-        if item.assignee_id and item.assignee_id != actor_id:
-            if not await self._plan_service.is_admin_user(actor_id):
-                raise ValueError("只能取消归档分配给自己的条目")
+        await self._ensure_item_actor(item, actor_id)
         item.archived_at = None
         await item.save()
         await self._plan_service.recalculate_plan_progress(item.plan_id)
@@ -445,6 +467,26 @@ class PlanCommandService:
     # ─────────────────────────────────────────────────────────────────
     #  内部辅助
     # ─────────────────────────────────────────────────────────────────
+
+    async def _is_plan_manager(self, plan: ExecutionPlanDoc, actor_id: str) -> bool:
+        return actor_id == plan.created_by or await self._plan_service.is_admin_user(actor_id)
+
+    async def _ensure_plan_manager(self, plan_id: str, actor_id: str) -> ExecutionPlanDoc:
+        plan = await self._plan_service.get_plan_or_raise(plan_id)
+        if not await self._is_plan_manager(plan, actor_id):
+            raise PermissionDeniedError("没有权限管理该执行计划")
+        return plan
+
+    async def _ensure_item_manager(self, item: ExecutionPlanItemDoc, actor_id: str) -> None:
+        plan = await self._plan_service.get_plan_or_raise(item.plan_id)
+        if not await self._is_plan_manager(plan, actor_id):
+            raise PermissionDeniedError("没有权限管理该计划条目")
+
+    async def _ensure_item_actor(self, item: ExecutionPlanItemDoc, actor_id: str) -> None:
+        plan = await self._plan_service.get_plan_or_raise(item.plan_id)
+        if item.assignee_id == actor_id or await self._is_plan_manager(plan, actor_id):
+            return
+        raise PermissionDeniedError("没有权限操作该计划条目")
 
     @staticmethod
     async def _log_assignee_change(

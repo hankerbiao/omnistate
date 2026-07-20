@@ -16,7 +16,7 @@ from app.modules.execution_plan.application.ports import (
     CaseSnapshotResolverPort,
     UserQueryPort,
 )
-from app.modules.execution_plan.domain.constants import PlanItemStatus, TASK_TO_ITEM_STATUS
+from app.modules.execution_plan.domain.constants import PlanItemStatus, PlanStatus, TASK_TO_ITEM_STATUS
 from app.modules.execution_plan.domain.exceptions import (
     ItemNotFoundError,
     PlanNotFoundError,
@@ -396,7 +396,7 @@ class ExecutionPlanService(BaseService):
             raise ResultNotFoundError(item_id)
         result_doc = await ManualExecutionResultDoc.find_one(
             ManualExecutionResultDoc.result_id == item.result_id,
-            ManualExecutionResultDoc.is_deleted == False,
+            ManualExecutionResultDoc.is_deleted == False,  # noqa: E712
         )
         if not result_doc:
             raise ResultNotFoundError(item_id)
@@ -407,7 +407,7 @@ class ExecutionPlanService(BaseService):
         # 查询手工结果
         manual_results = await ManualExecutionResultDoc.find(
             ManualExecutionResultDoc.case_id == case_id,
-            ManualExecutionResultDoc.is_deleted == False,
+            ManualExecutionResultDoc.is_deleted == False,  # noqa: E712
         ).sort("-executed_at").to_list()
 
         total = len(manual_results)
@@ -418,8 +418,8 @@ class ExecutionPlanService(BaseService):
         auto_items = await ExecutionPlanItemDoc.find(
             ExecutionPlanItemDoc.case_id == case_id,
             ExecutionPlanItemDoc.ref_type == "auto",
-            ExecutionPlanItemDoc.execution_task_id != None,
-            ExecutionPlanItemDoc.is_deleted == False,
+            ExecutionPlanItemDoc.execution_task_id != None,  # noqa: E711
+            ExecutionPlanItemDoc.is_deleted == False,  # noqa: E712
         ).to_list()
 
         task_ids = [it.execution_task_id for it in auto_items if it.execution_task_id]
@@ -461,7 +461,7 @@ class ExecutionPlanService(BaseService):
     async def _list_plan_items(self, plan_id: str) -> List[Dict[str, Any]]:
         docs = await ExecutionPlanItemDoc.find(
             ExecutionPlanItemDoc.plan_id == plan_id,
-            ExecutionPlanItemDoc.is_deleted == False,
+            ExecutionPlanItemDoc.is_deleted == False,  # noqa: E712
         ).sort("+order_no").to_list()
         plan_title = await self.get_plan_title(plan_id)
         # 批量加载 result（避免 N+1）
@@ -492,7 +492,7 @@ class ExecutionPlanService(BaseService):
             else:
                 result_doc = await ManualExecutionResultDoc.find_one(
                     ManualExecutionResultDoc.result_id == item.result_id,
-                    ManualExecutionResultDoc.is_deleted == False,
+                    ManualExecutionResultDoc.is_deleted == False,  # noqa: E712
                 )
                 if result_doc:
                     result_payload = self._result_payload(result_doc)
@@ -521,7 +521,7 @@ class ExecutionPlanService(BaseService):
             return
         task_doc = await ExecutionTaskDoc.find_one(
             ExecutionTaskDoc.task_id == item.execution_task_id,
-            ExecutionTaskDoc.is_deleted == False,
+            ExecutionTaskDoc.is_deleted == False,  # noqa: E712
         )
         if not task_doc:
             return
@@ -540,8 +540,8 @@ class ExecutionPlanService(BaseService):
         plan_doc = await self.get_plan_or_raise(plan_id)
         items = await ExecutionPlanItemDoc.find(
             ExecutionPlanItemDoc.plan_id == plan_id,
-            ExecutionPlanItemDoc.is_deleted == False,
-            ExecutionPlanItemDoc.archived_at == None,
+            ExecutionPlanItemDoc.is_deleted == False,  # noqa: E712
+            ExecutionPlanItemDoc.archived_at == None,  # noqa: E711
         ).to_list()
         item_count = len(items)
         done_count = sum(1 for item in items if item.status == PlanItemStatus.DONE.value)
@@ -551,8 +551,11 @@ class ExecutionPlanService(BaseService):
         plan_doc.item_count = item_count
         plan_doc.done_count = done_count
         plan_doc.progress_percent = progress
-        if item_count > 0 and completed_count == item_count and plan_doc.status == "active":
-            plan_doc.status = "done"
+        if plan_doc.status in {PlanStatus.ACTIVE.value, PlanStatus.DONE.value}:
+            if item_count > 0 and completed_count == item_count:
+                plan_doc.status = PlanStatus.DONE.value
+            elif plan_doc.status == PlanStatus.DONE.value:
+                plan_doc.status = PlanStatus.ACTIVE.value
         await plan_doc.save()
 
     async def resolve_case_snapshot(self, ref_type: str, case_id: str) -> Dict[str, Any]:
@@ -570,7 +573,7 @@ class ExecutionPlanService(BaseService):
     async def get_plan_or_raise(self, plan_id: str) -> ExecutionPlanDoc:
         doc = await ExecutionPlanDoc.find_one(
             ExecutionPlanDoc.plan_id == plan_id,
-            ExecutionPlanDoc.is_deleted == False,
+            ExecutionPlanDoc.is_deleted == False,  # noqa: E712
         )
         if not doc:
             raise PlanNotFoundError(plan_id)
@@ -580,7 +583,7 @@ class ExecutionPlanService(BaseService):
         doc = await ExecutionPlanItemDoc.find_one(
             ExecutionPlanItemDoc.plan_id == plan_id,
             ExecutionPlanItemDoc.item_id == item_id,
-            ExecutionPlanItemDoc.is_deleted == False,
+            ExecutionPlanItemDoc.is_deleted == False,  # noqa: E712
         )
         if not doc:
             raise ItemNotFoundError(item_id)
@@ -589,7 +592,7 @@ class ExecutionPlanService(BaseService):
     async def get_item_by_id_or_raise(self, item_id: str) -> ExecutionPlanItemDoc:
         doc = await ExecutionPlanItemDoc.find_one(
             ExecutionPlanItemDoc.item_id == item_id,
-            ExecutionPlanItemDoc.is_deleted == False,
+            ExecutionPlanItemDoc.is_deleted == False,  # noqa: E712
         )
         if not doc:
             raise ItemNotFoundError(item_id)
@@ -606,7 +609,7 @@ class ExecutionPlanService(BaseService):
             return {}
         plan_docs = await ExecutionPlanDoc.find(
             InOp(ExecutionPlanDoc.plan_id, list(plan_ids)),
-            ExecutionPlanDoc.is_deleted == False,
+            ExecutionPlanDoc.is_deleted == False,  # noqa: E712
         ).to_list()
         return {p.plan_id: p.title for p in plan_docs}
 
