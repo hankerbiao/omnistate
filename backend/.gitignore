@@ -42,6 +42,13 @@ env/
 # Logs
 logs/
 *.log
+.server.pid
+
+# Local agent/session state
+.workbuddy/
+
+# Accidental npm lockfile at backend root
+/package-lock.json
 
 # Config - 配置文件
 config.yaml              # 主配置文件（包含敏感信息）

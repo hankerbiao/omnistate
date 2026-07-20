@@ -56,7 +56,7 @@ vulture 原始输出 408 条，其中绝大多数已被判为**误报**并排除
 |---|------|------|------|------|
 | 1 | `execution/application/agent_service.py:29` `_ensure_utc_datetime` | 重复 | 与 `shared/core/datetime_utils.py:8` `ensure_utc_datetime` 逻辑几乎一致（仅多判 None） | 删除私有版，复用公共版（`task_command_helpers.py:23` 已正确复用） |
 | 2 | 各 module `service/*.py` 共 90+ 处 `{"is_deleted": False}` / `is_deleted == False` | 重复/不一致 | 未使用 `query_helpers.not_deleted()` 统一 helper | 统一改用 `not_deleted()`（同时让 #4 的函数产生价值） |
-| 3 | `mcp_server/client.py:32`、`modules/notification/service.py:289`、`shared/ai/embedding.py:42` | 重复 | 三处各自 `httpx.AsyncClient(...)` + 相同 `httpx.RequestError`/`HTTPStatusError` 处理 | 抽取 `shared/infrastructure/http.py` 公共客户端封装 |
+| 3 | `modules/notification/service.py:289`、`shared/ai/embedding.py:42` | 重复 | 两处各自 `httpx.AsyncClient(...)` + 相同 `httpx.RequestError`/`HTTPStatusError` 处理 | 抽取 `shared/infrastructure/http.py` 公共客户端封装（原 `mcp_server/client.py` 同款重复已随 MCP 模块删除一并移除） |
 | 4 | `shared/security/signing.py:27` `sha256_hex` vs `attachment_service.py:99`、`task_command_helpers.py:74`、`agent_credential.py:21` 内联 `hashlib.sha256` | 重复 | SHA256 散列多处各自实现 | 统一调用 `sha256_hex` |
 | 5 | `shared/security/signing.py:49` `compute_signature` vs `shared/auth/jwt_auth.py:30` `_sign_hs256` | 重复 | 各自 `hmac.new(sha256, ...)` | 收敛为单一签名函数 |
 | 6 | `shared/redis/service/__init__.py:184` `build_key` vs `shared/security/nonce_store.py:22` `_build_key` vs `modules/notification/repository/models/pending_notification.py:42` `build_key` | 重复 | Redis Key 拼接逻辑三处实现 | 统一用 `shared/redis` 的 `build_key` |
