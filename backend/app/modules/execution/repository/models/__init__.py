@@ -5,21 +5,18 @@ from .execution import (
     ExecutionTaskCaseDoc,
 )
 from .execution_biz_log import ExecutionBizLogDoc
-from .execution_event import ExecutionEventDoc
 
 
 __all__ = [
     "ExecutionTaskDoc",
     "ExecutionTaskCaseDoc",
     "ExecutionAgentDoc",
-    "ExecutionEventDoc",
     "ExecutionBizLogDoc",
     "DOCUMENT_MODELS",
 ]
 
 DOCUMENT_MODELS = [
     ExecutionAgentDoc,
-    ExecutionEventDoc,
     ExecutionBizLogDoc,
     ExecutionTaskDoc,
     ExecutionTaskCaseDoc,

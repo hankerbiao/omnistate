@@ -7,7 +7,6 @@ from app.modules.execution.application.constants import ConsumeStatus, DispatchS
 from app.modules.execution.application.progress_coordinator import ExecutionProgressCoordinator
 from app.modules.execution.domain.status_rules import resolve_case_status
 from app.modules.execution.repository.models import (
-    ExecutionEventDoc,
     ExecutionTaskCaseDoc,
     ExecutionTaskDoc,
 )
@@ -24,11 +23,9 @@ class ExecutionEventIngestService:
 
     它主要维护三类数据：
 
-    1. `ExecutionEventDoc`
-       保存原始事件归档，用于幂等、审计、排障和后续回放
-    2. `ExecutionTaskCaseDoc`
+    1. `ExecutionTaskCaseDoc`
        保存任务内每条 case 的当前状态、最近事件、断言统计和结果摘要
-    3. `ExecutionTaskDoc`
+    2. `ExecutionTaskDoc`
        保存整个任务的当前游标、聚合进度、整体状态，以及是否要继续推进到下一条 case
     """
 
@@ -45,17 +42,14 @@ class ExecutionEventIngestService:
 
         主流程：
         1. 解析事件
-        2. 基于 event_id 做幂等
-        3. 归档原始事件
-        4. 更新当前态 case / task
+        2. 更新当前态 case / task
 
         Returns:
             bool:
             - `True` 表示本次事件被成功消费并应用
-            - `False` 表示事件被跳过，例如重复事件或找不到对应任务
+            - `False` 表示事件被跳过，例如找不到对应任务
 
         设计要点：
-            - 即使任务不存在，也会归档事件，避免丢失排障线索
             - case 和 task 的更新分开进行，避免把局部失败放大成整条消息不可追踪
             - 是否推进下一条 case，只在 case_finish 这种“可判定当前 case 已结束”的事件上执行
         """
@@ -84,37 +78,7 @@ class ExecutionEventIngestService:
                 "execution task not found for event",
                 outcome="failed",
             )
-            await self._archive_event(
-                topic=topic,
-                event=event,
-                metadata=metadata,
-                processed=False,
-                process_error=f"Execution task not found: {event.task_id}",
-            )
             return False
-
-        # 幂等保证：依赖 event_id 唯一索引。并发重复事件会抛 DuplicateKeyError，
-        # 其他异常（如网络错误）则向上传播。
-        try:
-            await self._archive_event(
-                topic=topic,
-                event=event,
-                metadata=metadata,
-                processed=True,
-                process_error=None,
-            )
-        except Exception as e:
-            from pymongo.errors import DuplicateKeyError
-            if isinstance(e, DuplicateKeyError):
-                elog(
-                    "debug",
-                    ExecutionNode.EVENT_INGEST,
-                    "duplicate event_id detected, skipping",
-                    outcome="skipped",
-                    event_id=event.event_id,
-                )
-                return False
-            raise
 
         case_doc = None
         if event.case_id:
@@ -201,40 +165,6 @@ class ExecutionEventIngestService:
         )
 
         return True
-
-    async def _archive_event(
-        self,
-        topic: str,
-        event: TestEvent,
-        metadata: dict[str, Any],
-        processed: bool,
-        process_error: str | None,
-    ) -> None:
-        """归档原始事件。
-
-        这张表既用于 event_id 幂等，也用于调试、审计和后续回放。
-
-        这里存的是“收到什么就归档什么”的原则：
-            - 尽量不在归档层丢信息
-            - 处理成功与否通过 `processed/process_error` 标记区分
-            - 后续若要做补偿，可以直接从归档记录重放
-        """
-        await ExecutionEventDoc(
-            event_id=event.event_id,
-            task_id=event.task_id,
-            case_id=event.case_id,
-            topic=topic,
-            schema_name=event.schema_name,
-            event_type=event.event_type,
-            phase=event.phase,
-            event_seq=event.event_seq,
-            event_status=event.status,
-            event_timestamp=event.timestamp.astimezone(timezone.utc),
-            payload=event.model_dump(mode="json"),
-            metadata=metadata,
-            processed=processed,
-            process_error=process_error,
-        ).insert()
 
     @staticmethod
     def _apply_case_event(
@@ -353,7 +283,7 @@ class ExecutionEventIngestService:
         这里保留的是轻量历史：
             - 只累积 assert 事件
             - 非 assert 事件直接返回原列表
-            - 不做去重，默认依赖 event_id 幂等在更上层保证不会重复进入这里
+            - 不做归档表去重；重复事件会按当前回调重新聚合
         """
         existing_assertions = list(dict(getattr(target, "result_data", {}) or {}).get("assertions", []))
         if event.event_type != "assert":

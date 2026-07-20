@@ -31,22 +31,13 @@
 - 保存当前执行状态、进度、断言统计和结果数据
 - 作为平台串行推进与前端展示的数据来源
 
-### 3. `ExecutionEventDoc`
-
-执行事件归档表。
-
-职责：
-
-- 基于 `event_id` 做幂等
-- 保存原始 Kafka 事件和元数据
-
-### 4. `ExecutionBizLogDoc`
+### 3. `ExecutionBizLogDoc`
 
 平台侧业务轨迹表（非 Kafka 原始事件）。
 
 职责：
 
-- 记录平台业务节点（创建、下发、事件入库、自动推进、任务完成等）
+- 记录平台业务节点（创建、下发、事件消费、自动推进、任务完成等）
 - 支持按 `task_id` 查询时间线，便于排障
 
 ## 日志体系
@@ -63,7 +54,7 @@
 |------|------|
 | `task.create` | 创建任务 |
 | `task.dispatch` | 下发 case |
-| `event.ingest` | Kafka 事件入库与聚合 |
+| `event.ingest` | Kafka 事件消费与状态聚合 |
 | `case.update` | case 状态更新 |
 | `task.advance` | 自动推进下一条 case |
 | `task.complete` | 任务收口完成 |
@@ -87,7 +78,7 @@ GET /api/v1/execution/tasks/{task_id}/biz-logs
 ### 日志级别约定
 
 - **INFO**：业务节点成功（下发成功、推进下一条、任务完成）
-- **WARNING**：可恢复异常（重复 event、case 缺失、下发失败）
+- **WARNING**：可恢复异常（case 缺失、下发失败）
 - **ERROR**：需人工介入（auto-advance 失败、Kafka batch 单条失败）
 - **DEBUG**：payload 预览、状态机 skip 原因
 
@@ -121,12 +112,8 @@ GET /api/v1/execution/tasks/{task_id}/biz-logs
   负责任务查询和序列化
 - `agent_service.py`
   负责代理注册、心跳和查询
-- `task_dispatch_mixin.py`
-  下发实现细节，供 dispatch service 复用
-- `task_case_mixin.py`
-  负责 case 解析、快照构建和任务 case 明细维护
 - `event_ingest_service.py`
-  负责消费 Kafka 事件并回填当前任务态与当前 case 态
+  负责消费 Kafka 事件并回填当前任务态与当前 case 态，不再归档原始事件
 
 ## 对外接口
 
@@ -160,6 +147,6 @@ GET /api/v1/execution/tasks/{task_id}/biz-logs
 ## 维护建议
 
 - 改任务创建、删除、取消、停止，优先看 `task_command_service.py`
-- 改任务查询返回，优先看 `task_query_mixin.py`
+- 改任务查询返回，优先看 `task_query_service.py`
 - 改事件消费聚合，优先看 `event_ingest_service.py`
 - 改下发通道，优先看 `task_dispatcher.py`

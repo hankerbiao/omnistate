@@ -353,7 +353,7 @@ async def get_task_status(
 @router.get(
     "/tasks/{task_id}/timeline",
     response_model=APIResponse[dict],
-    summary="获取任务事件时间线",
+    summary="获取任务业务轨迹时间线",
     dependencies=[Depends(require_permission("execution_tasks:read"))],
 )
 async def get_task_timeline(
@@ -362,7 +362,7 @@ async def get_task_timeline(
         current_user=Depends(get_current_user),
         limit: int = Query(200, ge=1, le=500, description="返回条数上限"),
 ):
-    """获取任务事件时间线，包含业务轨迹日志和 Kafka 事件。"""
+    """获取任务平台侧业务轨迹日志。"""
     try:
         data = await service.get_task_timeline(task_id, limit=limit)
         return APIResponse(data=data)
