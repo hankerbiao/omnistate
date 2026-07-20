@@ -211,12 +211,8 @@ _ALLOWED_CROSS_MODULE_REPO_IMPORTS: dict[str, set[str]] = {
     "app/modules/execution/application/task_case_coordinator.py": {"app.modules.test_specs.repository.models"},
     # ── execution_plan ─────────────────────────────────────
     "app/modules/execution_plan/service/execution_plan_service.py": {
-        "app.modules.execution.repository.models",
         "app.modules.test_specs.repository.models",
         "app.modules.auth.repository.models",
-    },
-    "app/modules/execution_plan/application/adapters.py": {
-        "app.modules.execution.repository.models",
     },
     # ── lineage ──────────────────────────────────────────────
     "app/modules/lineage/service/lineage_service.py": {
@@ -364,3 +360,43 @@ def test_module_document_models_exported_consistently() -> None:
         assert len(doc_models_lines) > 0, (
             f"{models_init.relative_to(ROOT)} 需要定义 DOCUMENT_MODELS"
         )
+
+def test_execution_plan_does_not_own_execution_dispatch_adapter() -> None:
+    """execution 派发适配器归 execution 模块所有，execution_plan 只保留 Port。"""
+    assert not (ROOT / "app/modules/execution_plan/application/adapters.py").exists()
+    assert (ROOT / "app/modules/execution/application/plan_dispatch_adapter.py").exists()
+
+def test_execution_plan_service_does_not_read_execution_repository_models() -> None:
+    source = (ROOT / "app/modules/execution_plan/service/execution_plan_service.py").read_text()
+
+    assert "app.modules.execution.repository.models" not in source
+    assert "ExecutionTaskDoc" not in source
+
+
+def test_execution_plan_queries_do_not_sync_auto_item_status() -> None:
+    service_source = (ROOT / "app/modules/execution_plan/service/execution_plan_service.py").read_text()
+    query_source = (ROOT / "app/modules/execution_plan/application/plan_query_service.py").read_text()
+
+    assert "_sync_auto_item_status" not in service_source
+    assert "_sync_auto_item_status" not in query_source
+
+def test_execution_plan_has_explicit_execution_result_apply_entrypoint() -> None:
+    source = (ROOT / "app/modules/execution_plan/application/plan_command_service.py").read_text()
+
+    assert "def apply_execution_result" in source
+    assert "ExecutionPlanItemDoc.execution_task_id" in source
+
+def test_execution_plan_doc_does_not_store_derived_progress_fields() -> None:
+    source = (ROOT / "app/modules/execution_plan/repository/models/execution_plan.py").read_text()
+
+    assert "item_count:" not in source
+    assert "done_count:" not in source
+    assert "progress_percent:" not in source
+
+
+def test_execution_plan_status_refresh_does_not_write_derived_counts() -> None:
+    source = (ROOT / "app/modules/execution_plan/service/execution_plan_service.py").read_text()
+
+    assert "plan_doc.item_count" not in source
+    assert "plan_doc.done_count" not in source
+    assert "plan_doc.progress_percent" not in source

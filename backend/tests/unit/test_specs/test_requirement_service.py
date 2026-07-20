@@ -30,6 +30,7 @@ SERVICE_MODULE = "app.modules.test_specs.service.requirement_service"
 class _FakeField:
     def __init__(self, name):
         self._name = name
+
     def __eq__(self, other):
         return _FakeExpr(self._name, other)
 
@@ -42,6 +43,7 @@ class _FakeExpr:
 
 class _FakeRequirementDoc:
     store: dict[str, "_FakeRequirementDoc"] = {}
+    queries: list[dict] = []
 
     req_id = _FakeField("req_id")
 
@@ -62,17 +64,22 @@ class _FakeRequirementDoc:
 
     def model_dump(self) -> dict:
         data = {}
-        for attr in ["req_id", "title", "description", "tpm_owner_id", "tpm_owner_name",
-                      "manual_dev_id", "manual_dev_name", "auto_dev_id", "auto_dev_name",
-                      "workflow_item_id", "is_deleted", "status", "created_at", "updated_at"]:
+        for attr in [
+            "req_id", "title", "description", "tpm_owner_id", "tpm_owner_name",
+            "manual_dev_id", "manual_dev_name", "auto_dev_id", "auto_dev_name",
+            "workflow_item_id", "is_deleted", "status", "created_at", "updated_at",
+        ]:
             val = getattr(self, attr, None)
             if val is not None:
                 data[attr] = val
+        if hasattr(self, "embedding"):
+            data["embedding"] = self.embedding
         return data
 
     @classmethod
     def reset(cls):
         cls.store = {}
+        cls.queries = []
 
     @classmethod
     def find_one(cls, *args, **kwargs):
@@ -96,23 +103,35 @@ class _FakeRequirementDoc:
         class _Query:
             def __init__(self, docs):
                 self._docs = docs
+
             def sort(self, *args, **kwargs):
                 return self
+
             def skip(self, n):
                 return self
+
             def limit(self, n):
                 return self
+
             async def to_list(self):
                 return self._docs
+
             async def count(self):
                 return len(self._docs)
+
             def find(self, expr):
+                if isinstance(expr, dict):
+                    _FakeRequirementDoc.queries.append(expr)
+                    if "workflow_item_id" in expr and isinstance(expr["workflow_item_id"], dict):
+                        allowed = set(expr["workflow_item_id"].get("$in", []))
+                        self._docs = [d for d in self._docs if getattr(d, "workflow_item_id", None) in allowed]
                 return self
 
         docs = list(cls.store.values())
         if isinstance(expr, _FakeExpr):
             docs = [d for d in docs if getattr(d, expr._field, None) == expr._value]
         elif isinstance(expr, dict):
+            cls.queries.append(expr)
             docs = [d for d in docs if not getattr(d, "is_deleted", False)]
         return _Query(docs)
 
@@ -144,8 +163,10 @@ class _FakeTestCaseDoc:
 class _FakeTestCaseQuery:
     def __init__(self, docs):
         self._docs = docs
+
     def sort(self, *args, **kwargs):
         return self
+
     async def count(self):
         return len(self._docs)
 
@@ -270,13 +291,44 @@ def test_list_requirements_returns_empty_when_none():
     assert result == []
 
 
+def test_list_requirements_pushes_status_filter_to_workflow_ids():
+    service = RequirementService(AsyncMock(spec=WorkflowItemGateway))
+    _make_requirement("TR-001", workflow_item_id="wi-1")
+    _make_requirement("TR-002", workflow_item_id="wi-2")
+
+    with (
+        patch(f"{SERVICE_MODULE}.TestRequirementDoc", _FakeRequirementDoc),
+        patch.object(
+            service,
+            "_get_workflow_item_ids_by_status",
+            AsyncMock(return_value=["wi-2"]),
+        ),
+        patch.object(
+            service,
+            "_get_workflow_details_for_requirements",
+            AsyncMock(return_value={"TR-002": {"status": "IN_REVIEW"}}),
+        ),
+    ):
+        result = asyncio_run(service.list_requirements(status="IN_REVIEW"))
+
+    assert [item["req_id"] for item in result] == ["TR-002"]
+    assert {"workflow_item_id": {"$in": ["wi-2"]}} in _FakeRequirementDoc.queries
+
+
+def test_requirement_doc_to_dict_drops_embedding():
+    doc = _make_requirement("TR-001", embedding=[0.1, 0.2, 0.3])
+
+    data = RequirementService._doc_to_dict(doc)
+
+    assert "embedding" not in data
+
+
 # ══════════════════════════════════════════════
 #  Tests: get_requirement
 # ══════════════════════════════════════════════
 
 def test_get_requirement_not_found():
     service = RequirementService(AsyncMock(spec=WorkflowItemGateway))
-    from app.modules.test_specs.service._workflow_status_support import enrich_projected_status
     with patch(f"{SERVICE_MODULE}.TestRequirementDoc", _FakeRequirementDoc), \
          patch(f"{SERVICE_MODULE}.enrich_projected_status", AsyncMock(side_effect=lambda x: x)):
         with pytest.raises(KeyError, match="requirement not found"):

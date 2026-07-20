@@ -5,10 +5,11 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 from app.modules.execution.application.task_serializer import ExecutionTaskSerializer
+from app.modules.execution_plan.application.ports import ExecutionResultStatsPort
 from app.modules.execution.repository.models import ExecutionBizLogDoc, ExecutionTaskDoc
 
 
-class ExecutionTaskQueryService:
+class ExecutionTaskQueryService(ExecutionResultStatsPort):
     """任务查询与序列化能力。"""
 
     @staticmethod
@@ -22,6 +23,20 @@ class ExecutionTaskQueryService:
     @staticmethod
     def _serialize_task_case_doc(case_doc: Any) -> Dict[str, Any]:
         return ExecutionTaskSerializer.serialize_task_case_doc(case_doc)
+
+    async def count_passed_tasks(self, task_ids: List[str]) -> int:
+        """统计指定任务里最终通过的数量。
+
+        这是给 execution_plan 使用的只读端口实现，避免计划模块直接读 execution 仓储模型。
+        """
+        unique_task_ids = list(dict.fromkeys(task_ids))
+        if not unique_task_ids:
+            return 0
+        docs = await ExecutionTaskDoc.find(
+            ExecutionTaskDoc.task_id.is_in(unique_task_ids),
+            ExecutionTaskDoc.is_deleted == False,  # noqa: E712
+        ).to_list()
+        return sum(1 for doc in docs if doc.overall_status == "PASSED")
 
     async def list_tasks(self) -> List[Dict[str, Any]]:
         """列出全部未删除的执行任务。"""

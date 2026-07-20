@@ -116,6 +116,13 @@ class WorkflowQueryService:
             logger.warning(f"获取事项 {item_id} 时发生错误: {exc}")
         return None
 
+    async def list_work_item_ids_by_state(self, state: str) -> list[str]:
+        docs = await BusWorkItemDoc.find(
+            BusWorkItemDoc.current_state == state,
+            BusWorkItemDoc.is_deleted == False,  # noqa: E712
+        ).to_list()
+        return [str(doc.id) for doc in docs]
+
     async def get_logs(self, item_id: str, limit: int = 50) -> list[dict[str, Any]]:
         item = await self.get_item_by_id(item_id)
         if not item:

@@ -88,3 +88,8 @@ class WorkflowStatusQueryPort(ABC):
     ) -> dict[str, Any] | None:
         """查询单个工作流事项。"""
         ...
+
+    @abstractmethod
+    async def list_work_item_ids_by_state(self, state: str) -> list[str]:
+        """查询指定状态下的工作流事项 ID 列表。"""
+        ...

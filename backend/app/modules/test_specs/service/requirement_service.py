@@ -28,7 +28,7 @@ from app.modules.test_specs.service._workflow_status_support import (
     enrich_projected_status,
     get_workflow_details,
 )
-from app.modules.workflow.application import WorkflowItemGateway
+from app.modules.workflow.application import WorkflowItemGateway, WorkflowStatusQueryPort
 from app.shared.core.logger import log as logger
 from app.shared.core.mongo_client import get_mongo_client
 from app.shared.service import BaseService, SequenceIdService
@@ -60,12 +60,13 @@ class RequirementService(BaseService):
         # - 业务ID和关联：通过显式命令修改
     }
 
-    def __init__(self, workflow_gateway: WorkflowItemGateway) -> None:
+    def __init__(self, workflow_gateway: WorkflowItemGateway | WorkflowStatusQueryPort) -> None:
         self._workflow_gateway = workflow_gateway
 
     @staticmethod
     def _doc_to_dict(doc) -> Dict[str, Any]:
         data = doc.model_dump()
+        data.pop("embedding", None)
         data["id"] = str(doc.id)
         for field in ("planned_start_date", "planned_end_date"):
             value = data.get(field)
@@ -197,23 +198,25 @@ class RequirementService(BaseService):
         if auto_dev_id:
             query = query.find(TestRequirementDoc.auto_dev_id == auto_dev_id)
 
-        # 获取候选文档（如果需要状态过滤，先获取更大的集合）
         workflow_details: Dict[str, Dict[str, Any]] = {}
         if status:
-            docs = await query.sort("-created_at").to_list()
-            if not docs:
-                return []
+            if status == DEFAULT_PROJECTED_STATUS:
+                query = query.find(
+                    {
+                        "$or": [
+                            {"workflow_item_id": None},
+                            {"workflow_item_id": ""},
+                            {"workflow_item_id": {"$exists": False}},
+                        ]
+                    }
+                )
+            else:
+                workflow_item_ids = await self._get_workflow_item_ids_by_status(status)
+                if not workflow_item_ids:
+                    return []
+                query = query.find({"workflow_item_id": {"$in": workflow_item_ids}})
 
-            req_ids = [doc.req_id for doc in docs]
-            workflow_details = await self._get_workflow_details_for_requirements(req_ids)
-            filtered_docs = [
-                doc for doc in docs
-                if workflow_details.get(doc.req_id, {}).get("status") == status
-                or (doc.req_id not in workflow_details and status == DEFAULT_PROJECTED_STATUS)
-            ]
-            docs = filtered_docs[offset:offset + limit]
-        else:
-            docs = await query.sort("-created_at").skip(offset).limit(limit).to_list()
+        docs = await query.sort("-created_at").skip(offset).limit(limit).to_list()
 
         # Phase 3B: 转换时确保使用工作流状态作为真实来源
         if not docs:
@@ -228,6 +231,9 @@ class RequirementService(BaseService):
             to_dict=self._doc_to_dict,
             workflow_details=workflow_details,
         )
+
+    async def _get_workflow_item_ids_by_status(self, status: str) -> list[str]:
+        return await self._workflow_gateway.list_work_item_ids_by_state(status)
 
     async def update_requirement(self, req_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
         """更新需求内容字段（仅限安全的内容更新）。

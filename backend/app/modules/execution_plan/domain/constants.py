@@ -24,14 +24,6 @@ class PlanStatus(str, Enum):
     ARCHIVED = "archived"
 
 
-# 执行任务 overall_status → 计划条目状态 映射
-TASK_TO_ITEM_STATUS: dict[str, PlanItemStatus] = {
-    "QUEUED": PlanItemStatus.RUNNING,
-    "RUNNING": PlanItemStatus.RUNNING,
-    "PASSED": PlanItemStatus.DONE,
-    "FAILED": PlanItemStatus.FAIL,
-}
-
 # 手动回填结果时的状态映射
 RESULT_TO_ITEM_STATUS: dict[bool, PlanItemStatus] = {
     True: PlanItemStatus.DONE,

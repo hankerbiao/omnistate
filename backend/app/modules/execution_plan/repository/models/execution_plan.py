@@ -23,9 +23,6 @@ class ExecutionPlanDoc(Document, TimestampedDocumentMixin, SoftDeleteDocumentMix
     end_date: Optional[str] = Field(None, description="计划结束日期 YYYY-MM-DD")
     trigger_at: Optional[str] = Field(None, description="触发时间描述")
     created_by: str = Field(default="", description="创建人 user_id")
-    item_count: int = Field(default=0, description="条目总数")
-    done_count: int = Field(default=0, description="已完成条目数")
-    progress_percent: int = Field(default=0, description="进度 0-100")
 
     class Settings:
         name = "execution_plans"

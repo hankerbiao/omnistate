@@ -137,3 +137,20 @@ class UserQueryPort(ABC):
     async def is_admin(self, user_id: str) -> bool:
         """判断用户是否拥有 ADMIN 角色。"""
         ...
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  执行结果统计端口
+# ═══════════════════════════════════════════════════════════════════════
+
+class ExecutionResultStatsPort(ABC):
+    """执行任务结果统计端口。
+
+    由 execution 模块提供实现，execution_plan 只按 task_id 查询聚合结果，
+    不直接读取 ExecutionTaskDoc。
+    """
+
+    @abstractmethod
+    async def count_passed_tasks(self, task_ids: list[str]) -> int:
+        """统计给定任务 ID 中最终通过的任务数。"""
+        ...

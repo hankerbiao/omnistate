@@ -13,8 +13,7 @@ from app.modules.execution_plan.service.execution_plan_service import ExecutionP
 class PlanQueryService:
     """执行计划只读查询服务。
 
-    所有方法均为纯读操作，不修改数据（状态同步除外：
-    _sync_auto_item_status 会修正 auto 条目的状态缓存）。
+    所有方法均为纯读操作，不修改数据。
     """
 
     def __init__(

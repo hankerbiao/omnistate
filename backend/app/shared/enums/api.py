@@ -18,7 +18,6 @@ from app.modules.execution.application.constants import (
     ScheduleStatus,
 )
 from app.modules.execution_plan.domain.constants import (
-    TASK_TO_ITEM_STATUS,
     PlanItemStatus,
     PlanStatus,
 )
@@ -74,7 +73,6 @@ async def get_all_enums():
         # 执行计划
         "plan_item_status": [s.value for s in PlanItemStatus],
         "plan_status": [s.value for s in PlanStatus],
-        "task_to_item_status": {k: v.value for k, v in TASK_TO_ITEM_STATUS.items()},
 
         # 系统配置
         "config_types": ["string", "integer", "float", "boolean", "json"],

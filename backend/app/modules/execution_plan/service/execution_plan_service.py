@@ -11,12 +11,12 @@ from typing import Any, Dict, List, Optional
 
 from beanie.odm.operators.find.comparison import In as InOp
 
-from app.modules.execution.repository.models import ExecutionTaskDoc
 from app.modules.execution_plan.application.ports import (
     CaseSnapshotResolverPort,
+    ExecutionResultStatsPort,
     UserQueryPort,
 )
-from app.modules.execution_plan.domain.constants import PlanItemStatus, PlanStatus, TASK_TO_ITEM_STATUS
+from app.modules.execution_plan.domain.constants import PlanItemStatus, PlanStatus
 from app.modules.execution_plan.domain.exceptions import (
     ItemNotFoundError,
     PlanNotFoundError,
@@ -30,8 +30,6 @@ from app.modules.execution_plan.repository.models import (
 from app.shared.core.logger import log as logger
 from app.shared.service import BaseService, SequenceIdService
 
-_TASK_STATUS_MAP = TASK_TO_ITEM_STATUS
-
 
 class ExecutionPlanService(BaseService):
     """执行计划 CRUD 与查询。
@@ -44,10 +42,12 @@ class ExecutionPlanService(BaseService):
         self,
         case_snapshot_resolver: CaseSnapshotResolverPort | None = None,
         user_query: UserQueryPort | None = None,
+        execution_stats: ExecutionResultStatsPort | None = None,
     ) -> None:
         # 跨模块依赖通过端口注入；未注入时延迟加载默认实现（仅用于非 DI 场景）
         self._case_snapshot_resolver = case_snapshot_resolver
         self._user_query = user_query
+        self._execution_stats = execution_stats
 
     def _ensure_case_snapshot_resolver(self) -> CaseSnapshotResolverPort:
         if self._case_snapshot_resolver is None:
@@ -62,6 +62,12 @@ class ExecutionPlanService(BaseService):
             from app.modules.auth.plan_user_query_adapter import PlanUserQueryAdapter
             self._user_query = PlanUserQueryAdapter()
         return self._user_query
+
+    def _ensure_execution_stats(self) -> ExecutionResultStatsPort:
+        if self._execution_stats is None:
+            from app.modules.execution.application.task_query_service import ExecutionTaskQueryService
+            self._execution_stats = ExecutionTaskQueryService()
+        return self._execution_stats
 
     # ─────────────────────────────────────────────────────────────────
     #  计划 CRUD
@@ -107,11 +113,7 @@ class ExecutionPlanService(BaseService):
         for doc in docs:
             plan_dict = self._plan_to_dict(doc)
             items = items_by_plan.get(doc.plan_id, [])
-            item_count = len(items)
-            done_count = sum(1 for i in items if i.status == PlanItemStatus.DONE)
-            plan_dict["item_count"] = item_count
-            plan_dict["done_count"] = done_count
-            plan_dict["progress_percent"] = round(done_count / item_count * 100) if item_count else 0
+            plan_dict.update(self._plan_stats_from_items(items))
             results.append(plan_dict)
 
         return {
@@ -224,10 +226,6 @@ class ExecutionPlanService(BaseService):
         results: List[Dict[str, Any]] = []
         for doc in docs:
             try:
-                await self._sync_auto_item_status(doc)
-            except Exception as exc:
-                logger.warning("[items] 同步条目状态失败 {}: {}", doc.item_id, exc)
-            try:
                 results.append(await self.item_to_response(doc, _plan_title=plan_map.get(doc.plan_id, ""), result_map=result_map))
             except Exception as exc:
                 logger.warning("[items] 序列化条目失败 {}: {}", doc.item_id, exc)
@@ -264,7 +262,6 @@ class ExecutionPlanService(BaseService):
         results: List[Dict[str, Any]] = []
         for doc in docs:
             try:
-                await self._sync_auto_item_status(doc)
                 doc_dict = await self.item_to_response(doc, _plan_title=plan_map.get(doc.plan_id, ""), result_map=result_map)
                 results.append(doc_dict)
             except Exception as exc:
@@ -327,7 +324,7 @@ class ExecutionPlanService(BaseService):
                 "plan_id": plan_doc.plan_id,
                 "title": plan_doc.title,
                 "status": plan_doc.status,
-                "progress_percent": plan_doc.progress_percent,
+                "progress_percent": self._progress_from_counts(item_count, done_count, fail_count),
                 "item_count": item_count,
                 "running_count": running_count,
                 "pending_count": pending_count,
@@ -340,19 +337,6 @@ class ExecutionPlanService(BaseService):
             ExecutionPlanItemDoc.is_deleted == False,  # noqa: E712
             ExecutionPlanItemDoc.status == PlanItemStatus.RUNNING,
         ).to_list()
-
-        for item in running_items:
-            if item.ref_type == "auto":
-                try:
-                    await self._sync_auto_item_status(item)
-                except Exception as exc:
-                    logger.warning("同步运行中条目状态失败 {}: {}", item.item_id, exc)
-
-        # 重新查询 running（同步后部分条目可能已变为 done/fail）
-        running_items = await ExecutionPlanItemDoc.find(
-            ExecutionPlanItemDoc.is_deleted == False,  # noqa: E712
-            ExecutionPlanItemDoc.status == PlanItemStatus.RUNNING,
-        ).sort("-updated_at").to_list()
 
         # 批量加载 running 条目的 result（避免 N+1）
         running_result_ids = {item.result_id for item in running_items if item.result_id}
@@ -424,14 +408,9 @@ class ExecutionPlanService(BaseService):
 
         task_ids = [it.execution_task_id for it in auto_items if it.execution_task_id]
         if task_ids:
-            task_docs = await ExecutionTaskDoc.find(
-                InOp(ExecutionTaskDoc.task_id, task_ids),
-            ).to_list()
-            _TASK_PASS_STATUS = {"PASSED", "DONE"}
-            for t in task_docs:
-                total += 1
-                if t.overall_status in _TASK_PASS_STATUS:
-                    passed += 1
+            unique_task_ids = list(dict.fromkeys(task_ids))
+            total += len(unique_task_ids)
+            passed += await self._ensure_execution_stats().count_passed_tasks(unique_task_ids)
 
         recent = []
         for r in manual_results[:10]:
@@ -470,7 +449,6 @@ class ExecutionPlanService(BaseService):
         result = []
         for doc in docs:
             try:
-                await self._sync_auto_item_status(doc)
                 result.append(await self.item_to_response(doc, _plan_title=plan_title, result_map=result_map))
             except Exception as e:
                 logger.error("item_to_response 失败 (item_id={}): {}", doc.item_id, e, exc_info=True)
@@ -516,27 +494,7 @@ class ExecutionPlanService(BaseService):
             "updated_at": item.updated_at.isoformat() if item.updated_at else None,
         }
 
-    async def _sync_auto_item_status(self, item: ExecutionPlanItemDoc) -> None:
-        if item.ref_type != "auto" or not item.execution_task_id:
-            return
-        task_doc = await ExecutionTaskDoc.find_one(
-            ExecutionTaskDoc.task_id == item.execution_task_id,
-            ExecutionTaskDoc.is_deleted == False,  # noqa: E712
-        )
-        if not task_doc:
-            return
-        mapped = _TASK_STATUS_MAP.get(task_doc.overall_status)
-        if mapped and mapped != item.status:
-            old_status = item.status
-            item.status = mapped
-            await item.save()
-            await self.recalculate_plan_progress(item.plan_id)
-            logger.debug(
-                "[SYNC] item={} task={} status {} -> {} (task_overall={})",
-                item.item_id, item.execution_task_id, old_status, mapped, task_doc.overall_status,
-            )
-
-    async def recalculate_plan_progress(self, plan_id: str) -> None:
+    async def refresh_plan_status(self, plan_id: str) -> None:
         plan_doc = await self.get_plan_or_raise(plan_id)
         items = await ExecutionPlanItemDoc.find(
             ExecutionPlanItemDoc.plan_id == plan_id,
@@ -544,19 +502,18 @@ class ExecutionPlanService(BaseService):
             ExecutionPlanItemDoc.archived_at == None,  # noqa: E711
         ).to_list()
         item_count = len(items)
-        done_count = sum(1 for item in items if item.status == PlanItemStatus.DONE.value)
-        fail_count = sum(1 for item in items if item.status == PlanItemStatus.FAIL.value)
-        completed_count = done_count + fail_count
-        progress = round(completed_count / item_count * 100) if item_count else 0
-        plan_doc.item_count = item_count
-        plan_doc.done_count = done_count
-        plan_doc.progress_percent = progress
+        completed_count = sum(
+            1 for item in items
+            if item.status in {PlanItemStatus.DONE.value, PlanItemStatus.FAIL.value}
+        )
+        original_status = plan_doc.status
         if plan_doc.status in {PlanStatus.ACTIVE.value, PlanStatus.DONE.value}:
             if item_count > 0 and completed_count == item_count:
                 plan_doc.status = PlanStatus.DONE.value
             elif plan_doc.status == PlanStatus.DONE.value:
                 plan_doc.status = PlanStatus.ACTIVE.value
-        await plan_doc.save()
+        if plan_doc.status != original_status:
+            await plan_doc.save()
 
     async def resolve_case_snapshot(self, ref_type: str, case_id: str) -> Dict[str, Any]:
         """通过端口解析用例快照，消除对 test_specs repository 的直接依赖。"""
@@ -629,12 +586,27 @@ class ExecutionPlanService(BaseService):
             "end_date": doc.end_date,
             "trigger_at": doc.trigger_at,
             "created_by": doc.created_by,
-            "item_count": doc.item_count,
-            "done_count": doc.done_count,
-            "progress_percent": doc.progress_percent,
             "created_at": doc.created_at,
             "updated_at": doc.updated_at,
         }
+
+    @staticmethod
+    def _plan_stats_from_items(items: List[ExecutionPlanItemDoc]) -> Dict[str, int]:
+        item_count = len(items)
+        done_count = sum(1 for item in items if item.status == PlanItemStatus.DONE.value)
+        fail_count = sum(1 for item in items if item.status == PlanItemStatus.FAIL.value)
+        return {
+            "item_count": item_count,
+            "done_count": done_count,
+            "progress_percent": ExecutionPlanService._progress_from_counts(
+                item_count, done_count, fail_count,
+            ),
+        }
+
+    @staticmethod
+    def _progress_from_counts(item_count: int, done_count: int, fail_count: int) -> int:
+        completed_count = done_count + fail_count
+        return round(completed_count / item_count * 100) if item_count else 0
 
     @staticmethod
     def _result_payload(doc: ManualExecutionResultDoc) -> Dict[str, Any]:

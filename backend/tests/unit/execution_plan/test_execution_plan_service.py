@@ -352,9 +352,6 @@ def plan():
         title="测试计划",
         status="active",
         created_by="owner1",
-        item_count=0,
-        done_count=0,
-        progress_percent=0,
         is_deleted=False,
     )
     doc.save()
@@ -950,9 +947,6 @@ class TestBatchUpdateAssignee:
             title="其他计划",
             status="active",
             created_by="owner1",
-            item_count=0,
-            done_count=0,
-            progress_percent=0,
             is_deleted=False,
         )
         other_plan.save()
@@ -1049,9 +1043,7 @@ class TestListMyItems:
             assignee_id="other_user",
             is_deleted=False,
         ).save()
-        # patch _sync_auto_item_status to no-op
-        with patch.object(service, "_sync_auto_item_status", AsyncMock()):
-            results = await service.list_my_items(assignee_id="my_user")
+        results = await service.list_my_items(assignee_id="my_user")
         assert len(results) == 1
         assert results[0]["item_id"] == "EPI-MY"
 
@@ -1078,8 +1070,7 @@ class TestListItems:
             status=PlanItemStatus.PENDING.value,
             is_deleted=False,
         ).save()
-        with patch.object(service, "_sync_auto_item_status", AsyncMock()):
-            results = await service.list_items(status="done")
+        results = await service.list_items(status="done")
         assert len(results) == 1
         assert results[0]["item_id"] == "EPI-D"
 
@@ -1102,8 +1093,7 @@ class TestListArchivedItems:
             archived_at=datetime.now(timezone.utc),
             is_deleted=False,
         ).save()
-        with patch.object(service, "_sync_auto_item_status", AsyncMock()):
-            results = await service.list_archived_items(assignee_id="my_user")
+        results = await service.list_archived_items(assignee_id="my_user")
         assert len(results) == 1
         assert results[0]["item_id"] == "EPI-ARCH"
 
@@ -1134,8 +1124,7 @@ class TestGetOverview:
             status=PlanItemStatus.FAIL.value,
             is_deleted=False,
         ).save()
-        with patch.object(service, "_sync_auto_item_status", AsyncMock()):
-            overview = await service.get_overview()
+        overview = await service.get_overview()
         assert overview["total_items"] == 3
         assert overview["done_count"] == 1
         assert overview["fail_count"] == 1
@@ -1148,8 +1137,8 @@ class TestGetOverview:
 # ═══════════════════════════════════════════════════════════════════════
 
 
-class TestRecalculateProgress:
-    async def test_progress_all_done_marks_plan_done(self, service, plan):
+class TestRefreshPlanStatus:
+    async def test_all_done_marks_plan_done(self, service, plan):
         for i in range(3):
             _FakeItemDoc(
                 item_id=f"EPI-PROG-{i}",
@@ -1159,12 +1148,11 @@ class TestRecalculateProgress:
                 status=PlanItemStatus.DONE.value,
                 is_deleted=False,
             ).save()
-        await service.recalculate_plan_progress(plan.plan_id)
+        await service.refresh_plan_status(plan.plan_id)
         updated = _FakePlanDoc.store[plan.plan_id]
-        assert updated.progress_percent == 100
         assert updated.status == "done"
 
-    async def test_progress_partial(self, service, plan):
+    async def test_partial_plan_stays_active(self, service, plan):
         _FakeItemDoc(
             item_id="EPI-P1",
             plan_id=plan.plan_id,
@@ -1181,9 +1169,8 @@ class TestRecalculateProgress:
             status=PlanItemStatus.PENDING.value,
             is_deleted=False,
         ).save()
-        await service.recalculate_plan_progress(plan.plan_id)
-        updated = _FakePlanDoc.store[plan.plan_id]
-        assert updated.progress_percent == 50
+        await service.refresh_plan_status(plan.plan_id)
+        assert _FakePlanDoc.store[plan.plan_id].status == "active"
 
     async def test_done_plan_returns_active_when_unfinished_items_exist(self, service, plan):
         plan.status = "done"
@@ -1196,10 +1183,9 @@ class TestRecalculateProgress:
             status=PlanItemStatus.PENDING.value,
             is_deleted=False,
         ).save()
-        await service.recalculate_plan_progress(plan.plan_id)
+        await service.refresh_plan_status(plan.plan_id)
         updated = _FakePlanDoc.store[plan.plan_id]
         assert updated.status == "active"
-        assert updated.progress_percent == 0
 
     async def test_draft_plan_status_is_not_recalculated_to_active_or_done(self, service, plan):
         plan.status = "draft"
@@ -1212,10 +1198,10 @@ class TestRecalculateProgress:
             status=PlanItemStatus.DONE.value,
             is_deleted=False,
         ).save()
-        await service.recalculate_plan_progress(plan.plan_id)
+        await service.refresh_plan_status(plan.plan_id)
         assert _FakePlanDoc.store[plan.plan_id].status == "draft"
 
-    async def test_progress_fail_and_done_counts_separately(self, service, plan):
+    async def test_done_and_fail_items_mark_plan_done(self, service, plan):
         _FakeItemDoc(
             item_id="EPI-PD",
             plan_id=plan.plan_id,
@@ -1232,7 +1218,31 @@ class TestRecalculateProgress:
             status=PlanItemStatus.FAIL.value,
             is_deleted=False,
         ).save()
-        await service.recalculate_plan_progress(plan.plan_id)
+        await service.refresh_plan_status(plan.plan_id)
         updated = _FakePlanDoc.store[plan.plan_id]
-        assert updated.done_count == 1  # only DONE, not FAIL
-        assert updated.progress_percent == 100  # both DONE+FAIL = completed
+        assert updated.status == "done"
+
+class TestPlanStats:
+    def test_plan_stats_are_derived_from_items(self):
+        items = [
+            _FakeItemDoc(
+                item_id="EPI-S1", plan_id="EP-1", ref_type="manual", case_id="M1",
+                status=PlanItemStatus.DONE.value, is_deleted=False,
+            ),
+            _FakeItemDoc(
+                item_id="EPI-S2", plan_id="EP-1", ref_type="manual", case_id="M2",
+                status=PlanItemStatus.FAIL.value, is_deleted=False,
+            ),
+            _FakeItemDoc(
+                item_id="EPI-S3", plan_id="EP-1", ref_type="manual", case_id="M3",
+                status=PlanItemStatus.PENDING.value, is_deleted=False,
+            ),
+        ]
+
+        stats = ExecutionPlanService._plan_stats_from_items(items)
+
+        assert stats == {
+            "item_count": 3,
+            "done_count": 1,
+            "progress_percent": 67,
+        }

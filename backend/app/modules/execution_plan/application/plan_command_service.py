@@ -130,7 +130,7 @@ class PlanCommandService:
             if assignee_id:
                 assignee_items[assignee_id].append(case_title)
 
-        await self._plan_service.recalculate_plan_progress(plan_id)
+        await self._plan_service.refresh_plan_status(plan_id)
 
         # 通知被指派人（通过 Port）
         if assignee_items:
@@ -150,7 +150,7 @@ class PlanCommandService:
         await self._ensure_item_manager(item, actor_id)
         item.is_deleted = True
         await item.save()
-        await self._plan_service.recalculate_plan_progress(plan_id)
+        await self._plan_service.refresh_plan_status(plan_id)
 
     async def update_item(
         self,
@@ -170,7 +170,7 @@ class PlanCommandService:
                 raise ValueError(f"status 无效: {status_val}, 可选: {[s.value for s in PlanItemStatus]}")
         self._plan_service._apply_updates(item, updates, allowed)
         await item.save()
-        await self._plan_service.recalculate_plan_progress(plan_id)
+        await self._plan_service.refresh_plan_status(plan_id)
         logger.debug("[ITEM] update_item plan={} item={} updates={}", plan_id, item_id, updates)
         if "assignee_id" in updates:
             await self._log_assignee_change(
@@ -239,7 +239,7 @@ class PlanCommandService:
             ExecutionPlanItemDoc.is_deleted == False,  # noqa: E712
         ).update({"$set": {"assignee_id": assignee_id, "updated_at": datetime.now(timezone.utc)}})
 
-        await self._plan_service.recalculate_plan_progress(plan_id)
+        await self._plan_service.refresh_plan_status(plan_id)
         updated = result.modified_count
         logger.debug("[ITEM] batch_update_assignee plan={} count={} assignee={}", plan_id, updated, assignee_id)
 
@@ -307,7 +307,7 @@ class PlanCommandService:
                 existing.is_deleted = True
                 await existing.save()
                 logger.debug("[RESULT] replace previous result_id={}", previous_result_id)
-        await self._plan_service.recalculate_plan_progress(item.plan_id)
+        await self._plan_service.refresh_plan_status(item.plan_id)
         logger.info("[RESULT] submit_result item={} result={} passed={} actor={}", item_id, result_id, request.passed, actor_id)
         return self._plan_service.result_to_dict(result_doc)
 
@@ -355,9 +355,60 @@ class PlanCommandService:
             parameters=dict(request.parameters),
         )
         await item.save()
-        await self._plan_service.recalculate_plan_progress(item.plan_id)
+        await self._plan_service.refresh_plan_status(item.plan_id)
         logger.info("[DISPATCH] item={} task={} actor={}", item_id, task_id, actor_id)
         return data
+
+    async def apply_execution_result(
+        self,
+        task_id: str,
+        overall_status: str,
+    ) -> Dict[str, Any] | None:
+        """将 execution 任务终态显式应用到计划条目。
+
+        这是自动化结果回写计划项的唯一入口；查询服务不得再隐式同步状态。
+        重复提交同一终态时幂等返回当前条目，冲突终态不覆盖已有最终结果。
+        """
+        item = await ExecutionPlanItemDoc.find_one(
+            ExecutionPlanItemDoc.execution_task_id == task_id,
+            ExecutionPlanItemDoc.is_deleted == False,  # noqa: E712
+        )
+        if item is None:
+            logger.debug("[RESULT] no plan item bound to execution task {}", task_id)
+            return None
+        if item.ref_type != "auto":
+            raise ValueError("仅自动化条目支持自动化结果回写")
+
+        mapped_status = self._map_execution_status(overall_status)
+        if mapped_status is None:
+            return await self._plan_service.item_to_response(item)
+
+        if item.status == mapped_status:
+            return await self._plan_service.item_to_response(item)
+        if item.status in {PlanItemStatus.DONE.value, PlanItemStatus.FAIL.value}:
+            logger.warning(
+                "[RESULT] ignore conflicting final status item={} task={} current={} incoming={}",
+                item.item_id, task_id, item.status, mapped_status,
+            )
+            return await self._plan_service.item_to_response(item)
+
+        item.status = mapped_status
+        await item.save()
+        await self._plan_service.refresh_plan_status(item.plan_id)
+        logger.info(
+            "[RESULT] apply execution result item={} task={} status={}",
+            item.item_id, task_id, mapped_status,
+        )
+        return await self._plan_service.item_to_response(item)
+
+    @staticmethod
+    def _map_execution_status(overall_status: str) -> str | None:
+        status = str(overall_status).upper()
+        if status == "PASSED":
+            return PlanItemStatus.DONE.value
+        if status in {"FAILED", "SKIPPED", "CANCELLED", "TIMEOUT"}:
+            return PlanItemStatus.FAIL.value
+        return None
 
     async def cancel_execution(
         self,
@@ -376,7 +427,7 @@ class PlanCommandService:
         item.execution_task_id = None
         item.status = PlanItemStatus.PENDING.value
         await item.save()
-        await self._plan_service.recalculate_plan_progress(item.plan_id)
+        await self._plan_service.refresh_plan_status(item.plan_id)
         logger.info("[CANCEL] item={} status reset to pending, actor={}", item_id, actor_id)
         return await self._plan_service.item_to_response(item)
 
@@ -399,7 +450,7 @@ class PlanCommandService:
         if item.ref_type == "auto":
             item.execution_task_id = None
         await item.save()
-        await self._plan_service.recalculate_plan_progress(item.plan_id)
+        await self._plan_service.refresh_plan_status(item.plan_id)
         logger.info(
             "[RERUN] item={} ref_type={} status=reset->pending assignee={} actor={}",
             item_id, item.ref_type, request.assignee_id or "unchanged", actor_id,
@@ -454,7 +505,7 @@ class PlanCommandService:
         await self._ensure_item_actor(item, actor_id)
         item.archived_at = datetime.now(timezone.utc)
         await item.save()
-        await self._plan_service.recalculate_plan_progress(item.plan_id)
+        await self._plan_service.refresh_plan_status(item.plan_id)
 
     async def unarchive_item(self, item_id: str, actor_id: str) -> None:
         """取消归档计划条目。"""
@@ -462,7 +513,7 @@ class PlanCommandService:
         await self._ensure_item_actor(item, actor_id)
         item.archived_at = None
         await item.save()
-        await self._plan_service.recalculate_plan_progress(item.plan_id)
+        await self._plan_service.refresh_plan_status(item.plan_id)
 
     # ─────────────────────────────────────────────────────────────────
     #  内部辅助

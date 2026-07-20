@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import timezone
-from typing import Any
+from typing import Any, Protocol
 
 from app.modules.execution.application.constants import ConsumeStatus, DispatchStatus, OverallStatus
 from app.modules.execution.application.progress_coordinator import ExecutionProgressCoordinator
@@ -13,6 +13,10 @@ from app.modules.execution.repository.models import (
 from app.modules.execution.schemas.kafka_events import TestEvent
 from app.modules.execution.shared.execution_context import set_execution_context
 from app.modules.execution.shared.execution_log import ExecutionNode, elog
+
+
+class ExecutionResultSink(Protocol):
+    async def apply_execution_result(self, task_id: str, overall_status: str) -> None: ...
 
 
 class ExecutionEventIngestService:
@@ -29,8 +33,18 @@ class ExecutionEventIngestService:
        保存整个任务的当前游标、聚合进度、整体状态，以及是否要继续推进到下一条 case
     """
 
-    def __init__(self, progress_coordinator: ExecutionProgressCoordinator | None = None) -> None:
+    def __init__(
+        self,
+        progress_coordinator: ExecutionProgressCoordinator | None = None,
+        result_sink: ExecutionResultSink | None = None,
+    ) -> None:
         self._progress_coordinator = progress_coordinator or ExecutionProgressCoordinator()
+        if result_sink is None:
+            from app.modules.execution_plan.application.execution_result_adapter import (
+                ExecutionPlanResultAdapter,
+            )
+            result_sink = ExecutionPlanResultAdapter()
+        self._result_sink = result_sink
 
     async def ingest_event(
         self,
@@ -163,8 +177,18 @@ class ExecutionEventIngestService:
             event_time=event_time,
             resolved_case_status=case_status,
         )
+        await self._publish_final_task_result(task_doc)
 
         return True
+
+    async def _publish_final_task_result(self, task_doc: Any) -> None:
+        overall_status = getattr(task_doc.overall_status, "value", task_doc.overall_status)
+        if str(overall_status) not in {"PASSED", "FAILED", "SKIPPED", "CANCELLED", "TIMEOUT"}:
+            return
+        await self._result_sink.apply_execution_result(
+            task_id=task_doc.task_id,
+            overall_status=str(overall_status),
+        )
 
     @staticmethod
     def _apply_case_event(

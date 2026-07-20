@@ -4,12 +4,13 @@ from pymongo.asynchronous.client_session import AsyncClientSession
 
 from app.modules.workflow.application import (
     WorkflowItemGateway,
+    WorkflowStatusQueryPort,
     WorkflowQueryService,
 )
 from app.modules.workflow.application.mutation_service import WorkflowMutationService
 
 
-class WorkflowServicesAdapter(WorkflowItemGateway):
+class WorkflowServicesAdapter(WorkflowItemGateway, WorkflowStatusQueryPort):
     """Adapter exposing workflow query/mutation services as a test-specs gateway."""
 
     def __init__(
@@ -44,3 +45,20 @@ class WorkflowServicesAdapter(WorkflowItemGateway):
         if self._query_service is None:
             raise RuntimeError("query_service is required to load work items")
         return await self._query_service.get_item_by_id(item_id)
+
+    async def get_workflow_details(
+        self, workflow_ids: list[str]
+    ) -> dict[str, dict[str, object]]:
+        if self._query_service is None:
+            raise RuntimeError("query_service is required to load work item details")
+        details: dict[str, dict[str, object]] = {}
+        for workflow_id in workflow_ids:
+            item = await self._query_service.get_item_by_id(workflow_id)
+            if item is not None:
+                details[workflow_id] = item
+        return details
+
+    async def list_work_item_ids_by_state(self, state: str) -> list[str]:
+        if self._query_service is None:
+            raise RuntimeError("query_service is required to load work item ids")
+        return await self._query_service.list_work_item_ids_by_state(state)
