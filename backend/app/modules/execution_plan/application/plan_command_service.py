@@ -15,7 +15,7 @@ from app.modules.execution_plan.application.ports import (
     ExecutionDispatchPort,
     PlanNotificationPort,
 )
-from app.modules.execution_plan.domain.constants import PlanItemStatus
+from app.modules.execution_plan.domain.constants import PlanItemStatus, ResultSource
 from app.modules.execution_plan.repository.models import (
     ExecutionPlanChangeLogDoc,
     ExecutionPlanDoc,
@@ -162,12 +162,15 @@ class PlanCommandService:
         """更新计划条目字段，必要时记录审计日志。"""
         item = await self._plan_service.get_item_or_raise(plan_id, item_id)
         await self._ensure_item_manager(item, actor_id)
-        allowed = {"assignee_id", "status", "component", "order_no"}
+        process_fields = {"status", "execution_task_id", "result_id", "result_source"}
+        blocked = process_fields.intersection(data)
+        if blocked:
+            raise ValueError(
+                "计划条目流程字段只能通过 dispatch_plan_item/apply_execution_result/submit_manual_result 更新: "
+                f"{sorted(blocked)}"
+            )
+        allowed = {"assignee_id", "component", "order_no"}
         updates = self._plan_service._filter_updates(data, allowed)
-        if "status" in updates:
-            status_val = str(updates["status"])
-            if status_val not in PlanItemStatus._value2member_map_:
-                raise ValueError(f"status 无效: {status_val}, 可选: {[s.value for s in PlanItemStatus]}")
         self._plan_service._apply_updates(item, updates, allowed)
         await item.save()
         await self._plan_service.refresh_plan_status(plan_id)
@@ -261,7 +264,7 @@ class PlanCommandService:
     #  手工结果回填
     # ─────────────────────────────────────────────────────────────────
 
-    async def submit_result(
+    async def submit_manual_result(
         self,
         item_id: str,
         request: Any,
@@ -295,8 +298,7 @@ class PlanCommandService:
             executed_at=request.executed_at or datetime.now(timezone.utc),
         )
         await result_doc.insert()
-        item.result_id = result_id
-        item.status = PlanItemStatus.DONE.value if request.passed else PlanItemStatus.FAIL.value
+        self._mark_manual_result(item, result_id=result_id, passed=request.passed)
         await item.save()
         if previous_result_id:
             existing = await ManualExecutionResultDoc.find_one(
@@ -308,14 +310,17 @@ class PlanCommandService:
                 await existing.save()
                 logger.debug("[RESULT] replace previous result_id={}", previous_result_id)
         await self._plan_service.refresh_plan_status(item.plan_id)
-        logger.info("[RESULT] submit_result item={} result={} passed={} actor={}", item_id, result_id, request.passed, actor_id)
+        logger.info(
+            "[RESULT] submit_manual_result item={} result={} passed={} actor={}",
+            item_id, result_id, request.passed, actor_id,
+        )
         return self._plan_service.result_to_dict(result_doc)
 
     # ─────────────────────────────────────────────────────────────────
     #  自动化派发
     # ─────────────────────────────────────────────────────────────────
 
-    async def dispatch_item(
+    async def dispatch_plan_item(
         self,
         item_id: str,
         request: Any,
@@ -347,13 +352,7 @@ class PlanCommandService:
             config=dict(request.config),
         )
         task_id = data.get("task_id", "?")
-        item.execution_task_id = task_id
-        item.status = PlanItemStatus.RUNNING.value
-        item.dispatch_config = DispatchConfig(
-            schedule_type=request.schedule_type,
-            planned_at=request.planned_at,
-            parameters=dict(request.parameters),
-        )
+        self._mark_plan_item_dispatched(item, task_id=task_id, request=request)
         await item.save()
         await self._plan_service.refresh_plan_status(item.plan_id)
         logger.info("[DISPATCH] item={} task={} actor={}", item_id, task_id, actor_id)
@@ -392,7 +391,7 @@ class PlanCommandService:
             )
             return await self._plan_service.item_to_response(item)
 
-        item.status = mapped_status
+        self._mark_auto_result(item, status=mapped_status)
         await item.save()
         await self._plan_service.refresh_plan_status(item.plan_id)
         logger.info(
@@ -410,6 +409,39 @@ class PlanCommandService:
             return PlanItemStatus.FAIL.value
         return None
 
+    @staticmethod
+    def _mark_plan_item_dispatched(item: ExecutionPlanItemDoc, *, task_id: str, request: Any) -> None:
+        item.execution_task_id = task_id
+        item.status = PlanItemStatus.RUNNING.value
+        item.result_source = None
+        item.dispatch_config = DispatchConfig(
+            schedule_type=request.schedule_type,
+            planned_at=request.planned_at,
+            parameters=dict(request.parameters),
+        )
+
+    @staticmethod
+    def _mark_auto_result(item: ExecutionPlanItemDoc, *, status: str) -> None:
+        item.status = status
+        item.result_source = ResultSource.AUTO.value
+
+    @staticmethod
+    def _mark_manual_result(item: ExecutionPlanItemDoc, *, result_id: str, passed: bool) -> None:
+        item.result_id = result_id
+        item.status = PlanItemStatus.DONE.value if passed else PlanItemStatus.FAIL.value
+        item.result_source = ResultSource.MANUAL.value
+
+    @staticmethod
+    def _reset_item_for_rerun(item: ExecutionPlanItemDoc) -> None:
+        item.status = PlanItemStatus.PENDING.value
+        item.result_source = None
+
+    @staticmethod
+    def _reset_auto_execution(item: ExecutionPlanItemDoc) -> None:
+        item.execution_task_id = None
+        item.result_source = None
+        item.status = PlanItemStatus.PENDING.value
+
     async def cancel_execution(
         self,
         item_id: str,
@@ -424,8 +456,7 @@ class PlanCommandService:
             raise ValueError("该条目没有关联的执行任务，无需取消")
 
         await self._dispatch_port.cancel_task(item.execution_task_id)
-        item.execution_task_id = None
-        item.status = PlanItemStatus.PENDING.value
+        self._reset_auto_execution(item)
         await item.save()
         await self._plan_service.refresh_plan_status(item.plan_id)
         logger.info("[CANCEL] item={} status reset to pending, actor={}", item_id, actor_id)
@@ -446,9 +477,9 @@ class PlanCommandService:
         if request.assignee_id is not None:
             item.assignee_id = request.assignee_id
 
-        item.status = PlanItemStatus.PENDING.value
+        self._reset_item_for_rerun(item)
         if item.ref_type == "auto":
-            item.execution_task_id = None
+            self._reset_auto_execution(item)
         await item.save()
         await self._plan_service.refresh_plan_status(item.plan_id)
         logger.info(
@@ -487,7 +518,7 @@ class PlanCommandService:
                 timeout=request.timeout,
                 parameters=dict(request.parameters),
             )
-            data = await self.dispatch_item(
+            data = await self.dispatch_plan_item(
                 item_id=item_id,
                 request=item_dispatch,
                 actor_id=actor_id,

@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from app.modules.execution_plan.application.plan_command_service import PlanCommandService
-from app.modules.execution_plan.domain.constants import PlanItemStatus
+from app.modules.execution_plan.domain.constants import PlanItemStatus, ResultSource
 
 
 class _FakeField:
@@ -109,6 +109,7 @@ async def test_apply_passed_result_marks_auto_item_done(command_service) -> None
 
     assert result == {"item_id": item.item_id, "status": PlanItemStatus.DONE.value}
     assert item.status == PlanItemStatus.DONE.value
+    assert item.result_source == ResultSource.AUTO.value
     command_service._plan_service.refresh_plan_status.assert_awaited_once_with("EP-1")
 
 
@@ -120,6 +121,7 @@ async def test_apply_failed_result_marks_auto_item_failed(command_service) -> No
 
     assert result == {"item_id": item.item_id, "status": PlanItemStatus.FAIL.value}
     assert item.status == PlanItemStatus.FAIL.value
+    assert item.result_source == ResultSource.AUTO.value
 
 
 async def test_apply_same_final_status_is_idempotent(command_service) -> None:

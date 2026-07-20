@@ -64,7 +64,6 @@ class AddPlanItemsRequest(BaseModel):
 
 class UpdatePlanItemRequest(BaseModel):
     assignee_id: Optional[str] = None
-    status: Optional[str] = None
     component: Optional[str] = None
     order_no: Optional[int] = None
 

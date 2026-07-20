@@ -214,7 +214,7 @@ def test_query_service_has_no_write_methods():
         "create_plan", "update_plan", "delete_plan",
         "add_items", "delete_item", "update_item",
         "reassign_item", "batch_update_assignee",
-        "submit_result", "dispatch_item", "cancel_execution",
+        "submit_manual_result", "dispatch_plan_item", "cancel_execution",
         "rerun_item", "batch_dispatch",
         "archive_item", "unarchive_item",
     }

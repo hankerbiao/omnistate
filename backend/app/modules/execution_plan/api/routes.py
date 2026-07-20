@@ -182,7 +182,7 @@ async def submit_manual_result(
     """提交手工用例的执行结果回填。"""
     try:
         actor_id = _get_user_id(current_user)
-        result = await command_service.submit_result(
+        result = await command_service.submit_manual_result(
             item_id=item_id,
             request=request,
             actor_id=actor_id,
@@ -246,7 +246,7 @@ async def dispatch_single_item(
     """将计划内的单条自动化用例下发到执行引擎。"""
     try:
         actor_id = _get_user_id(current_user)
-        result = await command_service.dispatch_item(
+        result = await command_service.dispatch_plan_item(
             item_id=item_id,
             request=request,
             actor_id=actor_id,

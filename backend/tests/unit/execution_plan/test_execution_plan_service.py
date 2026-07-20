@@ -286,6 +286,7 @@ class _FakeItemDoc(_FakeDoc):
         payload.setdefault("manual_case_id", None)
         payload.setdefault("result_id", None)
         payload.setdefault("execution_task_id", None)
+        payload.setdefault("result_source", None)
         payload.setdefault("order_no", 0)
         super().__init__(**payload)
 
@@ -297,6 +298,7 @@ class _FakeResultDoc(_FakeDoc):
     def __init__(self, **payload):
         payload.setdefault("attachments", [])
         payload.setdefault("executed_at", datetime.now(timezone.utc))
+        payload.setdefault("result_source", "manual")
         super().__init__(**payload)
 
 
@@ -529,14 +531,39 @@ class TestRerunItem:
 
 
 # ═══════════════════════════════════════════════════════════════════════
-#  Tests — dispatch_item
+#  Tests — dispatch_plan_item
 # ═══════════════════════════════════════════════════════════════════════
 
 
 class TestDispatchItem:
-    # 成功下发需要真实 DispatchTaskRequest 集成，此处跳过
-    async def test_dispatch_pending_auto_success(self):
-        pytest.skip("需要真实 DispatchTaskRequest 集成")
+    async def test_dispatch_plan_item_marks_auto_item_running(self, command_service, plan):
+        from app.modules.execution_plan.schemas.execution_plan import PlanItemDispatchRequest
+
+        item = _FakeItemDoc(
+            item_id="EPI-DISPATCH",
+            plan_id=plan.plan_id,
+            ref_type="auto",
+            case_id="A",
+            status=PlanItemStatus.PENDING.value,
+            result_source="auto",
+            is_deleted=False,
+        )
+        item.save()
+        command_service._dispatch_port.dispatch_task = AsyncMock(return_value={"task_id": "task-1"})
+
+        result = await command_service.dispatch_plan_item(
+            item_id="EPI-DISPATCH",
+            request=PlanItemDispatchRequest(parameters={"k": "v"}),
+            actor_id="owner1",
+        )
+
+        updated = _FakeItemDoc.store["EPI-DISPATCH"]
+        assert result["task_id"] == "task-1"
+        assert updated.status == PlanItemStatus.RUNNING.value
+        assert updated.execution_task_id == "task-1"
+        assert updated.result_source is None
+        assert updated.dispatch_config.parameters == {"k": "v"}
+        command_service._dispatch_port.dispatch_task.assert_awaited_once()
 
     async def test_dispatch_rejects_non_auto(self, command_service, plan):
         item = _FakeItemDoc(
@@ -549,7 +576,7 @@ class TestDispatchItem:
         )
         item.save()
         with pytest.raises(ValueError, match="仅自动化条目"):
-            await command_service.dispatch_item(
+            await command_service.dispatch_plan_item(
                 item_id="EPI-MANUAL",
                 request=MagicMock(),
                 actor_id="owner1",
@@ -567,15 +594,15 @@ class TestDispatchItem:
         )
         item.save()
         with pytest.raises(ValueError, match="仅 pending"):
-            await command_service.dispatch_item(
+            await command_service.dispatch_plan_item(
                 item_id="EPI-RUNNING",
                 request=MagicMock(),
                 actor_id="owner1",
             )
 
-    async def test_dispatch_item_not_found(self, command_service):
+    async def test_dispatch_plan_item_not_found(self, command_service):
         with pytest.raises(ItemNotFoundError):
-            await command_service.dispatch_item(
+            await command_service.dispatch_plan_item(
                 item_id="NONEXISTENT",
                 request=MagicMock(),
                 actor_id="owner1",
@@ -633,13 +660,13 @@ class TestCancelExecution:
 
 
 # ═══════════════════════════════════════════════════════════════════════
-#  Tests — submit_result / get_result
+#  Tests — submit_manual_result / get_result
 # ═══════════════════════════════════════════════════════════════════════
 
 
 class TestSubmitResult:
-    async def test_submit_result_manual_item_passed(self, command_service, manual_item):
-        result = await command_service.submit_result(
+    async def test_submit_manual_result_manual_item_passed(self, command_service, manual_item):
+        result = await command_service.submit_manual_result(
             item_id=manual_item.item_id,
             request=MagicMock(
                 passed=True,
@@ -659,9 +686,11 @@ class TestSubmitResult:
         updated = _FakeItemDoc.store[manual_item.item_id]
         assert result["result_id"] == updated.result_id
         assert updated.status == PlanItemStatus.DONE.value
+        assert updated.result_source == "manual"
+        assert result["result_source"] == "manual"
 
-    async def test_submit_result_manual_item_failed(self, command_service, manual_item):
-        await command_service.submit_result(
+    async def test_submit_manual_result_manual_item_failed(self, command_service, manual_item):
+        await command_service.submit_manual_result(
             item_id=manual_item.item_id,
             request=MagicMock(
                 passed=False,
@@ -679,8 +708,9 @@ class TestSubmitResult:
             actor_id="user2",
         )
         assert _FakeItemDoc.store[manual_item.item_id].status == PlanItemStatus.FAIL.value
+        assert _FakeItemDoc.store[manual_item.item_id].result_source == "manual"
 
-    async def test_submit_result_rejects_auto_item(self, command_service, plan):
+    async def test_submit_manual_result_rejects_auto_item(self, command_service, plan):
         item = _FakeItemDoc(
             item_id="EPI-AUTO",
             plan_id=plan.plan_id,
@@ -691,13 +721,13 @@ class TestSubmitResult:
         )
         item.save()
         with pytest.raises(ValueError, match="仅手工"):
-            await command_service.submit_result(
+            await command_service.submit_manual_result(
                 item_id="EPI-AUTO",
                 request=MagicMock(),
                 actor_id="owner1",
             )
 
-    async def test_submit_result_replaces_previous_result(self, command_service, manual_item):
+    async def test_submit_manual_result_replaces_previous_result(self, command_service, manual_item):
         old_result = _FakeResultDoc(
             result_id="MER-OLD",
             item_id=manual_item.item_id,
@@ -719,7 +749,7 @@ class TestSubmitResult:
         manual_item.result_id = old_result.result_id
         manual_item.save()
 
-        result = await command_service.submit_result(
+        result = await command_service.submit_manual_result(
             item_id=manual_item.item_id,
             request=MagicMock(
                 passed=True,
@@ -742,7 +772,7 @@ class TestSubmitResult:
         active_results = [doc for doc in _FakeResultDoc.store.values() if not doc.is_deleted]
         assert [doc.result_id for doc in active_results] == [result["result_id"]]
 
-    async def test_submit_result_insert_failure_keeps_previous_result(self, command_service, manual_item):
+    async def test_submit_manual_result_insert_failure_keeps_previous_result(self, command_service, manual_item):
         old_result = _FakeResultDoc(
             result_id="MER-OLD",
             item_id=manual_item.item_id,
@@ -769,7 +799,7 @@ class TestSubmitResult:
 
         with patch.object(_FakeResultDoc, "insert", fail_insert):
             with pytest.raises(RuntimeError, match="insert failed"):
-                await command_service.submit_result(
+                await command_service.submit_manual_result(
                     item_id=manual_item.item_id,
                     request=MagicMock(
                         passed=False,
@@ -790,9 +820,9 @@ class TestSubmitResult:
         assert _FakeItemDoc.store[manual_item.item_id].result_id == "MER-OLD"
         assert _FakeResultDoc.store["MER-OLD"].is_deleted is False
 
-    async def test_submit_result_rejects_non_assignee(self, command_service, manual_item):
+    async def test_submit_manual_result_rejects_non_assignee(self, command_service, manual_item):
         with pytest.raises(PermissionDeniedError):
-            await command_service.submit_result(
+            await command_service.submit_manual_result(
                 item_id=manual_item.item_id,
                 request=MagicMock(),
                 actor_id="stranger",
@@ -881,6 +911,39 @@ class TestBatchDispatch:
                 request=BatchDispatchRequest(item_ids=[]),
                 actor_id="owner1",
             )
+
+
+class TestUpdateItemBoundaries:
+    async def test_update_item_allows_metadata_fields_only(self, command_service, auto_item):
+        result = await command_service.update_item(
+            plan_id=auto_item.plan_id,
+            item_id=auto_item.item_id,
+            data={"component": "wifi", "order_no": 9},
+            actor_id="owner1",
+        )
+
+        assert result["component"] == "wifi"
+        assert result["order_no"] == 9
+        assert _FakeItemDoc.store[auto_item.item_id].status == PlanItemStatus.FAIL.value
+
+    @pytest.mark.parametrize("field", ["status", "execution_task_id", "result_id", "result_source"])
+    async def test_update_item_rejects_process_fields(self, command_service, auto_item, field):
+        before_status = auto_item.status
+        before_task_id = auto_item.execution_task_id
+        before_result_id = auto_item.result_id
+
+        with pytest.raises(ValueError, match="流程字段"):
+            await command_service.update_item(
+                plan_id=auto_item.plan_id,
+                item_id=auto_item.item_id,
+                data={field: "illegal"},
+                actor_id="owner1",
+            )
+
+        updated = _FakeItemDoc.store[auto_item.item_id]
+        assert updated.status == before_status
+        assert updated.execution_task_id == before_task_id
+        assert updated.result_id == before_result_id
 
 
 class TestBatchUpdateAssignee:

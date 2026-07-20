@@ -415,6 +415,7 @@ class ExecutionPlanService(BaseService):
         recent = []
         for r in manual_results[:10]:
             recent.append({
+                "result_source": r.result_source,
                 "result_id": r.result_id,
                 "passed": r.passed,
                 "executed_by": r.executed_by,
@@ -487,6 +488,8 @@ class ExecutionPlanService(BaseService):
             "status": item.status,
             "order_no": item.order_no,
             "execution_task_id": item.execution_task_id,
+            "result_id": item.result_id,
+            "result_source": item.result_source,
             "result": result_payload,
             "archived_at": item.archived_at.isoformat() if item.archived_at else None,
             "dispatch_config": item.dispatch_config.model_dump() if item.dispatch_config else None,
@@ -612,6 +615,7 @@ class ExecutionPlanService(BaseService):
     def _result_payload(doc: ManualExecutionResultDoc) -> Dict[str, Any]:
         return {
             "passed": doc.passed,
+            "result_source": doc.result_source,
             "notes": doc.notes,
             "severity": doc.severity,
             "actual": doc.actual,

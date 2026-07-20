@@ -8,6 +8,7 @@ from beanie import Document
 from pydantic import Field
 
 from app.modules.execution_plan.schemas.execution_plan import DispatchConfig
+from app.modules.execution_plan.domain.constants import ResultSource
 from app.shared.core.document_mixins import TimestampedDocumentMixin, SoftDeleteDocumentMixin, ProjectRelatedMixin
 from pymongo import ASCENDING, DESCENDING, IndexModel
 
@@ -51,6 +52,7 @@ class ExecutionPlanItemDoc(Document, TimestampedDocumentMixin, SoftDeleteDocumen
     execution_task_id: Optional[str] = Field(None, description="关联自动化任务 ID")
     dispatch_config: Optional[DispatchConfig] = Field(None, description="用户下发的执行参数")
     result_id: Optional[str] = Field(None, description="关联手工结果 ID")
+    result_source: Optional[str] = Field(None, description="结果来源: manual|auto")
     archived_at: Optional[datetime] = Field(None, description="归档时间，null=未归档")
 
     class Settings:
@@ -83,6 +85,7 @@ class ManualExecutionResultDoc(Document, TimestampedDocumentMixin, SoftDeleteDoc
     attachments: List[str] = Field(default_factory=list)
     executed_by: str = Field(..., description="执行人 user_id")
     executed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    result_source: str = Field(default=ResultSource.MANUAL.value, description="结果来源: manual")
 
     class Settings:
         name = "manual_execution_results"

@@ -24,6 +24,12 @@ class PlanStatus(str, Enum):
     ARCHIVED = "archived"
 
 
+class ResultSource(str, Enum):
+    """计划条目结果来源。"""
+    MANUAL = "manual"
+    AUTO = "auto"
+
+
 # 手动回填结果时的状态映射
 RESULT_TO_ITEM_STATUS: dict[bool, PlanItemStatus] = {
     True: PlanItemStatus.DONE,
