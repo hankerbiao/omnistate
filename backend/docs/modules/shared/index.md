@@ -27,36 +27,47 @@
 
 ## 常见配置项与基础字段
 
+运行配置由 `backend/config/config.yaml` 加载，结构定义在 `app/shared/config/settings.py`。复制 `backend/config/config.yaml.example` 后按环境调整，不再按旧的单个 `.env` 键维护核心后端配置。
+
 ### 数据库与服务启动
 
-- `MONGO_URI`
+- `mongodb.uri`
   MongoDB 连接串
-- `MONGO_DB_NAME`
+- `mongodb.db_name`
   当前数据库名
-- `APP_DEBUG`
+- `app.debug`
   是否开启调试模式，影响中间件和日志行为
-- `CORS_ORIGINS`
+- `app.cors_origins`
   允许跨域访问的来源列表
 
 ### 认证
 
-- `JWT_SECRET_KEY`
+- `jwt.secret_key`
   JWT 签名密钥
-- `JWT_EXPIRE_MINUTES`
+- `jwt.expire_minutes`
   token 过期时间
-- `JWT_ISSUER`
+- `jwt.issuer`
   token 签发者
-- `JWT_AUDIENCE`
+- `jwt.audience`
   token 受众
 
-### 执行与终端
+### Open Platform 内部 JWT
 
-- `EXECUTION_SCHEDULER_INTERVAL_SEC`
+- `open_platform_gateway_jwt.enabled`
+  是否允许 Open Platform 网关签发的内部 JWT 访问主后端
+- `open_platform_gateway_jwt.secret_key`
+  内部 JWT 签名密钥，必须与 Open Platform 的 `DML_GATEWAY_UPSTREAM_AUTH_SECRET` 一致
+- `open_platform_gateway_jwt.issuer` / `open_platform_gateway_jwt.audience`
+  必须与 Open Platform 的 issuer / audience 配置一致
+
+### 执行
+
+- `execution.scheduler_interval_sec`
   调度器轮询间隔
-- `TERMINAL_SHELL`
-  远程终端 shell
-- `TERMINAL_IDLE_TIMEOUT_SEC`
-  终端空闲超时
+- `execution.kafka_worker_agent_id`
+  Kafka Worker 服务标识
+- `execution.kafka_worker_heartbeat_ttl_sec`
+  Worker 心跳过期时间
 
 ## 什么时候优先看 shared
 

@@ -65,39 +65,37 @@ flake8 --select=E,W,F
 
 关键运行配置主要来自：
 
-- `.env`
-- `app/shared/db/config.py`
+- `config/config.yaml`
+- `app/shared/config/settings.py`
 
 重点关注：
 
-- `MONGO_URI`
-- `MONGO_DB_NAME`
-- `CORS_ORIGINS`
+- `mongodb.uri`
+- `mongodb.db_name`
+- `app.cors_origins`
 - Kafka/RabbitMQ 相关配置
 - JWT 相关配置
 
 ### 关键配置项说明
 
-- `MONGO_URI`
+- `mongodb.uri`
   MongoDB 连接串；服务启动时会先用它做 `ping` 检查
-- `MONGO_DB_NAME`
+- `mongodb.db_name`
   当前后端使用的数据库名；Beanie 初始化和 workflow 配置校验都依赖它
-- `CORS_ORIGINS`
+- `app.cors_origins`
   允许跨域访问的前端来源列表；本地开发常需要放开给 `localhost`
-- `JWT_SECRET_KEY`
+- `jwt.secret_key`
   JWT 签名密钥；修改后旧 token 会全部失效
-- `JWT_EXPIRE_MINUTES`
+- `jwt.expire_minutes`
   登录 token 的有效期，单位分钟
-- `JWT_ISSUER`
+- `jwt.issuer`
   token 签发者校验值
-- `JWT_AUDIENCE`
+- `jwt.audience`
   token 受众校验值
-- `EXECUTION_SCHEDULER_INTERVAL_SEC`
+- `execution.scheduler_interval_sec`
   调度器扫描待触发任务的时间间隔
-- `TERMINAL_SHELL`
-  远程终端默认 shell
-- `TERMINAL_IDLE_TIMEOUT_SEC`
-  终端会话空闲超时时间
+- `open_platform_gateway_jwt.*`
+  Open Platform 网关调用主后端时使用的内部 JWT 校验配置
 
 ## 本地开发时优先检查什么
 

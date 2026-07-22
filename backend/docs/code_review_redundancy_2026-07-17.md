@@ -69,9 +69,10 @@ vulture 原始输出 408 条，其中绝大多数已被判为**误报**并排除
 
 | # | 位置 | 类型 | 说明 | 删除安全性 |
 |---|------|------|------|-----------|
-| 1 | `shared/api/router_registry.py:30` `"app.modules.open_platform.api"` | 死注册 | 列表中注册的模块目录**根本不存在**；`importlib.import_module` 抛 `ImportError` 被 `try/except` 静默吞掉，无任何路由挂载 | ✅ 安全（从不生效，建议删除该行并补一条启动 warning） |
-| 2 | `modules/system_config/api/routes.py:181` `POST /api/v1/system-configs/reload` | 疑似孤儿接口 | 前端 `api.ts` 无任何调用；可能为运维/测试脚本使用 | ⚠️ 删除前需确认无外部脚本依赖（grep 全前端无 `/reload`） |
-| 3 | `modules/auth/api/routes_navigation.py:31-100` 4 个端点 `GET/POST/PUT/DELETE /api/v1/auth/admin/navigation/pages/{view}` | 疑似孤儿接口 | 前端仅调用无 `view` 的列表 GET 与 user navigation 的 GET/PUT；这 4 个"按 view 增删改查"前端完全未调用 | ⚠️ 疑似管理 UI 未实现，删除前需确认无外部调用方 |
+| 1 | `modules/system_config/api/routes.py:181` `POST /api/v1/system-configs/reload` | 疑似孤儿接口 | 前端 `api.ts` 无任何调用；可能为运维/测试脚本使用 | ⚠️ 删除前需确认无外部脚本依赖（grep 全前端无 `/reload`） |
+| 2 | `modules/auth/api/routes_navigation.py:31-100` 4 个端点 `GET/POST/PUT/DELETE /api/v1/auth/admin/navigation/pages/{view}` | 疑似孤儿接口 | 前端仅调用无 `view` 的列表 GET 与 user navigation 的 GET/PUT；这 4 个"按 view 增删改查"前端完全未调用 | ⚠️ 疑似管理 UI 未实现，删除前需确认无外部调用方 |
+
+**历史误判说明**：早期报告曾把 `shared/api/router_registry.py` 中的 `open_platform` 注册项列为死注册；当前代码库已不存在该注册项，Open Platform 也已明确作为仓库根目录 `open-platform/` 下的独立服务维护，不再作为 `backend/app/modules` 模块接入。
 
 **说明**：`modules/workflow/api/*` 中被 vulture 标记的"未使用"端点（`GET /work-items/`、`POST /work-items/`、`GET /work-items/search` 等）经核查**均带 `@router.xxx` 装饰器且已挂载**，属 vulture 误报；这些为核心 CRUD，可能后端先行、前端未完全接入或被内部服务调用，**删除不安全**，需人工确认。
 
@@ -122,7 +123,6 @@ ruff 共报 **113 条 F401**，其中 **105 条位于各 `schemas/__init__.py`�
 - `query_helpers.model_to_public_dict`（#3）、`enums/api.get_all_enums`（#5）、`redaction.redact_headers`（#6）、`context.generate_trace_id`（#7）
 - kafka producer 的 `from_json`×2、`send_result`（#8/9/10）、`router.list_topics`（#11）
 - `registry` 死方法（#12）、`document_mixins._touch_updated_at`（#13）
-- `router_registry.py` 的 `open_platform` 死注册（三-#1）
 - 2 处确凿未使用导入（四）
 
 **P1 — 需确认后删除**

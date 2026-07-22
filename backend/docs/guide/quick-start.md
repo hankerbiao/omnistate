@@ -115,18 +115,20 @@ RBAC 相关能力主要由 `auth` 模块和 `app/shared/auth/*` 共同完成：
 
 ## JWT / RBAC 相关配置项
 
-这些配置主要在 `app/shared/db/config.py` 中定义，接手时至少知道它们的作用：
+这些配置主要在 `app/shared/config/settings.py` 中定义，并从 `config/config.yaml` 加载，接手时至少知道它们的作用：
 
-- `JWT_SECRET_KEY`
+- `jwt.secret_key`
   JWT 签名密钥；变更后旧 token 会失效
-- `JWT_ALGORITHM`
+- `jwt.algorithm`
   当前签名算法，代码里目前按 `HS256` 处理
-- `JWT_EXPIRE_MINUTES`
+- `jwt.expire_minutes`
   token 过期时间，单位分钟
-- `JWT_ISSUER`
+- `jwt.issuer`
   token 的签发者校验值
-- `JWT_AUDIENCE`
+- `jwt.audience`
   token 的受众校验值
+- `open_platform_gateway_jwt.*`
+  Open Platform 网关调用 DML 主后端时使用的内部 JWT 校验配置
 
 这些配置主要影响：
 

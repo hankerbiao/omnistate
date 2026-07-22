@@ -243,24 +243,25 @@ dmlv4/
 
 ## 9. 配置项
 
-核心配置定义在 `backend/app/shared/db/config.py`。
+核心配置定义在 `backend/app/shared/config/settings.py`，运行时从 `backend/config/config.yaml` 加载。
 
 常用项包括：
 
-- `MONGO_URI`
-- `MONGO_DB_NAME`
-- `CORS_ORIGINS`
-- `JWT_SECRET_KEY`
-- `JWT_ALGORITHM`
-- `JWT_EXPIRE_MINUTES`
-- `JWT_ISSUER`
-- `JWT_AUDIENCE`
-- `EXECUTION_SCHEDULER_INTERVAL_SEC`
+- `mongodb.uri`
+- `mongodb.db_name`
+- `app.cors_origins`
+- `jwt.secret_key`
+- `jwt.algorithm`
+- `jwt.expire_minutes`
+- `jwt.issuer`
+- `jwt.audience`
+- `execution.scheduler_interval_sec`
+- `open_platform_gateway_jwt.*`
 
 说明：
 
 - 默认值中包含开发环境示例，不应直接视为生产配置。
-- 真实部署应通过 `backend/.env` 覆盖。
+- 真实部署应复制 `backend/config/config.yaml.example` 为 `backend/config/config.yaml` 后按环境修改。
 
 ## 10. 数据与约束
 

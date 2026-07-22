@@ -113,7 +113,7 @@ python scripts/init/init_mongodb.py
 
 Workflow **不**使用独立 `.env` 键；依赖：
 
-- `MONGO_URI` / `MONGO_DB_NAME`（见 `config/config.yaml`）
+- `mongodb.uri` / `mongodb.db_name`（见 `config/config.yaml`）
 - 事务能力：MongoDB 须为 **Replica Set**（流转/删除）
 
 ## 调试配置问题

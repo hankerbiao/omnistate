@@ -2,12 +2,14 @@
 
 ## 总体形态
 
-DML V4 后端当前是单体 FastAPI 应用，不是微服务。
+DML V4 主后端当前是单体 FastAPI 应用，不是微服务。
 
 统一入口：
 
 - `app/main.py`
 - `app/shared/api/main.py`
+
+Open Platform 是独立开放能力服务，位于仓库根目录 `open-platform/`。它通过 `/api/v1/open/...` 对外暴露能力，并在需要时以内部短期 JWT 调用 DML 主后端；它不注册为 `backend/app/modules` 下的业务模块。
 
 统一 API 响应使用：
 
@@ -52,18 +54,12 @@ Domain → （不依赖 API、Service、Infrastructure）
   执行计划编排，管理自动化/手工用例的执行计划、结果回填、重新执行与用例执行统计（详见 [Execution Plan 模块文档](/modules/execution_plan/)）
 - `auth`
   资源级 RBAC 服务
+- `audit`
+  操作审计日志
 - `attachments`
   附件引用能力
-- `terminal`
-  远程终端能力
 - `ai_analysis`
   AI 驱动的测试资产分析（质量、冗余、覆盖度）
-- `failure_analysis`
-  执行失败智能分析与模式分类
-- `lineage`
-  需求-用例-执行的血缘追溯
-- `search`
-  跨模块统一全文搜索
 - `system_config`
   全局配置管理与 AI 连接测试
 - `test_case_collection`
@@ -78,7 +74,7 @@ Domain → （不依赖 API、Service、Infrastructure）
 1. 连接 MongoDB
 2. 初始化 Beanie 文档模型（各模块通过 `DOCUMENT_MODELS` 导出在 `repository/models/__init__.py` 中，`app/shared/infrastructure/bootstrap.py` 统一聚合）
 3. 校验 workflow 配置一致性
-4. **Kafka 健康检查**（检测 Broker 连通性 + Worker 心跳，失败时阻止启动，详见 [Worker 文档](/modules/execution/workers.html#主服务启动时的健康检查)）
+4. **Kafka 健康检查**（检测 Broker 连通性 + Worker 心跳；失败只记录 warning，不阻塞主服务启动，详见 [Worker 文档](/modules/execution/workers.html#主服务启动时的健康检查)）
 5. 初始化应用级基础设施（RabbitMQ、执行调度器）
 6. 初始化系统默认配置
 7. 初始化 Redis 连接池

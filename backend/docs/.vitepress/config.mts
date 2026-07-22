@@ -63,6 +63,7 @@ export default withMermaid(
               { text: "Worker 与消息", link: "/modules/execution/workers" },
             ],
           },
+          { text: "Open Platform", link: "/modules/open-platform" },
           { text: "Auth", link: "/modules/auth/" },
           {
             text: "Attachments",
@@ -74,7 +75,6 @@ export default withMermaid(
               { text: "模块集成", link: "/modules/attachments/integration" },
             ],
           },
-          { text: "Terminal", link: "/modules/terminal/" },
           { text: "Shared", link: "/modules/shared/" },
         ],
       },

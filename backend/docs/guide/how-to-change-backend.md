@@ -78,4 +78,4 @@
 - 日志：`app/shared/core/logger.py`
 - Mongo 客户端：`app/shared/core/mongo_client.py`
 - 统一响应与异常：`app/shared/api/*`
-- 配置：`app/shared/db/config.py`
+- 配置：`app/shared/config/settings.py` 与 `config/config.yaml`
