@@ -18,6 +18,7 @@
 
 import asyncio
 from copy import deepcopy
+import re
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 from pymongo import AsyncMongoClient
@@ -99,6 +100,54 @@ class TestCaseService(BaseService):
         self._catalog_service = catalog_service or CatalogService()
         # 依赖仓储协议而非具体 Beanie Document，便于单测注入 Mock
         self._case_repo = case_repository or TestCaseRepository()
+
+    @staticmethod
+    def _build_missing_field_conditions(missing_fields: Optional[str]) -> List[Dict[str, Any]]:
+        """Build Mongo filters for governance missing-field checks."""
+        if not missing_fields:
+            return []
+
+        conditions: List[Dict[str, Any]] = []
+        for field in missing_fields.split(","):
+            field = field.strip()
+            if field == "lab_id":
+                conditions.append({"$or": [{"lab_id": None}, {"lab_id": ""}]})
+            elif field == "catalog_path":
+                conditions.append({"$or": [{"catalog_path": None}, {"catalog_path": []}]})
+            elif field == "tags":
+                conditions.append({"$or": [{"tags": None}, {"tags": []}]})
+            elif field == "auto_link":
+                conditions.append({
+                    "$or": [
+                        {"linked_auto_case_id": None},
+                        {"linked_auto_case_id": ""},
+                        {"linked_auto_case_id": {"$exists": False}},
+                    ],
+                })
+        return conditions
+
+    @classmethod
+    def _build_governance_filter(
+        cls,
+        q: Optional[str] = None,
+        missing_fields: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Build Mongo filter for the case governance workbench."""
+        mongo_query: Dict[str, Any] = {"is_deleted": False}
+        and_conditions = cls._build_missing_field_conditions(missing_fields)
+
+        if q and q.strip():
+            escaped_q = re.escape(q.strip())
+            and_conditions.append({
+                "$or": [
+                    {"case_id": {"$regex": escaped_q, "$options": "i"}},
+                    {"title": {"$regex": escaped_q, "$options": "i"}},
+                ],
+            })
+
+        if and_conditions:
+            mongo_query["$and"] = and_conditions
+        return mongo_query
 
     async def _enrich_test_case_status(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """使用工作流状态和关联信息补齐测试用例响应中的派生状态字段。"""
@@ -201,23 +250,12 @@ class TestCaseService(BaseService):
             mongo_query["tags"] = {"$all": tags}
 
         # 缺失字段过滤：构建 $and 条件
-        if missing_fields:
-            missing_conditions = []
-            for field in missing_fields.split(","):
-                field = field.strip()
-                if field == "lab_id":
-                    missing_conditions.append({"$or": [{"lab_id": None}, {"lab_id": ""}]})
-                elif field == "catalog_path":
-                    missing_conditions.append({"$or": [{"catalog_path": None}, {"catalog_path": []}]})
-                elif field == "tags":
-                    missing_conditions.append({"$or": [{"tags": None}, {"tags": []}]})
-                elif field == "auto_link":
-                    missing_conditions.append({"$or": [{"linked_auto_case_id": None}, {"linked_auto_case_id": {"$exists": False}}]})
-            if missing_conditions:
-                if len(missing_conditions) == 1:
-                    mongo_query.update(missing_conditions[0])
-                else:
-                    mongo_query["$and"] = missing_conditions
+        missing_conditions = self._build_missing_field_conditions(missing_fields)
+        if missing_conditions:
+            if len(missing_conditions) == 1:
+                mongo_query.update(missing_conditions[0])
+            else:
+                mongo_query["$and"] = missing_conditions
 
         # 状态过滤下推到 DB 端：避免全量加载再内存过滤，支持直接分页
         if status:
@@ -267,6 +305,41 @@ class TestCaseService(BaseService):
             to_dict=self._doc_to_dict,
             workflow_states=workflow_states,
         )
+
+    async def list_governance_cases(
+        self,
+        q: Optional[str] = None,
+        missing_fields: Optional[str] = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> Dict[str, Any]:
+        """分页查询用例治理列表，返回总数与当前页数据。"""
+        mongo_query = self._build_governance_filter(q=q, missing_fields=missing_fields)
+        total = await TestCaseDoc.find(mongo_query).count()
+        docs = await (
+            TestCaseDoc.find(mongo_query)
+            .sort("-created_at")
+            .skip(offset)
+            .limit(limit)
+            .to_list()
+        )
+        if docs:
+            case_ids = [doc.case_id for doc in docs]
+            workflow_states = await self._get_workflow_states_for_test_cases(case_ids)
+            items = apply_workflow_status_projection(
+                docs=docs,
+                id_getter=lambda doc: doc.case_id,
+                to_dict=self._doc_to_dict,
+                workflow_states=workflow_states,
+            )
+        else:
+            items = []
+        return {
+            "items": items,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        }
 
     async def update_test_case(self, case_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
         """更新测试用例内容字段（仅限安全的内容更新）。

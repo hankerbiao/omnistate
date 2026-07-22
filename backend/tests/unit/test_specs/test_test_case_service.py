@@ -240,6 +240,37 @@ def build_service():
     return TestCaseService(workflow_gateway=gw, catalog_service=catalog, case_repository=repo)
 
 
+def test_build_governance_filter_searches_case_id_or_title():
+    query = TestCaseService._build_governance_filter(q="TC.001")
+
+    assert query["is_deleted"] is False
+    assert query["$and"] == [{
+        "$or": [
+            {"case_id": {"$regex": "TC\\.001", "$options": "i"}},
+            {"title": {"$regex": "TC\\.001", "$options": "i"}},
+        ],
+    }]
+
+
+def test_build_governance_filter_combines_missing_fields_and_search():
+    query = TestCaseService._build_governance_filter(
+        q="boot",
+        missing_fields="lab_id,tags,auto_link",
+    )
+
+    assert query["is_deleted"] is False
+    assert len(query["$and"]) == 4
+    assert {"$or": [{"lab_id": None}, {"lab_id": ""}]} in query["$and"]
+    assert {"$or": [{"tags": None}, {"tags": []}]} in query["$and"]
+    assert {
+        "$or": [
+            {"linked_auto_case_id": None},
+            {"linked_auto_case_id": ""},
+            {"linked_auto_case_id": {"$exists": False}},
+        ],
+    } in query["$and"]
+
+
 # ══════════════════════════════════════════════
 #  Tests: update_test_case — safe field enforcement
 # ══════════════════════════════════════════════

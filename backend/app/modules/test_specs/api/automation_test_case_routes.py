@@ -77,6 +77,8 @@ async def list_automation_test_cases(
     status: Optional[str] = Query(None),
     maintainer_id: Optional[str] = Query(None),
     linked_manual_case_id: Optional[str] = Query(None),
+    q: Optional[str] = Query(None, description="按自动化用例 ID / 名称 / 脚本搜索"),
+    linkable_for_case_id: Optional[str] = Query(None, description="只返回未关联或已关联到该手工用例的自动化用例"),
     limit: int = Query(20, ge=1, le=500),
     offset: int = Query(0, ge=0),
 ):
@@ -87,6 +89,8 @@ async def list_automation_test_cases(
         status=status,
         maintainer_id=maintainer_id,
         linked_manual_case_id=linked_manual_case_id,
+        q=q,
+        linkable_for_case_id=linkable_for_case_id,
         limit=limit,
         offset=offset,
     )

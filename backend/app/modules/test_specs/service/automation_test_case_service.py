@@ -2,6 +2,7 @@
 
 from copy import deepcopy
 from datetime import datetime
+import re
 from typing import Any, Dict, List, Optional
 
 from app.modules.test_specs.repository.models import (
@@ -17,6 +18,52 @@ from app.shared.service import BaseService, SequenceIdService
 
 class AutomationTestCaseService(BaseService):
     """自动化测试用例库 CRUD 服务。"""
+
+    @staticmethod
+    def _build_list_filter(
+        framework: Optional[str] = None,
+        automation_type: Optional[str] = None,
+        status: Optional[str] = None,
+        maintainer_id: Optional[str] = None,
+        linked_manual_case_id: Optional[str] = None,
+        q: Optional[str] = None,
+        linkable_for_case_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        query: Dict[str, Any] = {"is_deleted": False}
+        and_conditions: List[Dict[str, Any]] = []
+
+        if framework:
+            query["framework"] = framework
+        if automation_type:
+            query["automation_type"] = automation_type
+        if status:
+            query["status"] = status
+        if maintainer_id:
+            query["maintainer_id"] = maintainer_id
+        if linked_manual_case_id:
+            query["linked_manual_case_id"] = linked_manual_case_id
+        if linkable_for_case_id:
+            and_conditions.append({
+                "$or": [
+                    {"linked_manual_case_id": None},
+                    {"linked_manual_case_id": ""},
+                    {"linked_manual_case_id": {"$exists": False}},
+                    {"linked_manual_case_id": linkable_for_case_id},
+                ],
+            })
+        if q and q.strip():
+            escaped_q = re.escape(q.strip())
+            and_conditions.append({
+                "$or": [
+                    {"auto_case_id": {"$regex": escaped_q, "$options": "i"}},
+                    {"name": {"$regex": escaped_q, "$options": "i"}},
+                    {"script_name": {"$regex": escaped_q, "$options": "i"}},
+                    {"script_path": {"$regex": escaped_q, "$options": "i"}},
+                ],
+            })
+        if and_conditions:
+            query["$and"] = and_conditions
+        return query
 
     async def create_automation_test_case(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """创建自动化测试用例。"""
@@ -63,21 +110,28 @@ class AutomationTestCaseService(BaseService):
         status: Optional[str] = None,
         maintainer_id: Optional[str] = None,
         linked_manual_case_id: Optional[str] = None,
+        q: Optional[str] = None,
+        linkable_for_case_id: Optional[str] = None,
         limit: int = 20,
         offset: int = 0,
     ) -> List[Dict[str, Any]]:
         """分页查询自动化测试用例列表。"""
-        query = AutomationTestCaseDoc.find({"is_deleted": False})
-        if framework:
-            query = query.find(AutomationTestCaseDoc.framework == framework)
-        if automation_type:
-            query = query.find(AutomationTestCaseDoc.automation_type == automation_type)
-        if status:
-            query = query.find(AutomationTestCaseDoc.status == status)
-        if linked_manual_case_id:
-            query = query.find({"linked_manual_case_id": linked_manual_case_id})
-
-        docs = await query.sort("-created_at").skip(offset).limit(limit).to_list()
+        mongo_query = self._build_list_filter(
+            framework=framework,
+            automation_type=automation_type,
+            status=status,
+            maintainer_id=maintainer_id,
+            linked_manual_case_id=linked_manual_case_id,
+            q=q,
+            linkable_for_case_id=linkable_for_case_id,
+        )
+        docs = await (
+            AutomationTestCaseDoc.find(mongo_query)
+            .sort("-created_at")
+            .skip(offset)
+            .limit(limit)
+            .to_list()
+        )
         return [self._doc_to_dict(doc) for doc in docs]
 
     async def delete_automation_test_case(self, doc_id: str) -> None:

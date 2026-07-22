@@ -73,3 +73,17 @@ class TestCaseQueryService:
             limit=limit,
             offset=offset,
         )
+
+    async def list_governance_cases(
+        self,
+        q: Optional[str] = None,
+        missing_fields: Optional[str] = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict:
+        return await self._test_case_service.list_governance_cases(
+            q=q,
+            missing_fields=missing_fields,
+            limit=limit,
+            offset=offset,
+        )

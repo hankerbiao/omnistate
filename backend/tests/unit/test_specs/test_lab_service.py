@@ -84,7 +84,7 @@ class _FakeLabDoc:
     @classmethod
     def find(cls, query=None):
         class _Query:
-            async def sort(self, *args, **kwargs):
+            def sort(self, *args, **kwargs):
                 return self
 
             async def to_list(self):
@@ -190,6 +190,35 @@ def test_update_lab_does_not_change_code() -> None:
     assert result["name"] == "New Name"
     assert result["code"] == "BIOS"
     assert result["case_count"] == 2
+
+
+def test_list_labs_counts_cases_in_one_batch() -> None:
+    service = LabService()
+    _FakeLabDoc.store["LAB-BIOS"] = _FakeLabDoc(
+        lab_id="LAB-BIOS",
+        code="BIOS",
+        name="BIOS",
+        sort_order=0,
+        is_active=True,
+    )
+    _FakeLabDoc.store["LAB-BMC"] = _FakeLabDoc(
+        lab_id="LAB-BMC",
+        code="BMC",
+        name="BMC",
+        sort_order=1,
+        is_active=True,
+    )
+
+    with patch("app.modules.test_specs.service.lab_service.TestLabDoc", _FakeLabDoc), patch.object(
+        LabService,
+        "_count_cases_by_lab",
+        AsyncMock(return_value={"LAB-BIOS": 3}),
+    ) as count_cases:
+        result = asyncio.run(service.list_labs())
+
+    count_cases.assert_awaited_once_with(["LAB-BIOS", "LAB-BMC"])
+    assert [lab["lab_id"] for lab in result] == ["LAB-BIOS", "LAB-BMC"]
+    assert [lab["case_count"] for lab in result] == [3, 0]
 
 
 def test_delete_lab_rejects_when_cases_exist() -> None:

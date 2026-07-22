@@ -92,6 +92,29 @@ async def create_test_case(
 
 
 @router.get(
+    "/governance",
+    response_model=APIResponse[dict],
+    summary="查询用例治理列表",
+    dependencies=[Depends(require_permission("test_cases:read"))],
+)
+async def list_governance_cases(
+    query_service: TestCaseQueryServiceDep,
+    q: Optional[str] = Query(None, description="按用例 ID / 标题搜索"),
+    missing_fields: Optional[str] = Query(None, description="逗号分隔，如 lab_id,catalog_path,tags,auto_link"),
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+):
+    """返回用例治理列表与总数，不改变通用测试用例列表接口。"""
+    data = await query_service.list_governance_cases(
+        q=q,
+        missing_fields=missing_fields,
+        limit=limit,
+        offset=offset,
+    )
+    return APIResponse(data=data)
+
+
+@router.get(
     "/{case_id}/change-logs",
     response_model=APIResponse[TestCaseChangeLogListResponse],
     summary="获取测试用例变更记录",

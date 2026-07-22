@@ -22,10 +22,11 @@ class LabService(BaseService):
             query["is_active"] = True
 
         docs = await TestLabDoc.find(query).sort("+sort_order", "+code").to_list()
+        case_counts = await self._count_cases_by_lab([doc.lab_id for doc in docs])
         results: list[dict[str, Any]] = []
         for doc in docs:
             data = self._doc_to_dict(doc)
-            data["case_count"] = await self._count_cases(doc.lab_id)
+            data["case_count"] = case_counts.get(doc.lab_id, 0)
             results.append(data)
         return results
 
@@ -112,6 +113,18 @@ class LabService(BaseService):
     async def _count_cases(self, lab_id: str) -> int:
         collection = TestCaseDoc.get_pymongo_collection()
         return await collection.count_documents({"lab_id": lab_id, "is_deleted": False})
+
+    async def _count_cases_by_lab(self, lab_ids: list[str]) -> dict[str, int]:
+        if not lab_ids:
+            return {}
+        collection = TestCaseDoc.get_pymongo_collection()
+        cursor = collection.aggregate(
+            [
+                {"$match": {"lab_id": {"$in": lab_ids}, "is_deleted": False}},
+                {"$group": {"_id": "$lab_id", "count": {"$sum": 1}}},
+            ]
+        )
+        return {row["_id"]: int(row["count"]) async for row in cursor}
 
     async def _migrate_cases(self, source_lab_id: str, target_lab_id: str) -> int:
         client = get_mongo_client()

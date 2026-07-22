@@ -98,6 +98,31 @@ class _FakeAutoDoc:
 
     @classmethod
     def find(cls, expr=None):
+        def _matches(doc, query):
+            if not isinstance(query, dict):
+                return True
+            for key, value in query.items():
+                if key == "is_deleted":
+                    if getattr(doc, key, False) != value:
+                        return False
+                elif key == "$and":
+                    if not all(_matches(doc, item) for item in value):
+                        return False
+                elif key == "$or":
+                    if not any(_matches(doc, item) for item in value):
+                        return False
+                elif isinstance(value, dict) and "$exists" in value:
+                    exists = hasattr(doc, key)
+                    if exists != value["$exists"]:
+                        return False
+                elif isinstance(value, dict) and "$regex" in value:
+                    import re
+                    if not re.search(value["$regex"], str(getattr(doc, key, "")), re.IGNORECASE):
+                        return False
+                elif getattr(doc, key, None) != value:
+                    return False
+            return True
+
         class _Query:
             def __init__(self, docs):
                 self._docs = docs
@@ -116,6 +141,8 @@ class _FakeAutoDoc:
         docs = [d for d in cls.store.values() if not getattr(d, "is_deleted", False)]
         if isinstance(expr, _FakeExpr):
             docs = [d for d in docs if getattr(d, expr._field, None) == expr._value]
+        elif isinstance(expr, dict):
+            docs = [d for d in docs if _matches(d, expr)]
         return _Query(docs)
 
 
@@ -157,6 +184,33 @@ def _make_auto(auto_case_id: str, **overrides) -> _FakeAutoDoc:
     doc = _FakeAutoDoc(**attrs)
     _FakeAutoDoc.store[auto_case_id] = doc
     return doc
+
+
+def test_build_auto_case_list_filter_supports_search_and_linkable_case():
+    query = AutomationTestCaseService._build_list_filter(
+        q="pytest.case",
+        framework="pytest",
+        linkable_for_case_id="TC-001",
+    )
+
+    assert query["is_deleted"] is False
+    assert query["framework"] == "pytest"
+    assert {
+        "$or": [
+            {"linked_manual_case_id": None},
+            {"linked_manual_case_id": ""},
+            {"linked_manual_case_id": {"$exists": False}},
+            {"linked_manual_case_id": "TC-001"},
+        ],
+    } in query["$and"]
+    assert {
+        "$or": [
+            {"auto_case_id": {"$regex": "pytest\\.case", "$options": "i"}},
+            {"name": {"$regex": "pytest\\.case", "$options": "i"}},
+            {"script_name": {"$regex": "pytest\\.case", "$options": "i"}},
+            {"script_path": {"$regex": "pytest\\.case", "$options": "i"}},
+        ],
+    } in query["$and"]
 
 
 # ══════════════════════════════════════════════
