@@ -58,17 +58,24 @@ def base_item_query(
 
 async def docs_to_dicts(docs: list[BusWorkItemDoc]) -> list[dict[str, Any]]:
     """批量序列化工作项文档，统一输出结构。"""
-    return [await serialize_work_item(doc) for doc in docs]
+    if not docs:
+        return []
+
+    requirement_req_ids = await _load_requirement_req_ids(docs)
+    test_case_ids = await _load_test_case_ids(docs)
+    return [
+        _serialize_work_item_base(
+            doc,
+            req_id=requirement_req_ids.get(str(doc.id)),
+            case_id=test_case_ids.get(str(doc.id)),
+        )
+        for doc in docs
+    ]
 
 
 async def serialize_work_item(doc: BusWorkItemDoc) -> dict[str, Any]:
     """将 Beanie 文档转换为前端/接口更易消费的字典结构。"""
-    data = doc.model_dump()
-    data["id"] = str(doc.id)
-    # 保留 item_id 字段，兼容历史接口或调用方约定。
-    data["item_id"] = str(doc.id)
-    if data.get("parent_item_id") is not None:
-        data["parent_item_id"] = str(data["parent_item_id"])
+    data = _serialize_work_item_base(doc)
 
     # 对于 REQUIREMENT 类型，填充 req_id
     if doc.type_code == "REQUIREMENT":
@@ -101,6 +108,61 @@ async def serialize_work_item(doc: BusWorkItemDoc) -> dict[str, Any]:
             pass
 
     return data
+
+
+def _serialize_work_item_base(
+    doc: BusWorkItemDoc,
+    *,
+    req_id: str | None = None,
+    case_id: str | None = None,
+) -> dict[str, Any]:
+    data = doc.model_dump()
+    data["id"] = str(doc.id)
+    # 保留 item_id 字段，兼容历史接口或调用方约定。
+    data["item_id"] = str(doc.id)
+    if data.get("parent_item_id") is not None:
+        data["parent_item_id"] = str(data["parent_item_id"])
+    if doc.type_code == "REQUIREMENT":
+        resolved_req_id = doc.req_id or req_id
+        if resolved_req_id:
+            data["req_id"] = resolved_req_id
+    if doc.type_code == "TEST_CASE" and case_id:
+        data["case_id"] = case_id
+    return data
+
+
+async def _load_requirement_req_ids(docs: list[BusWorkItemDoc]) -> dict[str, str]:
+    workflow_ids = [
+        str(doc.id)
+        for doc in docs
+        if doc.type_code == "REQUIREMENT" and not doc.req_id
+    ]
+    if not workflow_ids:
+        return {}
+    TestRequirementDoc = _get_test_requirement_doc()
+    requirements = await TestRequirementDoc.find(
+        {"workflow_item_id": {"$in": workflow_ids}, "is_deleted": False}
+    ).to_list()
+    return {
+        str(requirement.workflow_item_id): requirement.req_id
+        for requirement in requirements
+        if requirement.workflow_item_id and requirement.req_id
+    }
+
+
+async def _load_test_case_ids(docs: list[BusWorkItemDoc]) -> dict[str, str]:
+    workflow_ids = [str(doc.id) for doc in docs if doc.type_code == "TEST_CASE"]
+    if not workflow_ids:
+        return {}
+    TestCaseDoc = _get_test_case_doc()
+    test_cases = await TestCaseDoc.find(
+        {"workflow_item_id": {"$in": workflow_ids}, "is_deleted": False}
+    ).to_list()
+    return {
+        str(test_case.workflow_item_id): test_case.case_id
+        for test_case in test_cases
+        if test_case.workflow_item_id and test_case.case_id
+    }
 
 
 async def get_work_item_doc(
