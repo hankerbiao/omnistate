@@ -20,8 +20,9 @@ python -m app.main                  # serves on 0.0.0.0:8000
 
 # Initialize core data
 cd backend
-python scripts/init/init_mongodb.py     # sync workflow/config data and base app data
-python scripts/init/init_rbac.py        # initialize default roles/permissions
+python scripts/init/sync_indexes.py      # sync indexes for all Beanie models
+python scripts/init/sync_workflow.py     # upsert workflow/config data without deletion
+python scripts/init/sync_rbac.py         # synchronize default roles
 python scripts/init/create_user.py --user-id admin001 --username "系统管理员" --password 'Admin@123' --roles ADMIN --email admin@example.com --upsert
 
 # Run tests
@@ -69,7 +70,7 @@ npm run docs:preview
 
 - Backend configuration is loaded from `backend/config.yaml` through `app.shared.config.get_settings()`; `backend/config.yaml.example` shows local defaults.
 - Important backend sections include `app`, `mongodb`, `rabbitmq`, `kafka`, `minio`, `jwt`, `execution`, `tmms`, `terminal`, and `logging`.
-- Beanie index sync is skipped by default in startup when `SKIP_INDEX_SYNC=1`; run `python scripts/init/init_mongodb.py` or set `SKIP_INDEX_SYNC=0` when indexes must be synchronized.
+- Beanie index sync is skipped by default in startup when `SKIP_INDEX_SYNC=1`; run `python scripts/init/sync_indexes.py` to synchronize all indexes explicitly.
 - Frontend API base URL comes from `VITE_API_BASE_URL`, defaulting in `src/services/api.ts` to `http://localhost:8000/api/v1`.
 
 ## Backend Architecture

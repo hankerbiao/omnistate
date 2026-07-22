@@ -17,19 +17,22 @@ DML_ENV=dev uv sync
 
 ```bash
 cd backend
-uv run python scripts/init/init_mongodb.py
-uv run python scripts/init/init_rbac.py
-uv run python scripts/init/create_user.py
+uv run python scripts/init/sync_indexes.py
+uv run python scripts/init/sync_workflow.py
+uv run python scripts/init/sync_rbac.py
+DML_ENV=dev uv run python scripts/dev/seed_test_users.py
 ```
 
 用途分别是：
 
-- `scripts/init/init_mongodb.py`
+- `scripts/init/sync_indexes.py`
+  同步所有已注册 Beanie 文档模型的索引
+- `scripts/init/sync_workflow.py`
   初始化 workflow 类型、状态和流转配置
-- `scripts/init/init_rbac.py`
-  初始化角色、权限、导航等 RBAC 基础数据
-- `scripts/init/create_user.py`
-  创建初始管理员
+- `scripts/init/sync_rbac.py`
+  校验静态权限码并同步默认角色
+- `scripts/dev/seed_test_users.py`
+  仅在 `DML_ENV=dev/test/local` 下创建可预测的开发账号
 
 ## 启动服务
 

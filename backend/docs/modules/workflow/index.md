@@ -10,7 +10,7 @@
 | [数据模型](./data-models.md) | MongoDB 集合、索引、序列化与父子关系 |
 | [状态与流转](./state-and-flow.md) | 状态机规则、处理人策略、权限 properties |
 | [HTTP API](./api.md) | 路由、权限、请求/响应约定 |
-| [配置与初始化](./configuration.md) | JSON 配置、`init_mongodb`、启动校验、扩展新类型 |
+| [配置与初始化](./configuration.md) | JSON 配置、`sync_workflow`、启动校验、扩展新类型 |
 
 代码内说明见 [`app/modules/workflow/README.md`](../../../app/modules/workflow/README.md)。  
 更细的模块内笔记见 [`app/modules/workflow/docs/workflow.md`](../../../app/modules/workflow/docs/workflow.md)。
@@ -70,7 +70,7 @@ app/modules/workflow/
 
 | 需求 | 优先位置 |
 |------|----------|
-| 新增事项类型或改流转图 | `app/configs/<type>.json` → `python scripts/init/init_mongodb.py` |
+| 新增事项类型或改流转图 | `app/configs/<type>.json` → `python scripts/init/sync_workflow.py` |
 | 改流转必填 / 处理人策略 | JSON `required_fields`、`target_owner_strategy` |
 | 改谁能点某个按钮 | JSON `properties`（见 [状态与流转](./state-and-flow.md)） |
 | 改删除联动 | `test_specs/.../workflow_projection_hook.py` |
@@ -79,7 +79,7 @@ app/modules/workflow/
 
 ## 风险点
 
-- **配置不一致**：`init_mongodb.py` 种子前校验 + 启动时 `validate_workflow_consistency()`；脏配置会导致服务无法启动（空库仅告警）。
+- **配置不一致**：`sync_workflow.py` 种子前校验 + 启动时 `validate_workflow_consistency()`；脏配置会导致服务无法启动（空库仅告警）。
 - **事务依赖**：流转与删除要求 MongoDB **副本集 + 事务**；单机无事务时会 `RuntimeError` 拒绝非原子操作。
 - **双写一致性**：`bus_work_items` 与 `test_requirements` / `test_cases` 由事务或 Hook 维护；只改一侧会导致列表状态与详情不一致。
 - **标题唯一**：同 `type_code` 下未删除事项的 `title` 唯一（部分索引），创建重复标题会 400。

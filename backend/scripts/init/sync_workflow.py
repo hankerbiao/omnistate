@@ -1,16 +1,10 @@
 #!/usr/bin/env python3
-"""
-MongoDB 数据库初始化脚本
+"""Synchronize workflow JSON configuration with MongoDB.
 
-功能说明：
-该脚本用于将代码中的配置（configs/*.json）同步到 MongoDB 数据库。
-RBAC 角色初始化由 scripts/init/init_rbac.py 独立管理。
-它是幂等的（Idempotent），可以重复运行。
-
-用法：
-  python scripts/init/init_mongodb.py       # 同步 workflow 配置
-  python scripts/init/init_rbac.py          # 同步 RBAC 角色
+By default this script only inserts or updates records. Deletion of database
+records absent from the JSON source requires the explicit ``--prune`` flag.
 """
+import argparse
 import asyncio
 import json
 import os
@@ -23,16 +17,13 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from pymongo import AsyncMongoClient
-from beanie import init_beanie
-
-from app.shared.config import get_settings
-from app.shared.core.logger import log
-from app.modules.workflow.repository.models import (
+from app.shared.core.logger import log  # noqa: E402
+from app.modules.workflow.repository.models import (  # noqa: E402
     SysWorkTypeDoc,
     SysWorkflowStateDoc,
     SysWorkflowConfigDoc,
 )
+from scripts.common.database import database_runtime  # noqa: E402
 
 
 def _parse_state_entry(entry: Any) -> Optional[tuple[str, str, Optional[bool]]]:
@@ -49,10 +40,22 @@ def _parse_state_entry(entry: Any) -> Optional[tuple[str, str, Optional[bool]]]:
 
 
 def _merge_work_types(data: Dict[str, Any], work_types_map: Dict[str, str]) -> None:
-    """合并事项类型配置。"""
+    """合并事项类型配置并拒绝重复 code。"""
     for item in data.get("work_types", []):
-        if isinstance(item, list) and len(item) == 2:
-            work_types_map[item[0]] = item[1]
+        if not isinstance(item, list) or len(item) != 2:
+            raise ValueError(f"非法 work_types 配置项: {item}")
+        code, name = item
+        if (
+            not isinstance(code, str)
+            or not code.strip()
+            or not isinstance(name, str)
+            or not name.strip()
+        ):
+            raise ValueError(f"非法 work_types 配置项: {item}")
+        code, name = code.strip(), name.strip()
+        if code in work_types_map:
+            raise ValueError(f"重复事项类型定义: code={code}")
+        work_types_map[code] = name
 
 
 def _merge_states(data: Dict[str, Any], states_map: Dict[str, Dict[str, Any]]) -> None:
@@ -102,7 +105,7 @@ def _load_config_maps(
     states_map: Dict[str, Dict[str, Any]] = {}
     workflow_configs_map: Dict[str, list[dict]] = {}
 
-    for filename in os.listdir(config_dir):
+    for filename in sorted(os.listdir(config_dir)):
         if not filename.endswith(".json"):
             continue
 
@@ -245,7 +248,11 @@ async def _cleanup_removed(
     """删除数据库中不再存在于配置中的记录。"""
     existing = await Model.find_all().to_list()
     for doc in existing:
-        key = getattr(doc, key_attrs) if isinstance(key_attrs, str) else tuple(getattr(doc, a) for a in key_attrs)
+        key = (
+            getattr(doc, key_attrs)
+            if isinstance(key_attrs, str)
+            else tuple(getattr(doc, attr) for attr in key_attrs)
+        )
         if key not in desired_keys:
             await doc.delete()
             log.info(f"删除已下线{label}: {key}")
@@ -274,7 +281,7 @@ async def _cleanup_removed_workflow_configs(
     )
 
 
-async def init_config_data():
+async def sync_workflow_config(*, prune: bool = False) -> None:
     """
     从配置文件初始化基础数据 (Beanie ODM 版本)
 
@@ -283,7 +290,7 @@ async def init_config_data():
     2. 同步 `SysWorkTypeDoc` (事项类型)。
     3. 同步 `SysWorkflowStateDoc` (工作流状态)。
     4. 同步 `SysWorkflowConfigDoc` (流转规则)。
-    5. 清理数据库中已废弃（配置文件中不存在）的数据。
+    5. 仅在 ``prune=True`` 时清理配置文件中不存在的数据。
     """
     log.info("开始从配置文件初始化基础数据...")
 
@@ -303,54 +310,29 @@ async def init_config_data():
     await _sync_work_types(work_types_map)
     await _sync_workflow_states(states_map)
     await _sync_workflow_configs(work_types_map, workflow_configs_map)
-    await _cleanup_removed_work_types(work_types_map)
-    await _cleanup_removed_workflow_configs(work_types_map, workflow_configs_map)
+    if prune:
+        log.warning("已启用 workflow prune，将删除配置源中不存在的事项类型和流转规则")
+        await _cleanup_removed_work_types(work_types_map)
+        await _cleanup_removed_workflow_configs(work_types_map, workflow_configs_map)
 
     log.success("基础数据初始化完成")
 
 
-async def main():
-    """
-    主函数
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="同步 workflow 配置")
+    parser.add_argument(
+        "--prune",
+        action="store_true",
+        help="删除数据库中已不在配置源内的事项类型和流转规则",
+    )
+    return parser.parse_args()
 
-    功能：
-    1. 连接 MongoDB。
-    2. 初始化 Beanie ODM。
-    3. 同步 workflow 配置。
-    4. 优雅关闭连接。
 
-    注意：RBAC 初始化由 scripts/init/init_rbac.py 独立完成。
-    """
-    log.info("开始 MongoDB 初始化...")
-
-    client = AsyncMongoClient(get_settings().mongodb.uri)
-
-    try:
-        # 测试连接
-        await client.admin.command('ping')
-        log.success("MongoDB 连接成功")
-
-        # 初始化 Beanie，注册模型
-        await init_beanie(
-            database=client[get_settings().mongodb.db_name],
-            document_models=[
-                SysWorkTypeDoc,
-                SysWorkflowStateDoc,
-                SysWorkflowConfigDoc,
-            ]
-        )
-        log.success("Beanie 初始化完成")
-
-        # 执行核心同步逻辑
-        await init_config_data()
-
-        log.success("MongoDB 初始化完成!")
-    except Exception as e:
-        log.error(f"MongoDB 初始化失败: {e}")
-        raise
-    finally:
-        await client.close()
-        log.info("MongoDB 连接已关闭")
+async def main() -> None:
+    args = parse_args()
+    models = [SysWorkTypeDoc, SysWorkflowStateDoc, SysWorkflowConfigDoc]
+    async with database_runtime(document_models=models):
+        await sync_workflow_config(prune=args.prune)
 
 
 if __name__ == "__main__":

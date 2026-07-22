@@ -42,8 +42,13 @@ def get_document_models_list() -> list[type[Any]]:
     return get_document_models()
 
 
-async def initialize_beanie(database: Any) -> None:
-    skip_indexes = os.getenv("SKIP_INDEX_SYNC", "1") == "1"
+async def initialize_beanie(
+    database: Any,
+    *,
+    skip_indexes: bool | None = None,
+) -> None:
+    if skip_indexes is None:
+        skip_indexes = os.getenv("SKIP_INDEX_SYNC", "1") == "1"
 
     await init_beanie(
         database=database,
@@ -54,13 +59,17 @@ async def initialize_beanie(database: Any) -> None:
     if skip_indexes:
         log.info(
             "Beanie 索引同步已跳过（SKIP_INDEX_SYNC=1），"
-            "如需同步索引请运行: python scripts/init/init_mongodb.py 或设置 SKIP_INDEX_SYNC=0"
+            "如需同步索引请运行: python scripts/init/sync_indexes.py"
         )
 
 
 async def validate_workflow_consistency() -> None:
     """启动时校验 workflow 基础配置，避免脏配置进入运行期。"""
-    from app.modules.workflow.repository.models import SysWorkTypeDoc, SysWorkflowStateDoc, SysWorkflowConfigDoc
+    from app.modules.workflow.repository.models import (
+        SysWorkflowConfigDoc,
+        SysWorkflowStateDoc,
+        SysWorkTypeDoc,
+    )
 
     work_types = await SysWorkTypeDoc.find_all().to_list()
     states = await SysWorkflowStateDoc.find_all().to_list()
@@ -69,7 +78,7 @@ async def validate_workflow_consistency() -> None:
     if not work_types and not states and not configs:
         log.warning(
             "workflow consistency check skipped: workflow configs are empty, "
-            "run `python scripts/init/init_mongodb.py` to initialize"
+            "run `python scripts/init/sync_workflow.py` to initialize"
         )
         return
 

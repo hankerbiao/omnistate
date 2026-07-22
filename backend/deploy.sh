@@ -12,6 +12,7 @@ API_SERVICE="dmlv4-backend.service"
 WORKER_SERVICE="dmlv4-kafka-worker.service"
 RUN_INIT=1
 START_SERVICES=1
+PRUNE_WORKFLOW=0
 
 if [[ -f "$ENV_FILE" ]]; then
     persisted_config="$(
@@ -60,6 +61,7 @@ Options:
   --manager auto|systemd|script
                              Use systemd on Linux when available, otherwise shell scripts
   --skip-init                Do not initialize MongoDB/RBAC during install or update
+  --prune-workflow           Delete workflow records absent from JSON configuration
   --no-start                 Prepare the environment without starting services
   --without-worker           Do not install or manage the Kafka worker service
   -h, --help                 Show this help
@@ -85,6 +87,7 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         --skip-init) RUN_INIT=0; shift ;;
+        --prune-workflow) PRUNE_WORKFLOW=1; shift ;;
         --no-start) START_SERVICES=0; shift ;;
         --without-worker) WITH_WORKER=0; shift ;;
         -h|--help) usage; exit 0 ;;
@@ -100,6 +103,13 @@ case "$WITH_WORKER" in
     0|1) ;;
     *) die "DML_WITH_WORKER must be 0 or 1" ;;
 esac
+if [[ $PRUNE_WORKFLOW -eq 1 ]]; then
+    case "$ACTION" in
+        install|update|init) ;;
+        *) die "--prune-workflow is only valid with install, update or init" ;;
+    esac
+    [[ $RUN_INIT -eq 1 ]] || die "--prune-workflow cannot be combined with --skip-init"
+fi
 
 if [[ "$CONFIG_FILE" != /* ]]; then
     CONFIG_FILE="$PROJECT_ROOT/$CONFIG_FILE"
@@ -203,10 +213,17 @@ PY
 initialize_data() {
     local run=(uv run --frozen --no-dev --no-sync python)
     cd "$PROJECT_ROOT"
-    info "Synchronizing MongoDB indexes and workflow configuration"
-    SKIP_INDEX_SYNC=0 "${run[@]}" scripts/init/init_mongodb.py
+    info "Synchronizing MongoDB indexes for all document models"
+    "${run[@]}" scripts/init/sync_indexes.py
+    info "Synchronizing workflow configuration"
+    local workflow_args=(scripts/init/sync_workflow.py)
+    if [[ $PRUNE_WORKFLOW -eq 1 ]]; then
+        workflow_args+=(--prune)
+        warn "Workflow pruning is enabled"
+    fi
+    "${run[@]}" "${workflow_args[@]}"
     info "Synchronizing RBAC roles"
-    "${run[@]}" scripts/init/init_rbac.py
+    "${run[@]}" scripts/init/sync_rbac.py
 
     if [[ -n "${DML_ADMIN_PASSWORD:-}" ]]; then
         local user_args=(

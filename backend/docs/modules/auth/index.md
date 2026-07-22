@@ -62,7 +62,7 @@
 
 ## RBAC 初始化默认角色与权限
 
-初始化脚本是 `backend/scripts/init/init_rbac.py`。它只幂等写入 `roles` 集合：
+初始化脚本是 `backend/scripts/init/sync_rbac.py`。它只幂等写入 `roles` 集合：
 
 - 不创建 `permissions` 集合。
 - 不创建 `navigation_pages` 集合。
@@ -171,7 +171,7 @@ Token 校验只能证明“用户身份有效”，后续授权流程是：
 ## 常见修改场景
 
 - 改登录或 token：看 `app/shared/auth/*` 和 `auth/api/routes_login.py`。
-- 新增权限码：改 `auth/permissions.py`，再更新 `scripts/init/init_rbac.py` 的角色绑定。
+- 新增权限码：改 `auth/permissions.py`，再更新 `scripts/init/sync_rbac.py` 的角色绑定。
 - 改角色/用户管理接口：看 `auth/api/routes_roles.py`、`auth/api/routes_users.py` 与对应 service。
 - 改路由权限依赖：看具体路由上的 `require_permission(...)`。
 

@@ -33,7 +33,6 @@ dmlv4/
 ├── backend/
 │   ├── app/
 │   │   ├── main.py              # FastAPI 入口
-│   │   ├── init_mongodb.py      # 初始化工作流配置、RBAC 基础数据
 │   │   ├── configs/             # 工作流配置（JSON）
 │   │   ├── modules/
 │   │   │   ├── workflow/        # 配置驱动工作流引擎
@@ -56,7 +55,9 @@ dmlv4/
 │   │       ├── rabbitmq/        # RabbitMQ 消息管理
 │   │       └── infrastructure/  # 应用级基础设施初始化
 │   ├── scripts/
-│   │   ├── init/                # 初始化脚本（RBAC、用户创建）
+│   │   ├── init/                # 索引、工作流、RBAC 与用户初始化
+│   │   ├── dev/                 # 仅限开发环境的数据脚本
+│   │   ├── migrations/          # 一次性数据迁移
 │   │   ├── auth/                # Token 生成
 │   │   ├── mock/                # 模拟数据与服务
 │   │   └── maintenance/         # 维护脚本
@@ -190,8 +191,8 @@ AI 驱动的用例集质量分析。
 ```bash
 cd backend
 uv sync --frozen
-uv run python scripts/init/init_mongodb.py
-uv run python scripts/init/init_rbac.py
+uv run python scripts/init/sync_workflow.py
+uv run python scripts/init/sync_rbac.py
 uv run python -m app.main
 ```
 

@@ -45,8 +45,9 @@ dmlv4/
 │   │       ├── kafka/
 │   │       └── service/
 │   ├── scripts/
-│   │   └── init/
-│   │       └── init_mongodb.py
+│   │   ├── init/              # 索引、workflow、RBAC、单用户工具
+│   │   ├── dev/               # 开发/测试环境种子数据
+│   │   └── migrations/        # 一次性数据迁移
 │   └── docs/
 └── docs/
 ```
@@ -200,7 +201,7 @@ dmlv4/
 
 ## 7. 工作流配置
 
-工作流规则定义在 `backend/app/configs/*.json`，通过 `backend/scripts/init/init_mongodb.py` 同步到 MongoDB。
+工作流规则定义在 `backend/app/configs/*.json`，通过 `backend/scripts/init/sync_workflow.py` 同步到 MongoDB。
 
 初始化脚本会做几类处理：
 
@@ -214,7 +215,7 @@ dmlv4/
 新增工作流类型的标准方式：
 
 1. 在 `backend/app/configs/` 下新增或修改 JSON 配置。
-2. 运行 `python scripts/init/init_mongodb.py`。
+2. 运行 `python scripts/init/sync_workflow.py`。
 3. 重启服务并观察启动期的一致性校验结果。
 
 ## 8. API 注册与统一响应

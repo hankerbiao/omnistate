@@ -9,7 +9,7 @@ backend/app/configs/
 └── test_case.json       # TEST_CASE 类型 + 流转边
 ```
 
-`init_mongodb.py` 会扫描 `configs/` 下所有 `.json`，**合并**：
+`sync_workflow.py` 会扫描 `configs/` 下所有 `.json`，**合并**：
 
 - `work_types` → `sys_work_types`
 - `states`（来自各文件，通常只在 global）→ `sys_workflow_states`
@@ -62,7 +62,7 @@ backend/app/configs/
 
 ```bash
 cd backend
-python scripts/init/init_mongodb.py
+python scripts/init/sync_workflow.py
 ```
 
 脚本会：
@@ -70,6 +70,14 @@ python scripts/init/init_mongodb.py
 1. 解析并合并所有 JSON
 2. **`_validate_workflow_configs`**：未定义 type/state、重复边等 → 抛错退出
 3. Upsert 写入 `sys_work_types`、`sys_workflow_states`、`sys_workflow_configs`
+
+默认不会删除数据库中的既有记录。确认已下线配置且已处理存量业务数据后，才可显式执行：
+
+```bash
+uv run python scripts/init/sync_workflow.py --prune
+```
+
+`--prune` 会删除配置源中不存在的事项类型和流转规则，生产发布默认不启用。
 
 修改 JSON 后需**重新执行**种子脚本，运行中服务不会自动热加载配置。
 
@@ -79,7 +87,7 @@ python scripts/init/init_mongodb.py
 
 | 条件 | 行为 |
 |------|------|
-| 三表均为空 | **Warning**，提示运行 `init_mongodb.py` |
+| 三表均为空 | **Warning**，提示运行 `sync_workflow.py` |
 | 有配置但无 work_types / states | **RuntimeError**，阻止启动 |
 | config 引用未知 `type_code` / `from_state` / `to_state` | **RuntimeError** |
 
@@ -91,7 +99,7 @@ python scripts/init/init_mongodb.py
    - `work_types`: `[["MY_TYPE", "显示名"]]`
    - `workflow_configs.MY_TYPE`: 完整边列表
 2. 确认所有 `from_state` / `to_state` 已在 `global_config.json` 的 `states` 中（或在新文件补充 `states`）
-3. `python scripts/init/init_mongodb.py`
+3. `python scripts/init/sync_workflow.py`
 4. 重启后端，确认启动无 consistency 错误
 5. 若业务模块需要投影（类似 test_specs）：
    - 实现 `WorkflowItemGateway` / 事务创建
@@ -121,7 +129,7 @@ Workflow **不**使用独立 `.env` 键；依赖：
 | 现象 | 排查 |
 |------|------|
 | 启动报 consistency failed | 对照报错中的 unknown `type_code` / `state`，检查 JSON 与 DB 是否一致 |
-| `init_mongodb` 报重复流转 | 同一 `(type, from, action)` 出现两次 |
+| `sync_workflow` 报重复流转 | 同一 `(type, from, action)` 出现两次 |
 | 前端无按钮 | `GET .../transitions` 看是否被 `can_transition` 过滤；查 `properties.allowed_role_ids` |
 | 流转 400 缺字段 | 对照该 action 的 `required_fields` |
 

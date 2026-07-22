@@ -688,13 +688,13 @@ jobs:
 
 ```bash
 # 1. 初始化 RBAC
-python scripts/init/init_rbac.py
+python scripts/init/sync_rbac.py
 
 # 2. 创建测试用户
-python scripts/init/seed_test_users.py
+DML_ENV=test python scripts/dev/seed_test_users.py
 
 # 3. 初始化 MongoDB 工作流配置
-python scripts/init/init_mongodb.py
+python scripts/init/sync_workflow.py
 ```
 
 ### 16.2 测试用户矩阵

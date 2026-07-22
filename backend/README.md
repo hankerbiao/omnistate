@@ -6,9 +6,10 @@ FastAPI 后端，提供测试需求、用例管理、执行编排、权限控制
 
 ```bash
 uv sync
-uv run python scripts/init/init_mongodb.py
-uv run python scripts/init/init_rbac.py
-uv run python scripts/init/create_user.py
+uv run python scripts/init/sync_indexes.py
+uv run python scripts/init/sync_workflow.py
+uv run python scripts/init/sync_rbac.py
+uv run python scripts/init/create_user.py --help
 DML_ENV=dev uv run python -m app.main
 ```
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """创建 RBAC 用户脚本。
 
-前提：必须先执行 scripts/init/init_rbac.py 初始化权限与角色。
+前提：必须先执行 scripts/init/sync_rbac.py 初始化角色。
 
 用法示例：
 python scripts/init/create_user.py \
@@ -24,16 +24,13 @@ import os
 import sys
 from pathlib import Path
 
-from beanie import init_beanie
-from pymongo import AsyncMongoClient
-
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app.shared.config import get_settings  # noqa: E402
-from app.shared.auth import hash_password  # noqa: E402
 from app.modules.auth.repository.models import UserDoc, RoleDoc  # noqa: E402
+from scripts.common.database import database_runtime  # noqa: E402
+from scripts.common.users import write_user  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
@@ -71,55 +68,18 @@ async def main() -> None:
     password = resolve_password(args)
     role_ids = [r.strip() for r in args.roles.split(",") if r.strip()]
 
-    client = AsyncMongoClient(get_settings().mongodb.uri)
-    try:
-        await init_beanie(
-            database=client[get_settings().mongodb.db_name],
-            document_models=[UserDoc, RoleDoc],
-        )
-
-        # 角色存在性校验
-        if role_ids:
-            role_count = await RoleDoc.find({"role_id": {"$in": role_ids}}).count()
-            if role_count != len(set(role_ids)):
-                existing_role_ids = {
-                    role.role_id
-                    async for role in RoleDoc.find({"role_id": {"$in": role_ids}})
-                }
-                missing = set(role_ids) - existing_role_ids
-                raise RuntimeError(
-                    f"角色不存在: {missing}。请先执行 scripts/init/init_rbac.py 初始化权限与角色。"
-                )
-
-        salt, pwd_hash = hash_password(password)
-        existing = await UserDoc.find_one(UserDoc.user_id == args.user_id)
-
-        if existing and not args.upsert:
-            raise RuntimeError(f"用户已存在: {args.user_id}（如需覆盖请加 --upsert）")
-
-        if existing and args.upsert:
-            existing.username = args.username
-            existing.email = args.email
-            existing.status = args.status
-            existing.role_ids = role_ids
-            existing.password_salt = salt
-            existing.password_hash = pwd_hash
-            await existing.save()
-            print(f"用户已更新: {args.user_id}")
-            return
-
-        await UserDoc(
+    async with database_runtime(document_models=[UserDoc, RoleDoc]):
+        result = await write_user(
             user_id=args.user_id,
             username=args.username,
             email=args.email,
             status=args.status,
             role_ids=role_ids,
-            password_salt=salt,
-            password_hash=pwd_hash,
-        ).insert()
-        print(f"用户创建成功: {args.user_id}")
-    finally:
-        await client.close()
+            password=password,
+            existing_policy="update" if args.upsert else "error",
+        )
+        action = "更新" if result == "updated" else "创建"
+        print(f"用户{action}成功: {args.user_id}")
 
 
 if __name__ == "__main__":

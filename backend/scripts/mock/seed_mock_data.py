@@ -3,7 +3,8 @@
 模拟数据生成脚本 — 批量创建项目、需求、用例等关联数据。
 
 直接使用 Beanie ODM 写入 MongoDB，不依赖后端 API 运行。
-前提：必须先执行 scripts/init/init_rbac.py 和 scripts/init/seed_test_users.py。
+前提：必须先执行 scripts/init/sync_rbac.py 和
+      DML_ENV=dev python scripts/dev/seed_test_users.py。
 
 用法:
   python scripts/mock/seed_mock_data.py                          # 创建全部模拟数据
@@ -493,7 +494,7 @@ async def main():
     # 验证用户存在
     owner = await UserDoc.find_one(UserDoc.user_id == args.owner)
     if not owner:
-        print(f"✗ 用户 '{args.owner}' 不存在，请先执行 scripts/init/seed_test_users.py")
+        print(f"✗ 用户 '{args.owner}' 不存在，请先执行 scripts/dev/seed_test_users.py")
         sys.exit(1)
     reviewer = await UserDoc.find_one(UserDoc.user_id == args.reviewer) or owner
 

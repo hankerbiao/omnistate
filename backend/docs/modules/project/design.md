@@ -379,7 +379,7 @@ async def delete_project(self, project_id: str) -> None:
 | `projects:write` | 创建、更新项目 | ADMIN, TPM |
 | `projects:delete` | 删除项目 | ADMIN |
 
-修改 `scripts/init/init_rbac.py`：
+修改 `scripts/init/sync_rbac.py`：
 - 在 `DEFAULT_PERMISSIONS` 中新增上述 3 个权限
 - 在 `DEFAULT_ROLES` 中为 `ADMIN` 分配全部 3 个，`TPM` 分配 `read` + `write`
 
@@ -389,7 +389,7 @@ async def delete_project(self, project_id: str) -> None:
 
 ### 10.1 初始化脚本
 
-新增 `scripts/init/init_projects.py`：
+新增 `scripts/migrations/backfill_default_project.py`：
 
 ```python
 async def init_default_project():
@@ -405,18 +405,14 @@ async def init_default_project():
         )
         await default.insert()
 
-    # 批量为历史数据添加默认项目关联（可选）
-    # 通过命令行参数控制是否执行历史数据迁移
+    # 批量为历史数据添加默认项目关联
 ```
 
 ### 10.2 运行方式
 
 ```bash
-# 开发环境：初始化默认项目
-python scripts/init/init_projects.py --migrate-existing
-
-# 生产环境：仅创建默认项目，不迁移历史数据（由管理员手动归档）
-python scripts/init/init_projects.py
+# 一次性迁移；可重复执行，已关联的数据会跳过
+uv run python scripts/migrations/backfill_default_project.py
 ```
 
 ### 10.3 现有索引迁移
@@ -426,7 +422,7 @@ python scripts/init/init_projects.py
 IndexModel("project_ids")  # 支持 $in 查询
 ```
 
-在 `scripts/init/init_mongodb.py` 或启动时通过 `SKIP_INDEX_SYNC=0` 自动同步。
+通过 `uv run python scripts/init/sync_indexes.py` 显式同步全部 Beanie 模型索引。
 
 ---
 
@@ -463,7 +459,7 @@ IndexModel("project_ids")  # 支持 $in 查询
 
 ### Phase 4：数据迁移（可选）
 
-- [ ] 运行 `init_projects.py --migrate-existing` 将历史数据关联默认项目
+- [ ] 运行 `scripts/migrations/backfill_default_project.py` 将历史数据关联默认项目
 - [ ] 管理员在 UI 中手动重新分配项目
 
 ---
@@ -490,7 +486,7 @@ backend/app/modules/project/
 │   └── project.py
 └── domain/
     └── constants.py
-backend/scripts/init/init_projects.py
+backend/scripts/migrations/backfill_default_project.py
 ```
 
 ### 后端修改
@@ -498,7 +494,7 @@ backend/scripts/init/init_projects.py
 ```
 backend/app/shared/infrastructure/bootstrap.py      # 注册 PROJECT_DOCUMENT_MODELS
 backend/app/shared/api/main.py                    # 注册 project_router
-backend/scripts/init/init_rbac.py                 # 新增项目权限
+backend/scripts/init/sync_rbac.py                 # 新增项目权限
 ```
 
 ### 前端新增

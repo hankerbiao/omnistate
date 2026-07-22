@@ -80,7 +80,7 @@
 - 导航授权闭环：后端 `/users/me/navigation` + 前端 `config/navigation.ts` 的 `permission` 字段 ≡ 后端 `PermissionDoc.code`，前端经 `/users/me/permissions` 下发权限数组做 `includes` 过滤。
 
 ### 可扩展性：🟡 中等（受限点）
-1. **权限码无集中注册表/枚举**：权限码硬编码在 `scripts/init/init_rbac.py` 的 `DEFAULT_PERMISSIONS`（约 32 个），运行时各模块直接用字符串字面量（如 `require_permission("requirements:read")`）。新增/改名权限码无编译期检查，易拼写漂移。
+1. **权限码无集中注册表/枚举**：权限码硬编码在 `scripts/init/sync_rbac.py` 的 `DEFAULT_PERMISSIONS`（约 32 个），运行时各模块直接用字符串字面量（如 `require_permission("requirements:read")`）。新增/改名权限码无编译期检查，易拼写漂移。
 2. **扁平无层级**：无角色继承/父子关系（`inherit/parent_role` 全仓无匹配）。多角色仅做权限并集，无法表达"角色 A 继承角色 B"。当前 8 个系统角色够用，但业务扩张后维护成本高。
 3. **仅 Allow 模型**：`extra_permission_ids` 只能追加，无 Deny/黑名单概念。若需"授予角色但排除某敏感操作"需绕道。
 4. **无权限分组/通配**：权限按 `资源:动作` 单码管理，无法批量授予（如 `requirements:*`）。
@@ -91,7 +91,7 @@
 
 ### 分配入口（核验路由 + 脚本）
 - 用户→角色：`PATCH /users/{id}/roles`（`routes_users.py:97`）、`scripts/init/create_user.py --roles`（CLI）。
-- 角色→权限：`PATCH /roles/{id}/permissions`（**整体替换**，`routes_roles.py:71`）、`init_rbac.py` 预置。
+- 角色→权限：`PATCH /roles/{id}/permissions`（**整体替换**，`routes_roles.py:71`）、`sync_rbac.py` 预置。
 - 用户额外权限：`PUT /users/{id}/permissions/extra`（`routes_users.py:129`）。
 - 创建角色/权限时 `_ensure_permissions_exist`/`_ensure_roles_exist`（`support.py`）校验引用 ID 存在。
 
@@ -183,7 +183,7 @@
 | 密码哈希 | `backend/app/shared/auth/password.py` |
 | RBAC 数据模型 | `backend/app/modules/auth/repository/models/rbac.py` |
 | 鉴权依赖 | `backend/app/shared/auth/jwt_auth.py:109-215`；`backend/app/modules/auth/api/dependencies.py` |
-| 权限码注册 | `backend/scripts/init/init_rbac.py`（`DEFAULT_PERMISSIONS`/`DEFAULT_ROLES`） |
+| 权限码注册 | `backend/scripts/init/sync_rbac.py`（`DEFAULT_PERMISSIONS`/`DEFAULT_ROLES`） |
 | 导航授权闭环 | `backend/app/modules/auth/api/routes_login.py:69` + `frontend/src/config/navigation.ts` |
 | 中间件挂载 | `backend/app/main.py:147-156` |
 | CORS 配置 | `backend/config.yaml:5-6` |

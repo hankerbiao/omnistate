@@ -73,7 +73,7 @@ MVP auto status: join execution task on read (QUEUED/RUNNINGâ†’running, PASSEDâ†
 
 backend/app/modules/execution_plan/ (api, schemas, service, repository/models)
 
-Register: bootstrap, main.py, init_rbac (execution_plans:read/write)
+Register: bootstrap, main.py, sync_rbac (execution_plans:read/write)
 
 ---
 
@@ -159,7 +159,7 @@ component source, auto display ids, re-dispatch, delete rules, approval, result 
 ## 12. References
 
 frontend: TestExecutionPlan.tsx, MyTasksPage.tsx, myTasksTypes.ts, ResultBackfillModal.tsx, testPlan.ts
-backend: execution/api/routes.py, execution/models/execution.py, workflow/business.py, init/init_rbac.py, bootstrap.py
+backend: execution/api/routes.py, execution/models/execution.py, workflow/business.py, init/sync_rbac.py, bootstrap.py
 
 ---
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Initialize default RBAC roles.
+"""Synchronize default RBAC roles.
 
 Permissions are static application constants. This script only persists role
 records and their selected permission codes.
@@ -10,16 +10,13 @@ import asyncio
 import sys
 from pathlib import Path
 
-from beanie import init_beanie
-from pymongo import AsyncMongoClient
-
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app.modules.auth.permissions import PERMISSION_CODES
-from app.modules.auth.repository.models import RoleDoc
-from app.shared.config import get_settings
+from app.modules.auth.permissions import PERMISSION_CODES  # noqa: E402
+from app.modules.auth.repository.models import RoleDoc  # noqa: E402
+from scripts.common.database import database_runtime  # noqa: E402
 
 _READ = [
     "users:read",
@@ -169,18 +166,24 @@ DEFAULT_ROLES = {
 }
 
 
-def _valid_permission_ids(permission_ids: list[str]) -> list[str]:
-    return sorted(pid for pid in set(permission_ids) if pid in PERMISSION_CODES)
+def _validated_permission_ids(permission_ids: list[str]) -> list[str]:
+    unknown = sorted(set(permission_ids) - PERMISSION_CODES)
+    if unknown:
+        raise ValueError(f"默认角色引用了未定义的权限码: {unknown}")
+    return sorted(set(permission_ids))
 
 
 async def init_roles() -> None:
-    for role_id, cfg in DEFAULT_ROLES.items():
-        payload = {
+    role_payloads = {
+        role_id: {
             "name": cfg["name"],
             "description": cfg.get("description"),
             "is_system": cfg.get("is_system", False),
-            "permission_ids": _valid_permission_ids(cfg["permission_ids"]),
+            "permission_ids": _validated_permission_ids(cfg["permission_ids"]),
         }
+        for role_id, cfg in DEFAULT_ROLES.items()
+    }
+    for role_id, payload in role_payloads.items():
         existing = await RoleDoc.find_one(RoleDoc.role_id == role_id)
         if existing:
             existing.name = payload["name"]
@@ -193,18 +196,9 @@ async def init_roles() -> None:
 
 
 async def main() -> None:
-    client = AsyncMongoClient(get_settings().mongodb.uri)
-    try:
-        await init_beanie(
-            database=client[get_settings().mongodb.db_name],
-            document_models=[RoleDoc],
-        )
+    async with database_runtime(document_models=[RoleDoc]):
         await init_roles()
-        print("RBAC 角色初始化完成")
-    finally:
-        close_result = client.close()
-        if asyncio.iscoroutine(close_result):
-            await close_result
+        print("RBAC 角色同步完成")
 
 
 if __name__ == "__main__":

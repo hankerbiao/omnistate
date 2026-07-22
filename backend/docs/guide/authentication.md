@@ -270,11 +270,11 @@ Content-Type: application/json
 
 ```bash
 cd backend
-python scripts/init/init_rbac.py
+python scripts/init/sync_rbac.py
 python scripts/init/create_user.py --user-id admin --username 管理员 --password 'admin123' --roles ADMIN
 ```
 
-`init_rbac.py` 只初始化/同步 `roles` 集合。重新初始化数据库时，`permissions` 和 `navigation_pages` 集合不再需要。旧用户字段 `extra_permission_ids`、`allowed_nav_views` 也不再使用。
+`sync_rbac.py` 只初始化/同步 `roles` 集合。重新初始化数据库时，`permissions` 和 `navigation_pages` 集合不再需要。旧用户字段 `extra_permission_ids`、`allowed_nav_views` 也不再使用。
 
 ## 8. Schema 事实
 

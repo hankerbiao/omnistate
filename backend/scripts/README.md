@@ -7,7 +7,10 @@ scripts/
 ├── ../deploy.sh         # uv 一键安装、初始化与服务管理
 ├── ../server.sh         # API 服务启停管理（无 systemd 时使用）
 ├── ../kafka_worker.sh   # Kafka Worker 启停管理（无 systemd 时使用）
-├── init/         # 初始化脚本（RBAC、用户创建）
+├── common/       # 脚本共享的数据库与用户写入逻辑
+├── init/         # 生产可用的索引、配置、RBAC 与用户工具
+├── dev/          # 仅限开发/测试环境的数据脚本
+├── migrations/   # 一次性历史数据迁移
 ├── auth/         # 认证相关（Token 生成）
 ├── mock/         # 模拟数据与服务
 ├── maintenance/  # 维护脚本
@@ -18,36 +21,57 @@ scripts/
 
 ## init/ — 初始化脚本
 
-### `init/init_rbac.py` - RBAC 初始化
-初始化系统权限(Permission)和角色(Role)。
+### `init/sync_indexes.py` - 全量索引同步
+
+注册应用内全部 Beanie Document 并同步索引。首次安装和模型索引发生变化时执行：
+
+```bash
+uv run python scripts/init/sync_indexes.py
+```
+
+### `init/sync_workflow.py` - Workflow 配置同步
+
+默认仅 upsert，不会删除数据库中的记录：
+
+```bash
+uv run python scripts/init/sync_workflow.py
+uv run python scripts/init/sync_workflow.py --prune  # 明确删除已下线配置
+```
+
+### `init/sync_rbac.py` - RBAC 初始化
+校验静态权限码并同步角色(Role)。未知权限码会在写库前报错。
 
 **使用方法：**
 ```bash
-# 默认执行，创建所有默认角色和权限
-python scripts/init/init_rbac.py
+# 默认执行，创建或更新所有默认角色
+uv run python scripts/init/sync_rbac.py
 ```
 
 **功能说明：**
-- 创建 `Permission` 集合：所有业务权限（work_items、users、requirements、test_cases 等）
-- 创建 `Role` 集合：ADMIN（全量权限）、TPM、REVIEWER、MANUAL_DEV、QA、TESTER、AUTO_DEV、AUTOMATION
+- 校验权限码来自应用静态常量
+- 创建或更新 `Role` 集合：ADMIN、TPM、REVIEWER、MANUAL_DEV、QA、TESTER、AUTO_DEV、AUTOMATION
 - 幂等操作，可重复执行
 
 ---
 
-### `init/seed_test_users.py` - 测试用户创建
+## dev/ — 开发数据脚本
+
+### `dev/seed_test_users.py` - 测试用户创建
 一键创建多个测试账号，方便开发和演示使用。
 
 **使用方法：**
 ```bash
 # 创建所有测试用户（默认密码: Test@123）
-python scripts/init/seed_test_users.py
+DML_ENV=dev uv run python scripts/dev/seed_test_users.py
 
 # 覆盖已存在的用户
-python scripts/init/seed_test_users.py --reset
+DML_ENV=dev uv run python scripts/dev/seed_test_users.py --reset
 
 # 自定义统一密码
-python scripts/init/seed_test_users.py --password MyPass@456
+DML_ENV=dev uv run python scripts/dev/seed_test_users.py --password MyPass@456
 ```
+
+脚本只接受 `DML_ENV=dev/test/local`，生产或未设置环境时会拒绝执行。
 
 **创建的测试用户：**
 
@@ -62,7 +86,7 @@ python scripts/init/seed_test_users.py --password MyPass@456
 
 ---
 
-### `init/create_user.py` - 单个用户创建
+## `init/create_user.py` - 单个用户创建
 创建单个 RBAC 用户账号。
 
 **使用方法：**
@@ -245,21 +269,25 @@ python scripts/maintenance/remove_test_specs_status_projection.py --apply
 首次部署时按以下顺序执行：
 
 ```bash
-# 1. 初始化 RBAC（角色和权限）
-python scripts/init/init_rbac.py
+# 1. 同步全部模型索引
+uv run python scripts/init/sync_indexes.py
 
-# 2. 创建管理员账号
+# 2. 同步 workflow 和 RBAC
+uv run python scripts/init/sync_workflow.py
+uv run python scripts/init/sync_rbac.py
+
+# 3. 创建管理员账号
 python scripts/init/create_user.py \
   --user-id admin \
   --username 管理员 \
   --password 'Admin@123' \
   --roles ADMIN
 
-# 3. 生成管理员 token
+# 4. 生成管理员 token
 python scripts/auth/create_token.py --user-id admin --save-to-file /tmp/admin_token.txt
 
-# 4. 或者使用一键脚本创建测试用户（方便演示）
-python scripts/init/seed_test_users.py
+# 5. 或者在开发环境创建测试用户
+DML_ENV=dev uv run python scripts/dev/seed_test_users.py
 ```
 
 后续开发调试可直接使用 `seed_test_users.py` 快速创建多个测试账号。

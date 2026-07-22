@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """
-初始化默认项目数据。
+一次性回填历史数据到默认项目。
 
 运行方式：
-    python scripts/init/init_projects.py                  # 仅创建默认项目
-    python scripts/init/init_projects.py --migrate-existing  # 创建默认项目 + 迁移历史数据
+    uv run python scripts/migrations/backfill_default_project.py
 """
 from __future__ import annotations
 
@@ -17,10 +16,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from beanie import init_beanie
-from pymongo import AsyncMongoClient
-
-from app.shared.config import get_settings
+from scripts.common.database import database_runtime  # noqa: E402
 
 
 async def init_default_project() -> str:
@@ -83,32 +79,12 @@ async def migrate_existing_data(project_id: str) -> None:
 
 
 async def main():
-    settings = get_settings()
-    client = AsyncMongoClient(settings.mongodb.uri)
-
-    try:
-        await client.admin.command("ping")
-        print("[OK] MongoDB 连接成功")
-
-        # 注册 Beanie 模型
-        from app.modules.project.repository.models import ProjectDoc
-        await init_beanie(
-            database=client[settings.mongodb.db_name],
-            document_models=[ProjectDoc],
-        )
-
-        # 创建默认项目
+    # Full registration is required because the migration queries models from
+    # several modules listed in PROJECT_RELATED_MODEL_PATHS.
+    async with database_runtime():
         project_id = await init_default_project()
-
-        # 迁移历史数据
-        if "--migrate-existing" in sys.argv:
-            print("\n开始迁移历史数据...")
-            await migrate_existing_data(project_id)
-        else:
-            print("\n提示: 传递 --migrate-existing 参数可迁移历史数据到默认项目")
-
-    finally:
-        client.close()
+        print("\n开始迁移历史数据...")
+        await migrate_existing_data(project_id)
 
 
 if __name__ == "__main__":

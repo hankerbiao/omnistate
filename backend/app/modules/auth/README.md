@@ -87,7 +87,7 @@ permission_ids: list[str]  # static permission codes
 
 ```bash
 cd backend
-python scripts/init/init_rbac.py
+python scripts/init/sync_rbac.py
 ```
 
 该脚本只初始化/同步 `roles` 集合。`permissions` 和 `navigation_pages` 集合不再需要；如果重新初始化数据库，可以不创建这两张表。

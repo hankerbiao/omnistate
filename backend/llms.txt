@@ -85,10 +85,12 @@
 
 ## 工具脚本
 
-- [scripts/init/init_mongodb.py](scripts/init/init_mongodb.py): 初始化 MongoDB 工作流配置（幂等）
-- [scripts/init/init_rbac.py](scripts/init/init_rbac.py): 初始化 RBAC 角色和权限（幂等）
+- [scripts/init/sync_indexes.py](scripts/init/sync_indexes.py): 同步全部 Beanie 文档模型索引
+- [scripts/init/sync_workflow.py](scripts/init/sync_workflow.py): Upsert MongoDB 工作流配置，默认不删除
+- [scripts/init/sync_rbac.py](scripts/init/sync_rbac.py): 校验权限码并同步 RBAC 角色
 - [scripts/init/create_user.py](scripts/init/create_user.py): 创建单个 RBAC 用户
-- [scripts/init/seed_test_users.py](scripts/init/seed_test_users.py): 一键创建多个测试账号
+- [scripts/dev/seed_test_users.py](scripts/dev/seed_test_users.py): 在开发/测试环境创建测试账号
+- [scripts/migrations/backfill_default_project.py](scripts/migrations/backfill_default_project.py): 一次性回填默认项目
 - [scripts/auth/create_token.py](scripts/auth/create_token.py): 为指定用户生成 JWT Token
 - [scripts/mock/generate_mock_test_cases.py](scripts/mock/generate_mock_test_cases.py): 批量创建模拟测试用例
 - [scripts/mock/seed_mock_data.py](scripts/mock/seed_mock_data.py): 种子模拟数据
