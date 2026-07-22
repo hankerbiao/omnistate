@@ -1,6 +1,6 @@
 """用例集合 Pydantic Schema。"""
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -19,6 +19,14 @@ class UpdateCollectionRequest(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=200)
     description: Optional[str] = Field(None, max_length=2000)
     tags: Optional[List[str]] = None
+
+
+class CopyCollectionRequest(BaseModel):
+    """另存为用例集合请求。"""
+    name: str = Field(..., min_length=1, max_length=200)
+    description: Optional[str] = Field(None, max_length=2000)
+    tags: List[str] = Field(default_factory=list)
+    include_cases: bool = Field(True, description="是否复制集合内用例")
 
 
 class CollectionResponse(BaseModel):
@@ -91,3 +99,59 @@ class CollectionListItem(BaseModel):
             created_by=doc.created_by,
             updated_at=doc.updated_at,
         )
+
+
+class CollectionCaseValidity(BaseModel):
+    """集合内单条用例有效性。"""
+    type: str
+    case_id: str
+    valid: bool
+    risk_code: Optional[str] = None
+    risk_label: Optional[str] = None
+
+
+class CollectionValiditySummary(BaseModel):
+    """集合有效性汇总。"""
+    total: int = 0
+    valid_count: int = 0
+    risk_count: int = 0
+    inactive_count: int = 0
+    missing_count: int = 0
+    deprecated_count: int = 0
+    automation_invalid_count: int = 0
+    cases: List[CollectionCaseValidity] = Field(default_factory=list)
+
+
+class CollectionChangeLogResponse(BaseModel):
+    """集合变更历史响应。"""
+    id: str
+    collection_id: str
+    action: str
+    operator_id: str
+    operator_name: Optional[str] = None
+    case_changes: List[Dict[str, Any]] = Field(default_factory=list)
+    field_changes: List[Dict[str, Any]] = Field(default_factory=list)
+    export_format: Optional[str] = None
+    remark: Optional[str] = None
+    created_at: datetime
+
+    @classmethod
+    def from_doc(cls, doc) -> "CollectionChangeLogResponse":
+        return cls(
+            id=str(doc.id),
+            collection_id=doc.collection_id,
+            action=doc.action,
+            operator_id=doc.operator_id,
+            operator_name=doc.operator_name,
+            case_changes=doc.case_changes,
+            field_changes=doc.field_changes,
+            export_format=doc.export_format,
+            remark=doc.remark,
+            created_at=doc.created_at,
+        )
+
+
+class CollectionChangeLogListResponse(BaseModel):
+    """集合变更历史分页响应。"""
+    items: List[CollectionChangeLogResponse]
+    total: int

@@ -1,11 +1,17 @@
 """用例集合 API 路由。"""
+from urllib.parse import quote
+
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import Response
 
 from app.modules.test_case_collection.api.dependencies import CollectionServiceDep
 from app.modules.test_case_collection.schemas import (
     AddCasesRequest,
+    CollectionChangeLogListResponse,
     CollectionListItem,
     CollectionResponse,
+    CollectionValiditySummary,
+    CopyCollectionRequest,
     CreateCollectionRequest,
     RemoveCasesRequest,
     UpdateCollectionRequest,
@@ -31,7 +37,7 @@ async def create_collection(
     current_user=Depends(get_current_user),
 ):
     """创建用例集合。"""
-    data = await service.create(request, creator_id=current_user["user_id"])
+    data = await service.create(request, creator_id=current_user["user_id"], current_user=current_user)
     return APIResponse(data=data)
 
 
@@ -84,6 +90,89 @@ async def get_collection(
         raise HTTPException(status_code=404, detail=str(exc))
 
 
+@router.post(
+    "/{collection_id}/copy",
+    response_model=APIResponse[CollectionResponse],
+    status_code=201,
+    summary="另存为用例集合",
+)
+async def copy_collection(
+    collection_id: str,
+    request: CopyCollectionRequest,
+    service: CollectionServiceDep,
+    current_user=Depends(get_current_user),
+):
+    """基于已有集合另存为新集合。"""
+    try:
+        data = await service.copy(collection_id, request, current_user)
+        return APIResponse(data=data)
+    except CollectionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.get(
+    "/{collection_id}/history",
+    response_model=APIResponse[CollectionChangeLogListResponse],
+    summary="获取集合变更历史",
+)
+async def get_collection_history(
+    collection_id: str,
+    service: CollectionServiceDep,
+    current_user=Depends(get_current_user),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+):
+    """按时间倒序获取集合变更历史。"""
+    try:
+        data = await service.history(collection_id, limit=limit, offset=offset)
+        return APIResponse(data=data)
+    except CollectionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.get(
+    "/{collection_id}/validity",
+    response_model=APIResponse[CollectionValiditySummary],
+    summary="获取集合用例有效性",
+)
+async def get_collection_validity(
+    collection_id: str,
+    service: CollectionServiceDep,
+    current_user=Depends(get_current_user),
+):
+    """获取集合内用例有效性风险汇总。"""
+    try:
+        data = await service.validity(collection_id)
+        return APIResponse(data=data)
+    except CollectionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.get(
+    "/{collection_id}/export",
+    summary="导出集合用例清单",
+)
+async def export_collection(
+    collection_id: str,
+    service: CollectionServiceDep,
+    current_user=Depends(get_current_user),
+    format: str = Query("csv", pattern="^(csv|xlsx)$"),
+):
+    """导出集合用例清单，支持 CSV/XLSX。"""
+    try:
+        content, media_type, filename = await service.export_cases(collection_id, format, current_user)
+        quoted_filename = quote(filename)
+        return Response(
+            content=content,
+            media_type=media_type,
+            headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quoted_filename}"},
+        )
+    except CollectionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
 @router.put(
     "/{collection_id}",
     response_model=APIResponse[CollectionResponse],
@@ -97,7 +186,7 @@ async def update_collection(
 ):
     """更新集合名称/描述/标签。"""
     try:
-        data = await service.update(collection_id, request)
+        data = await service.update(collection_id, request, current_user)
         return APIResponse(data=data)
     except CollectionNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
@@ -134,7 +223,7 @@ async def add_cases_to_collection(
 ):
     """批量向集合添加用例（自动去重）。"""
     try:
-        data = await service.add_cases(collection_id, request)
+        data = await service.add_cases(collection_id, request, current_user)
         return APIResponse(data=data)
     except CollectionNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
@@ -153,7 +242,7 @@ async def remove_cases_from_collection(
 ):
     """批量从集合移除用例。"""
     try:
-        data = await service.remove_cases(collection_id, request)
+        data = await service.remove_cases(collection_id, request, current_user)
         return APIResponse(data=data)
     except CollectionNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
