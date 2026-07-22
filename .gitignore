@@ -61,6 +61,14 @@ htmlcov/
 .ruff_cache/
 .mypy_cache/
 .pyright/
+**/.vite/
+
+# Local agent/session state
+**/.workbuddy/
+
+# Runtime artifacts
+frontend/nohup.out
+frontend/test-results/
 
 node_modules/
 docs/node_modules/
