@@ -2,7 +2,7 @@
 
 ## 依赖与运行环境
 
-- Python 3.10+
+- Python 3.11+
 - MongoDB
 - 后端依赖来自 `pyproject.toml`（使用 uv 管理）
 
@@ -10,16 +10,16 @@
 
 ```bash
 cd backend
-uv sync
+DML_ENV=dev uv sync
 ```
 
 ## 初始化基础数据
 
 ```bash
 cd backend
-python scripts/init/init_mongodb.py
-python scripts/init/init_rbac.py
-python scripts/init/create_user.py
+uv run python scripts/init/init_mongodb.py
+uv run python scripts/init/init_rbac.py
+uv run python scripts/init/create_user.py
 ```
 
 用途分别是：
@@ -35,10 +35,11 @@ python scripts/init/create_user.py
 
 ```bash
 cd backend
-python -m app.main
+DML_ENV=dev uv run python -m app.main
 ```
 
-默认端口是 `8000`。
+默认端口是 `8801`。开发环境会加载 `config/config_dev.yaml` 并启用热重载；未设置
+`DML_ENV` 时默认按生产环境加载，只使用 `config/config.yaml`。
 
 ## 常用检查命令
 

@@ -319,7 +319,7 @@ def get_settings() -> Settings:
 
     配置加载顺序（后者覆盖前者）：
     1. config/config.yaml（基础配置）
-    2. 同目录 config_dev.yaml（存在时自动加载，覆盖基础配置，可配置 debug: true 开启调试模式）
+    2. 非生产环境按 DML_ENV 加载同目录覆盖文件（例如 config_dev.yaml）
     3. 环境变量覆盖（如 DML_APP_PORT）
 
     Returns:
@@ -327,12 +327,13 @@ def get_settings() -> Settings:
     """
     config_data = load_yaml_config()
 
-    # 如同目录 config_dev.yaml 存在，则自动加载并覆盖基础配置（dev 模式开关）
-    dev_config_path = get_config_path().with_name("config_dev.yaml")
-    if dev_config_path.exists():
-        with open(dev_config_path, "r", encoding="utf-8") as f:
-            dev_data = yaml.safe_load(f) or {}
-        config_data = _deep_merge(config_data, dev_data)
+    environment = _normalize_environment(os.getenv("DML_ENV", "production"))
+    if environment != "production":
+        overlay_path = get_config_path().with_name(f"config_{environment}.yaml")
+        if overlay_path.exists():
+            with open(overlay_path, "r", encoding="utf-8") as f:
+                overlay_data = yaml.safe_load(f) or {}
+            config_data = _deep_merge(config_data, overlay_data)
 
     # 环境变量 DML_APP_PORT 优先级高于配置文件
     env_port = os.getenv("DML_APP_PORT")
@@ -342,6 +343,20 @@ def get_settings() -> Settings:
         config_data["app"] = app_config
 
     return Settings(**config_data)
+
+
+def _normalize_environment(value: str) -> str:
+    """Normalize DML_ENV and keep overlay filenames constrained."""
+    normalized = value.strip().lower()
+    aliases = {
+        "prod": "production",
+        "development": "dev",
+        "testing": "test",
+    }
+    normalized = aliases.get(normalized, normalized)
+    if not normalized or any(char not in "abcdefghijklmnopqrstuvwxyz0123456789_-" for char in normalized):
+        raise ValueError(f"Invalid DML_ENV value: {value!r}")
+    return normalized
 
 
 def _deep_merge(base: dict, override: dict) -> dict:

@@ -1,171 +1,140 @@
-#!/bin/bash
-#
-# kafka_worker.sh — DML V4 Kafka Worker 启停管理脚本
-#
-# Usage:
-#   ./kafka_worker.sh start     启动 worker（后台运行）
-#   ./kafka_worker.sh stop      停止 worker
-#   ./kafka_worker.sh restart   重启 worker
-#   ./kafka_worker.sh status    查看 worker 状态
+#!/usr/bin/env bash
+# DML V4 Kafka worker process management for hosts without systemd.
 
-set -e
+set -Eeuo pipefail
 
-PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PID_FILE="$PROJECT_ROOT/.kafka_worker.pid"
 LOG_DIR="$PROJECT_ROOT/logs"
 LOG_FILE="$LOG_DIR/kafka_worker.log"
 APP_MODULE="app.workers.kafka_worker_main"
+STOP_TIMEOUT_SECONDS="${DML_STOP_TIMEOUT_SECONDS:-30}"
 
-# 优先使用虚拟环境的 Python
+export DML_ENV="${DML_ENV:-production}"
+export CONFIG_PATH="${CONFIG_PATH:-$PROJECT_ROOT/config/config.yaml}"
+export SKIP_INDEX_SYNC="${SKIP_INDEX_SYNC:-1}"
+export PYTHONUNBUFFERED="${PYTHONUNBUFFERED:-1}"
+
 VENV_PYTHON="$PROJECT_ROOT/.venv/bin/python"
-if [[ -x "$VENV_PYTHON" ]]; then
-    PYTHON_BIN="$VENV_PYTHON"
-else
-    PYTHON_BIN="$(command -v python3)"
+if [[ ! -x "$VENV_PYTHON" ]]; then
+    echo "[x] uv environment is unavailable. Run ./deploy.sh install first." >&2
+    exit 1
 fi
+PYTHON_BIN="$VENV_PYTHON"
 
-# 颜色输出
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m'
-
-info()  { echo -e "${GREEN}[✓]${NC} $1"; }
-warn()  { echo -e "${YELLOW}[!]${NC} $1"; }
-error() { echo -e "${RED}[✗]${NC} $1"; }
-
-find_pid() {
-    pgrep -f "${APP_MODULE}" 2>/dev/null | head -1
-}
+info() { printf '[ok] %s\n' "$1"; }
+warn() { printf '[!] %s\n' "$1" >&2; }
+error() { printf '[x] %s\n' "$1" >&2; }
 
 read_pid() {
-    if [[ -f "$PID_FILE" ]]; then
-        cat "$PID_FILE"
-    fi
+    [[ -f "$PID_FILE" ]] && tr -dc '0-9' < "$PID_FILE"
 }
 
 is_running() {
-    local pid="$1"
+    local pid="${1:-}"
     [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null
+}
+
+is_worker_process() {
+    local pid="$1"
+    local process_command
+    process_command="$(ps -p "$pid" -o command= 2>/dev/null || true)"
+    [[ "$process_command" == *"$APP_MODULE"* ]]
+}
+
+find_pid() {
+    local pid
+    pid="$(read_pid)"
+    if is_running "$pid" && is_worker_process "$pid"; then
+        printf '%s\n' "$pid"
+        return 0
+    fi
+    [[ -f "$PID_FILE" ]] && rm -f "$PID_FILE"
+    return 1
+}
+
+cmd_run() {
+    cd "$PROJECT_ROOT"
+    exec "$PYTHON_BIN" -m "$APP_MODULE"
 }
 
 cmd_start() {
     local pid
-    pid=$(find_pid)
-    if [[ -n "$pid" ]]; then
-        warn "Kafka Worker is already running (PID: $pid)"
-        exit 1
+    if pid="$(find_pid)"; then
+        warn "Kafka worker is already running (PID: $pid)"
+        return 0
     fi
 
     mkdir -p "$LOG_DIR"
-
-    nohup "$PYTHON_BIN" -m "$APP_MODULE" \
-        >> "$LOG_FILE" 2>&1 &
-
-    local new_pid=$!
-    echo "$new_pid" > "$PID_FILE"
-    info "Kafka Worker started (PID: $new_pid)"
-    echo "    Log: $LOG_FILE"
+    nohup "$0" run >> "$LOG_FILE" 2>&1 &
+    pid=$!
+    printf '%s\n' "$pid" > "$PID_FILE"
 
     sleep 1
-    if ! is_running "$new_pid"; then
-        warn "Kafka Worker exited shortly after starting — check logs:"
-        echo "    tail -n 20 $LOG_FILE"
+    if ! is_running "$pid"; then
         rm -f "$PID_FILE"
-        exit 1
+        error "Kafka worker exited during startup. Check $LOG_FILE"
+        return 1
     fi
+    info "Kafka worker started (PID: $pid, environment: $DML_ENV)"
+    printf '     log: %s\n' "$LOG_FILE"
 }
 
 cmd_stop() {
     local pid
-    pid=$(find_pid)
-
-    if [[ -z "$pid" ]]; then
-        error "Kafka Worker is not running"
-        rm -f "$PID_FILE"
-        return
+    if ! pid="$(find_pid)"; then
+        warn "Kafka worker is not running"
+        return 0
     fi
 
-    echo "Stopping Kafka Worker (PID: $pid)..."
+    printf 'Stopping Kafka worker (PID: %s)...\n' "$pid"
+    kill -TERM "$pid" 2>/dev/null || true
 
-    # 先 SIGTERM 优雅停止
-    kill "$pid" 2>/dev/null || true
-
-    # 等待最多 5 秒
-    local waited=0
-    while is_running "$pid" && [[ $waited -lt 5 ]]; do
+    local checks=$((STOP_TIMEOUT_SECONDS * 2))
+    local index
+    for ((index = 0; index < checks; index++)); do
+        if ! is_running "$pid"; then
+            rm -f "$PID_FILE"
+            info "Kafka worker stopped"
+            return 0
+        fi
         sleep 0.5
-        waited=$((waited + 1))
     done
 
-    # 超时则强制 SIGKILL
-    if is_running "$pid"; then
-        warn "Force killing..."
-        kill -9 "$pid" 2>/dev/null || true
-        sleep 0.5
-    fi
-
+    warn "Graceful stop timed out after ${STOP_TIMEOUT_SECONDS}s; sending SIGKILL"
+    kill -KILL "$pid" 2>/dev/null || true
     rm -f "$PID_FILE"
-    info "Kafka Worker stopped"
-}
-
-cmd_restart() {
-    cmd_stop
-    sleep 1
-    cmd_start
 }
 
 cmd_status() {
     local pid
-    pid=$(find_pid)
-    if [[ -n "$pid" ]]; then
-        info "Kafka Worker is running (PID: $pid)"
-        echo "$pid" > "$PID_FILE"
-    else
-        if [[ -f "$PID_FILE" ]]; then
-            warn "Stale PID file found, process not running"
-            rm -f "$PID_FILE"
-        fi
-        error "Kafka Worker is not running"
-        return 1
+    if pid="$(find_pid)"; then
+        info "Kafka worker is running (PID: $pid)"
+        return 0
     fi
+    error "Kafka worker is not running"
+    return 1
 }
 
-cmd_dev() {
-    info "Starting Kafka Worker in DEV mode (DML_ENV=dev)..."
-    DML_ENV=dev cmd_start
+usage() {
+    cat <<'EOF'
+Usage: ./kafka_worker.sh {start|dev|run|stop|restart|status}
+
+  start    Start the worker in production mode (background fallback)
+  dev      Start the worker with the dev config overlay
+  run      Run the worker in the foreground (used by systemd)
+  stop     Gracefully stop the background worker
+  restart  Restart the background worker
+  status   Show background worker status
+EOF
 }
 
-main() {
-    local action="${1:-}"
-    case "$action" in
-        start)
-            cmd_start
-            ;;
-        stop)
-            cmd_stop
-            ;;
-        restart)
-            cmd_restart
-            ;;
-        dev)
-            cmd_dev
-            ;;
-        status)
-            cmd_status
-            ;;
-        *)
-            echo "Usage: $(basename "$0") {start|stop|restart|dev|status}"
-            echo ""
-            echo "Commands:"
-            echo "  start     Start the Kafka Worker (daemon mode, production)"
-            echo "  dev       Start the Kafka Worker in DEV mode (DML_ENV=dev)"
-            echo "  stop      Stop the Kafka Worker"
-            echo "  restart   Restart the Kafka Worker"
-            echo "  status    Show Kafka Worker status"
-            exit 1
-            ;;
-    esac
-}
-
-main "$@"
+case "${1:-}" in
+    start) DML_ENV=production; export DML_ENV; cmd_start ;;
+    dev) DML_ENV=dev; export DML_ENV; cmd_start ;;
+    run) cmd_run ;;
+    stop) cmd_stop ;;
+    restart) cmd_stop; sleep 1; cmd_start ;;
+    status) cmd_status ;;
+    *) usage; exit 1 ;;
+esac

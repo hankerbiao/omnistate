@@ -35,6 +35,7 @@ or with --dist=no flag for parallel execution.
 """
 import asyncio
 import logging
+import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
@@ -43,8 +44,12 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
-from app.main import app
-from app.shared.config import get_settings
+# Integration tests historically use config_dev.yaml. Keep that selection explicit
+# now that production is the safe default for normal processes.
+os.environ.setdefault("DML_ENV", "dev")
+
+from app.main import app  # noqa: E402
+from app.shared.config import get_settings  # noqa: E402
 
 logger = logging.getLogger(__name__)
 

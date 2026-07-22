@@ -181,7 +181,7 @@ AI 驱动的用例集质量分析。
 
 ### 环境要求
 
-- Python 3.10+
+- Python 3.11+
 - MongoDB 6.0+
 - Node.js 18+
 
@@ -189,10 +189,10 @@ AI 驱动的用例集质量分析。
 
 ```bash
 cd backend
-pip install -r requirements.txt
-python scripts/init/init_mongodb.py
-python scripts/init/init_rbac.py
-python -m app.main
+uv sync --frozen
+uv run python scripts/init/init_mongodb.py
+uv run python scripts/init/init_rbac.py
+uv run python -m app.main
 ```
 
 初始化账号：

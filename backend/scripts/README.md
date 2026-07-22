@@ -4,7 +4,9 @@
 
 ```
 scripts/
-├── server.sh     # 服务启停管理（start/stop/restart/status）
+├── ../deploy.sh         # uv 一键安装、初始化与服务管理
+├── ../server.sh         # API 服务启停管理（无 systemd 时使用）
+├── ../kafka_worker.sh   # Kafka Worker 启停管理（无 systemd 时使用）
 ├── init/         # 初始化脚本（RBAC、用户创建）
 ├── auth/         # 认证相关（Token 生成）
 ├── mock/         # 模拟数据与服务
@@ -217,22 +219,23 @@ python scripts/maintenance/remove_test_specs_status_projection.py --apply
 **使用方法：**
 ```bash
 # 启动服务（后台运行，日志输出到 logs/server.log）
-./scripts/server.sh start
+./server.sh start
 
 # 查看服务运行状态
-./scripts/server.sh status
+./server.sh status
 
 # 停止服务
-./scripts/server.sh stop
+./server.sh stop
 
 # 重启服务
-./scripts/server.sh restart
+./server.sh restart
 ```
 
 **功能说明：**
-- 启动时以 `uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload` 运行
+- 生产启动读取 `config/config.yaml` 中的监听地址，且不启用热重载
+- `./server.sh dev` 才加载 `config/config_dev.yaml` 并启用热重载
 - PID 保存在 `.server.pid`，日志输出到 `logs/server.log`
-- 停止时先发送 SIGTERM，超时后自动 SIGKILL
+- 停止时先发送 SIGTERM，默认等待 30 秒后再发送 SIGKILL
 - 自动清理过期 PID 文件
 
 ---

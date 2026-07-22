@@ -1,4 +1,6 @@
+import os
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
@@ -204,7 +206,15 @@ async def serve_robots_txt():
 def main() -> None:
     import uvicorn
 
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8801, reload=True)
+    settings = get_settings()
+    environment = os.getenv("DML_ENV", "production").strip().lower()
+    reload_enabled = environment in {"dev", "development"} and settings.app.debug
+    uvicorn.run(
+        "app.main:app",
+        host=settings.app.host,
+        port=settings.app.port,
+        reload=reload_enabled,
+    )
 
 
 if __name__ == "__main__":

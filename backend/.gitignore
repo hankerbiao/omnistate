@@ -43,6 +43,9 @@ env/
 logs/
 *.log
 .server.pid
+.kafka_worker.pid
+.deploy.env
+.deploy-manager
 
 # Local agent/session state
 .workbuddy/

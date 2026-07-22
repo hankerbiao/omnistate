@@ -20,26 +20,33 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import sys
 from pathlib import Path
 
 from beanie import init_beanie
 from pymongo import AsyncMongoClient
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app.shared.config import get_settings
-from app.shared.auth import hash_password
-from app.modules.auth.repository.models import UserDoc, RoleDoc
+from app.shared.config import get_settings  # noqa: E402
+from app.shared.auth import hash_password  # noqa: E402
+from app.modules.auth.repository.models import UserDoc, RoleDoc  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="创建 RBAC 用户")
     parser.add_argument("--user-id", required=True, help="用户唯一 ID")
     parser.add_argument("--username", required=True, help="用户名")
-    parser.add_argument("--password", required=True, help="登录密码（明文输入，脚本内加密）")
+    password_group = parser.add_mutually_exclusive_group(required=True)
+    password_group.add_argument("--password", help="登录密码（明文输入，脚本内加密）")
+    password_group.add_argument(
+        "--password-env",
+        metavar="ENV_NAME",
+        help="从环境变量读取密码，避免密码出现在进程参数中",
+    )
     parser.add_argument("--roles", default="", help="角色列表，逗号分隔，例如 ADMIN,TESTER")
     parser.add_argument("--email", default=None, help="邮箱")
     parser.add_argument("--status", default="ACTIVE", choices=["ACTIVE", "DISABLED"], help="用户状态")
@@ -47,8 +54,21 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def resolve_password(args: argparse.Namespace) -> str:
+    """Resolve the password without requiring it in the process command line."""
+    if args.password_env:
+        password = os.getenv(args.password_env)
+        if not password:
+            raise RuntimeError(f"密码环境变量未设置或为空: {args.password_env}")
+        return password
+    if not args.password:
+        raise RuntimeError("必须提供密码")
+    return args.password
+
+
 async def main() -> None:
     args = parse_args()
+    password = resolve_password(args)
     role_ids = [r.strip() for r in args.roles.split(",") if r.strip()]
 
     client = AsyncMongoClient(get_settings().mongodb.uri)
@@ -62,12 +82,16 @@ async def main() -> None:
         if role_ids:
             role_count = await RoleDoc.find({"role_id": {"$in": role_ids}}).count()
             if role_count != len(set(role_ids)):
-                missing = set(role_ids) - {r.role_id async for r in RoleDoc.find({"role_id": {"$in": role_ids}})}
+                existing_role_ids = {
+                    role.role_id
+                    async for role in RoleDoc.find({"role_id": {"$in": role_ids}})
+                }
+                missing = set(role_ids) - existing_role_ids
                 raise RuntimeError(
                     f"角色不存在: {missing}。请先执行 scripts/init/init_rbac.py 初始化权限与角色。"
                 )
 
-        salt, pwd_hash = hash_password(args.password)
+        salt, pwd_hash = hash_password(password)
         existing = await UserDoc.find_one(UserDoc.user_id == args.user_id)
 
         if existing and not args.upsert:
