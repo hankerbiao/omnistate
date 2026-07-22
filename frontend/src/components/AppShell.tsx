@@ -1,5 +1,8 @@
+import { useState } from 'react'
 import { useAuth } from '../providers/AuthProvider'
 import { useNavigation } from '../providers/NavigationProvider'
+import { getPageHelpDoc, getSectionHelpDocForPage } from '../help/pageHelpDocs'
+import PageHelpDrawer from './help/PageHelpDrawer'
 import Sidebar from './Sidebar'
 import Topbar from './Topbar'
 
@@ -43,6 +46,9 @@ const AppShell: React.FC<AppShellProps> = ({ children }) => {
   } = useNavigation()
 
   const pageInfo = PAGE_TITLES[currentPage] || { title: 'DML Sentio' }
+  const [helpOpen, setHelpOpen] = useState(false)
+  const helpDoc = getPageHelpDoc(currentPage)
+  const sectionDoc = getSectionHelpDocForPage(currentPage)
 
   return (
     <div style={styles.shell}>
@@ -56,6 +62,8 @@ const AppShell: React.FC<AppShellProps> = ({ children }) => {
         <Topbar
           title={pageInfo.title}
           description={pageInfo.description}
+          hasHelp={Boolean(helpDoc)}
+          onHelpClick={() => setHelpOpen(true)}
           onLogout={handleLogout}
           currentUser={currentUsername}
           currentUserId={currentUserId}
@@ -67,6 +75,13 @@ const AppShell: React.FC<AppShellProps> = ({ children }) => {
         <main style={styles.workspace}>
           {children}
         </main>
+        {helpOpen && helpDoc && (
+          <PageHelpDrawer
+            doc={helpDoc}
+            sectionDoc={sectionDoc}
+            onClose={() => setHelpOpen(false)}
+          />
+        )}
       </div>
     </div>
   )

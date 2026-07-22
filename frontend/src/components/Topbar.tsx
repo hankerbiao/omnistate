@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useTheme } from 'next-themes'
-import { Sun, Moon, Check } from 'lucide-react'
+import { Sun, Moon, Check, CircleHelp } from 'lucide-react'
 
 interface SwitchableUser {
   userId: string
@@ -19,6 +19,8 @@ interface TopbarProps {
   onUserClick?: () => void
   onSwitchUser?: (userId: string, password: string) => Promise<void>
   switchableUsers?: SwitchableUser[]
+  onHelpClick?: () => void
+  hasHelp?: boolean
 }
 
 const Topbar: React.FC<TopbarProps> = ({
@@ -30,6 +32,8 @@ const Topbar: React.FC<TopbarProps> = ({
   onUserClick,
   onSwitchUser,
   switchableUsers,
+  onHelpClick,
+  hasHelp = false,
 }) => {
   const [switching, setSwitching] = useState(false)
   const { resolvedTheme, setTheme } = useTheme()
@@ -57,9 +61,21 @@ const Topbar: React.FC<TopbarProps> = ({
       </div>
 
       <div className="topbar__actions">
+        {hasHelp && (
+          <button
+            type="button"
+            className="btn btn--ghost btn--sm topbar__icon-action"
+            onClick={onHelpClick}
+            title="查看页面说明"
+            aria-label="查看页面说明"
+          >
+            <CircleHelp size={16} />
+          </button>
+        )}
+
         <button
           type="button"
-          className="btn btn--ghost btn--sm"
+          className="btn btn--ghost btn--sm topbar__icon-action"
           onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
           title={resolvedTheme === 'dark' ? '切换到明亮模式' : '切换到暗黑模式'}
           aria-label="切换主题"
