@@ -167,20 +167,12 @@ async def ensure_no_active_duplicate(dedup_key: str, excluded_task_id: str | Non
         )
 
 
-async def _get_system_config_from_db(key: str) -> str | None:
-    """异步读取系统配置值（从 MongoDB）。
+def _get_bootstrap_execution_default(key: str) -> str | None:
+    """读取任务下发 BOOTSTRAP 默认值。"""
+    from app.shared.config import get_settings
 
-    通过 ConfigService 读取 MongoDB system_configs 集合中的配置。
-    execution.default_repo_url / execution.default_branch 以系统配置页面设置为准。
-    """
-    try:
-        from app.modules.system_config.service import ConfigService
-        value = await ConfigService.get_config(key)
-        return str(value) if value is not None else None
-    except Exception as e:
-        from app.shared.core.logger import log
-        log.warning(f"Failed to read system config '{key}': {e}")
-        return None
+    value = getattr(get_settings().execution, key, None)
+    return value if isinstance(value, str) and value else None
 
 
 async def build_rerun_command_from_payload(
@@ -337,9 +329,9 @@ async def _apply_defaults(command: DispatchExecutionTaskCommand) -> None:
     if command.branch == "HEAD":
         command.branch = None
     if command.repo_url is None:
-        command.repo_url = await _get_system_config_from_db("execution.default_repo_url")
+        command.repo_url = _get_bootstrap_execution_default("default_repo_url")
     if command.branch is None:
-        command.branch = await _get_system_config_from_db("execution.default_branch")
+        command.branch = _get_bootstrap_execution_default("default_branch")
     if command.category is None:
         command.category = ""
     if command.project_tag is None:
