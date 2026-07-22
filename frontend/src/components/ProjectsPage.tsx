@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigation } from '../providers/NavigationProvider'
 import { api } from '../services/api'
-import type { Project, ProjectDetail, ProjectStats, AssigneeDistribution, BlockerItem, ProjectActivity } from '../types'
+import type { Project, ProjectDetail, ProjectStats, BlockerItem, ProjectActivity, CreateProjectRequest, UpdateProjectRequest } from '../types'
 
 // ── 样式 ─────────────────────────────────────────────────────────────
 
@@ -22,32 +22,19 @@ const s: Record<string, React.CSSProperties> = {
   statValue: { fontSize: 18, fontWeight: 700, color: 'var(--accent-primary)', lineHeight: 1.1 },
   statLabel: { fontSize: 10, color: 'var(--text-secondary)', marginTop: 2 },
   progressBar: { height: 6, borderRadius: 3, background: 'var(--surface-tertiary)', overflow: 'hidden', marginTop: 4 },
-  progressFill: (pct: number, color: string) => ({ width: `${Math.min(pct, 100)}%`, height: '100%', background: color, borderRadius: 3, transition: 'width 0.3s' }),
-  pill: (bg: string, fg: string) => ({ display: 'inline-block', fontSize: 9, padding: '1px 6px', borderRadius: 7, background: bg, color: fg, fontWeight: 600 }),
   modalOverlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
   modal: { background: 'var(--surface-primary)', borderRadius: 12, width: 680, maxWidth: '90vw', maxHeight: '85vh', overflowY: 'auto', padding: 28, boxShadow: '0 8px 32px rgba(0,0,0,0.3)' },
 }
 
-// ── helpers ───────────────────────────────────────────────────────────
-
-// 后端无数据时的 UI 占位数据
-const FALLBACK_BLOCKERS: BlockerItem[] = [
-  { id: 'demo-b1', title: 'UI兼容性适配验证', source: 'plan_item', assignee_id: 'u001', status: 'fail', priority: 'P2', updated_at: null },
-  { id: 'demo-b2', title: '接口安全扫描', source: 'plan_item', assignee_id: 'u002', status: 'pending', priority: 'P0', updated_at: null },
-  { id: 'demo-b3', title: '权限分配-只读用户', source: 'plan_item', assignee_id: 'u003', status: 'fail', priority: 'P1', updated_at: null },
-]
-
-function getFallbackActivities(): ProjectActivity[] {
-  const now = Date.now()
-  return [
-    { id: 'demo-a1', time: new Date(now - 60000).toISOString(), user_id: 'u001', username: '张三', action: '完成', target: '登录模块功能验证', target_type: 'test_case' },
-    { id: 'demo-a2', time: new Date(now - 300000).toISOString(), user_id: 'u002', username: '李四', action: '标记进行中', target: '权限管理回归测试', target_type: 'test_case' },
-    { id: 'demo-a3', time: new Date(now - 3600000).toISOString(), user_id: 'u003', username: '王五', action: '创建计划', target: '安全专项扫描', target_type: 'plan' },
-    { id: 'demo-a4', time: new Date(now - 7200000).toISOString(), user_id: 'u004', username: '赵六', action: '提交用例', target: 'UI-深色模式显示', target_type: 'test_case' },
-    { id: 'demo-a5', time: new Date(now - 10800000).toISOString(), user_id: 'u001', username: '张三', action: '标记失败', target: '接口安全扫描', target_type: 'test_case' },
-    { id: 'demo-a6', time: new Date(now - 86400000).toISOString(), user_id: 'u002', username: '李四', action: '归档计划', target: 'V2.0 回归测试计划', target_type: 'plan' },
-  ]
+function progressFillStyle(pct: number, color: string): React.CSSProperties {
+  return { width: `${Math.min(pct, 100)}%`, height: '100%', background: color, borderRadius: 3, transition: 'width 0.3s' }
 }
+
+function pillStyle(bg: string, fg: string): React.CSSProperties {
+  return { display: 'inline-block', fontSize: 9, padding: '1px 6px', borderRadius: 7, background: bg, color: fg, fontWeight: 600 }
+}
+
+// ── helpers ───────────────────────────────────────────────────────────
 
 function fmtDate(d: string | null | undefined): string {
   if (!d) return '-'
@@ -78,6 +65,8 @@ const STATUS: Record<string, { label: string; color: string }> = {
   active: { label: '活跃', color: '#3fb950' }, archived: { label: '已归档', color: '#8b949e' },
 }
 
+const EMPTY_FORM = { name: '', key: '', description: '', priority: 'P2', start_date: '', end_date: '', target_version: '', tags: '' }
+
 // ── 子组件：进度卡 ───────────────────────────────────────────────────
 
 function MiniProgress({ label, done, total, color = 'var(--accent-primary)' }: { label: string; done: number; total: number; color?: string }) {
@@ -89,7 +78,7 @@ function MiniProgress({ label, done, total, color = 'var(--accent-primary)' }: {
         <span style={{ fontWeight: 600, fontSize: 11 }}>{done}/{total}  {pctStr(pct)}</span>
       </div>
       <div style={s.progressBar}>
-        <div style={s.progressFill(pct, color)} />
+        <div style={progressFillStyle(pct, color)} />
       </div>
     </div>
   )
@@ -107,7 +96,7 @@ function PassCard({ label, stats, color }: { label: string; stats: { total: numb
         {stats.failed > 0 && <span style={{ color: '#f85149' }}> | {stats.failed} 失败</span>}
       </div>
       <div style={s.progressBar}>
-        <div style={s.progressFill(stats.pass_rate, color)} />
+        <div style={progressFillStyle(stats.pass_rate, color)} />
       </div>
     </div>
   )
@@ -128,17 +117,13 @@ export default function ProjectsPage() {
   // modal
   const [showModal, setShowModal] = useState(false)
   const [editMode, setEditMode] = useState(false)
-  const [form, setForm] = useState({ name: '', key: '', description: '', priority: 'P2', owner_id: '', start_date: '', end_date: '', target_version: '', tags: '' })
+  const [form, setForm] = useState(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
 
-  // extra data (blockers, activities)
-  const [blockers, setBlockers] = useState<BlockerItem[]>(FALLBACK_BLOCKERS)
-  const [blockersLoading, setBlockersLoading] = useState(false)
-  const [activities, setActivities] = useState<ProjectActivity[]>(getFallbackActivities())
-  const [activitiesLoading, setActivitiesLoading] = useState(false)
-  const [generating, setGenerating] = useState(false)
-  const [refreshKey, setRefreshKey] = useState(0)
+  const [blockers, setBlockers] = useState<BlockerItem[]>([])
+  const [activities, setActivities] = useState<ProjectActivity[]>([])
+  const [detailLoading, setDetailLoading] = useState(false)
 
   // data fetch
   const fetchProjects = useCallback(async () => {
@@ -156,30 +141,32 @@ export default function ProjectsPage() {
   useEffect(() => { void fetchProjects() }, [fetchProjects])
 
   useEffect(() => {
-    if (!selectedId) { setProjectDetail(null); setBlockers(FALLBACK_BLOCKERS); setActivities(getFallbackActivities()); return }
-    api.getProject(selectedId).then(res => setProjectDetail(res.data || null)).catch(() => setProjectDetail(null))
+    if (!selectedId) {
+      setProjectDetail(null)
+      setBlockers([])
+      setActivities([])
+      return
+    }
+
+    let active = true
+    setDetailLoading(true)
+    Promise.allSettled([
+      api.getProject(selectedId),
+      api.getProjectBlockers(selectedId),
+      api.getProjectActivities(selectedId, 20),
+    ]).then(([detailRes, blockerRes, activityRes]) => {
+      if (!active) return
+      setProjectDetail(detailRes.status === 'fulfilled' ? detailRes.value.data || null : null)
+      setBlockers(blockerRes.status === 'fulfilled' ? blockerRes.value.data || [] : [])
+      setActivities(activityRes.status === 'fulfilled' ? activityRes.value.data || [] : [])
+    }).finally(() => {
+      if (active) setDetailLoading(false)
+    })
+
+    return () => { active = false }
   }, [selectedId])
 
-  // 获取阻塞项和动态
-  useEffect(() => {
-    if (!selectedId) return
-    setBlockersLoading(true)
-    api.getProjectBlockers(selectedId).then(res => {
-      const data = res.data || []
-      setBlockers(data.length > 0 ? data : FALLBACK_BLOCKERS)
-    }).catch(() => setBlockers(FALLBACK_BLOCKERS)).finally(() => setBlockersLoading(false))
-  }, [selectedId, refreshKey])
-
-  useEffect(() => {
-    if (!selectedId) return
-    setActivitiesLoading(true)
-    api.getProjectActivities(selectedId, 20).then(res => {
-      const data = res.data || []
-      setActivities(data.length > 0 ? data : getFallbackActivities())
-    }).catch(() => setActivities(getFallbackActivities())).finally(() => setActivitiesLoading(false))
-  }, [selectedId, refreshKey])
-
-  const selectedProject = projects.find(p => p.project_id === selectedId) || null
+  const selectedProject = projectDetail || projects.find(p => p.project_id === selectedId) || null
 
   const filtered = useMemo(() => {
     let list = projects
@@ -189,13 +176,13 @@ export default function ProjectsPage() {
   }, [projects, searchQuery, statusFilter])
 
   // modal open
-  const openCreate = () => { setEditMode(false); setForm({ name: '', key: '', description: '', priority: 'P2', owner_id: '', start_date: '', end_date: '', target_version: '', tags: '' }); setFormError(''); setShowModal(true) }
+  const openCreate = () => { setEditMode(false); setForm(EMPTY_FORM); setFormError(''); setShowModal(true) }
   const openEdit = () => {
     if (!selectedProject) return
     setEditMode(true)
     setForm({
       name: selectedProject.name, key: selectedProject.key, description: selectedProject.description || '',
-      priority: selectedProject.priority || 'P2', owner_id: selectedProject.owner_id || '',
+      priority: selectedProject.priority || 'P2',
       start_date: selectedProject.start_date ? selectedProject.start_date.slice(0, 10) : '',
       end_date: selectedProject.end_date ? selectedProject.end_date.slice(0, 10) : '',
       target_version: selectedProject.target_version || '',
@@ -207,16 +194,16 @@ export default function ProjectsPage() {
     if (!editMode && !form.key.trim()) { setFormError('项目标识不能为空'); return }
     setSaving(true); setFormError('')
     try {
-      const payload: Record<string, unknown> = {
+      const payload: CreateProjectRequest | UpdateProjectRequest = {
         name: form.name.trim(), key: form.key.trim(), description: form.description.trim() || null,
-        priority: form.priority, owner_id: form.owner_id || null,
+        priority: form.priority,
         start_date: form.start_date ? new Date(form.start_date).toISOString() : null,
         end_date: form.end_date ? new Date(form.end_date).toISOString() : null,
         target_version: form.target_version || null,
         tags: form.tags ? form.tags.split(',').map(s => s.trim()).filter(Boolean) : [],
       }
-      if (editMode) { await api.updateProject(selectedId, payload as any) }
-      else { await api.createProject(payload as any) }
+      if (editMode) { await api.updateProject(selectedId, payload) }
+      else { await api.createProject(payload as CreateProjectRequest) }
       setShowModal(false); await fetchProjects()
     } catch (err: unknown) { setFormError(err instanceof Error ? err.message : '保存失败') } finally { setSaving(false) }
   }
@@ -230,30 +217,10 @@ export default function ProjectsPage() {
     try { await api.updateProject(selectedId, { status: ns }); await fetchProjects() } catch { setError('状态更新失败') }
   }
 
-  // 生成演示数据
-  const handleGenerateDemo = async () => {
-    if (!selectedId) return
-    setGenerating(true)
-    try {
-      const res = await api.generateProjectDemoData(selectedId)
-      alert(`演示数据生成成功！\n创建了 ${res.data?.plan_items_created || 0} 条计划条目\n创建了 ${res.data?.activities_created || 0} 条活动记录`)
-      // 刷新项目详情 + 阻塞项 + 动态
-      setRefreshKey(k => k + 1)
-      api.getProject(selectedId).then(r => setProjectDetail(r.data || null)).catch(() => {})
-    } catch { alert('生成演示数据失败') } finally { setGenerating(false) }
-  }
-
   // 使用后端真实统计数据
   const stats = projectDetail?.stats as ProjectStats | null
   const taskBreakdown = stats?.task
-  const assignees = (stats?.assignee_distribution && stats.assignee_distribution.length > 0
-    ? stats.assignee_distribution
-    : [
-        { assignee_id: 'u001', assignee_name: '张三', item_count: 6, done_count: 3, progress: 50 },
-        { assignee_id: 'u002', assignee_name: '李四', item_count: 5, done_count: 2, progress: 40 },
-        { assignee_id: 'u003', assignee_name: '王五', item_count: 5, done_count: 2, progress: 40 },
-        { assignee_id: 'u004', assignee_name: '赵六', item_count: 4, done_count: 2, progress: 50 },
-      ]) as AssigneeDistribution[]
+  const assignees = stats?.assignee_distribution || []
 
   return (
     <div style={s.wrapper}>
@@ -286,7 +253,7 @@ export default function ProjectsPage() {
                   style={{ padding: '8px 14px', cursor: 'pointer', borderLeft: isActive ? '3px solid var(--accent-primary)' : '3px solid transparent', background: isActive ? 'var(--surface-secondary)' : 'transparent', transition: 'background 0.12s' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 1 }}>
                     <span style={{ fontSize: 13, fontWeight: 600, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
-                    <span style={s.pill(prio.color + '22', prio.color)}>{prio.label}</span>
+                    <span style={pillStyle(prio.color + '22', prio.color)}>{prio.label}</span>
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'flex', gap: 8, alignItems: 'center' }}>
                     <span>{p.key}</span>
@@ -311,8 +278,8 @@ export default function ProjectsPage() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
                     <button className="btn btn--ghost btn--sm" onClick={() => setSelectedId('')} style={{ fontSize: 12 }}>← 返回列表</button>
                     <span style={{ fontSize: 16, fontWeight: 700 }}>{selectedProject.name}</span>
-                    <span style={s.pill(STATUS[selectedProject.status]?.color + '22', STATUS[selectedProject.status]?.color || '#8b949e')}>{STATUS[selectedProject.status]?.label}</span>
-                    <span style={s.pill(PRIORITY[selectedProject.priority]?.color + '22', PRIORITY[selectedProject.priority]?.color || '#8b949e')}>{PRIORITY[selectedProject.priority]?.label}</span>
+                    <span style={pillStyle(STATUS[selectedProject.status]?.color + '22', STATUS[selectedProject.status]?.color || '#8b949e')}>{STATUS[selectedProject.status]?.label}</span>
+                    <span style={pillStyle(PRIORITY[selectedProject.priority]?.color + '22', PRIORITY[selectedProject.priority]?.color || '#8b949e')}>{PRIORITY[selectedProject.priority]?.label}</span>
                     <span style={{ fontSize: 11, color: 'var(--text-tertiary)', marginLeft: 4 }}>
                       {selectedProject.key}
                       {selectedProject.created_by && <> | 创建者：{selectedProject.created_by}</>}
@@ -325,11 +292,14 @@ export default function ProjectsPage() {
                 </div>
                 <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                   <button className="btn btn--ghost btn--sm" onClick={handleToggleStatus} style={{ fontSize: 12 }}>{selectedProject.status === 'active' ? '归档' : '激活'}</button>
-                  <button className="btn btn--ghost btn--sm" onClick={() => void handleGenerateDemo()} disabled={generating} style={{ fontSize: 12 }}>{generating ? '生成中...' : '汇报'}</button>
                   <button className="btn btn--secondary btn--sm" onClick={openEdit} style={{ fontSize: 12 }}>编辑</button>
                   <button className="btn btn--danger btn--sm" onClick={handleDelete} style={{ fontSize: 12 }}>删除</button>
                 </div>
               </div>
+
+              {detailLoading && (
+                <div style={{ marginBottom: 14, padding: 10, fontSize: 12, color: 'var(--text-secondary)' }}>刷新项目详情中...</div>
+              )}
 
               {/* ── 项目进度 + 关联资源 ── */}
               {stats && (
@@ -382,9 +352,6 @@ export default function ProjectsPage() {
                   </div>
                 </div>
               )}
-              {blockersLoading && blockers.length === 0 && (
-                <div style={{ marginBottom: 14, padding: 10, fontSize: 12, color: 'var(--text-secondary)' }}>加载阻塞项中...</div>
-              )}
 
               {/* ── 统计数据 ── */}
               {stats && (
@@ -420,7 +387,7 @@ export default function ProjectsPage() {
                     <div style={{ fontSize: 10, color: 'var(--text-secondary)', marginBottom: 2 }}>需求覆盖率</div>
                     <div style={{ fontSize: 16, fontWeight: 700 }}>{pctStr(stats.coverage_rate)}</div>
                     <div style={{ fontSize: 10, color: 'var(--text-secondary)', marginTop: 2 }}>{stats.test_case_count}用例/{stats.requirement_count}需求</div>
-                    <div style={s.progressBar}><div style={s.progressFill(stats.coverage_rate, '#a371f7')} /></div>
+                    <div style={s.progressBar}><div style={progressFillStyle(stats.coverage_rate, '#a371f7')} /></div>
                   </div>
                 </div>
               )}
@@ -453,7 +420,7 @@ export default function ProjectsPage() {
                               <span style={{ fontWeight: 500, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.assignee_name || a.assignee_id || '未分配'}</span>
                               <span style={{ color: 'var(--text-tertiary)', flexShrink: 0 }}>{a.done_count}/{a.item_count}</span>
                             </div>
-                            <div style={s.progressBar}><div style={s.progressFill(a.progress, '#58a6ff')} /></div>
+                            <div style={s.progressBar}><div style={progressFillStyle(a.progress, '#58a6ff')} /></div>
                           </div>
                         ))}
                       </div>

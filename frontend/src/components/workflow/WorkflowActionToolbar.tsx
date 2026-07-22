@@ -25,6 +25,8 @@ export interface WorkflowActionToolbarProps {
   overflowMenu?: boolean;
   /** 共享 workflow 实例，避免重复请求 */
   workflow?: UseWorkflowResult;
+  /** 为 true 时先不加载工作流详情，用户展开操作后再请求 */
+  lazy?: boolean;
   /** 隐藏指定操作按钮，如 ['START_WRITE'] */
   hideActions?: string[];
 }
@@ -44,7 +46,7 @@ export const WorkflowOverflowMenu: React.FC<WorkflowOverflowMenuProps> = ({
   showReassign = true,
   workflow: externalWorkflow,
 }) => {
-  const internalWf = useWorkflow(externalWorkflow ? null : workflowItemId);
+  const internalWf = useWorkflow(externalWorkflow ? null : workflowItemId, { loadLogs: false });
   const wf = externalWorkflow ?? internalWf;
   const wrapRef = useRef<HTMLDivElement>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -194,9 +196,11 @@ const WorkflowActionToolbar: React.FC<WorkflowActionToolbarProps> = ({
   showStateBadge = false,
   overflowMenu = false,
   workflow: externalWorkflow,
+  lazy = false,
   hideActions = [],
 }) => {
-  const internalWf = useWorkflow(externalWorkflow ? null : workflowItemId);
+  const [activated, setActivated] = useState(!lazy);
+  const internalWf = useWorkflow(externalWorkflow || !activated ? null : workflowItemId, { loadLogs: false });
   const wf = externalWorkflow ?? internalWf;
   const [transitionModal, setTransitionModal] = useState<{
     open: boolean;
@@ -228,6 +232,22 @@ const WorkflowActionToolbar: React.FC<WorkflowActionToolbarProps> = ({
   };
 
   if (!workflowItemId) return null;
+
+  if (!externalWorkflow && !activated) {
+    return (
+      <div style={styles.wrapper} onClick={(e) => e.stopPropagation()}>
+        <button
+          type="button"
+          className="btn btn--ghost btn--sm"
+          onClick={() => setActivated(true)}
+          title="加载工作流操作"
+          aria-label="加载工作流操作"
+        >
+          操作
+        </button>
+      </div>
+    );
+  }
 
   const stateBadgeVariant = compact ? 'compact' : 'prominent';
   const inlineRefresh = showRefresh && !overflowMenu;

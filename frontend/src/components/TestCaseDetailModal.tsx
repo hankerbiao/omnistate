@@ -3,7 +3,6 @@ import type { TestCaseResponse, UserResponse, ExecutionStatsResponse } from '../
 import { WorkflowPanel, WorkflowActionToolbar, WorkflowOverflowMenu } from './workflow';
 import { useWorkflow } from '../hooks/useWorkflow';
 import WorkflowCurrentStateBadge from './workflow/WorkflowCurrentStateBadge';
-import { PRIORITY_COLORS } from '../constants/testCaseLabels';
 import { catalogStyles } from './catalog/catalogStyles';
 import { SWITCHABLE_USERS } from '../config/users';
 import { api } from '../services/api';
@@ -35,15 +34,6 @@ interface TestCaseDetailModalProps {
 }
 
 type DetailTab = 'steps' | 'workflow' | 'more' | 'comments' | 'stats' | 'aiReview';
-
-const DETAIL_TABS: { id: DetailTab; label: string; badge?: number }[] = [
-  { id: 'steps', label: '步骤' },
-  { id: 'workflow', label: '工作流' },
-  { id: 'more', label: '更多' },
-  { id: 'stats', label: '执行统计' },
-  { id: 'comments', label: '评论' },
-  { id: 'aiReview', label: 'AI 评审' },
-];
 
 const NON_EDITABLE_STATES = new Set(['PENDING_REVIEW', 'DONE']);
 
@@ -163,12 +153,18 @@ const TestCaseDetailModal: React.FC<TestCaseDetailModalProps> = ({
 
   const formatDate = (dateStr: string | null | undefined) => dateStr ? new Date(dateStr).toLocaleString('zh-CN') : '-';
 
-  const renderField = (label: string, value: React.ReactNode) => {
+  const renderValue = (value: unknown): React.ReactNode => {
+    if (typeof value === 'string' || typeof value === 'number') return value;
+    if (typeof value === 'boolean') return value ? '是' : '否';
+    return JSON.stringify(value);
+  };
+
+  const renderField = (label: string, value: unknown) => {
     if (!hasDisplayValue(value)) return null;
     return (
       <div style={styles.sideField}>
         <span style={styles.sideFieldLabel}>{label}</span>
-        <span style={styles.sideFieldValue}>{value}</span>
+        <span style={styles.sideFieldValue}>{renderValue(value)}</span>
       </div>
     );
   };
@@ -180,12 +176,13 @@ const TestCaseDetailModal: React.FC<TestCaseDetailModalProps> = ({
         {testCase.attachments.map((att, index) => {
           const filename = String(att.original_filename || att.file_id || `附件 ${index + 1}`);
           const size = formatFileSize(att.size);
+          const contentType = att.content_type ? String(att.content_type) : '';
           return (
             <li key={`${filename}-${index}`} style={styles.attachmentItem}>
               <span style={styles.attachmentName}>{filename}</span>
               {size && <span style={styles.attachmentMeta}>{size}</span>}
-              {att.content_type && (
-                <span style={styles.attachmentMeta}>{String(att.content_type)}</span>
+              {contentType && (
+                <span style={styles.attachmentMeta}>{contentType}</span>
               )}
             </li>
           );
@@ -202,15 +199,17 @@ const TestCaseDetailModal: React.FC<TestCaseDetailModalProps> = ({
           const action = entry.action ?? entry.status ?? entry.result;
           const actor = entry.operator_id ?? entry.user_id ?? entry.reviewer_id;
           const at = entry.created_at ?? entry.approved_at ?? entry.timestamp;
+          const actionText = action ? String(action) : '';
+          const timeText = at ? formatDate(String(at)) : '';
           const actorName = typeof actor === 'string' ? resolveUserName(userNameMap, actor) : null;
-          if (action || actor || at) {
+          if (actionText || actor || timeText) {
             return (
               <div key={index} style={styles.approvalItem}>
-                {action && <span style={styles.approvalAction}>{String(action)}</span>}
+                {actionText && <span style={styles.approvalAction}>{actionText}</span>}
                 {actorName && <span>{actorName}</span>}
-                {at && (
+                {timeText && (
                   <span style={styles.approvalTime}>
-                    {formatDate(String(at))}
+                    {timeText}
                   </span>
                 )}
               </div>
@@ -376,13 +375,13 @@ const TestCaseDetailModal: React.FC<TestCaseDetailModalProps> = ({
           <pre style={styles.codeBlockCompact}>{JSON.stringify(testCase.custom_fields, null, 2)}</pre>
         </div>
       )}
-      {testCase.attachments?.length > 0 && (
+      {(testCase.attachments?.length ?? 0) > 0 && (
         <div style={styles.subBlock}>
           <span style={styles.subBlockTitle}>附件</span>
           {renderAttachments()}
         </div>
       )}
-      {testCase.approval_history?.length > 0 && (
+      {(testCase.approval_history?.length ?? 0) > 0 && (
         <div style={styles.subBlock}>
           <span style={styles.subBlockTitle}>审批记录</span>
           {renderApprovalHistory()}

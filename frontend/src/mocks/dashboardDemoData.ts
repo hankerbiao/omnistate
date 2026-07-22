@@ -225,7 +225,7 @@ function buildAutomationCases(testCases: TestCaseResponse[]): AutomationTestCase
       framework: ['pytest', 'robot', 'custom'][i % 3],
       automation_type: ['CI', 'Nightly', 'Smoke', 'Regression'][i % 4],
       runtime_env: {},
-      tags: tc.tags,
+      tags: tc.tags ?? [],
       maintainer_id: tc.owner_id,
       reviewer_id: tc.reviewer_id,
       created_at: tc.created_at,

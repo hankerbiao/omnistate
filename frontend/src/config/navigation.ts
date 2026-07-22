@@ -22,11 +22,11 @@ const NAV_ITEM_DEFS: NavItemDef[] = [
   { key: 'collections',  label: '预制用例集',       section: '测试资产', icon: FolderKanban, permission: 'collections:read' },
   { key: 'projects',     label: '项目',             section: '测试资产', icon: Layers3, permission: 'projects:read' },
 
-  { key: 'agents',               label: '执行代理',   section: '执行', icon: Bot, permission: 'execution_agents:read' },
   { key: 'testPlanStudioDemo',   label: '执行计划',   section: '执行', icon: CalendarClock, permission: 'execution_plans:read' },
   { key: 'caseGovernance',       label: '用例治理',   section: '执行', icon: ShieldCheck, permission: 'case_governance:read' },
 
   { key: 'dashboard',    label: '数据统计',  section: '系统', icon: BarChart3, permission: 'nav:dashboard:view' },
+  { key: 'agents',       label: '执行代理',  section: '系统', icon: Bot, permission: 'execution_agents:read' },
   { key: 'users',        label: '用户管理',  section: '系统', icon: Users, permission: 'users:read' },
   { key: 'roles',        label: '角色管理',  section: '系统', icon: Shield, permission: 'roles:read' },
   { key: 'catalogLabs',  label: 'Lab 管理',  section: '系统', icon: FlaskConical, permission: 'catalog:labs:manage' },
@@ -40,10 +40,20 @@ export interface NavItemWithIcon extends Omit<NavItem, 'icon'> {
   icon: ComponentType<{ className?: string; size?: number | string }>
 }
 
-export const navItemsWithIcons: NavItemWithIcon[] = NAV_ITEM_DEFS.map(({ section: _s, ...rest }) => rest)
+export const navItemsWithIcons: NavItemWithIcon[] = NAV_ITEM_DEFS.map((def) => ({
+  key: def.key,
+  label: def.label,
+  icon: def.icon,
+  permission: def.permission,
+}))
 
 /** Legacy: keep original string-icon NavItem for backward compat */
-export const navItems: NavItem[] = NAV_ITEM_DEFS.map(({ section: _s, icon: _i, ...rest }) => ({ ...rest, icon: '' }))
+export const navItems: NavItem[] = NAV_ITEM_DEFS.map((def) => ({
+  key: def.key,
+  label: def.label,
+  icon: '',
+  permission: def.permission,
+}))
 
 export const navSections: NavSection[] = (() => {
   const map = new Map<string, PageType[]>()

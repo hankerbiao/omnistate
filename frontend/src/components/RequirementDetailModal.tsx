@@ -59,11 +59,6 @@ const CATEGORY_COLORS: Record<string, { bg: string; color: string }> = {
   REGRESSION: { bg: 'rgba(163, 113, 247, 0.15)', color: '#a371f7' },
 };
 
-/** 复制到剪贴板 */
-function copyToClipboard(text: string) {
-  navigator.clipboard.writeText(text).catch(() => {/* 静默失败 */});
-}
-
 type DetailTab = 'details' | 'components' | 'attachmentsTab' | 'workflow';
 
 interface RequirementDetailModalProps {
@@ -365,12 +360,6 @@ const RequirementDetailModal: React.FC<RequirementDetailModalProps> = ({ require
                   }
                 </span>
               </div>
-              {requirement.ref_reqs?.length ? (
-                <div style={styles.sideMetaRow}>
-                  <span style={styles.sideMetaLabel}>关联需求</span>
-                  <span style={styles.sideMetaValue}>{requirement.ref_reqs.length}</span>
-                </div>
-              ) : null}
             </div>
 
             <div style={styles.sideDivider} />

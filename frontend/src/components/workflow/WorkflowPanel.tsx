@@ -52,13 +52,13 @@ const WorkflowPanel: React.FC<WorkflowPanelProps> = ({
   showPermissionHint = true,
   defaultLogsCollapsed = false,
 }) => {
-  const wf = useWorkflow(workflowItemId);
+  const wf = useWorkflow(workflowItemId, { loadLogs: showLogs });
   const [logsCollapsed, setLogsCollapsed] = useState(defaultLogsCollapsed);
 
   useEffect(() => {
     if (refreshSignal !== undefined && refreshSignal > 0) {
       void wf.refresh();
-      void wf.refreshLogs();
+      if (showLogs) void wf.refreshLogs();
     }
     // refreshSignal 是唯一触发源；wf 方法引用稳定
     // eslint-disable-next-line react-hooks/exhaustive-deps

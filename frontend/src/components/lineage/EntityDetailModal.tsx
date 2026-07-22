@@ -1,7 +1,5 @@
 /** 节点详情弹窗 - 在血缘图谱中点击节点时展示 */
-import { useState, useEffect } from 'react'
-import { api } from '../../services/api'
-import type { LineageNode, LineageEdge, LineageGraphResponse } from '../../types'
+import type { LineageNode } from '../../types'
 
 interface EntityDetailModalProps {
   node: LineageNode | null
@@ -98,7 +96,7 @@ export default function EntityDetailModal({ node, onClose, onOpenLineage }: Enti
           <h3 style={{ fontSize: 13, fontWeight: 600, color: '#111827', marginBottom: 8 }}>详细信息</h3>
           <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
             <tbody>
-              {Object.entries(node.meta).filter(([_, v]) => v !== null && v !== undefined && v !== '').map(([key, value]) => (
+              {Object.entries(node.meta).filter(([, value]) => value !== null && value !== undefined && value !== '').map(([key, value]) => (
                 <tr key={key} style={{ borderBottom: '1px solid #f3f4f6' }}>
                   <td style={{ padding: '6px 0', color: '#6b7280', width: '40%' }}>{key}</td>
                   <td style={{ padding: '6px 0', color: '#111827' }}>

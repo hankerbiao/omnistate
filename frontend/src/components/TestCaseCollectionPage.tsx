@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { AlertTriangle, CheckCircle2, Clock3, Copy, Download } from 'lucide-react';
 import { api } from '../services/api';
 import type {
+  CollectionChangeLog,
   CollectionListItem,
   CollectionResponse,
-  AutomationTestCaseResponse,
-  TestCaseResponse,
+  CollectionValiditySummary,
 } from '../types';
 import PageToolbar, { StatPill } from './ui/PageToolbar';
 import CaseLibraryPicker, { useCaseLibrary, useDualCaseSelection } from './CaseLibraryPicker';
@@ -32,6 +33,7 @@ interface TestCaseCollectionPageProps {
 }
 
 type SortKey = 'name' | 'count' | 'updated';
+type DetailTab = 'cases' | 'history';
 
 // ═══════════════════════════════════════════════════════════════════════
 //  工具函数
@@ -49,6 +51,23 @@ function formatRelativeTime(iso: string): string {
 function parseTagsInput(raw: string): string[] | undefined {
   const tags = raw.split(/[,，]/).map(t => t.trim()).filter(Boolean);
   return tags.length > 0 ? tags : undefined;
+}
+
+function formatDateTime(iso: string): string {
+  return new Date(iso).toLocaleString('zh-CN');
+}
+
+function formatAction(action: string): string {
+  return {
+    CREATE: '创建集合',
+    UPDATE: '编辑集合',
+    DELETE: '删除集合',
+    ADD_CASES: '添加用例',
+    REMOVE_CASES: '移除用例',
+    COPY_FROM: '另存为',
+    COPY_TO: '复制来源',
+    EXPORT: '导出清单',
+  }[action] || action;
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -105,6 +124,126 @@ function CollectionFormModal({
   );
 }
 
+interface CopyCollectionModalProps {
+  open: boolean;
+  name: string;
+  description: string;
+  tags: string;
+  includeCases: boolean;
+  submitting: boolean;
+  onClose: () => void;
+  onNameChange: (value: string) => void;
+  onDescriptionChange: (value: string) => void;
+  onTagsChange: (value: string) => void;
+  onIncludeCasesChange: (value: boolean) => void;
+  onSubmit: () => void;
+}
+
+function CopyCollectionModal({
+  open, name, description, tags, includeCases, submitting,
+  onClose, onNameChange, onDescriptionChange, onTagsChange, onIncludeCasesChange, onSubmit,
+}: CopyCollectionModalProps) {
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="sm:max-w-[480px]">
+        <DialogHeader>
+          <DialogTitle>另存为预制集合</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-[var(--text-secondary)]">集合名称 *</label>
+            <input className="form-input" value={name} onChange={e => onNameChange(e.target.value)} autoFocus />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-[var(--text-secondary)]">描述</label>
+            <textarea className="form-input" style={{ width: '100%', minHeight: 80, resize: 'vertical' }} value={description} onChange={e => onDescriptionChange(e.target.value)} rows={3} />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-[var(--text-secondary)]">标签（逗号分隔）</label>
+            <input className="form-input" value={tags} onChange={e => onTagsChange(e.target.value)} />
+          </div>
+          <label className="collection-copy-option">
+            <input type="checkbox" checked={includeCases} onChange={e => onIncludeCasesChange(e.target.checked)} />
+            <span>复制当前集合内的手工和自动化用例</span>
+          </label>
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" size="sm" onClick={onClose}>取消</Button>
+          <Button size="sm" onClick={onSubmit} disabled={submitting || !name.trim()}>
+            {submitting ? '另存中…' : '另存为'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function CollectionValidityBanner({ validity }: { validity: CollectionValiditySummary | null }) {
+  if (!validity) return null;
+  const hasRisk = validity.risk_count > 0;
+  return (
+    <div className={`collection-validity-banner${hasRisk ? ' collection-validity-banner--risk' : ' collection-validity-banner--ok'}`}>
+      <div className="collection-validity-banner__lead">
+        {hasRisk ? <AlertTriangle size={16} /> : <CheckCircle2 size={16} />}
+        <span>{hasRisk ? `发现 ${validity.risk_count} 个有效性风险` : '集合内用例全部有效'}</span>
+      </div>
+      <div className="collection-validity-banner__stats">
+        <span>已停用 {validity.inactive_count}</span>
+        <span>已删除/缺失 {validity.missing_count}</span>
+        <span>已废弃 {validity.deprecated_count}</span>
+        <span>自动化失效 {validity.automation_invalid_count}</span>
+      </div>
+    </div>
+  );
+}
+
+function CollectionHistoryPanel({
+  logs, loading, total, onLoadMore,
+}: {
+  logs: CollectionChangeLog[];
+  loading: boolean;
+  total: number;
+  onLoadMore: () => void;
+}) {
+  if (loading && logs.length === 0) {
+    return <div className="collection-history-empty">正在加载变更历史…</div>;
+  }
+  if (logs.length === 0) {
+    return <div className="collection-history-empty">暂无集合变更历史</div>;
+  }
+  return (
+    <div className="collection-history">
+      {logs.map(log => (
+        <div key={log.id} className="collection-history__item">
+          <div className="collection-history__dot"><Clock3 size={13} /></div>
+          <div className="collection-history__body">
+            <div className="collection-history__top">
+              <span className="collection-history__action">{formatAction(log.action)}</span>
+              <span className="collection-history__operator">{log.operator_name || log.operator_id}</span>
+              <span className="collection-history__time">{formatDateTime(log.created_at)}</span>
+            </div>
+            {log.remark && <div className="collection-history__remark">{log.remark}</div>}
+            {log.case_changes.length > 0 && (
+              <div className="collection-history__cases">
+                {log.case_changes.slice(0, 8).map((item, index) => (
+                  <code key={`${item.type}-${item.case_id}-${index}`}>{item.type === 'auto' ? '自动化' : '手工'} {item.case_id}</code>
+                ))}
+                {log.case_changes.length > 8 && <span>+{log.case_changes.length - 8}</span>}
+              </div>
+            )}
+            {log.export_format && <div className="collection-history__remark">格式：{log.export_format.toUpperCase()}</div>}
+          </div>
+        </div>
+      ))}
+      {logs.length < total && (
+        <button type="button" className="btn btn--ghost btn--sm collection-history__more" onClick={onLoadMore} disabled={loading}>
+          {loading ? '加载中…' : '加载更多'}
+        </button>
+      )}
+    </div>
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 //  主组件
 // ═══════════════════════════════════════════════════════════════════════
@@ -121,6 +260,7 @@ const TestCaseCollectionPage: React.FC<TestCaseCollectionPageProps> = ({ current
   const [detailLoading, setDetailLoading] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>('updated');
   const [selectedCollIds, setSelectedCollIds] = useState<Set<string>>(new Set());
+  const [detailTab, setDetailTab] = useState<DetailTab>('cases');
 
   // — 创建 / 编辑状态
   const [createOpen, setCreateOpen] = useState(false);
@@ -133,6 +273,13 @@ const TestCaseCollectionPage: React.FC<TestCaseCollectionPageProps> = ({ current
   const [editDesc, setEditDesc] = useState('');
   const [editTags, setEditTags] = useState('');
   const [editing, setEditing] = useState(false);
+  const [copyOpen, setCopyOpen] = useState(false);
+  const [copyName, setCopyName] = useState('');
+  const [copyDesc, setCopyDesc] = useState('');
+  const [copyTags, setCopyTags] = useState('');
+  const [copyIncludeCases, setCopyIncludeCases] = useState(true);
+  const [copying, setCopying] = useState(false);
+  const [exporting, setExporting] = useState<'csv' | 'xlsx' | null>(null);
 
   // — 添加用例（Drawer）
   const [addOpen, setAddOpen] = useState(false);
@@ -142,7 +289,12 @@ const TestCaseCollectionPage: React.FC<TestCaseCollectionPageProps> = ({ current
   // — 集合内用例筛选 & 批量选择
   const [caseSearch, setCaseSearch] = useState('');
   const [caseTypeFilter, setCaseTypeFilter] = useState<TypeFilter>('all');
+  const [riskOnly, setRiskOnly] = useState(false);
   const [selectedCaseIds, setSelectedCaseIds] = useState<Set<string>>(new Set());
+  const [validity, setValidity] = useState<CollectionValiditySummary | null>(null);
+  const [historyLogs, setHistoryLogs] = useState<CollectionChangeLog[]>([]);
+  const [historyTotal, setHistoryTotal] = useState(0);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   const selectedRef = useRef(selected);
   selectedRef.current = selected;
@@ -174,20 +326,58 @@ const TestCaseCollectionPage: React.FC<TestCaseCollectionPageProps> = ({ current
 
   useEffect(() => { fetchCollections(); }, [fetchCollections]);
 
+  const fetchValidity = useCallback(async (id: string) => {
+    try {
+      const res = await api.getCollectionValidity(id);
+      setValidity(res.data || null);
+    } catch {
+      setValidity(null);
+    }
+  }, []);
+
+  const fetchHistory = useCallback(async (id: string, offset = 0) => {
+    setHistoryLoading(true);
+    try {
+      const res = await api.getCollectionHistory(id, { limit: 20, offset });
+      const payload = res.data;
+      setHistoryLogs(prev => offset === 0 ? (payload?.items || []) : [...prev, ...(payload?.items || [])]);
+      setHistoryTotal(payload?.total || 0);
+    } catch {
+      if (offset === 0) {
+        setHistoryLogs([]);
+        setHistoryTotal(0);
+      }
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, []);
+
+  const refreshSelectedAux = useCallback(async (id: string) => {
+    await Promise.allSettled([
+      fetchValidity(id),
+      fetchHistory(id, 0),
+    ]);
+  }, [fetchHistory, fetchValidity]);
+
   const fetchDetail = useCallback(async (id: string) => {
     setDetailLoading(true);
     setCaseSearch('');
     setCaseTypeFilter('all');
+    setRiskOnly(false);
     setSelectedCaseIds(new Set());
     try {
       const res = await api.getCollection(id);
       setSelected(res.data);
+      await refreshSelectedAux(id);
     } catch {
       setSelected(null);
+      setValidity(null);
+      setHistoryLogs([]);
+      setHistoryTotal(0);
     } finally {
       setDetailLoading(false);
     }
-  }, []);
+  }, [refreshSelectedAux]);
 
   useEffect(() => {
     const timer = setTimeout(() => fetchCollections(searchQuery || undefined), 300);
@@ -312,6 +502,62 @@ const TestCaseCollectionPage: React.FC<TestCaseCollectionPageProps> = ({ current
     }
   };
 
+  const openCopy = () => {
+    if (!selected) return;
+    setCopyName(`${selected.name} 副本`);
+    setCopyDesc(selected.description || '');
+    setCopyTags((selected.tags || []).join(', '));
+    setCopyIncludeCases(true);
+    setCopyOpen(true);
+  };
+
+  const handleCopy = async () => {
+    if (!selected || !copyName.trim()) return;
+    setCopying(true);
+    setError(null);
+    try {
+      const res = await api.copyCollection(selected.collection_id, {
+        name: copyName.trim(),
+        description: copyDesc.trim() || undefined,
+        tags: parseTagsInput(copyTags) ?? [],
+        include_cases: copyIncludeCases,
+      });
+      setCopyOpen(false);
+      await fetchCollections();
+      if (res.data?.collection_id) {
+        await fetchDetail(res.data.collection_id);
+      }
+    } catch (err) {
+      setError('另存为集合失败');
+      console.error(err);
+    } finally {
+      setCopying(false);
+    }
+  };
+
+  const handleExport = async (format: 'csv' | 'xlsx') => {
+    if (!selected) return;
+    setExporting(format);
+    setError(null);
+    try {
+      const { blob, filename } = await api.exportCollection(selected.collection_id, format);
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename || `${selected.collection_id}_cases.${format}`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      await fetchHistory(selected.collection_id, 0);
+    } catch (err) {
+      setError('导出集合清单失败');
+      console.error(err);
+    } finally {
+      setExporting(null);
+    }
+  };
+
   const handleBatchDelete = async () => {
     if (selectedCollIds.size === 0) return;
     if (!window.confirm(`确定批量删除 ${selectedCollIds.size} 个预制集合吗？`)) return;
@@ -409,16 +655,23 @@ const TestCaseCollectionPage: React.FC<TestCaseCollectionPageProps> = ({ current
     return rows;
   }, [selected]);
 
+  const validityMap = useMemo(() => {
+    const map = new Map<string, CollectionValiditySummary['cases'][number]>();
+    validity?.cases.forEach(item => map.set(`${item.type}-${item.case_id}`, item));
+    return map;
+  }, [validity]);
+
   const filteredDetailCases = useMemo(() => {
     const q = caseSearch.trim().toLowerCase();
     return detailCaseRows.filter(row => {
       if (caseTypeFilter === 'manual' && row.type !== 'manual') return false;
       if (caseTypeFilter === 'auto' && row.type !== 'auto') return false;
+      if (riskOnly && validityMap.get(`${row.type}-${row.id}`)?.valid !== false) return false;
       if (!q) return true;
       const title = getCaseDisplayTitle(row.type, row.id, manualMap, autoMap).toLowerCase();
       return row.id.toLowerCase().includes(q) || title.includes(q);
     });
-  }, [detailCaseRows, caseSearch, caseTypeFilter, manualMap, autoMap]);
+  }, [detailCaseRows, caseSearch, caseTypeFilter, riskOnly, validityMap, manualMap, autoMap]);
 
   const manualCount = selected?.case_ids.length ?? 0;
   const autoCount = selected?.auto_case_ids.length ?? 0;
@@ -626,6 +879,20 @@ const TestCaseCollectionPage: React.FC<TestCaseCollectionPageProps> = ({ current
                           collectionId={selected.collection_id}
                         />
                         <button type="button" className="btn btn--primary btn--sm" onClick={openAddModal}>添加用例</button>
+                        <button type="button" className="btn btn--secondary btn--sm" onClick={openCopy}>
+                          <Copy size={14} />
+                          另存为
+                        </button>
+                        <div className="collection-export-actions">
+                          <button type="button" className="btn btn--secondary btn--sm" onClick={() => handleExport('csv')} disabled={exporting !== null}>
+                            <Download size={14} />
+                            {exporting === 'csv' ? '导出中…' : 'CSV'}
+                          </button>
+                          <button type="button" className="btn btn--secondary btn--sm" onClick={() => handleExport('xlsx')} disabled={exporting !== null}>
+                            <Download size={14} />
+                            {exporting === 'xlsx' ? '导出中…' : 'XLSX'}
+                          </button>
+                        </div>
                         <button type="button" className="btn btn--secondary btn--sm" onClick={openEdit}>编辑</button>
                         {canDelete && <button type="button" className="btn btn--danger btn--sm" onClick={() => handleDelete()}>删除</button>}
                       </>
@@ -645,6 +912,8 @@ const TestCaseCollectionPage: React.FC<TestCaseCollectionPageProps> = ({ current
                   </div>
 
                   <div className="split-detail-content">
+                    <CollectionValidityBanner validity={validity} />
+
                     {/* 四个统计小卡片 */}
                     <div className="collection-stats-grid">
                       <div className="collection-stat-card collection-stat-card--manual">
@@ -665,7 +934,28 @@ const TestCaseCollectionPage: React.FC<TestCaseCollectionPageProps> = ({ current
                       </div>
                     </div>
 
+                    <div className="collection-detail-tabs">
+                      <button
+                        type="button"
+                        className={detailTab === 'cases' ? 'collection-detail-tabs__tab collection-detail-tabs__tab--active' : 'collection-detail-tabs__tab'}
+                        onClick={() => setDetailTab('cases')}
+                      >
+                        集合用例
+                      </button>
+                      <button
+                        type="button"
+                        className={detailTab === 'history' ? 'collection-detail-tabs__tab collection-detail-tabs__tab--active' : 'collection-detail-tabs__tab'}
+                        onClick={() => {
+                          setDetailTab('history');
+                          if (selected) void fetchHistory(selected.collection_id, 0);
+                        }}
+                      >
+                        变更历史
+                      </button>
+                    </div>
+
                     {/* 用例列表 */}
+                    {detailTab === 'cases' ? (
                     <div className="split-detail-section">
                       <div className="split-detail-section__header">
                         <h4 className="split-detail-section__title">集合用例</h4>
@@ -689,6 +979,16 @@ const TestCaseCollectionPage: React.FC<TestCaseCollectionPageProps> = ({ current
                               </button>
                             ))}
                           </div>
+                          <button
+                            type="button"
+                            className={riskOnly ? 'collection-risk-filter collection-risk-filter--active' : 'collection-risk-filter'}
+                            onClick={() => { setRiskOnly(v => !v); setSelectedCaseIds(new Set()); }}
+                            disabled={!validity || validity.risk_count === 0}
+                          >
+                            <AlertTriangle size={13} />
+                            存在风险
+                            {validity?.risk_count ? <span>{validity.risk_count}</span> : null}
+                          </button>
                         </div>
                       )}
 
@@ -728,6 +1028,7 @@ const TestCaseCollectionPage: React.FC<TestCaseCollectionPageProps> = ({ current
                                 <th className="case-table__title">标题</th>
                                 <th className="case-table__lab">所属目录</th>
                                 <th className="case-table__status">状态</th>
+                                <th className="case-table__validity">有效性</th>
                                 <th className="case-table__actions">操作</th>
                               </tr>
                             </thead>
@@ -737,10 +1038,15 @@ const TestCaseCollectionPage: React.FC<TestCaseCollectionPageProps> = ({ current
                                 const status = row.type === 'manual' ? manualMap.get(row.id)?.status : autoMap.get(row.id)?.status;
                                 const labName = row.type === 'manual' ? manualMap.get(row.id)?.lab_name || manualMap.get(row.id)?.lab_id || '—' : '—';
                                 const key = `${row.type}-${row.id}`;
+                                const risk = validityMap.get(key);
                                 return (
                                   <tr
                                     key={key}
-                                    className={selectedCaseIds.has(key) ? 'case-table__row case-table__row--selected' : 'case-table__row'}
+                                    className={[
+                                      'case-table__row',
+                                      selectedCaseIds.has(key) ? 'case-table__row--selected' : '',
+                                      risk?.valid === false ? 'case-table__row--risk' : '',
+                                    ].filter(Boolean).join(' ')}
                                   >
                                     <td className="case-table__cb">
                                       <input
@@ -755,6 +1061,13 @@ const TestCaseCollectionPage: React.FC<TestCaseCollectionPageProps> = ({ current
                                     <td className="case-table__title" title={title}>{title}</td>
                                     <td className="case-table__lab">{labName}</td>
                                     <td className="case-table__status">{status ? getCaseStatusLabel(status) : '—'}</td>
+                                    <td className="case-table__validity">
+                                      {risk?.valid === false ? (
+                                        <span className="case-validity-badge case-validity-badge--risk">{risk.risk_label || '存在风险'}</span>
+                                      ) : (
+                                        <span className="case-validity-badge case-validity-badge--ok">有效</span>
+                                      )}
+                                    </td>
                                     <td className="case-table__actions">
                                       <button type="button" className="btn btn--ghost btn--xs" style={{ color: 'var(--status-error)', fontSize: 11 }} onClick={() => handleRemoveCase(row.type, row.id)}>移除</button>
                                     </td>
@@ -766,6 +1079,20 @@ const TestCaseCollectionPage: React.FC<TestCaseCollectionPageProps> = ({ current
                         </div>
                       )}
                     </div>
+                    ) : (
+                      <div className="split-detail-section">
+                        <div className="split-detail-section__header">
+                          <h4 className="split-detail-section__title">集合变更历史</h4>
+                          {historyTotal > 0 && <span className="split-detail-section__hint">&nbsp;共 {historyTotal} 条</span>}
+                        </div>
+                        <CollectionHistoryPanel
+                          logs={historyLogs}
+                          loading={historyLoading}
+                          total={historyTotal}
+                          onLoadMore={() => selected && fetchHistory(selected.collection_id, historyLogs.length)}
+                        />
+                      </div>
+                    )}
                   </div>
                 </>
               )}
@@ -779,6 +1106,20 @@ const TestCaseCollectionPage: React.FC<TestCaseCollectionPageProps> = ({ current
       {/* ── 创建 / 编辑弹窗 ── */}
       <CollectionFormModal mode="create" open={createOpen} name={newName} description={newDesc} tags={newTags} submitting={creating} onClose={() => setCreateOpen(false)} onNameChange={setNewName} onDescriptionChange={setNewDesc} onTagsChange={setNewTags} onSubmit={handleCreate} />
       <CollectionFormModal mode="edit" open={editOpen} name={editName} description={editDesc} tags={editTags} submitting={editing} onClose={() => setEditOpen(false)} onNameChange={setEditName} onDescriptionChange={setEditDesc} onTagsChange={setEditTags} onSubmit={handleEdit} />
+      <CopyCollectionModal
+        open={copyOpen}
+        name={copyName}
+        description={copyDesc}
+        tags={copyTags}
+        includeCases={copyIncludeCases}
+        submitting={copying}
+        onClose={() => setCopyOpen(false)}
+        onNameChange={setCopyName}
+        onDescriptionChange={setCopyDesc}
+        onTagsChange={setCopyTags}
+        onIncludeCasesChange={setCopyIncludeCases}
+        onSubmit={handleCopy}
+      />
 
       {/* ── 添加用例：右侧抽屉 ── */}
       {addOpen && selected && (

@@ -344,7 +344,7 @@ export default function DashboardPage({ onWorkflowNavigate }: DashboardPageProps
 
       {anyError && !demoMode && (
         <div className="error-banner" style={{ marginBottom: 16 }}>
-          {anyError.message || '加载统计数据失败'}
+          {anyError.error?.message || '加载统计数据失败'}
         </div>
       )}
 

@@ -2,7 +2,6 @@
  * PlanSidebar — Left sidebar with plan list
  */
 import type { PlanSummary } from './types';
-import { PLAN_STATUS_META } from './types';
 
 interface PlanSidebarProps {
   plans: PlanSummary[];
@@ -36,7 +35,6 @@ export function PlanSidebar({ plans, activePlanId, loading, searchQuery, onSelec
         ) : (
           plans.map(p => {
             const isActive = p.plan_id === activePlanId;
-            const meta = PLAN_STATUS_META[p.status] || { label: p.status, color: 'var(--text-tertiary)' };
             return (
               <div key={p.plan_id} onClick={() => onSelect(p.plan_id)}
                 style={{

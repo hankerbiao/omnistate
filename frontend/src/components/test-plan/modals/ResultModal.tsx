@@ -11,23 +11,108 @@ import { STATUS_META } from '../types';
 
 interface ResultModalProps {
   item: PlanItemSummary;
-  taskData: any;
-  timelineData: any;
+  taskData: unknown;
+  timelineData: unknown;
   loading: boolean;
   error?: string;
   onClose: () => void;
 }
 
+interface ManualTaskData {
+  manualResult?: {
+    passed?: boolean;
+    severity?: string;
+    notes?: string;
+    executed_by?: string;
+    executed_at?: string;
+  } | null;
+}
+
+interface TaskResultData {
+  error?: unknown;
+  cases?: CaseResultSummary[];
+  triggered_at?: string;
+  consumed_at?: string;
+  started_at?: string;
+  finished_at?: string;
+  last_event_at?: string;
+  overall_status?: string;
+  progress_percent?: number;
+  reported_case_count?: number;
+  passed_case_count?: number;
+  case_count?: number;
+}
+
+interface CaseResultSummary {
+  auto_case_id?: string;
+  status?: string;
+  dispatch_status?: string;
+  dispatched_at?: string;
+  started_at?: string;
+  finished_at?: string;
+  created_at?: string;
+  last_event_at?: string;
+  progress_percent?: number;
+  dispatch_attempts?: number;
+  event_count?: number;
+  step_total?: number;
+  step_passed?: number;
+  step_failed?: number;
+  step_skipped?: number;
+  result_data?: {
+    assertions?: AssertionResult[];
+    data?: Record<string, unknown>;
+  };
+}
+
+interface AssertionResult {
+  seq?: number;
+  name?: string;
+  status?: string;
+  error?: unknown;
+  timestamp?: string;
+}
+
+interface TaskTimelineData {
+  biz_logs?: BizLogEntry[];
+  events?: TaskEventEntry[];
+}
+
+interface BizLogEntry {
+  created_at?: string;
+  action?: string;
+  node?: string;
+  outcome?: string;
+  level?: string;
+  detail?: Record<string, unknown>;
+}
+
+interface TaskEventEntry {
+  event_timestamp?: string;
+  event_type?: string;
+  phase?: string;
+  event_status?: string;
+  payload?: Record<string, unknown>;
+}
+
 const FINAL_STATUSES = ['PASSED', 'FAILED', 'SKIPPED', 'CANCELLED', 'TIMEOUT'];
 
 export function ResultModal({ item, taskData, timelineData, loading, error, onClose }: ResultModalProps) {
-  const caseSummary = taskData?.cases?.find((c: any) => c.auto_case_id === item.case_id);
+  const normalizedTaskData = isObject(taskData) ? taskData as TaskResultData | ManualTaskData : null;
+  const autoTaskData = normalizedTaskData && 'cases' in normalizedTaskData ? normalizedTaskData : null;
+  const normalizedTimelineData = isObject(timelineData) ? timelineData as TaskTimelineData : null;
+  const caseSummary = autoTaskData?.cases?.find(c => c.auto_case_id === item.case_id);
+  const manualResult = normalizedTaskData && 'manualResult' in normalizedTaskData ? normalizedTaskData.manualResult : null;
   const r = caseSummary?.result_data;
+  const assertions = r?.assertions || [];
+  const returnData = r?.data;
+  const bizLogs = normalizedTimelineData?.biz_logs || [];
+  const events = normalizedTimelineData?.events || [];
   const isManual = !item.execution_task_id;
 
   const buildTaskTimelineItems = (): TimelineItem[] => {
     const items: TimelineItem[] = [];
-    const t = taskData;
+    const t = autoTaskData;
     if (!t) return items;
     if (t.triggered_at) items.push({ time: t.triggered_at, title: '任务下发', status: 'info' });
     if (t.consumed_at) items.push({ time: t.consumed_at, title: '任务被消费', status: 'info' });
@@ -60,23 +145,22 @@ export function ResultModal({ item, taskData, timelineData, loading, error, onCl
     if (!caseSummary) return items;
     const c = caseSummary;
     if (c.dispatch_status) {
-      items.push({ time: c.dispatched_at || c.started_at || c.created_at, title: '用例下发状态', description: c.dispatch_status, badge: c.dispatch_status, status: c.dispatch_status === 'COMPLETED' ? 'success' : c.dispatch_status === 'DISPATCH_FAILED' ? 'failed' : 'running' });
+      items.push({ time: c.dispatched_at || c.started_at || c.created_at || '', title: '用例下发状态', description: c.dispatch_status, badge: c.dispatch_status, status: c.dispatch_status === 'COMPLETED' ? 'success' : c.dispatch_status === 'DISPATCH_FAILED' ? 'failed' : 'running' });
     }
     if (c.dispatched_at) items.push({ time: c.dispatched_at, title: '用例下发时间', status: 'info' });
     if (c.started_at) items.push({ time: c.started_at, title: '用例开始执行', status: 'running' });
     if (c.finished_at) items.push({ time: c.finished_at, title: '用例执行结束', status: c.status === 'PASSED' ? 'success' : c.status === 'FAILED' ? 'failed' : 'info' });
     if (c.status) {
-      items.push({ time: c.finished_at || c.last_event_at || c.started_at || c.created_at, title: '用例执行状态', description: c.status, badge: c.status, status: c.status === 'PASSED' ? 'success' : c.status === 'FAILED' ? 'failed' : c.status === 'RUNNING' ? 'running' : 'info' });
+      items.push({ time: c.finished_at || c.last_event_at || c.started_at || c.created_at || '', title: '用例执行状态', description: c.status, badge: c.status, status: c.status === 'PASSED' ? 'success' : c.status === 'FAILED' ? 'failed' : c.status === 'RUNNING' ? 'running' : 'info' });
     }
     if (c.last_event_at) items.push({ time: c.last_event_at, title: '用例最近事件', status: 'info' });
     return items;
   };
 
   const buildBizLogTimelineItems = (): TimelineItem[] => {
-    if (!timelineData?.biz_logs) return [];
-    return timelineData.biz_logs.map((log: any) => ({
-      time: log.created_at, title: log.action,
-      description: `${log.node}${log.outcome ? ` — ${log.outcome}` : ''}`,
+    return bizLogs.map(log => ({
+      time: log.created_at || '', title: log.action || '操作日志',
+      description: `${log.node || '-'}${log.outcome ? ` — ${log.outcome}` : ''}`,
       status: log.outcome === 'success' || log.outcome === 'completed' ? 'success' as const : log.outcome === 'failed' ? 'failed' as const : log.level === 'WARNING' ? 'warning' as const : 'info' as const,
       badge: log.outcome || log.level,
       expandable: log.detail && Object.keys(log.detail).length > 0 ? <pre style={{ fontSize: 10, margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{JSON.stringify(log.detail, null, 2)}</pre> : undefined,
@@ -84,9 +168,8 @@ export function ResultModal({ item, taskData, timelineData, loading, error, onCl
   };
 
   const buildEventTimelineItems = (): TimelineItem[] => {
-    if (!timelineData?.events) return [];
-    return timelineData.events.map((evt: any) => ({
-      time: evt.event_timestamp, title: evt.event_type,
+    return events.map(evt => ({
+      time: evt.event_timestamp || '', title: evt.event_type || '事件',
       description: `phase: ${evt.phase || '-'}${evt.event_status ? ` | status: ${evt.event_status}` : ''}`,
       status: 'info' as const, badge: evt.phase || undefined,
       expandable: evt.payload && Object.keys(evt.payload).length > 0 ? <pre style={{ fontSize: 10, margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{JSON.stringify(evt.payload, null, 2)}</pre> : undefined,
@@ -108,16 +191,16 @@ export function ResultModal({ item, taskData, timelineData, loading, error, onCl
             <p className="py-10 text-center text-sm text-[var(--text-secondary)]">{error}</p>
           ) : loading ? (
             <p className="py-10 text-center text-sm text-[var(--text-tertiary)]">加载执行结果...</p>
-          ) : taskData?.error ? (
+          ) : autoTaskData?.error ? (
             <p className="py-8 text-center text-sm text-[var(--status-error)]">获取结果失败</p>
           ) : isManual ? (
             <div className="flex flex-col gap-4">
               <div className="flex gap-3 flex-wrap">
                 {[
-                  { label: '结果', value: taskData?.manualResult?.passed ? '通过' : '失败', color: taskData?.manualResult?.passed ? 'var(--status-success)' : 'var(--status-error)' },
-                  { label: '严重程度', value: taskData?.manualResult?.severity || '-' },
-                  { label: '备注', value: taskData?.manualResult?.notes || '-' },
-                  { label: '执行人', value: taskData?.manualResult?.executed_by || '-' },
+                  { label: '结果', value: manualResult?.passed ? '通过' : '失败', color: manualResult?.passed ? 'var(--status-success)' : 'var(--status-error)' },
+                  { label: '严重程度', value: manualResult?.severity || '-' },
+                  { label: '备注', value: manualResult?.notes || '-' },
+                  { label: '执行人', value: manualResult?.executed_by || '-' },
                 ].map(kv => (
                   <div key={kv.label} className="px-3 py-2 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-secondary)] min-w-[80px]">
                     <div className="text-[10px] text-[var(--text-tertiary)] mb-0.5">{kv.label}</div>
@@ -125,9 +208,9 @@ export function ResultModal({ item, taskData, timelineData, loading, error, onCl
                   </div>
                 ))}
               </div>
-              {taskData?.manualResult?.executed_at && (
+              {manualResult?.executed_at && (
                 <div className="text-xs text-[var(--text-tertiary)]">
-                  执行时间: {new Date(taskData.manualResult.executed_at).toLocaleString('zh-CN')}
+                  执行时间: {new Date(manualResult.executed_at).toLocaleString('zh-CN')}
                 </div>
               )}
             </div>
@@ -152,7 +235,7 @@ export function ResultModal({ item, taskData, timelineData, loading, error, onCl
               </div>
 
               {/* Step stats */}
-              {caseSummary.step_total > 0 && (
+              {(caseSummary.step_total || 0) > 0 && (
                 <div className="flex gap-3 flex-wrap">
                   {[
                     { label: '步骤总数', value: caseSummary.step_total, color: 'var(--text-primary)', bg: 'var(--surface-secondary)' },
@@ -172,16 +255,16 @@ export function ResultModal({ item, taskData, timelineData, loading, error, onCl
               <TimelineView items={buildCaseTimelineItems()} title="用例状态时间线" />
 
               {/* Assertions */}
-              {r?.assertions?.length > 0 && (
+              {assertions.length > 0 && (
                 <div>
-                  <div className="text-xs font-semibold text-[var(--text-secondary)] mb-2">断言 ({r.assertions.length})</div>
-                  {r.assertions.map((a: any, i: number) => (
+                  <div className="text-xs font-semibold text-[var(--text-secondary)] mb-2">断言 ({assertions.length})</div>
+                  {assertions.map((a, i) => (
                     <div key={i} className="px-2.5 py-2 rounded-md border border-[var(--border-subtle)] text-xs mb-1">
                       <div className="flex justify-between mb-1">
                         <span className="font-medium">#{a.seq ?? i + 1} {a.name || '-'}</span>
                         <Badge variant={a.status === 'PASSED' ? 'success' : a.status === 'FAILED' ? 'destructive' : 'info'}>{a.status || '-'}</Badge>
                       </div>
-                      {a.error && <div className="text-[var(--status-error)] text-[11px] whitespace-pre-wrap break-all">{JSON.stringify(a.error)}</div>}
+                      {a.error != null && <div className="text-[var(--status-error)] text-[11px] whitespace-pre-wrap break-all">{JSON.stringify(a.error)}</div>}
                       {a.timestamp && <div className="text-[var(--text-tertiary)] text-[10px] mt-1">{new Date(a.timestamp).toLocaleString('zh-CN')}</div>}
                     </div>
                   ))}
@@ -189,19 +272,23 @@ export function ResultModal({ item, taskData, timelineData, loading, error, onCl
               )}
 
               {/* Return data */}
-              {r?.data && Object.keys(r.data).length > 0 && (
+              {returnData && Object.keys(returnData).length > 0 && (
                 <div>
                   <div className="text-xs font-semibold text-[var(--text-secondary)] mb-1.5">返回数据</div>
-                  <pre className="text-[11px] bg-[var(--surface-secondary)] p-2.5 rounded-md overflow-auto max-h-[200px] m-0 whitespace-pre-wrap break-all">{JSON.stringify(r.data, null, 2)}</pre>
+                  <pre className="text-[11px] bg-[var(--surface-secondary)] p-2.5 rounded-md overflow-auto max-h-[200px] m-0 whitespace-pre-wrap break-all">{JSON.stringify(returnData, null, 2)}</pre>
                 </div>
               )}
 
-              {timelineData?.biz_logs?.length > 0 && <TimelineView items={buildBizLogTimelineItems()} title="操作日志" />}
-              {timelineData?.events?.length > 0 && <TimelineView items={buildEventTimelineItems()} title="事件时间线" defaultCollapsed />}
+              {bizLogs.length > 0 && <TimelineView items={buildBizLogTimelineItems()} title="操作日志" />}
+              {events.length > 0 && <TimelineView items={buildEventTimelineItems()} title="事件时间线" defaultCollapsed />}
             </div>
           )}
         </div>
       </DialogContent>
     </Dialog>
   );
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }

@@ -22,9 +22,6 @@ export const queryKeys = {
   planItems: {
     my: (userId: string) => ['planItems', 'my', userId] as const,
   },
-  executionTasks: {
-    my: (userId: string) => ['executionTasks', 'my', userId] as const,
-  },
   catalogLabs: {
     all: ['catalogLabs'] as const,
   },

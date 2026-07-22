@@ -32,6 +32,8 @@ export interface PlanItemSummary {
   status: string;
   order_no: number;
   execution_task_id?: string | null;
+  result_id?: string | null;
+  result_source?: 'manual' | 'auto' | null;
   result?: { passed?: boolean; notes?: string; actual?: string } | null;
   created_at?: string | null;
   updated_at?: string | null;
@@ -85,11 +87,24 @@ export interface CaseMapEntry {
   title: string;
   type: 'auto' | 'manual';
   priority: string;
+  createdAt?: string;
+  tags?: string[];
+  testCategory?: string;
+  labId?: string;
+  labName?: string | null;
+  catalogPath?: string[];
+  catalogBreadcrumb?: string | null;
+  framework?: string;
+  defaultOwnerId?: string;
 }
 
 export interface CollectionEntry {
   collection_id: string;
   name: string;
   description?: string | null;
+  tags?: string[];
   case_count: number;
+  auto_case_count?: number;
+  case_ids?: string[];
+  auto_case_ids?: string[];
 }

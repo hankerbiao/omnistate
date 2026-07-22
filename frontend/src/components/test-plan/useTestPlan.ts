@@ -10,6 +10,23 @@ import type {
 } from './types';
 import { emptyNewPlan } from './types';
 
+interface PlanListPayload {
+  items?: PlanSummary[];
+}
+
+interface PlanDetailPayload {
+  items?: PlanItemSummary[];
+}
+
+interface CollectionDetailPayload {
+  case_ids?: string[];
+  auto_case_ids?: string[];
+}
+
+type LoadedCaseEntry = CaseMapEntry & {
+  case_id: string;
+};
+
 export function useTestPlan() {
   // ── Plans ──
   const [plans, setPlans] = useState<PlanSummary[]>([]);
@@ -36,16 +53,11 @@ export function useTestPlan() {
   const [users, setUsers] = useState<UserResponse[]>([]);
   const [currentUserId, setCurrentUserId] = useState('');
 
-  // ── Overview ──
-  const [showOverview, setShowOverview] = useState(false);
-  const [overviewData, setOverviewData] = useState<Record<string, any> | null>(null);
-  const [overviewLoading, setOverviewLoading] = useState(false);
-
   // ── Refresh ──
   const [refreshDetail, setRefreshDetail] = useState(0);
 
   // ── Test cases & collections ──
-  const [testCases, setTestCases] = useState<Record<string, { case_id: string; title: string; type: string; priority: string; created_at: string }>>({});
+  const [testCases, setTestCases] = useState<Record<string, LoadedCaseEntry>>({});
   const [collections, setCollections] = useState<CollectionEntry[]>([]);
   const [casesLoading, setCasesLoading] = useState(false);
 
@@ -59,8 +71,8 @@ export function useTestPlan() {
   // ── Result viewer ──
   const [resultModal, setResultModal] = useState<{
     item: PlanItemSummary;
-    taskData: any;
-    timelineData: any;
+    taskData: unknown;
+    timelineData: unknown;
     loading: boolean;
     error?: string;
   } | null>(null);
@@ -88,12 +100,36 @@ export function useTestPlan() {
         api.listTestCases({ limit: 200 }),
         api.listAutomationTestCases({ limit: 200 }),
       ]);
-      const map: Record<string, { case_id: string; title: string; type: string; priority: string; created_at: string }> = {};
+      const map: Record<string, LoadedCaseEntry> = {};
       for (const tc of (manualRes.data || [])) {
-        map[tc.case_id] = { case_id: tc.case_id, title: tc.title, type: 'manual', priority: tc.priority || 'P3', created_at: tc.created_at || '' };
+        map[tc.case_id] = {
+          case_id: tc.case_id,
+          id: tc.case_id,
+          title: tc.title,
+          type: 'manual',
+          priority: tc.priority || 'P3',
+          createdAt: tc.created_at || '',
+          tags: tc.tags || [],
+          testCategory: tc.test_category,
+          labId: tc.lab_id,
+          labName: tc.lab_name,
+          catalogPath: tc.catalog_path || [],
+          catalogBreadcrumb: tc.catalog_breadcrumb,
+          defaultOwnerId: tc.owner_id,
+        };
       }
       for (const atc of (autoRes.data || [])) {
-        map[atc.auto_case_id] = { case_id: atc.auto_case_id, title: atc.name, type: 'auto', priority: 'P3', created_at: atc.created_at || '' };
+        map[atc.auto_case_id] = {
+          case_id: atc.auto_case_id,
+          id: atc.auto_case_id,
+          title: atc.name,
+          type: 'auto',
+          priority: 'P3',
+          createdAt: atc.created_at || '',
+          tags: atc.tags || [],
+          framework: atc.framework,
+          defaultOwnerId: atc.maintainer_id,
+        };
       }
       setTestCases(map);
     } catch {
@@ -105,12 +141,21 @@ export function useTestPlan() {
 
   const caseMap = useMemo(() => new Map< string, CaseMapEntry>(
     Object.values(testCases)
-      .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
+      .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))
       .map(tc => [tc.case_id, {
         id: tc.case_id,
         title: tc.title,
-        type: (tc.type === 'auto' ? 'auto' : 'manual') as 'auto' | 'manual',
+        type: tc.type,
         priority: tc.priority,
+        createdAt: tc.createdAt,
+        tags: tc.tags,
+        testCategory: tc.testCategory,
+        labId: tc.labId,
+        labName: tc.labName,
+        catalogPath: tc.catalogPath,
+        catalogBreadcrumb: tc.catalogBreadcrumb,
+        framework: tc.framework,
+        defaultOwnerId: tc.defaultOwnerId,
       }]),
   ), [testCases]);
 
@@ -120,8 +165,8 @@ export function useTestPlan() {
     setError(null);
     try {
       const res = await api.listPlans();
-      const plansData = res.data as Record<string, any> | null;
-      setPlans((plansData?.items as PlanSummary[]) || []);
+      const plansData = res.data as PlanListPayload | null;
+      setPlans(plansData?.items || []);
     } catch {
       setError('获取计划列表失败');
     } finally {
@@ -136,23 +181,6 @@ export function useTestPlan() {
     setRefreshDetail(v => v + 1);
   }, [fetchPlans]);
 
-  // ── Fetch overview ──
-  const fetchOverview = useCallback(async () => {
-    setOverviewLoading(true);
-    try {
-      const res = await api.getPlanOverview();
-      setOverviewData((res.data as Record<string, any>) || null);
-    } catch {
-      setOverviewData(null);
-    } finally {
-      setOverviewLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (showOverview) fetchOverview();
-  }, [showOverview, fetchOverview]);
-
   // ── Fetch users & collections on mount ──
   useEffect(() => {
     api.listUsers({ limit: 200 })
@@ -166,7 +194,22 @@ export function useTestPlan() {
         }).catch(() => setUsers([]));
       });
     api.listCollections()
-      .then(res => setCollections(res.data || []))
+      .then(async res => {
+        const list = res.data || [];
+        const detailed = await Promise.all(list.map(async col => {
+          try {
+            const detail = await api.getCollection(col.collection_id);
+            return {
+              ...col,
+              case_ids: detail.data?.case_ids || [],
+              auto_case_ids: detail.data?.auto_case_ids || [],
+            };
+          } catch {
+            return col;
+          }
+        }));
+        setCollections(detailed);
+      })
       .catch(() => setCollections([]));
   }, []);
 
@@ -174,8 +217,8 @@ export function useTestPlan() {
   const refreshPlanDetail = useCallback(async (planId: string) => {
     if (!planId) { setActivePlanItems([]); return; }
     const res = await api.getPlanDetail(planId);
-    const d = res.data as Record<string, unknown> | undefined;
-    const items = (d?.items as PlanItemSummary[]) || [];
+    const d = res.data as PlanDetailPayload | undefined;
+    const items = d?.items || [];
     setActivePlanItems(items);
     setPlans(prev => prev.map(p =>
       p.plan_id === planId
@@ -304,27 +347,16 @@ export function useTestPlan() {
     }
   }, [activePlanId]);
 
-  // ── Terminate / Delete ──
-  const handleTerminateItem = useCallback(async (_planId: string, itemId: string) => {
-    try {
-      await api.cancelExecution(itemId);
-      if (showOverview) fetchOverview();
-      if (activePlanId) await refreshPlanDetail(activePlanId);
-    } catch (err) {
-      console.error('终止失败:', err);
-    }
-  }, [activePlanId, showOverview, fetchOverview, refreshPlanDetail]);
-
+  // ── Delete ──
   const handleDeleteItem = useCallback(async (planId: string, itemId: string) => {
     try {
       try { await api.cancelExecution(itemId); } catch { /* no task */ }
       await api.deletePlanItem(planId, itemId);
-      if (showOverview) fetchOverview();
       if (activePlanId) await refreshPlanDetail(activePlanId);
     } catch (err) {
       console.error('删除失败:', err);
     }
-  }, [activePlanId, showOverview, fetchOverview, refreshPlanDetail]);
+  }, [activePlanId, refreshPlanDetail]);
 
   const handleDeletePlan = useCallback(async (planId: string) => {
     if (!window.confirm('确定要删除该执行计划及其所有条目？此操作不可撤销。')) return;
@@ -332,17 +364,17 @@ export function useTestPlan() {
       await api.deletePlan(planId);
       setActivePlanId('');
       setActivePlanItems([]);
-      fetchOverview();
+      await fetchPlans();
     } catch (err) {
       console.error('删除计划失败:', err);
     }
-  }, [fetchOverview]);
+  }, [fetchPlans]);
 
   // ── View result ──
   const handleViewResult = useCallback(async (item: PlanItemSummary) => {
     if (!item.execution_task_id && !item.result) return;
     if (item.execution_task_id) {
-      setResultModal({ item, taskData: null, loading: true });
+      setResultModal({ item, taskData: null, timelineData: null, loading: true });
       try {
         const [statusRes, timelineRes] = await Promise.all([
           api.getTaskStatus(item.execution_task_id),
@@ -357,7 +389,7 @@ export function useTestPlan() {
         setResultModal(prev => prev ? { ...prev, taskData: null, loading: false, error: '该任务尚未执行或执行记录已清除' } : null);
       }
     } else {
-      setResultModal({ item, taskData: { manualResult: item.result }, loading: false });
+      setResultModal({ item, taskData: { manualResult: item.result }, timelineData: null, loading: false });
     }
   }, []);
 
@@ -371,16 +403,15 @@ export function useTestPlan() {
     const item = rerunConfirm;
     setRerunConfirm(null);
     try {
-      if ((item as any).archived_at) {
+      if (item.archived_at) {
         try { await api.unarchiveItem(item.item_id); } catch { /* ignore */ }
       }
       await api.rerunPlanItem(item.item_id, { assignee_id: assigneeId || undefined });
       if (activePlanId) await refreshPlanDetail(activePlanId);
-      if (showOverview) fetchOverview();
     } catch (err) {
       console.error('重新执行失败:', err);
     }
-  }, [rerunConfirm, activePlanId, showOverview, fetchOverview, refreshPlanDetail]);
+  }, [rerunConfirm, activePlanId, refreshPlanDetail]);
 
   // ── Wizard ──
   const resetWizard = useCallback(() => {
@@ -435,7 +466,7 @@ export function useTestPlan() {
   const toggleSelectCollection = useCallback(async (col: { collection_id: string; name: string }) => {
     try {
       const res = await api.getCollection(col.collection_id);
-      const data = res.data as any;
+      const data = res.data as CollectionDetailPayload | null;
       const caseIds = [...(data?.case_ids || []), ...(data?.auto_case_ids || [])];
       if (caseIds.length === 0) return;
       setNewPlan(prev => {
@@ -459,29 +490,26 @@ export function useTestPlan() {
 
   return {
     // State
-    plans, loading, error, activePlanId, searchQuery, statusFilter,
+    loading, error, activePlanId, searchQuery, statusFilter,
     activePlanItems, detailLoading, viewMode,
-    editingPlanId, editingItems, selectedAddCaseIds, showAddCases, saving, isEditing,
+    editingItems, selectedAddCaseIds, showAddCases, saving, isEditing,
     users, currentUserId,
-    showOverview, overviewData, overviewLoading,
-    testCases, collections, casesLoading, caseMap,
+    collections, casesLoading, caseMap,
     showWizard, wizardStep, caseSearch, submittingPlan, newPlan,
     resultModal, rerunConfirm,
     activePlan, filteredPlans,
     // Setters
     setActivePlanId, setSearchQuery, setStatusFilter,
-    setViewMode, setEditingItems, setShowAddCases,
-    setShowOverview, setShowWizard,
+    setViewMode, setShowAddCases,
+    setShowWizard,
     setWizardStep, setCaseSearch, setNewPlan,
     setResultModal, setRerunConfirm, setError,
     // Actions
-    fetchPlans, handleRefresh, fetchOverview, loadCases, refreshPlanDetail,
+    handleRefresh, loadCases,
     startEditing, cancelEditing, removeEditingItem, saveEditing,
     handleAddCaseToggle, handleAddSelectedCases, handleUpdateItemAssignee,
-    handleBatchAssign, handleTerminateItem, handleDeleteItem, handleDeletePlan,
+    handleBatchAssign, handleDeleteItem, handleDeletePlan,
     handleViewResult, handleRerunItem, confirmRerun,
     resetWizard, handleCreatePlan, toggleSelectCase, toggleSelectCollection, setAssignment,
   };
 }
-
-export type UseTestPlanReturn = ReturnType<typeof useTestPlan>;

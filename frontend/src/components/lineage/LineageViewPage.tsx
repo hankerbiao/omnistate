@@ -40,12 +40,6 @@ const TYPE_LABELS: Record<string, string> = {
   agent: '代理',
 }
 
-interface LayoutNode {
-  node: LineageNode
-  x: number
-  y: number
-}
-
 function computeLayout(nodes: LineageNode[], edges: LineageEdge[], rootId: string) {
   // BFS from root to assign layers
   const adjacency = new Map<string, string[]>()
@@ -125,8 +119,7 @@ function computeLayout(nodes: LineageNode[], edges: LineageEdge[], rootId: strin
   }
 }
 
-function EdgePath({ source, target, sourcePos, targetPos }: {
-  source: string; target: string
+function EdgePath({ sourcePos, targetPos }: {
   sourcePos: { x: number; y: number }
   targetPos: { x: number; y: number }
 }) {
@@ -213,18 +206,24 @@ export default function LineageViewPage({ entityType, entityId }: LineageViewPag
   const [zoom, setZoom] = useState(0.85)
   const svgRef = useRef<SVGSVGElement>(null)
 
-  useEffect(() => {
-    if (!entityType || !entityId) return
+  const loadGraph = useCallback(async (type: string, id: string) => {
     setLoading(true)
     setError(null)
-    api.getLineageGraph(entityType, entityId)
-      .then(res => { setData(res.data) })
-      .catch(err => {
-        console.warn('API unavailable, using mock data:', err)
-        setData(getLineageMockData(entityType, entityId))
-      })
-      .finally(() => setLoading(false))
-  }, [entityType, entityId])
+    try {
+      const res = await api.getLineageGraph(type, id)
+      setData(res.data)
+    } catch (err) {
+      console.warn('API unavailable, using mock data:', err)
+      setData(getLineageMockData(type, id))
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!entityType || !entityId) return
+    void loadGraph(entityType, entityId)
+  }, [entityType, entityId, loadGraph])
 
   const layout = useMemo(() => {
     if (!data) return null
@@ -237,20 +236,8 @@ export default function LineageViewPage({ entityType, entityId }: LineageViewPag
 
   const handleOpenLineageAgain = useCallback((type: string, id: string) => {
     setSelectedNode(null)
-    setLoading(true)
-    api.getLineageGraph(type, id)
-      .then(res => { setData(res.data) })
-      .catch(err => { setError(err instanceof Error ? err.message : '加载失败') })
-      .finally(() => setLoading(false))
-  }, [])
-
-  // Build quick edge lookup for rendering
-  const edgeSet = useMemo(() => {
-    if (!data) return new Set<string>()
-    const s = new Set<string>()
-    data.edges.forEach(e => s.add(`${e.source}->${e.target}`))
-    return s
-  }, [data])
+    void loadGraph(type, id)
+  }, [loadGraph])
 
   if (loading) {
     return (
@@ -276,7 +263,7 @@ export default function LineageViewPage({ entityType, entityId }: LineageViewPag
     )
   }
 
-  const types = [...new Set(data.nodes.map(n => n.type))]
+  const types = new Set<string>(data.nodes.map(n => n.type))
   const rootNode = data.nodes.find(n => n.id === data.root_id)
 
   return (
@@ -298,7 +285,7 @@ export default function LineageViewPage({ entityType, entityId }: LineageViewPag
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {/* Legend */}
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 11 }}>
-            {Object.entries(TYPE_COLORS).filter(([t]) => types.includes(t)).map(([type, color]) => (
+            {Object.entries(TYPE_COLORS).filter(([type]) => types.has(type)).map(([type, color]) => (
               <span key={type} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                 <span style={{ width: 8, height: 8, borderRadius: '50%', background: color }} />
                 {TYPE_LABELS[type] || type}
@@ -342,8 +329,6 @@ export default function LineageViewPage({ entityType, entityId }: LineageViewPag
               return (
                 <EdgePath
                   key={`edge-${i}`}
-                  source={edge.source}
-                  target={edge.target}
                   sourcePos={{ x: src.x, y: src.y }}
                   targetPos={{ x: tgt.x, y: tgt.y }}
                 />

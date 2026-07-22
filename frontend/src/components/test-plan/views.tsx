@@ -1,5 +1,5 @@
 /**
- * PlanDetailView + StatusBoard + StatusCard + ComponentBoard + DataTable
+ * PlanDetailView + StatusBoard + StatusCard + DataTable
  * Display components for the test plan page.
  * Extracted from the original TestExecutionPlanDemo.tsx.
  */
@@ -30,14 +30,13 @@ interface PlanDetailViewProps {
   onRerunItem?: (item: PlanItemSummary) => void;
   onViewResult?: (item: PlanItemSummary) => void;
   onBatchAssign?: (itemIds: string[], assigneeId: string) => void;
-  onTerminateItem?: (planId: string, itemId: string) => void;
   onDeleteItem?: (planId: string, itemId: string) => void;
   onDeletePlan?: (planId: string) => void;
   onUpdateItemAssignee?: (itemId: string, assigneeId: string) => void;
 }
 
 export function PlanDetailView(props: PlanDetailViewProps) {
-  const { plan, items, viewMode, onViewModeChange, isEditing, onStartEditing, onCancelEditing, onSaveEditing, onRemoveItem, saving, onShowAddCases, users, onViewResult, onRerunItem, onBatchAssign, onTerminateItem, onDeleteItem, onDeletePlan, onUpdateItemAssignee } = props;
+  const { plan, items, viewMode, onViewModeChange, isEditing, onStartEditing, onCancelEditing, onSaveEditing, onRemoveItem, saving, onShowAddCases, users, onViewResult, onRerunItem, onBatchAssign, onDeleteItem, onDeletePlan, onUpdateItemAssignee } = props;
   const meta = PLAN_STATUS_META[plan.status] || { label: plan.status, color: 'var(--text-tertiary)' };
 
   const statusCounts = useMemo(() => {
@@ -52,31 +51,38 @@ export function PlanDetailView(props: PlanDetailViewProps) {
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: '16px 20px' }}>
       {/* Plan header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', background: 'var(--surface-primary)', borderRadius: 8, border: '1px solid var(--border-subtle)', flexShrink: 0, marginBottom: 12 }}>
-        <span style={{ fontSize: 14, fontWeight: 600 }}>{plan.title}</span>
-        <Badge variant={plan.status === 'active' ? 'success' : 'secondary'}>{meta.label}</Badge>
-        <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{plan.start_date || '-'} 至 {plan.end_date || '-'}</span>
-        <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>进度 {plan.progress_percent ?? 0}% ({plan.done_count}/{plan.item_count})</span>
-        <div style={{ width: 60, height: 3, background: 'var(--surface-tertiary)', borderRadius: 2, overflow: 'hidden' }}>
-          <div style={{ width: `${plan.progress_percent ?? 0}%`, height: '100%', background: plan.status === 'active' ? 'var(--accent-primary)' : 'var(--text-tertiary)', borderRadius: 2 }} />
-        </div>
-        <div className="flex gap-1 text-[10px]">
-          {([['pending', '待执行', 'var(--text-tertiary)'], ['running', '执行中', 'var(--accent-primary)'], ['fail', '失败', 'var(--status-error)'], ['done', '已完成', 'var(--status-success)']] as const).map(([key, label, color]) =>
-            statusCounts[key] > 0 && <span key={key} style={{ padding: '1px 5px', borderRadius: 4, background: `${color}12`, color, fontWeight: 600 }}>{label}: {statusCounts[key]}</span>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '12px 16px', background: 'var(--surface-primary)', borderRadius: 8, border: '1px solid var(--border-subtle)', flexShrink: 0, marginBottom: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+          <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{plan.title}</span>
+          <Badge variant={plan.status === 'active' ? 'success' : 'secondary'}>{meta.label}</Badge>
+          <div style={{ flex: 1 }} />
+          {isEditing ? (
+            <div className="flex gap-1.5">
+              <button className="btn btn--ghost btn--sm" onClick={onCancelEditing} disabled={saving} style={{ fontSize: 12 }}>取消</button>
+              <button className="btn btn--primary btn--sm" onClick={() => onSaveEditing()} disabled={saving} style={{ fontSize: 12 }}>{saving ? '保存中...' : '保存更改'}</button>
+            </div>
+          ) : (
+            <div className="flex gap-1.5">
+              <button className="btn btn--ghost btn--sm" onClick={onStartEditing} style={{ fontSize: 12 }}>编辑</button>
+              {onDeletePlan && <button className="btn btn--ghost btn--sm" onClick={() => onDeletePlan(plan.plan_id)} style={{ fontSize: 12, color: 'var(--status-error)' }}>删除</button>}
+            </div>
           )}
         </div>
-        <div style={{ flex: 1 }} />
-        {isEditing ? (
-          <div className="flex gap-1.5">
-            <button className="btn btn--ghost btn--sm" onClick={onCancelEditing} disabled={saving} style={{ fontSize: 12 }}>取消</button>
-            <button className="btn btn--primary btn--sm" onClick={() => onSaveEditing()} disabled={saving} style={{ fontSize: 12 }}>{saving ? '保存中...' : '保存更改'}</button>
+        <p style={{ margin: 0, fontSize: 12, color: plan.description ? 'var(--text-secondary)' : 'var(--text-tertiary)', lineHeight: 1.5 }}>
+          {plan.description || '暂无计划描述'}
+        </p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>周期 {plan.start_date || '-'} 至 {plan.end_date || '-'}</span>
+          <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>进度 {plan.progress_percent ?? 0}% ({plan.done_count}/{plan.item_count})</span>
+          <div style={{ width: 84, height: 4, background: 'var(--surface-tertiary)', borderRadius: 2, overflow: 'hidden' }}>
+            <div style={{ width: `${plan.progress_percent ?? 0}%`, height: '100%', background: plan.status === 'active' ? 'var(--accent-primary)' : 'var(--text-tertiary)', borderRadius: 2 }} />
           </div>
-        ) : (
-          <div className="flex gap-1.5">
-            <button className="btn btn--ghost btn--sm" onClick={onStartEditing} style={{ fontSize: 12 }}>编辑</button>
-            {onDeletePlan && <button className="btn btn--ghost btn--sm" onClick={() => onDeletePlan(plan.plan_id)} style={{ fontSize: 12, color: 'var(--status-error)' }}>删除</button>}
+          <div className="flex gap-1 text-[10px]">
+            {([['pending', '待执行', 'var(--text-tertiary)'], ['running', '执行中', 'var(--accent-primary)'], ['fail', '失败', 'var(--status-error)'], ['done', '已完成', 'var(--status-success)']] as const).map(([key, label, color]) =>
+              statusCounts[key] > 0 && <span key={key} style={{ padding: '1px 5px', borderRadius: 4, background: `${color}12`, color, fontWeight: 600 }}>{label}: {statusCounts[key]}</span>
+            )}
           </div>
-        )}
+        </div>
       </div>
 
       {/* View switcher */}
@@ -99,9 +105,9 @@ export function PlanDetailView(props: PlanDetailViewProps) {
             {isEditing && <button className="btn btn--ghost btn--sm" onClick={onShowAddCases} style={{ fontSize: 12 }}>添加用例</button>}
           </div>
         ) : viewMode === 'statusBoard' ? (
-          <StatusBoard items={items} isEditing={isEditing} onRemoveItem={onRemoveItem} users={users} onViewResult={onViewResult} onRerunItem={onRerunItem} onTerminateItem={onTerminateItem} onDeleteItem={onDeleteItem} onUpdateItemAssignee={onUpdateItemAssignee} />
+          <StatusBoard items={items} isEditing={isEditing} onRemoveItem={onRemoveItem} users={users} onViewResult={onViewResult} onRerunItem={onRerunItem} onDeleteItem={onDeleteItem} onUpdateItemAssignee={onUpdateItemAssignee} />
         ) : (
-          <DataTable items={items} isEditing={isEditing} onRemoveItem={onRemoveItem} users={users} onViewResult={onViewResult} onRerunItem={onRerunItem} onBatchAssign={onBatchAssign} onTerminateItem={onTerminateItem} onDeleteItem={onDeleteItem} onUpdateItemAssignee={onUpdateItemAssignee} />
+          <DataTable items={items} isEditing={isEditing} onRemoveItem={onRemoveItem} users={users} onViewResult={onViewResult} onRerunItem={onRerunItem} onBatchAssign={onBatchAssign} onDeleteItem={onDeleteItem} onUpdateItemAssignee={onUpdateItemAssignee} />
         )}
       </div>
     </div>
@@ -118,7 +124,6 @@ interface ItemActions {
   users: UserResponse[];
   onViewResult?: (item: PlanItemSummary) => void;
   onRerunItem?: (item: PlanItemSummary) => void;
-  onTerminateItem?: (planId: string, itemId: string) => void;
   onDeleteItem?: (planId: string, itemId: string) => void;
   onUpdateItemAssignee?: (itemId: string, assigneeId: string) => void;
 }
@@ -211,7 +216,12 @@ function DataTable({ items, ...actions }: { items: PlanItemSummary[] } & ItemAct
   const [batchAssigneeId, setBatchAssigneeId] = useState('');
 
   const handleSelectAll = () => setSelectedItemIds(selectedItemIds.size === items.length ? new Set() : new Set(items.map(i => i.item_id)));
-  const handleSelectItem = (itemId: string) => { const s = new Set(selectedItemIds); s.has(itemId) ? s.delete(itemId) : s.add(itemId); setSelectedItemIds(s); };
+  const handleSelectItem = (itemId: string) => {
+    const s = new Set(selectedItemIds);
+    if (s.has(itemId)) s.delete(itemId);
+    else s.add(itemId);
+    setSelectedItemIds(s);
+  };
   const handleBatchAssign = () => { if (onBatchAssign && selectedItemIds.size > 0 && batchAssigneeId) { onBatchAssign(Array.from(selectedItemIds), batchAssigneeId); setSelectedItemIds(new Set()); setBatchAssigneeId(''); } };
 
   return (

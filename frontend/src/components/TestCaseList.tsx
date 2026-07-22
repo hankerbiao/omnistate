@@ -90,10 +90,6 @@ const TestCaseList: React.FC = () => {
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
-  const handleSelect = (id: string) => {
-    setSelectedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  };
-
   const fwIcon = (fw?: string) => fw ? (FW_ICONS[fw] || '⚙️') : '⚙️';
   const fwColor = (fw?: string) => fw ? (FW_COLORS[fw] || 'var(--accent-purple)') : 'var(--accent-purple)';
 

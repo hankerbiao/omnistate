@@ -10,13 +10,11 @@
  *
  * 本文件只负责：布局编排 + 导入子模块 + 渲染 Modals
  */
-import { CalendarClock, RefreshCw, Plus, Eye, AlertCircle } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
-import { EmptyState, LoadingState, ErrorState } from '@/components/ui/states';
+import { CalendarClock, RefreshCw, Plus, AlertCircle } from 'lucide-react';
+import { EmptyState, LoadingState } from '@/components/ui/states';
 import { useTestPlan } from './test-plan/useTestPlan';
 import { PlanSidebar } from './test-plan/PlanSidebar';
 import { PlanDetailView } from './test-plan/views';
-import { OverviewView } from './test-plan/OverviewView';
 import { AddCasesModal } from './test-plan/modals/AddCasesModal';
 import { CreatePlanWizard } from './test-plan/modals/CreatePlanWizard';
 import { ResultModal } from './test-plan/modals/ResultModal';
@@ -55,9 +53,6 @@ export default function TestExecutionPlanDemo() {
           ))}
         </div>
         <div style={{ flex: 1 }} />
-        <button type="button" className={`btn btn--sm ${h.showOverview ? 'btn--primary' : 'btn--secondary'}`} onClick={() => h.setShowOverview(v => !v)}>
-          <Eye size={14} /> {h.showOverview ? '计划列表' : '运行总览'}
-        </button>
         {h.error && (
           <div className="flex items-center gap-1.5 text-xs text-[var(--status-error)]">
             <AlertCircle size={12} /> {h.error}
@@ -68,51 +63,35 @@ export default function TestExecutionPlanDemo() {
 
       {/* ── Main content ── */}
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-        {h.showOverview ? (
-          <OverviewView
-            data={h.overviewData}
-            loading={h.overviewLoading}
-            onRefresh={h.fetchOverview}
-            onSelectPlan={(planId) => { h.setShowOverview(false); h.setActivePlanId(planId); }}
-            users={h.users}
-            onViewResult={h.handleViewResult}
-            onDeleteItem={h.handleTerminateItem}
-            onCancelExecution={(itemId: string) => h.handleTerminateItem('', itemId)}
-          />
-        ) : (
-          <>
-            <PlanSidebar plans={h.filteredPlans} activePlanId={h.activePlanId} loading={h.loading} searchQuery={h.searchQuery} onSelect={h.setActivePlanId} />
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--surface-secondary)' }}>
-              {!h.activePlan ? (
-                <EmptyState title="从左侧选择一个计划" description="或点击「新建计划」创建一个新的执行计划" className="flex-1" />
-              ) : h.detailLoading ? (
-                <LoadingState title="加载计划详情..." className="flex-1" />
-              ) : (
-                <PlanDetailView
-                  plan={h.activePlan}
-                  items={h.isEditing ? h.editingItems : h.activePlanItems}
-                  viewMode={h.viewMode}
-                  onViewModeChange={h.setViewMode}
-                  isEditing={h.isEditing}
-                  onStartEditing={h.startEditing}
-                  onCancelEditing={h.cancelEditing}
-                  onSaveEditing={h.saveEditing}
-                  onRemoveItem={h.removeEditingItem}
-                  saving={h.saving}
-                  onShowAddCases={() => { h.setShowAddCases(true); h.loadCases(); }}
-                  users={h.users}
-                  onViewResult={h.handleViewResult}
-                  onRerunItem={h.handleRerunItem}
-                  onBatchAssign={h.handleBatchAssign}
-                  onTerminateItem={h.handleTerminateItem}
-                  onDeleteItem={h.handleDeleteItem}
-                  onDeletePlan={h.handleDeletePlan}
-                  onUpdateItemAssignee={h.handleUpdateItemAssignee}
-                />
-              )}
-            </div>
-          </>
-        )}
+        <PlanSidebar plans={h.filteredPlans} activePlanId={h.activePlanId} loading={h.loading} searchQuery={h.searchQuery} onSelect={h.setActivePlanId} />
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--surface-secondary)' }}>
+          {!h.activePlan ? (
+            <EmptyState title="从左侧选择一个计划" description="或点击「新建计划」创建一个新的执行计划" className="flex-1" />
+          ) : h.detailLoading ? (
+            <LoadingState title="加载计划详情..." className="flex-1" />
+          ) : (
+            <PlanDetailView
+              plan={h.activePlan}
+              items={h.isEditing ? h.editingItems : h.activePlanItems}
+              viewMode={h.viewMode}
+              onViewModeChange={h.setViewMode}
+              isEditing={h.isEditing}
+              onStartEditing={h.startEditing}
+              onCancelEditing={h.cancelEditing}
+              onSaveEditing={h.saveEditing}
+              onRemoveItem={h.removeEditingItem}
+              saving={h.saving}
+              onShowAddCases={() => { h.setShowAddCases(true); h.loadCases(); }}
+              users={h.users}
+              onViewResult={h.handleViewResult}
+              onRerunItem={h.handleRerunItem}
+              onBatchAssign={h.handleBatchAssign}
+              onDeleteItem={h.handleDeleteItem}
+              onDeletePlan={h.handleDeletePlan}
+              onUpdateItemAssignee={h.handleUpdateItemAssignee}
+            />
+          )}
+        </div>
       </div>
 
       {/* ── Modals ── */}

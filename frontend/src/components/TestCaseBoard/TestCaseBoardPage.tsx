@@ -1,5 +1,6 @@
 /** 用例看板 — 左侧多级 Lab 目录树 + 右侧卡片网格 */
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { AlertTriangle, CheckSquare, ChevronRight, ClipboardList, Folder, Plus, RefreshCw, Search, Trash2, X, Zap } from 'lucide-react';
 import { api } from '../../services/api';
 import { getCatalogLabs } from '../../services/catalogLabsCache';
 import type {
@@ -31,23 +32,7 @@ const STATUS_COLORS: Record<string, string> = {
   PENDING_REVIEW: '#f59e0b', IN_REVIEW: '#3b82f6', REJECTED: '#ef4444',
 };
 
-
-const IconSearch = () => (
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
-  </svg>
-);
-const IconPlus = () => (
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-    <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-  </svg>
-);
-const IconRefresh = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" />
-    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-  </svg>
-);
+const TAG_DISPLAY_LIMIT = 18;
 
 export default function TestCaseBoardPage() {
   const [autoCases, setAutoCases] = useState<AutomationTestCaseResponse[]>([]);
@@ -74,11 +59,6 @@ export default function TestCaseBoardPage() {
   const [deleteTarget, setDeleteTarget] = useState<UnifiedCaseItem | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  // ── Delete all confirmation ──
-  const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false);
-  const [deletingAll, setDeletingAll] = useState(false);
-  const [deleteAllProgress, setDeleteAllProgress] = useState<{ current: number; total: number } | null>(null);
-
   const fetchAll = useCallback(async () => {
     setLoading(true);
     try {
@@ -90,9 +70,14 @@ export default function TestCaseBoardPage() {
       setAutoCases(autoRes.data || []);
       setManualCases(manualRes.data || []);
       setLabs(labItems);
-      if (!selectedLabId && labItems.length > 0) setSelectedLabId(labItems[0].lab_id);
-    } catch { /* ignore */ }
-    setLoading(false);
+      if (labItems.length > 0) {
+        setSelectedLabId(prev => prev || labItems[0].lab_id);
+      }
+    } catch {
+      /* ignore */
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
@@ -128,6 +113,46 @@ export default function TestCaseBoardPage() {
   // ── 所有 Tag 去重排序 ──
   const allTags = useMemo(() => collectAllTags(cards), [cards]);
 
+  const activeFilters = useMemo(() => {
+    const items: string[] = [];
+    if (searchQuery.trim()) items.push(`搜索: ${searchQuery.trim()}`);
+    if (typeFilter !== 'all') items.push(`类型: ${getCaseTypeLabel(typeFilter)}`);
+    if (statusFilter !== 'all') items.push(`状态: ${getCaseStatusLabel(statusFilter)}`);
+    if (selectedPrefix.length > 0) items.push(`目录: ${selectedPrefix.join(' / ')}`);
+    if (tagFilter.length > 0) items.push(`标签: ${tagFilter.join(', ')}`);
+    return items;
+  }, [searchQuery, typeFilter, statusFilter, selectedPrefix, tagFilter]);
+
+  const visibleTags = useMemo(() => {
+    const active = tagFilter.filter(tag => allTags.includes(tag));
+    const inactive = allTags.filter(tag => !tagFilter.includes(tag));
+    return [...active, ...inactive].slice(0, TAG_DISPLAY_LIMIT);
+  }, [allTags, tagFilter]);
+
+  const selectedLabName = useMemo(
+    () => labs.find(lab => lab.lab_id === selectedLabId)?.name || '全部 Lab',
+    [labs, selectedLabId],
+  );
+
+  const summary = useMemo(() => {
+    const active = cards.filter(card => card.status === 'ACTIVE' || card.status === 'DONE').length;
+    return {
+      total: cards.length,
+      filtered: filtered.length,
+      manual: manualCases.length,
+      auto: autoCases.length,
+      active,
+    };
+  }, [cards, filtered.length, manualCases.length, autoCases.length]);
+
+  const clearFilters = () => {
+    setSearchQuery('');
+    setTypeFilter('all');
+    setStatusFilter('all');
+    setSelectedPrefix([]);
+    setTagFilter([]);
+  };
+
   const toggleTag = (tag: string) => {
     setTagFilter(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]);
   };
@@ -154,49 +179,29 @@ export default function TestCaseBoardPage() {
     setDeleting(false);
   }, [deleteTarget, fetchAll]);
 
-  const handleDeleteAll = useCallback(async () => {
-    setDeletingAll(true);
-    setDeleteAllProgress({ current: 0, total: cards.length });
-    let successCount = 0;
-    let failCount = 0;
-    const CONCURRENCY = 5;
-    try {
-      // Process in batches to avoid overwhelming the server
-      for (let i = 0; i < cards.length; i += CONCURRENCY) {
-        const batch = cards.slice(i, i + CONCURRENCY);
-        const results = await Promise.allSettled(
-          batch.map(card =>
-            card.type === 'manual'
-              ? api.deleteTestCase(card.id)
-              : api.deleteAutomationTestCase(card.id)
-          )
-        );
-        results.forEach(r => {
-          if (r.status === 'fulfilled') successCount++;
-          else failCount++;
-        });
-        setDeleteAllProgress({ current: Math.min(i + CONCURRENCY, cards.length), total: cards.length });
-      }
-      setShowDeleteAllConfirm(false);
-      if (failCount > 0) {
-        alert(`删除完成：成功 ${successCount} 个，失败 ${failCount} 个`);
-      }
-      await fetchAll();
-    } catch (err) {
-      console.error('批量删除失败:', err);
-      alert('批量删除失败: ' + (err instanceof Error ? err.message : '未知错误'));
-    }
-    setDeletingAll(false);
-    setDeleteAllProgress(null);
-  }, [cards, fetchAll]);
-
-  const stats = useMemo(() => ({
-    total: cards.length, auto: autoCases.length, manual: manualCases.length,
-  }), [cards, autoCases, manualCases]);
-
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ flex: 1, minHeight: 0, padding: 'var(--space-5) var(--space-6)', display: 'flex', gap: 16, overflow: 'hidden' }}>
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ flex: 1, minHeight: 0, padding: 'var(--space-5) var(--space-6)', display: 'flex', flexDirection: 'column', gap: 14, overflow: 'hidden' }}>
+        <section style={summaryBarStyle}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+              <ClipboardList size={18} color="var(--accent-primary)" />
+              <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>用例看板</h2>
+              <span style={softPillStyle}>{selectedLabName}{selectedPrefix.length > 0 ? ` / ${selectedPrefix.join(' / ')}` : ''}</span>
+            </div>
+            <p style={{ margin: 0, fontSize: 12, color: 'var(--text-secondary)' }}>
+              当前显示 {summary.filtered} 条，共 {summary.total} 条。按目录、类型、状态、标签快速收敛用例。
+            </p>
+          </div>
+          <div style={summaryStatsStyle}>
+            <SummaryMetric icon={<ClipboardList size={15} />} label="总用例" value={summary.total} tone="var(--accent-primary)" />
+            <SummaryMetric icon={<CheckSquare size={15} />} label="手工" value={summary.manual} tone="#6366f1" />
+            <SummaryMetric icon={<Zap size={15} />} label="自动化" value={summary.auto} tone="var(--accent-secondary)" />
+            <SummaryMetric icon={<CheckSquare size={15} />} label="活跃/完成" value={summary.active} tone="var(--status-success)" />
+          </div>
+        </section>
+
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: 16, overflow: 'hidden' }}>
         {/* 左侧：Lab 目录树 */}
         <div style={{
           width: 220, minWidth: 220, display: 'flex', flexDirection: 'column',
@@ -208,11 +213,14 @@ export default function TestCaseBoardPage() {
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
             padding: '10px 12px', borderBottom: '1px solid var(--border-default)',
           }}>
-            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>📁 目录</span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>
+              <Folder size={14} />目录
+            </span>
             <button
               onClick={() => setShowCatalog(false)}
               style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: 'var(--text-tertiary)', padding: 0 }}
-            >✕</button>
+              aria-label="隐藏目录"
+            ><X size={14} /></button>
           </div>
           <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
             {labs.length === 0 ? (
@@ -230,71 +238,81 @@ export default function TestCaseBoardPage() {
         </div>
 
         {/* 右侧：工具栏 + 卡片网格 */}
-        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 12, overflow: 'hidden' }}>
           {/* Toolbar */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-            {!showCatalog && (
-              <button onClick={() => setShowCatalog(true)} style={{
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border-default)',
-                background: 'var(--surface-primary)', cursor: 'pointer', fontSize: 14, color: 'var(--text-primary)',
-              }} title="显示目录">▶</button>
-            )}
+          <div style={toolbarStyle}>
+            <div style={toolbarMainStyle}>
+              {!showCatalog && (
+                <button onClick={() => setShowCatalog(true)} style={iconButtonStyle} title="显示目录" aria-label="显示目录">
+                  <ChevronRight size={16} />
+                </button>
+              )}
 
-            <div style={{ position: 'relative', flex: '0 1 240px' }}>
-              <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)', display: 'flex' }}>
-                <IconSearch />
-              </span>
-              <input type="text" placeholder="搜索用例名称或 ID..." value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                style={{ width: '100%', padding: '7px 10px 7px 30px', borderRadius: 8,
-                  border: '1px solid var(--border-default)', fontSize: 13, outline: 'none', backgroundColor: 'var(--surface-primary)', color: 'var(--text-primary)', boxSizing: 'border-box' }} />
+              <div style={{ position: 'relative', flex: '1 1 280px', minWidth: 220, maxWidth: 420 }}>
+                <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)', display: 'flex' }}>
+                  <Search size={15} />
+                </span>
+                <input type="search" placeholder="搜索用例名称或 ID..." value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  style={{ width: '100%', padding: '7px 10px 7px 30px', borderRadius: 8,
+                    border: '1px solid var(--border-default)', fontSize: 13, outline: 'none', backgroundColor: 'var(--surface-primary)', color: 'var(--text-primary)', boxSizing: 'border-box' }} />
+              </div>
+
+              <div style={{ display: 'flex', background: 'var(--surface-secondary)', borderRadius: 8, padding: 2 }}>
+                {PICKER_TYPE_FILTERS.map(({ key, label }) => (
+                  <button key={key} onClick={() => setTypeFilter(key)} style={{
+                    padding: '5px 12px', borderRadius: 6, border: 'none',
+                    fontSize: 12, fontWeight: 500, cursor: 'pointer',
+                    background: typeFilter === key ? 'var(--surface-primary)' : 'transparent',
+                    color: typeFilter === key ? 'var(--text-primary)' : 'var(--text-secondary)',
+                    boxShadow: typeFilter === key ? 'var(--shadow-sm)' : 'none',
+                  }}>{label}</button>
+                ))}
+              </div>
+
+              <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
+                style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid var(--border-default)',
+                  fontSize: 12, color: 'var(--text-primary)', background: 'var(--surface-primary)', cursor: 'pointer' }}>
+                <option value="all">全部状态</option>
+                {statusOptions.map(s => (
+                  <option key={s} value={s}>{getCaseStatusLabel(s)}</option>
+                ))}
+              </select>
             </div>
 
-            <div style={{ display: 'flex', background: 'var(--surface-secondary)', borderRadius: 8, padding: 2 }}>
-              {PICKER_TYPE_FILTERS.map(({ key, label }) => (
-                <button key={key} onClick={() => setTypeFilter(key)} style={{
-                  padding: '5px 12px', borderRadius: 6, border: 'none',
-                  fontSize: 12, fontWeight: 500, cursor: 'pointer',
-                  background: typeFilter === key ? 'var(--surface-primary)' : 'transparent',
-                  color: typeFilter === key ? 'var(--text-primary)' : 'var(--text-secondary)',
-                  boxShadow: typeFilter === key ? 'var(--shadow-sm)' : 'none',
-                }}>{label}</button>
-              ))}
+            <div style={toolbarActionsStyle}>
+              <span style={{ fontSize: 12, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>{summary.filtered} / {summary.total} 条</span>
+              {activeFilters.length > 0 && (
+                <button onClick={clearFilters} style={ghostButtonStyle}>清除筛选</button>
+              )}
+              <button onClick={() => setShowCreateManual(true)} aria-label="创建手工用例" style={{ ...btnStyle, background: 'var(--accent-primary)', color: '#fff', border: 'none' }}>
+                <Plus size={15} /> 手工
+              </button>
+              <button onClick={() => setShowCreateAuto(true)} style={{ ...btnStyle, background: 'var(--accent-secondary)', color: '#fff', border: 'none' }}>
+                <Plus size={15} /> 自动
+              </button>
+              <button onClick={fetchAll} disabled={loading} title="刷新" aria-label="刷新用例" style={{ ...iconButtonStyle, opacity: loading ? 0.65 : 1 }}>
+                <RefreshCw size={14} />
+              </button>
             </div>
-
-            <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
-              style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid var(--border-default)',
-                fontSize: 12, color: 'var(--text-primary)', background: 'var(--surface-primary)', cursor: 'pointer' }}>
-              <option value="all">全部状态</option>
-              {statusOptions.map(s => (
-                <option key={s} value={s}>{getCaseStatusLabel(s)}</option>
-              ))}
-            </select>
-
-            <div style={{ flex: 1 }} />
-            <span style={{ fontSize: 12, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>{filtered.length} / {stats.total} 条</span>
-            {selectedIds.size > 0 && (
-              <span style={{ fontSize: 12, color: 'var(--accent-primary)', fontWeight: 500 }}>已选 {selectedIds.size}</span>
-            )}
-            <button onClick={() => setShowCreateManual(true)} aria-label="创建手工用例" style={{ ...btnStyle, background: 'var(--accent-primary)', color: '#fff', border: 'none' }}>
-              <IconPlus /> 手工
-            </button>
-            <button onClick={() => setShowCreateAuto(true)} style={{ ...btnStyle, background: 'var(--accent-secondary)', color: '#fff', border: 'none' }}>
-              <IconPlus /> 自动
-            </button>
-            <button onClick={() => setShowDeleteAllConfirm(true)} style={{ ...btnStyle, background: 'var(--surface-primary)', color: 'var(--status-error)', border: '1px solid var(--status-error)' }}>
-              🗑 删除全部
-            </button>
-            <button onClick={fetchAll} style={{ ...btnStyle, background: 'var(--surface-primary)', color: 'var(--text-primary)', border: '1px solid var(--border-default)' }}>
-              <IconRefresh />
-            </button>
           </div>
 
-          {/* Tag chips */}
+          {activeFilters.length > 0 && (
+            <div style={activeFilterBarStyle}>
+              {activeFilters.map(item => <span key={item} style={softPillStyle}>{item}</span>)}
+            </div>
+          )}
+
+          {selectedIds.size > 0 && (
+            <div style={bulkBarStyle}>
+              <span style={{ fontSize: 12, color: 'var(--accent-primary)', fontWeight: 600 }}>已选 {selectedIds.size} 条</span>
+              <button type="button" onClick={() => setSelectedIds(new Set())} style={ghostButtonStyle}>取消选择</button>
+            </div>
+          )}
+
           {allTags.length > 0 && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap', flexShrink: 0 }}>
-              {allTags.map(tag => {
+            <div style={tagBarStyle}>
+              {visibleTags.map(tag => {
                 const active = tagFilter.includes(tag);
                 return (
                   <button key={tag} onClick={() => toggleTag(tag)} style={{
@@ -306,99 +324,103 @@ export default function TestCaseBoardPage() {
                     transition: 'all 0.1s',
                   }}>
                     {tag}
-                    {active && <span style={{ fontSize: 12, lineHeight: 1 }}>✕</span>}
+                    {active && <X size={11} />}
                   </button>
                 );
               })}
+              {allTags.length > visibleTags.length && (
+                <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>+{allTags.length - visibleTags.length} 个标签</span>
+              )}
               {tagFilter.length > 0 && (
-                <button onClick={() => setTagFilter([])} style={{
-                  background: 'none', border: 'none', cursor: 'pointer',
-                  fontSize: 11, color: 'var(--text-tertiary)', padding: '3px 6px',
-                }}>清除</button>
+                <button onClick={() => setTagFilter([])} style={ghostButtonStyle}>清除标签</button>
               )}
             </div>
           )}
 
           {/* Card Grid */}
-          <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
+          <div style={{ flex: 1, minHeight: 0, overflow: 'auto', paddingRight: 2 }}>
             {loading && filtered.length === 0 ? (
-              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 200, color: 'var(--text-tertiary)' }}>加载中...</div>
+              <EmptyBoard title="加载中..." />
             ) : filtered.length === 0 ? (
-              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 200, color: 'var(--text-tertiary)' }}>没有匹配的用例</div>
+              <EmptyBoard
+                title="没有匹配的用例"
+                action={activeFilters.length > 0 ? <button onClick={clearFilters} style={{ ...btnStyle, border: '1px solid var(--border-default)', background: 'var(--surface-primary)', color: 'var(--text-primary)' }}>清除筛选</button> : undefined}
+              />
             ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 10 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12, alignItems: 'stretch' }}>
                 {filtered.map(card => {
                   const sc = STATUS_COLORS[card.status] || '#9ca3af';
                   const isSel = selectedIds.has(card.id);
                   return (
                     <div key={card.id} onClick={() => setSelectedCase(card)} style={{
-                      background: 'var(--surface-primary)', borderRadius: 10, border: `1px solid ${isSel ? 'var(--accent-primary)' : 'var(--border-default)'}`,
-                      padding: '12px 14px', cursor: 'pointer', position: 'relative',
-                      boxShadow: 'var(--shadow-xs)',
-                      transition: 'box-shadow 0.15s, border-color 0.15s', display: 'flex', flexDirection: 'column', gap: 8,
+                      background: 'var(--surface-primary)', borderRadius: 8, border: `1px solid ${isSel ? 'var(--accent-primary)' : 'var(--border-default)'}`,
+                      padding: '12px 14px 14px', cursor: 'pointer', position: 'relative',
+                      boxShadow: isSel ? 'var(--shadow-sm)' : 'var(--shadow-xs)',
+                      transition: 'box-shadow 0.15s, border-color 0.15s', display: 'flex', flexDirection: 'column', gap: 10,
+                      minHeight: 132,
                     }}
                       onMouseEnter={e => { e.currentTarget.style.boxShadow = 'var(--shadow-md)'; e.currentTarget.style.borderColor = 'var(--accent-primary)'; }}
-                      onMouseLeave={e => { e.currentTarget.style.boxShadow = 'var(--shadow-xs)'; e.currentTarget.style.borderColor = isSel ? 'var(--accent-primary)' : 'var(--border-default)'; }}
+                      onMouseLeave={e => { e.currentTarget.style.boxShadow = isSel ? 'var(--shadow-sm)' : 'var(--shadow-xs)'; e.currentTarget.style.borderColor = isSel ? 'var(--accent-primary)' : 'var(--border-default)'; }}
                     >
-                      <div style={{ position: 'absolute', top: 8, right: 8, zIndex: 1 }}
-                        onClick={e => { e.stopPropagation(); toggleSelect(card.id); }}>
-                        <input type="checkbox" checked={isSel} readOnly style={{ accentColor: 'var(--accent-primary)', cursor: 'pointer' }} />
+                      <label style={cardCheckboxStyle} onClick={e => e.stopPropagation()}>
+                        <input type="checkbox" checked={isSel} onChange={() => toggleSelect(card.id)} style={{ accentColor: 'var(--accent-primary)', cursor: 'pointer' }} />
+                      </label>
+
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, paddingRight: 28 }}>
+                        <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', backgroundColor: sc, flexShrink: 0, marginTop: 6 }} />
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.45, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{card.title}</div>
+                          <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                            <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: 'var(--text-tertiary)' }}>{card.caseId}</span>
+                            <span style={{ padding: '1px 6px', borderRadius: 6, fontSize: 10, background: `${sc}15`, color: sc, fontWeight: 600 }}>
+                              {getCaseStatusLabel(card.status)}
+                            </span>
+                          </div>
+                        </div>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingRight: 24 }}>
-                        <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', backgroundColor: sc, flexShrink: 0 }} />
-                        <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{card.title}</span>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: 'var(--text-secondary)' }}>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', fontSize: 11, color: 'var(--text-secondary)' }}>
                         <span style={{
                           fontSize: 10, fontWeight: 600, padding: '1px 8px', borderRadius: 8,
                           background: card.type === 'auto' ? 'rgba(6, 182, 212, 0.1)' : 'rgba(99, 102, 241, 0.1)',
                           color: card.type === 'auto' ? 'var(--accent-secondary)' : 'var(--accent-primary)',
                           border: `1px solid ${card.type === 'auto' ? 'rgba(6, 182, 212, 0.2)' : 'rgba(99, 102, 241, 0.2)'}`,
                         }}>{getCaseTypeLabel(card.type)}</span>
-                        <span style={{ fontFamily: 'JetBrains Mono, monospace', color: 'var(--text-tertiary)' }}>{card.caseId}</span>
-                        <div style={{ flex: 1 }} />
-                        <span style={{ padding: '1px 6px', borderRadius: 6, fontSize: 10, background: `${sc}15`, color: sc, fontWeight: 500 }}>
-                          {getCaseStatusLabel(card.status)}
-                        </span>
-                        {card.framework && <span style={{ color: 'var(--text-tertiary)' }}>{card.framework}</span>}
-                        {card.catalogPath && (
-                          <span style={{ color: 'var(--text-tertiary)', fontSize: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 120 }}>
-                            {card.catalogPath.join(' ▸ ')}
-                          </span>
-                        )}
+                        {card.priority && <span style={miniMetaStyle}>{card.priority}</span>}
+                        {card.framework && <span style={miniMetaStyle}>{card.framework}</span>}
+                        {card.catalogPath && <span style={miniMetaStyle}>{card.catalogPath.join(' / ')}</span>}
                       </div>
-                      {/* Tags row */}
+
                       {card.tags && card.tags.length > 0 && (
-                        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                          {card.tags.map(t => (
+                        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 'auto', paddingRight: 30 }}>
+                          {card.tags.slice(0, 4).map(t => (
                             <span key={t} style={{
-                              fontSize: 9, padding: '1px 6px', borderRadius: 8,
-                            background: tagFilter.includes(t) ? 'var(--status-info-bg)' : 'var(--surface-secondary)',
-                            color: tagFilter.includes(t) ? 'var(--status-info)' : 'var(--text-secondary)',
+                              fontSize: 10, padding: '1px 6px', borderRadius: 8,
+                              background: tagFilter.includes(t) ? 'var(--status-info-bg)' : 'var(--surface-secondary)',
+                              color: tagFilter.includes(t) ? 'var(--status-info)' : 'var(--text-secondary)',
                             }}>{t}</span>
                           ))}
+                          {card.tags.length > 4 && <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>+{card.tags.length - 4}</span>}
                         </div>
                       )}
-                      {/* Delete button */}
-                      <div style={{ position: 'absolute', bottom: 8, right: 8, zIndex: 1 }}
-                        onClick={e => { e.stopPropagation(); setDeleteTarget(card); }}>
-                        <button title="删除此用例" style={{
-                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                          width: 24, height: 24, borderRadius: 6, border: 'none',
-                          background: 'transparent', color: 'var(--border-subtle)', cursor: 'pointer',
-                          fontSize: 14, lineHeight: 1, padding: 0,
-                          transition: 'color 0.12s, background 0.12s',
-                        }}
-                          onMouseEnter={e => { e.currentTarget.style.background = 'var(--status-error-bg)'; e.currentTarget.style.color = 'var(--status-error)'; }}
-                          onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--border-subtle)'; }}
-                        >🗑</button>
-                      </div>
+
+                      <button
+                        title="删除此用例"
+                        aria-label="删除此用例"
+                        onClick={e => { e.stopPropagation(); setDeleteTarget(card); }}
+                        style={deleteButtonStyle}
+                        onMouseEnter={e => { e.currentTarget.style.background = 'var(--status-error-bg)'; e.currentTarget.style.color = 'var(--status-error)'; }}
+                        onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--border-subtle)'; }}
+                      >
+                        <Trash2 size={14} />
+                      </button>
                     </div>
                   );
                 })}
               </div>
             )}
           </div>
+        </div>
         </div>
       </div>
 
@@ -447,7 +469,7 @@ export default function TestCaseBoardPage() {
             textAlign: 'center', maxWidth: 400, width: '90%',
             boxShadow: 'var(--shadow-lg)',
           }} onClick={e => e.stopPropagation()}>
-            <div style={{ fontSize: 36, marginBottom: 12 }}>⚠️</div>
+            <AlertTriangle size={36} color="var(--status-error)" style={{ marginBottom: 12 }} />
             <h3 style={{ margin: '0 0 8px', fontSize: 17, fontWeight: 600, color: 'var(--text-primary)' }}>确认删除</h3>
             <p style={{ margin: '0 0 4px', fontSize: 14, color: 'var(--text-secondary)' }}>
               确定要删除以下测试用例吗？
@@ -479,66 +501,6 @@ export default function TestCaseBoardPage() {
         </div>
       )}
 
-      {/* ── Delete all confirmation modal ── */}
-      {showDeleteAllConfirm && (
-        <div style={{
-          position: 'fixed', inset: 0, background: 'var(--overlay-bg)', zIndex: 3000,
-          display: 'flex', justifyContent: 'center', alignItems: 'center',
-          backdropFilter: 'blur(2px)',
-        }} onClick={() => !deletingAll && setShowDeleteAllConfirm(false)}>
-          <div style={{
-            background: 'var(--surface-primary)', borderRadius: 14, padding: '28px 32px',
-            textAlign: 'center', maxWidth: 420, width: '90%',
-            boxShadow: 'var(--shadow-lg)',
-          }} onClick={e => e.stopPropagation()}>
-            <div style={{ fontSize: 40, marginBottom: 12 }}>⚠️</div>
-            <h3 style={{ margin: '0 0 8px', fontSize: 17, fontWeight: 600, color: 'var(--text-primary)' }}>
-              {deletingAll ? '正在删除...' : '确认删除全部用例'}
-            </h3>
-            {!deletingAll ? (
-              <>
-                <p style={{ margin: '0 0 8px', fontSize: 14, color: 'var(--text-secondary)' }}>
-                  确定要删除当前加载的全部测试用例吗？
-                </p>
-                <p style={{ margin: '0 0 4px', fontSize: 13, color: 'var(--status-error)', fontWeight: 600 }}>
-                  共 {stats.total} 个（手工 {stats.manual} 个 / 自动化 {stats.auto} 个）
-                </p>
-                <p style={{ margin: '0 0 20px', fontSize: 12, color: 'var(--status-error)', fontWeight: 500 }}>
-                  此操作不可撤销，关联数据将被一并删除。
-                </p>
-                <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
-                  <button onClick={() => setShowDeleteAllConfirm(false)} style={{
-                    padding: '8px 24px', borderRadius: 8, border: '1px solid var(--border-default)',
-                    background: 'var(--surface-primary)', color: 'var(--text-primary)', cursor: 'pointer',
-                    fontSize: 13, fontWeight: 500,
-                  }}>取消</button>
-                  <button onClick={handleDeleteAll} style={{
-                    padding: '8px 24px', borderRadius: 8, border: 'none',
-                    background: 'var(--status-error)', color: '#fff',
-                    cursor: 'pointer', fontSize: 13, fontWeight: 600,
-                  }}>确认删除全部</button>
-                </div>
-              </>
-            ) : (
-              <div style={{ padding: '12px 0' }}>
-                <div style={{
-                  width: '100%', height: 6, background: 'var(--surface-secondary)',
-                  borderRadius: 3, overflow: 'hidden', marginBottom: 12,
-                }}>
-                  <div style={{
-                    height: '100%', background: 'var(--status-error)',
-                    borderRadius: 3, transition: 'width 0.2s',
-                    width: deleteAllProgress ? `${(deleteAllProgress.current / deleteAllProgress.total) * 100}%` : '0%',
-                  }} />
-                </div>
-                <p style={{ margin: 0, fontSize: 13, color: 'var(--text-secondary)' }}>
-                  {deleteAllProgress?.current ?? 0} / {deleteAllProgress?.total ?? 0}
-                </p>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -547,4 +509,193 @@ const btnStyle: React.CSSProperties = {
   display: 'inline-flex', alignItems: 'center', gap: 4,
   padding: '7px 14px', borderRadius: 8, fontSize: 12, fontWeight: 500,
   cursor: 'pointer', lineHeight: 1,
+};
+
+function SummaryMetric({ icon, label, value, tone }: { icon: React.ReactNode; label: string; value: number; tone: string }) {
+  return (
+    <div style={summaryMetricStyle}>
+      <span style={{ color: tone, display: 'inline-flex' }}>{icon}</span>
+      <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{label}</span>
+      <strong style={{ fontSize: 16, color: 'var(--text-primary)', fontFamily: 'JetBrains Mono, monospace' }}>{value}</strong>
+    </div>
+  );
+}
+
+function EmptyBoard({ title, action }: { title: string; action?: React.ReactNode }) {
+  return (
+    <div style={{ minHeight: 260, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12, color: 'var(--text-tertiary)' }}>
+      <ClipboardList size={32} />
+      <span style={{ fontSize: 13 }}>{title}</span>
+      {action}
+    </div>
+  );
+}
+
+const summaryBarStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 16,
+  padding: '14px 16px',
+  borderRadius: 8,
+  border: '1px solid var(--border-default)',
+  background: 'var(--surface-primary)',
+  boxShadow: 'var(--shadow-xs)',
+  flexShrink: 0,
+};
+
+const summaryStatsStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(4, minmax(82px, 1fr))',
+  gap: 8,
+  minWidth: 420,
+};
+
+const summaryMetricStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'auto 1fr',
+  columnGap: 6,
+  rowGap: 1,
+  alignItems: 'center',
+  padding: '7px 10px',
+  borderRadius: 8,
+  background: 'var(--surface-secondary)',
+};
+
+const toolbarStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 12,
+  flexWrap: 'wrap',
+  flexShrink: 0,
+  padding: 10,
+  border: '1px solid var(--border-default)',
+  borderRadius: 8,
+  background: 'var(--surface-primary)',
+};
+
+const toolbarMainStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 10,
+  flex: '1 1 520px',
+  minWidth: 0,
+  flexWrap: 'wrap',
+};
+
+const toolbarActionsStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'flex-end',
+  gap: 8,
+  flex: '0 1 auto',
+  flexWrap: 'wrap',
+};
+
+const iconButtonStyle: React.CSSProperties = {
+  ...btnStyle,
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: 32,
+  height: 32,
+  padding: 0,
+  background: 'var(--surface-primary)',
+  color: 'var(--text-primary)',
+  border: '1px solid var(--border-default)',
+};
+
+const ghostButtonStyle: React.CSSProperties = {
+  ...btnStyle,
+  padding: '6px 10px',
+  background: 'var(--surface-secondary)',
+  color: 'var(--text-secondary)',
+  border: '1px solid var(--border-subtle)',
+};
+
+const softPillStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  minHeight: 22,
+  padding: '2px 8px',
+  borderRadius: 999,
+  background: 'var(--surface-secondary)',
+  color: 'var(--text-secondary)',
+  fontSize: 11,
+  fontWeight: 500,
+  maxWidth: 360,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+};
+
+const activeFilterBarStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 6,
+  flexWrap: 'wrap',
+  flexShrink: 0,
+};
+
+const bulkBarStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 10,
+  padding: '8px 10px',
+  borderRadius: 8,
+  background: 'color-mix(in srgb, var(--accent-primary) 8%, var(--surface-primary))',
+  border: '1px solid color-mix(in srgb, var(--accent-primary) 20%, var(--border-default))',
+  flexShrink: 0,
+};
+
+const tagBarStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 4,
+  flexWrap: 'wrap',
+  flexShrink: 0,
+  maxHeight: 62,
+  overflow: 'hidden',
+};
+
+const cardCheckboxStyle: React.CSSProperties = {
+  position: 'absolute',
+  top: 10,
+  right: 10,
+  zIndex: 1,
+  display: 'inline-flex',
+  alignItems: 'center',
+};
+
+const miniMetaStyle: React.CSSProperties = {
+  minWidth: 0,
+  maxWidth: 180,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+  padding: '1px 6px',
+  borderRadius: 6,
+  background: 'var(--surface-secondary)',
+  color: 'var(--text-tertiary)',
+};
+
+const deleteButtonStyle: React.CSSProperties = {
+  position: 'absolute',
+  bottom: 8,
+  right: 8,
+  zIndex: 1,
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: 24,
+  height: 24,
+  borderRadius: 6,
+  border: 'none',
+  background: 'transparent',
+  color: 'var(--border-subtle)',
+  cursor: 'pointer',
+  lineHeight: 1,
+  padding: 0,
+  transition: 'color 0.12s, background 0.12s',
 };

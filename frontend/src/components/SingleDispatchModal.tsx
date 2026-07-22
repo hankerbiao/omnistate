@@ -73,8 +73,7 @@ const SingleDispatchModal: React.FC<Props> = ({
   const [boardOpen, setBoardOpen] = useState(false);
   const [selectedServer, setSelectedServer] = useState<ServerResource | null>(null);
 
-  useEffect(() => {
-    if (!open) return;
+  const loadAutoCase = useCallback(async () => {
     setLoadingCase(true);
     setError(null);
     setAutoCase(null);
@@ -82,41 +81,47 @@ const SingleDispatchModal: React.FC<Props> = ({
     setStrategy('immediate');
     setPlannedAt('');
     setSelectedServer(null);
-    api.listAutomationTestCases({ limit: 200 })
-      .then(res => {
-        const found = (res.data || []).find((tc) => tc.auto_case_id === caseId);
-        if (found) {
-          setAutoCase({
-            repo_url: found.repo_url,
-            branch: found.repo_branch || found.code_snapshot?.branch,
-            timeout: found.report_meta?.timeout,
-            param_spec: found.param_spec,
-          });
-          // Init default values from param_spec, then override with saved config
-          const init: Record<string, string> = {};
-          if (found.param_spec) {
-            for (const p of found.param_spec) {
-              init[p.name] = p.default != null ? String(p.default) : '';
-            }
+    try {
+      const res = await api.listAutomationTestCases({ limit: 200 });
+      const found = (res.data || []).find((tc) => tc.auto_case_id === caseId);
+      if (found) {
+        setAutoCase({
+          repo_url: found.repo_url,
+          branch: found.repo_branch || found.code_snapshot?.branch,
+          timeout: found.report_meta?.timeout,
+          param_spec: found.param_spec,
+        });
+        const init: Record<string, string> = {};
+        if (found.param_spec) {
+          for (const p of found.param_spec) {
+            init[p.name] = p.default != null ? String(p.default) : '';
           }
-          if (dispatchConfig) {
-            if (dispatchConfig.schedule_type === 'SCHEDULED') {
-              setStrategy('scheduled');
-              if (dispatchConfig.planned_at) setPlannedAt(dispatchConfig.planned_at.slice(0, 16));
-            }
-            if (dispatchConfig.parameters && found.param_spec) {
-              for (const p of found.param_spec) {
-                const saved = dispatchConfig.parameters[p.name];
-                if (saved != null) init[p.name] = String(saved);
-              }
-            }
-          }
-          setParamValues(init);
         }
-      })
-      .catch(() => setError('获取用例详情失败'))
-      .finally(() => setLoadingCase(false));
-  }, [open, caseId, dispatchConfig]);
+        if (dispatchConfig) {
+          if (dispatchConfig.schedule_type === 'SCHEDULED') {
+            setStrategy('scheduled');
+            if (dispatchConfig.planned_at) setPlannedAt(dispatchConfig.planned_at.slice(0, 16));
+          }
+          if (dispatchConfig.parameters && found.param_spec) {
+            for (const p of found.param_spec) {
+              const saved = dispatchConfig.parameters[p.name];
+              if (saved != null) init[p.name] = String(saved);
+            }
+          }
+        }
+        setParamValues(init);
+      }
+    } catch {
+      setError('获取用例详情失败');
+    } finally {
+      setLoadingCase(false);
+    }
+  }, [caseId, dispatchConfig]);
+
+  useEffect(() => {
+    if (!open) return;
+    void loadAutoCase();
+  }, [open, loadAutoCase]);
 
   const resetForm = () => {
     setStrategy('immediate');
@@ -164,7 +169,7 @@ const SingleDispatchModal: React.FC<Props> = ({
         <select className="form-input form-select" style={fieldStyle} value={val} onChange={e => setVal(e.target.value)}>
           <option value="">{p.required ? '请选择' : '可选'}</option>
           {p.options.map((opt) => (
-            <option key={opt.value} value={String(opt.value)}>{opt.label || opt.value}</option>
+            <option key={String(opt.value)} value={String(opt.value)}>{opt.label || String(opt.value)}</option>
           ))}
         </select>
       );

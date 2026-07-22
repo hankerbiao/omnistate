@@ -58,6 +58,7 @@ const CreateRequirementForm: React.FC<CreateRequirementFormProps> = ({ onClose, 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tagInput, setTagInput] = useState('');
+  const [createdRequirement, setCreatedRequirement] = useState<RequirementResponse | null>(null);
 
   // 拆解的描述区块
   const [descSections, setDescSections] = useState({
@@ -118,6 +119,7 @@ const CreateRequirementForm: React.FC<CreateRequirementFormProps> = ({ onClose, 
       if (!cleaned.planned_end_date) delete cleaned.planned_end_date;
 
       const response = await api.createRequirement(cleaned);
+      setCreatedRequirement(response.data);
       setCreatedReqId(response.data.req_id);
     } catch (err) {
       setError('创建测试用例编写需求失败');
@@ -391,7 +393,14 @@ const CreateRequirementForm: React.FC<CreateRequirementFormProps> = ({ onClose, 
                   padding: '6px 16px', borderRadius: 6, border: 'none',
                   background: '#7c3aed', color: '#fff', fontSize: 12, cursor: 'pointer',
                 }}>AI 生成用例</button>
-                <button type="button" style={styles.cancelBtn} onClick={() => { onSuccess({ req_id: createdReqId } as any); onClose(); }}>
+                <button
+                  type="button"
+                  style={styles.cancelBtn}
+                  onClick={() => {
+                    if (createdRequirement) onSuccess(createdRequirement);
+                    onClose();
+                  }}
+                >
                   完成
                 </button>
               </>
@@ -436,8 +445,6 @@ const CreateRequirementForm: React.FC<CreateRequirementFormProps> = ({ onClose, 
 // ═══════════════════════════════════════════════════════════════
 //  Styles
 // ═══════════════════════════════════════════════════════════════
-
-const FOCUS_RING = `0 0 0 3px ${C.blue}25`;
 
 const styles: Record<string, React.CSSProperties> = {
   // ── Overlay & Modal ──

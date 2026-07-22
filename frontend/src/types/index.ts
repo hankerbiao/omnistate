@@ -16,6 +16,8 @@ export interface BaseTestCaseFields {
   automation_type?: string;
   script_entity_id?: string;
   automation_case_ref?: AutomationCaseRef;
+  auto_case_ref?: AutomationCaseRef;
+  linked_auto_case_id?: string;
   risk_level?: string;
   failure_analysis?: string;
   confidentiality?: string;
@@ -648,6 +650,8 @@ export interface ListAutomationTestCasesParams extends PaginationParams {
   status?: string;
   maintainer_id?: string;
   linked_manual_case_id?: string;
+  q?: string;
+  linkable_for_case_id?: string;
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -933,11 +937,56 @@ export interface RemoveCasesRequest {
   auto_case_ids?: string[];
 }
 
+export interface CopyCollectionRequest {
+  name: string;
+  description?: string;
+  tags?: string[];
+  include_cases: boolean;
+}
+
+export interface CollectionCaseValidity {
+  type: 'manual' | 'auto';
+  case_id: string;
+  valid: boolean;
+  risk_code?: 'DELETED_OR_MISSING' | 'INACTIVE' | 'DEPRECATED' | 'AUTOMATION_INVALID' | string | null;
+  risk_label?: string | null;
+}
+
+export interface CollectionValiditySummary {
+  total: number;
+  valid_count: number;
+  risk_count: number;
+  inactive_count: number;
+  missing_count: number;
+  deprecated_count: number;
+  automation_invalid_count: number;
+  cases: CollectionCaseValidity[];
+}
+
+export interface CollectionChangeLog {
+  id: string;
+  collection_id: string;
+  action: string;
+  operator_id: string;
+  operator_name?: string | null;
+  case_changes: Array<{ type?: string; case_id?: string; action?: string }>;
+  field_changes: Array<{ field?: string; old_value?: unknown; new_value?: unknown }>;
+  export_format?: string | null;
+  remark?: string | null;
+  created_at: string;
+}
+
+export interface CollectionChangeLogListResponse {
+  items: CollectionChangeLog[];
+  total: number;
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 //  执行计划（ExecutionPlan / My Tasks）
 // ═══════════════════════════════════════════════════════════════════════
 
 export interface PlanTaskResultPayload {
+  result_source?: 'manual' | 'auto';
   passed: boolean;
   notes: string;
   severity: string;
@@ -964,7 +1013,10 @@ export interface PlanTaskItemResponse {
   status: string;          // 'pending' | 'running' | 'done' | 'fail'
   order_no: number;
   execution_task_id: string | null;
+  result_id?: string | null;
+  result_source?: 'manual' | 'auto' | null;
   result: PlanTaskResultPayload | null;
+  dispatch_config?: PlanItemDispatchConfig | null;
 }
 
 export interface SubmitManualResultRequest {
@@ -1140,6 +1192,44 @@ export interface CollectionAnalysisResult {
   recommendations: string[];
 }
 
+export interface PendingTaskAnalysisItem {
+  id: string;
+  kind: 'plan' | 'workflow';
+  title: string;
+  category: string;
+  status: string;
+  next_step: string;
+  period: string;
+  period_label: string;
+  period_detail: string;
+}
+
+export interface PendingTaskAnalysisRequest {
+  user_id: string;
+  stats: {
+    total: number;
+    plan_count: number;
+    workflow_count: number;
+    risk_count: number;
+    risk_percent: number;
+    overdue_count: number;
+    today_count: number;
+    soon_count: number;
+    normal_count: number;
+    unset_count: number;
+  };
+  category_stats: Array<{ label: string; count: number; percent: number }>;
+  items: PendingTaskAnalysisItem[];
+}
+
+export interface PendingTaskAnalysisResult {
+  summary: string;
+  health_score: number;
+  anomalies: Array<{ severity: 'critical' | 'warning' | 'info' | string; title: string; detail: string; related_ids: string[] }>;
+  priority_items: Array<{ id: string; title: string; reason: string; priority: string }>;
+  recommendations: string[];
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 //  用例治理（Case Governance）
 // ═══════════════════════════════════════════════════════════════════════
@@ -1151,6 +1241,18 @@ export interface GovernanceStats {
   missing_catalog: number;
   missing_tags: number;
   unlinked_auto: number;
+}
+
+export interface GovernanceCaseListResponse {
+  items: TestCaseResponse[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface ListGovernanceCasesParams extends PaginationParams {
+  q?: string;
+  missing_fields?: string;
 }
 
 export interface BatchUpdateCasesRequest {
@@ -1284,11 +1386,6 @@ export interface ProjectActivity {
   action: string;
   target: string;
   target_type: string;
-}
-
-export interface GenerateDemoResponse {
-  plan_items_created: number;
-  activities_created: number;
 }
 
 // ═══════════════════════════════════════════════════════════════════════

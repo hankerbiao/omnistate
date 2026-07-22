@@ -20,6 +20,7 @@ interface FormSectionProps {
   title: string;
   badge?: string;
   prominent?: boolean;
+  actions?: React.ReactNode;
   children: React.ReactNode;
 }
 
@@ -148,7 +149,6 @@ const CreateTestCaseForm: React.FC<CreateTestCaseFormProps> = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'basic' | 'steps' | 'automation'>('basic');
-  const [activeStepIndex, setActiveStepIndex] = useState(0);
   const [cleanupExpanded, setCleanupExpanded] = useState(
     () => Boolean(editTestCase?.cleanup_steps?.length),
   );
@@ -224,13 +224,11 @@ const CreateTestCaseForm: React.FC<CreateTestCaseFormProps> = ({
       });
       if (isEditMode && editTestCase) {
         // Strip high-risk fields that must be updated via explicit commands
-        const {
-          owner_id: _owner,
-          reviewer_id: _reviewer,
-          auto_dev_id: _autoDev,
-          ref_req_id: _refReq,
-          ...safePayload
-        } = payload;
+        const safePayload = { ...payload };
+        delete safePayload.owner_id;
+        delete safePayload.reviewer_id;
+        delete safePayload.auto_dev_id;
+        delete safePayload.ref_req_id;
         await api.updateTestCase(editTestCase.case_id, safePayload);
       } else {
         await api.createTestCase(payload);

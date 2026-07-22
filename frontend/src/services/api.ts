@@ -1,4 +1,4 @@
-import type { LoginRequest, LoginResponse, ApiResponse, CreateRequirementRequest, RequirementResponse, ListRequirementsParams, CreateTestCaseRequest, UpdateTestCaseRequest, TestCaseResponse, TestCaseChangeLogListResponse, ListTestCasesParams, CatalogLab, CreateCatalogLabRequest, UpdateCatalogLabRequest, CatalogTreeResponse, DispatchTaskRequest, DispatchTaskResponse, ExecutionAgent, AgentCleanupOfflineResponse, ListAgentsParams, CreateAutomationTestCaseRequest, AutomationTestCaseResponse, ListAutomationTestCasesParams, ExecutionTask, ListTasksParams, TaskStatus, RerunTaskRequest, AttachmentInfo, WorkflowTransitionRequest, WorkflowTransitionResponse, WorkflowTransitionsResponse, WorkflowTransitionLog, RoleResponse, PermissionResponse, CreateRoleRequest, UpdateRoleRequest, UpdateRolePermissionsRequest, CurrentUserPermissionsResponse, UserResponse, CreateUserRequest, UpdateUserRequest, UpdateUserRolesRequest, UpdateUserPasswordRequest, ListUsersParams, WorkItem, LineageGraphResponse, CommentListResponse, CreateCommentRequest, TestCaseComment, PlanTaskItemResponse, SubmitManualResultRequest, PlanItemDispatchRequest, PlanItemRerunRequest, BatchDispatchPlanItemsRequest, CreatePlanRequest, AddPlanItemsRequest, BatchUpdateAssigneeRequest, UserEffectivePermissionsResponse, SystemConfigListResponse, SystemConfig, BatchUpdateConfigRequest, TestConnectionRequest, TestConnectionResponse, ConfigHistory, ExecutionStatsResponse, CollectionResponse, CollectionListItem, CreateCollectionRequest, UpdateCollectionRequest, AddCasesRequest, RemoveCasesRequest, CollectionAnalysisResult, TaskTimeline } from '../types';
+import type { LoginRequest, LoginResponse, ApiResponse, CreateRequirementRequest, RequirementResponse, ListRequirementsParams, CreateTestCaseRequest, UpdateTestCaseRequest, TestCaseResponse, TestCaseChangeLogListResponse, ListTestCasesParams, CatalogLab, CreateCatalogLabRequest, UpdateCatalogLabRequest, CatalogTreeResponse, DispatchTaskRequest, DispatchTaskResponse, ExecutionAgent, AgentCleanupOfflineResponse, ListAgentsParams, CreateAutomationTestCaseRequest, AutomationTestCaseResponse, ListAutomationTestCasesParams, ExecutionTask, ListTasksParams, TaskStatus, RerunTaskRequest, AttachmentInfo, WorkflowTransitionRequest, WorkflowTransitionResponse, WorkflowTransitionsResponse, WorkflowTransitionLog, RoleResponse, PermissionResponse, CreateRoleRequest, UpdateRoleRequest, UpdateRolePermissionsRequest, CurrentUserPermissionsResponse, UserResponse, CreateUserRequest, UpdateUserRequest, UpdateUserRolesRequest, UpdateUserPasswordRequest, ListUsersParams, WorkItem, LineageGraphResponse, CommentListResponse, CreateCommentRequest, TestCaseComment, PlanTaskItemResponse, SubmitManualResultRequest, PlanItemDispatchRequest, PlanItemRerunRequest, BatchDispatchPlanItemsRequest, CreatePlanRequest, AddPlanItemsRequest, BatchUpdateAssigneeRequest, UserEffectivePermissionsResponse, SystemConfigListResponse, SystemConfig, BatchUpdateConfigRequest, TestConnectionRequest, TestConnectionResponse, ConfigHistory, ExecutionStatsResponse, CollectionResponse, CollectionListItem, CreateCollectionRequest, UpdateCollectionRequest, AddCasesRequest, RemoveCasesRequest, CopyCollectionRequest, CollectionChangeLogListResponse, CollectionValiditySummary, CollectionAnalysisResult, PendingTaskAnalysisRequest, PendingTaskAnalysisResult, TaskTimeline } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
 
@@ -79,6 +79,22 @@ class ApiClient {
       console.error('API request failed:', error);
       throw error;
     }
+  }
+
+  private async download(endpoint: string): Promise<{ blob: Blob; filename?: string }> {
+    const url = `${this.baseUrl}${endpoint}`;
+    const headers: HeadersInit = {};
+    if (this.token) {
+      headers['Authorization'] = `Bearer ${this.token}`;
+    }
+    const response = await fetch(url, { method: 'GET', headers });
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    const disposition = response.headers.get('content-disposition') || '';
+    const match = disposition.match(/filename\*=UTF-8''([^;]+)/);
+    const filename = match ? decodeURIComponent(match[1]) : undefined;
+    return { blob: await response.blob(), filename };
   }
 
   async login(credentials: LoginRequest): Promise<LoginResponse> {
@@ -395,6 +411,19 @@ class ApiClient {
     });
   }
 
+  async listGovernanceCases(params: import('../types').ListGovernanceCasesParams = {}): Promise<ApiResponse<import('../types').GovernanceCaseListResponse>> {
+    const queryParams = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') {
+        queryParams.append(key, String(value));
+      }
+    });
+    const queryString = queryParams.toString();
+    return this.request<import('../types').GovernanceCaseListResponse>(`/test-cases/governance${queryString ? `?${queryString}` : ''}`, {
+      method: 'GET',
+    });
+  }
+
   async batchUpdateCases(request: import('../types').BatchUpdateCasesRequest): Promise<ApiResponse<import('../types').BatchUpdateResult>> {
     return this.request<import('../types').BatchUpdateResult>('/test-cases/batch', {
       method: 'PUT',
@@ -441,12 +470,6 @@ class ApiClient {
     });
   }
 
-  async listMyExecutionTasks(userId: string, limit: number = 20): Promise<ApiResponse<ExecutionTask[]>> {
-    return this.request<ExecutionTask[]>(`/execution/tasks/my?created_by=${userId}&limit=${limit}`, {
-      method: 'GET',
-    });
-  }
-
   async getTaskStatus(taskId: string): Promise<ApiResponse<TaskStatus>> {
     return this.request<TaskStatus>(`/execution/tasks/${taskId}/status`, {
       method: 'GET',
@@ -466,8 +489,8 @@ class ApiClient {
   }
 
   /** 取消计划内自动化条目的执行：删除关联任务，恢复状态为 pending */
-  async cancelExecution(itemId: string): Promise<ApiResponse<any>> {
-    return this.request<any>(`/execution-plans/items/${itemId}/cancel-execution`, {
+  async cancelExecution(itemId: string): Promise<ApiResponse<Record<string, unknown>>> {
+    return this.request<Record<string, unknown>>(`/execution-plans/items/${itemId}/cancel-execution`, {
       method: 'POST',
     });
   }
@@ -699,6 +722,12 @@ class ApiClient {
     });
   }
 
+  async copyCollection(id: string, data: CopyCollectionRequest): Promise<ApiResponse<CollectionResponse>> {
+    return this.request<CollectionResponse>(`/collections/${id}/copy`, {
+      method: 'POST', body: JSON.stringify(data),
+    });
+  }
+
   async deleteCollection(id: string): Promise<ApiResponse<{ deleted: string }>> {
     return this.request<{ deleted: string }>(`/collections/${id}`, { method: 'DELETE' });
   }
@@ -715,6 +744,27 @@ class ApiClient {
     });
   }
 
+  async getCollectionHistory(
+    id: string,
+    params?: { limit?: number; offset?: number },
+  ): Promise<ApiResponse<CollectionChangeLogListResponse>> {
+    const query = new URLSearchParams();
+    if (params?.limit != null) query.set('limit', String(params.limit));
+    if (params?.offset != null) query.set('offset', String(params.offset));
+    const qs = query.toString();
+    return this.request<CollectionChangeLogListResponse>(`/collections/${id}/history${qs ? `?${qs}` : ''}`, {
+      method: 'GET',
+    });
+  }
+
+  async getCollectionValidity(id: string): Promise<ApiResponse<CollectionValiditySummary>> {
+    return this.request<CollectionValiditySummary>(`/collections/${id}/validity`, { method: 'GET' });
+  }
+
+  async exportCollection(id: string, format: 'csv' | 'xlsx'): Promise<{ blob: Blob; filename?: string }> {
+    return this.download(`/collections/${id}/export?${new URLSearchParams({ format }).toString()}`);
+  }
+
   // ══════════════════════════════════════════════════════════════
   //  执行计划 / My Tasks API
   // ══════════════════════════════════════════════════════════════
@@ -727,11 +777,11 @@ class ApiClient {
     );
   }
 
-  /** 更新计划条目（状态/指派人等） */
+  /** 更新计划条目元数据（状态由派发/结果入口推进） */
   async updatePlanItem(
     planId: string,
     itemId: string,
-    data: { status?: string; assignee_id?: string; component?: string },
+    data: { assignee_id?: string; component?: string; order_no?: number },
   ): Promise<ApiResponse<PlanTaskItemResponse>> {
     return this.request<PlanTaskItemResponse>(`/execution-plans/plans/${planId}/items/${itemId}`, {
       method: 'PUT',
@@ -863,11 +913,6 @@ class ApiClient {
     return this.request<Array<Record<string, unknown>>>(`/execution-plans/items${qs ? `?${qs}` : ''}`, { method: 'GET' });
   }
 
-  /** 获取所有计划的运行总览 */
-  async getPlanOverview(): Promise<ApiResponse<Record<string, unknown>>> {
-    return this.request<Record<string, unknown>>('/execution-plans/items/overview', { method: 'GET' });
-  }
-
   // ══════════════════════════════════════════════════════════════
   //  收纳箱 API
   // ══════════════════════════════════════════════════════════════
@@ -988,6 +1033,14 @@ class ApiClient {
     );
   }
 
+  /** AI分析我的待处理任务 */
+  async analyzePendingTasks(data: PendingTaskAnalysisRequest): Promise<ApiResponse<PendingTaskAnalysisResult>> {
+    return this.request<PendingTaskAnalysisResult>('/ai-analyze/my-tasks/pending', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
   /** AI 润色文本 */
   async aiPolish(text: string): Promise<string> {
     const res = await this.request<{ polished: string }>(
@@ -1077,11 +1130,6 @@ class ApiClient {
     return this.request(`/projects/${encodeURIComponent(projectId)}`, { method: 'DELETE' });
   }
 
-  /** 获取项目统计 */
-  async getProjectStats(projectId: string): Promise<ApiResponse<import('../types').ProjectStats>> {
-    return this.request(`/projects/${encodeURIComponent(projectId)}/stats`, { method: 'GET' });
-  }
-
   /** 获取项目风险/阻塞项 */
   async getProjectBlockers(projectId: string): Promise<ApiResponse<import('../types').BlockerItem[]>> {
     return this.request(`/projects/${encodeURIComponent(projectId)}/blockers`, { method: 'GET' });
@@ -1091,11 +1139,6 @@ class ApiClient {
   async getProjectActivities(projectId: string, limit?: number): Promise<ApiResponse<import('../types').ProjectActivity[]>> {
     const qs = limit ? `?limit=${limit}` : '';
     return this.request(`/projects/${encodeURIComponent(projectId)}/activities${qs}`, { method: 'GET' });
-  }
-
-  /** 生成项目演示数据 */
-  async generateProjectDemoData(projectId: string): Promise<ApiResponse<import('../types').GenerateDemoResponse>> {
-    return this.request(`/projects/${encodeURIComponent(projectId)}/generate-demo-data`, { method: 'POST' });
   }
 }
 

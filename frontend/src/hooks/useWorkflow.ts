@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { api } from '../services/api';
 import type { WorkflowTransition, WorkflowTransitionLog } from '../types';
 
@@ -21,64 +22,55 @@ export interface UseWorkflowResult {
   clearMessages: () => void;
 }
 
-export function useWorkflow(workflowItemId: string | null | undefined): UseWorkflowResult {
-  const [currentState, setCurrentState] = useState('');
-  const [transitions, setTransitions] = useState<WorkflowTransition[]>([]);
-  const [logs, setLogs] = useState<WorkflowTransitionLog[]>([]);
-  const [creator, setCreator] = useState<string>();
-  const [currentOwner, setCurrentOwner] = useState<string>();
-  const [loading, setLoading] = useState(false);
-  const [logsLoading, setLogsLoading] = useState(false);
+interface UseWorkflowOptions {
+  loadLogs?: boolean;
+}
+
+export function useWorkflow(
+  workflowItemId: string | null | undefined,
+  options: UseWorkflowOptions = {},
+): UseWorkflowResult {
+  const { loadLogs = false } = options;
   const [transitioning, setTransitioning] = useState(false);
   const [reassigning, setReassigning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  const refreshLogs = useCallback(async () => {
-    if (!workflowItemId) {
-      setLogs([]);
-      return;
-    }
-    setLogsLoading(true);
-    try {
+  const transitionsQuery = useQuery({
+    queryKey: ['workflow', workflowItemId, 'transitions'],
+    queryFn: async () => {
+      if (!workflowItemId) throw new Error('missing workflow item id');
+      const response = await api.getWorkflowTransitions(workflowItemId);
+      return response.data;
+    },
+    enabled: Boolean(workflowItemId),
+    staleTime: 30_000,
+  });
+
+  const logsQuery = useQuery({
+    queryKey: ['workflow', workflowItemId, 'logs'],
+    queryFn: async () => {
+      if (!workflowItemId) throw new Error('missing workflow item id');
       const response = await api.getWorkflowLogs(workflowItemId, 50);
-      setLogs(response.data || []);
-    } catch (err) {
-      console.error('Fetch workflow logs error:', err);
-    } finally {
-      setLogsLoading(false);
-    }
-  }, [workflowItemId]);
+      return response.data || [];
+    },
+    enabled: Boolean(workflowItemId) && loadLogs,
+    staleTime: 30_000,
+  });
+
+  const refreshLogs = useCallback(async () => {
+    if (!workflowItemId || !loadLogs) return;
+    await logsQuery.refetch();
+  }, [loadLogs, logsQuery, workflowItemId]);
 
   const refresh = useCallback(async () => {
-    if (!workflowItemId) {
-      setCurrentState('');
-      setTransitions([]);
-      setCreator(undefined);
-      setCurrentOwner(undefined);
-      return;
-    }
-    setLoading(true);
+    if (!workflowItemId) return;
     setError(null);
-    try {
-      const response = await api.getWorkflowTransitions(workflowItemId);
-      setCurrentState(response.data.current_state);
-      setTransitions(response.data.available_transitions || []);
-      setCreator(response.data.creator);
-      setCurrentOwner(response.data.current_owner);
-    } catch (err) {
-      setCurrentState('');
-      setTransitions([]);
-      setError(err instanceof Error ? err.message : '获取工作流信息失败');
-    } finally {
-      setLoading(false);
+    const result = await transitionsQuery.refetch();
+    if (result.error) {
+      setError(result.error instanceof Error ? result.error.message : '获取工作流信息失败');
     }
-  }, [workflowItemId]);
-
-  useEffect(() => {
-    refresh();
-    refreshLogs();
-  }, [refresh, refreshLogs]);
+  }, [transitionsQuery, workflowItemId]);
 
   const executeTransition = useCallback(
     async (action: string, formData: Record<string, string>): Promise<boolean> => {
@@ -133,16 +125,16 @@ export function useWorkflow(workflowItemId: string | null | undefined): UseWorkf
   }, []);
 
   return {
-    currentState,
-    transitions,
-    logs,
-    creator,
-    currentOwner,
-    loading,
-    logsLoading,
+    currentState: transitionsQuery.data?.current_state || '',
+    transitions: transitionsQuery.data?.available_transitions || [],
+    logs: logsQuery.data || [],
+    creator: transitionsQuery.data?.creator,
+    currentOwner: transitionsQuery.data?.current_owner,
+    loading: transitionsQuery.isFetching,
+    logsLoading: logsQuery.isFetching,
     transitioning,
     reassigning,
-    error,
+    error: error || (transitionsQuery.error instanceof Error ? transitionsQuery.error.message : null),
     successMessage,
     refresh,
     refreshLogs,
