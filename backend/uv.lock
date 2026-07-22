@@ -436,16 +436,6 @@ wheels = [
 ]
 
 [[package]]
-name = "bson"
-version = "0.5.10"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "python-dateutil" },
-    { name = "six" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/4d/53/7c534a38850f2252275d7f949aed2219095e90df1e2d180a9c8ed139e499/bson-0.5.10.tar.gz", hash = "sha256:d6511b2ab051139a9123c184de1a04227262173ad593429d21e443d6462d6590", size = 10363, upload-time = "2020-05-26T11:13:47.979Z" }
-
-[[package]]
 name = "certifi"
 version = "2026.5.20"
 source = { registry = "https://pypi.org/simple" }
@@ -943,7 +933,6 @@ dependencies = [
     { name = "asyncssh" },
     { name = "bcrypt" },
     { name = "beanie" },
-    { name = "bson" },
     { name = "dnspython" },
     { name = "ecdsa" },
     { name = "email-validator" },
@@ -1044,7 +1033,6 @@ requires-dist = [
     { name = "asyncssh", specifier = ">=2.14.0" },
     { name = "bcrypt", specifier = ">=5.0.0" },
     { name = "beanie", specifier = ">=2.0.1" },
-    { name = "bson", specifier = ">=0.5.10" },
     { name = "coverage", marker = "extra == 'dev'", specifier = ">=7.0.0" },
     { name = "dnspython", specifier = ">=2.8.0" },
     { name = "ecdsa", specifier = ">=0.19.1" },
@@ -2995,7 +2983,7 @@ name = "pexpect"
 version = "4.9.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "ptyprocess", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
+    { name = "ptyprocess" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/42/92/cc564bf6381ff43ce1f4d06852fc19a2f11d180f23dc32d9588bee2f149d/pexpect-4.9.0.tar.gz", hash = "sha256:ee7d41123f3c9911050ea2c2dac107568dc43b2d3b0c7557a33212c398ead30f", size = 166450, upload-time = "2023-11-25T09:07:26.339Z" }
 wheels = [

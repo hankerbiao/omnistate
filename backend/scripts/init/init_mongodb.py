@@ -222,9 +222,7 @@ async def _sync_workflow_configs(
         for cfg in configs:
             await _upsert_doc(
                 SysWorkflowConfigDoc,
-                (SysWorkflowConfigDoc.type_code == type_code)
-                & (SysWorkflowConfigDoc.from_state == cfg.get("from_state"))
-                & (SysWorkflowConfigDoc.action == cfg.get("action")),
+                {"type_code": type_code, "from_state": cfg.get("from_state"), "action": cfg.get("action")},
                 {
                     "to_state": cfg.get("to_state"),
                     "target_owner_strategy": cfg.get("target_owner_strategy", "KEEP"),
