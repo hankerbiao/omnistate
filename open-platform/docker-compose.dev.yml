@@ -1,0 +1,41 @@
+services:
+  open-platform-gateway:
+    volumes:
+      - open-platform-gateway-data:/data
+      - ./backend/gateway_service:/app/gateway_service:ro
+    command:
+      - python
+      - -m
+      - uvicorn
+      - gateway_service.app:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8820"
+      - --reload
+      - --reload-dir
+      - /app/gateway_service
+      - --log-level
+      - info
+
+  open-platform-frontend:
+    image: node:22-slim
+    container_name: dml-open-platform-frontend
+    working_dir: /app
+    restart: unless-stopped
+    ports:
+      - "8808:8808"
+    environment:
+      VITE_OPEN_PLATFORM_API_BASE_URL: ${VITE_OPEN_PLATFORM_API_BASE_URL:-http://127.0.0.1:8820}
+      VITE_OPEN_PLATFORM_CONSOLE_TOKEN: ${DML_GATEWAY_CONSOLE_TOKEN:-dev-console-token}
+    volumes:
+      - ./frontend:/app
+      - open-platform-frontend-node-modules:/app/node_modules
+    command: sh -c "npm install && npm run dev -- --host=0.0.0.0 --port=8808"
+    depends_on:
+      open-platform-gateway:
+        condition: service_healthy
+
+volumes:
+  open-platform-gateway-data:
+  open-platform-frontend-node-modules:

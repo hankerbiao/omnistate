@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Python
+.venv/
+**/.venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+**/*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Build output
+dist/
+build/
+**/dist/
+**/build/
+.cache/
+.vite/
+**/.vite/
+
+# Logs
+*.log
+**/*.log
+
+# Databases (SQLite storage)
+*.db
+*.sqlite
+*.sqlite3
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local agent/session state
+**/.workbuddy/
+
+# Local tooling state (code graph index, etc.)
+.codegraph/

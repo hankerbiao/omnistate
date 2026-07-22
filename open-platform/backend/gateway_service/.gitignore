@@ -1,0 +1,11 @@
+# SQLite 调试数据库（自动生成）
+gateway.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/

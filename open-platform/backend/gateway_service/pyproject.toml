@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "dml-open-platform-gateway"
+version = "1.0.0"
+description = "开放平台网关服务，提供路由转发、请求过滤、负载均衡、鉴权认证、限流熔断与审计日志"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.34",
+    "httpx>=0.28",
+    "pydantic>=2.10",
+    "loguru>=0.7.3",
+]
+
+[tool.setuptools.packages.find]
+include = ["gateway_service*"]

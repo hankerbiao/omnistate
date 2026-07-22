@@ -1,0 +1,17 @@
+:root {
+  --vp-c-brand-1: #24b47e;
+  --vp-c-brand-2: #3ecf8e;
+  --vp-c-brand-3: #76e4b8;
+  --vp-home-hero-name-color: #171717;
+  --vp-home-hero-text-color: #171717;
+}
+
+.dark {
+  --vp-c-brand-1: #3ecf8e;
+  --vp-c-brand-2: #24b47e;
+  --vp-c-brand-3: #76e4b8;
+}
+
+.VPHome .VPFeature {
+  border-radius: 8px;
+}
