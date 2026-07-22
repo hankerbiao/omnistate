@@ -106,6 +106,11 @@ async def batch_update_configs(
 ) -> APIResponse[BatchUpdateResponse]:
     """批量更新配置"""
     items = [{"config_key": item.config_key, "config_value": item.config_value} for item in data.items]
+    for item in items:
+        is_valid, error_msg = ConfigValidator.validate(item["config_key"], item["config_value"])
+        if not is_valid:
+            raise HTTPException(status_code=400, detail=error_msg)
+
     updated_count = await ConfigService.batch_update(
         items=items,
         changed_by=current_user.get("username"),

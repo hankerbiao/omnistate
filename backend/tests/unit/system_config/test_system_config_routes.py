@@ -51,7 +51,7 @@ def test_system_config_routes_reject_user_without_permission(monkeypatch):
 
 def test_system_config_routes_allow_admin(monkeypatch):
     async def fake_categories() -> list[str]:
-        return ["ai", "system"]
+        return ["ai"]
 
     monkeypatch.setattr(ConfigService, "get_categories", fake_categories)
     client = _build_client(fake_admin_user)
@@ -59,7 +59,7 @@ def test_system_config_routes_allow_admin(monkeypatch):
     response = client.get("/system-configs/categories")
 
     assert response.status_code == 200
-    assert response.json()["data"] == ["ai", "system"]
+    assert response.json()["data"] == ["ai"]
 
 
 def test_batch_update_uses_static_batch_route(monkeypatch):
@@ -98,24 +98,24 @@ def _config_doc(*, key: str, value: str):
         config_key=key,
         config_value=value,
         config_type="string",
-        category="system",
+        category="ai",
         description="secret",
         is_active=True,
-        needs_restart=True,
+        needs_restart=False,
         created_at=now,
         updated_at=now,
         updated_by="admin",
     )
 
 
-def test_config_detail_returns_plain_value(monkeypatch):
+def test_config_detail_returns_runtime_value(monkeypatch):
     async def fake_get_config_by_key(_key):
-        return _config_doc(key="redis.password", value="plain-secret")
+        return _config_doc(key="ai.api_key", value="plain-secret")
 
     monkeypatch.setattr(ConfigService, "get_config_by_key", fake_get_config_by_key)
     client = _build_client(fake_admin_user)
 
-    response = client.get("/system-configs/redis.password")
+    response = client.get("/system-configs/ai.api_key")
 
     assert response.status_code == 200
     assert response.json()["data"]["config_value"] == "plain-secret"
@@ -128,7 +128,7 @@ def test_config_history_returns_plain_values(monkeypatch):
         return [
             SimpleNamespace(
                 id="history-1",
-                config_key="redis.password",
+                config_key="ai.api_key",
                 old_value="old-secret",
                 new_value="new-secret",
                 changed_by="admin",

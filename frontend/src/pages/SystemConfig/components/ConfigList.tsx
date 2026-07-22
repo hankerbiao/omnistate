@@ -1,16 +1,13 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { api } from '../../../services/api';
+import { getErrorMessage } from '../../../utils/errors';
 import type { SystemConfig } from '../../../types';
-import RedisConfigModal from './RedisConfigModal';
-import KafkaConfigModal from './KafkaConfigModal';
 
-type Category = 'all' | 'ai' | 'system' | 'general';
+type Category = 'all' | 'ai';
 
 const CATEGORY_LABELS: Record<Category, string> = {
   all: '全部',
   ai: 'AI 配置',
-  system: '系统配置',
-  general: '通用配置',
 };
 
 const TYPE_LABELS: Record<string, string> = {
@@ -21,73 +18,14 @@ const TYPE_LABELS: Record<string, string> = {
   json: 'JSON',
 };
 
-function summarizeJsonArray(jsonStr: string): string {
-  try {
-    const arr = JSON.parse(jsonStr);
-    return Array.isArray(arr) ? arr.join(', ') : jsonStr;
-  } catch {
-    return jsonStr;
-  }
-}
-
-function latestUpdatedAt(configs: SystemConfig[]): string {
-  if (configs.length === 0) return '';
-  return configs.reduce((latest, c) => c.updated_at > latest ? c.updated_at : latest, configs[0].updated_at);
-}
-
-interface ConfigListProps {}
-
-const ConfigList: React.FC<ConfigListProps> = ({}) => {
-  const [allConfigs, setAllConfigs] = useState<SystemConfig[]>([]);
+const ConfigList: React.FC = () => {
+  const [configs, setConfigs] = useState<SystemConfig[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [category, setCategory] = useState<Category>('all');
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
   const [saving, setSaving] = useState(false);
-
-  // 弹窗状态
-  const [redisModalVisible, setRedisModalVisible] = useState(false);
-  const [kafkaModalVisible, setKafkaModalVisible] = useState(false);
-
-  // 从 allConfigs 中分离 redis.*、kafka.* 和普通配置
-  const { redisConfigs, kafkaConfigs, normalConfigs } = useMemo(() => {
-    const redis: SystemConfig[] = [];
-    const kafka: SystemConfig[] = [];
-    const normal: SystemConfig[] = [];
-    for (const cfg of allConfigs) {
-      if (cfg.config_key.startsWith('redis.')) {
-        redis.push(cfg);
-      } else if (cfg.config_key.startsWith('kafka.')) {
-        kafka.push(cfg);
-      } else {
-        normal.push(cfg);
-      }
-    }
-    return { redisConfigs: redis, kafkaConfigs: kafka, normalConfigs: normal };
-  }, [allConfigs]);
-
-  // Redis 摘要
-  const redisSummary = useMemo(() => {
-    const hostsCfg = redisConfigs.find(c => c.config_key === 'redis.sentinel_hosts');
-    const masterCfg = redisConfigs.find(c => c.config_key === 'redis.master_name');
-    const hosts = hostsCfg ? summarizeJsonArray(hostsCfg.config_value) : '默认';
-    const master = masterCfg?.config_value || 'redis_master';
-    return `节点: ${hosts} | Master: ${master}`;
-  }, [redisConfigs]);
-
-  const redisUpdatedAt = useMemo(() => latestUpdatedAt(redisConfigs), [redisConfigs]);
-
-  // Kafka 摘要
-  const kafkaSummary = useMemo(() => {
-    const serversCfg = kafkaConfigs.find(c => c.config_key === 'kafka.bootstrap_servers');
-    const topicCfg = kafkaConfigs.find(c => c.config_key === 'kafka.result_topic');
-    const servers = serversCfg ? summarizeJsonArray(serversCfg.config_value) : '默认';
-    const topic = topicCfg?.config_value || 'dmlv4.results';
-    return `Broker: ${servers} | Topic: ${topic}`;
-  }, [kafkaConfigs]);
-
-  const kafkaUpdatedAt = useMemo(() => latestUpdatedAt(kafkaConfigs), [kafkaConfigs]);
 
   const fetchConfigs = useCallback(async () => {
     setLoading(true);
@@ -97,9 +35,9 @@ const ConfigList: React.FC<ConfigListProps> = ({}) => {
         category: category === 'all' ? undefined : category,
         active_only: false,
       });
-      setAllConfigs(res.data?.items || []);
-    } catch (err: any) {
-      setError('获取配置失败: ' + (err.message || '未知错误'));
+      setConfigs(res.data?.items || []);
+    } catch (err) {
+      setError(getErrorMessage(err, '获取配置失败'));
     } finally {
       setLoading(false);
     }
@@ -134,8 +72,8 @@ const ConfigList: React.FC<ConfigListProps> = ({}) => {
       setEditingKey(null);
       setEditValue('');
       await fetchConfigs();
-    } catch (err: any) {
-      setError('保存失败: ' + (err.message || '未知错误'));
+    } catch (err) {
+      setError(getErrorMessage(err, '保存失败'));
     } finally {
       setSaving(false);
     }
@@ -146,12 +84,10 @@ const ConfigList: React.FC<ConfigListProps> = ({}) => {
     else if (e.key === 'Escape') handleCancel();
   };
 
-  const showInTable = category === 'all' || category === 'system';
-
   return (
     <div className="config-list">
       <div className="config-list__header">
-        <h3>配置列表</h3>
+        <h3>运行时配置</h3>
         <div className="config-list__actions">
           <button type="button" className="btn btn--secondary btn--sm" onClick={fetchConfigs} disabled={loading}>
             刷新
@@ -196,72 +132,16 @@ const ConfigList: React.FC<ConfigListProps> = ({}) => {
               </tr>
             </thead>
             <tbody>
-              {/* ── Redis 合并行 ── */}
-              {showInTable && redisConfigs.length > 0 && (
-                <tr key="__redis_group__" className="config-row--group">
-                  <td>
-                    <div className="config-key-cell">
-                      <code className="config-key config-key--group">Redis 配置</code>
-                      <span className="restart-badge" title="修改后需要重启服务才能生效">需重启</span>
-                    </div>
-                  </td>
-                  <td className="config-value">
-                    <span className="config-value__text config-value--summary">{redisSummary}</span>
-                  </td>
-                  <td><span className="config-type-badge">组合</span></td>
-                  <td className="config-desc">Redis 连接参数（节点、用户名、密码等）</td>
-                  <td><span className="status-badge status-badge--active">启用</span></td>
-                  <td className="config-date">
-                    {redisUpdatedAt ? new Date(redisUpdatedAt).toLocaleString('zh-CN') : '-'}
-                  </td>
-                  <td className="config-actions">
-                    <button type="button" className="btn btn--ghost btn--xs" onClick={() => setRedisModalVisible(true)}>编辑</button>
-                  </td>
-                </tr>
-              )}
-
-              {/* ── Kafka 合并行 ── */}
-              {showInTable && kafkaConfigs.length > 0 && (
-                <tr key="__kafka_group__" className="config-row--group">
-                  <td>
-                    <div className="config-key-cell">
-                      <code className="config-key config-key--group">Kafka 配置</code>
-                      <span className="restart-badge" title="bootstrap_servers/client_id 修改后需要重启">需重启</span>
-                    </div>
-                  </td>
-                  <td className="config-value">
-                    <span className="config-value__text config-value--summary">{kafkaSummary}</span>
-                  </td>
-                  <td><span className="config-type-badge">组合</span></td>
-                  <td className="config-desc">Kafka 连接参数（Broker、Topic、Consumer Group 等）</td>
-                  <td><span className="status-badge status-badge--active">启用</span></td>
-                  <td className="config-date">
-                    {kafkaUpdatedAt ? new Date(kafkaUpdatedAt).toLocaleString('zh-CN') : '-'}
-                  </td>
-                  <td className="config-actions">
-                    <button type="button" className="btn btn--ghost btn--xs" onClick={() => setKafkaModalVisible(true)}>编辑</button>
-                  </td>
-                </tr>
-              )}
-
-              {/* ── 普通配置项 ── */}
-              {normalConfigs.length === 0 ? (
+              {configs.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="config-table__empty">
-                    {showInTable && (redisConfigs.length > 0 || kafkaConfigs.length > 0)
-                      ? '暂无其他配置项'
-                      : '暂无配置项'}
-                  </td>
+                  <td colSpan={7} className="config-table__empty">暂无配置项</td>
                 </tr>
               ) : (
-                normalConfigs.map(config => (
+                configs.map(config => (
                   <tr key={config.config_key}>
                     <td>
                       <div className="config-key-cell">
                         <code className="config-key">{config.config_key}</code>
-                        {config.needs_restart && (
-                          <span className="restart-badge" title="修改后需要重启服务才能生效">需重启</span>
-                        )}
                       </div>
                     </td>
                     <td className="config-value">
@@ -307,19 +187,6 @@ const ConfigList: React.FC<ConfigListProps> = ({}) => {
           </table>
         </div>
       )}
-
-      <RedisConfigModal
-        visible={redisModalVisible}
-        configs={redisConfigs}
-        onClose={() => setRedisModalVisible(false)}
-        onSaved={fetchConfigs}
-      />
-      <KafkaConfigModal
-        visible={kafkaModalVisible}
-        configs={kafkaConfigs}
-        onClose={() => setKafkaModalVisible(false)}
-        onSaved={fetchConfigs}
-      />
     </div>
   );
 };

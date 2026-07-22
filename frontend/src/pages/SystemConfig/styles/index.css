@@ -526,58 +526,6 @@
   border-top: 1px solid var(--border-color, #e0e0e0);
 }
 
-/* Redis 弹窗专属 */
-.redis-modal {
-  width: 560px;
-}
-
-.redis-modal__hint {
-  background: #fff3cd;
-  border: 1px solid #ffc107;
-  border-radius: 6px;
-  padding: 10px 14px;
-  font-size: 13px;
-  color: #856404;
-  margin-bottom: 20px;
-}
-
-/* 组合行（Redis 合并行） */
-.config-row--group td {
-  background: var(--bg-secondary, #f8f9fa);
-}
-
-.config-key--group {
-  background: #e8f0fe;
-  color: #1a73e8;
-}
-
-.config-value--summary {
-  color: var(--text-secondary, #555);
-  font-size: 13px;
-}
-
-/* Kafka 弹窗 */
-.kafka-modal {
-  width: 620px;
-}
-
-.kafka-section {
-  margin-bottom: 20px;
-}
-
-.kafka-section__title {
-  font-size: 14px;
-  font-weight: 600;
-  margin: 0 0 4px 0;
-  color: var(--text-primary, #1a1a2e);
-}
-
-.kafka-section__hint {
-  font-size: 12px;
-  color: var(--text-secondary, #888);
-  margin: 0 0 12px 0;
-}
-
 .form-textarea {
   min-height: 80px;
   font-family: 'Monaco', 'Menlo', monospace;
