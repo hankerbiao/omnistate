@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import { api } from '../services/api';
+import { getErrorMessage } from '../utils/errors';
 import type { CollectionAnalysisResult } from '../types';
 import { Dialog, DialogContent } from './ui/dialog';
 
@@ -72,22 +73,18 @@ const IssueItem = ({ severity, caseId, message }: { severity: string; caseId: st
   </div>
 );
 
-const CardSection = ({ label, count, children, emptyMsg }: {
-  label: string; count: number; children: React.ReactNode; emptyMsg?: string;
+const CardSection = ({ label, count, countLabel, children, emptyMsg }: {
+  label: string; count: number; countLabel?: string; children: React.ReactNode; emptyMsg?: string;
 }) => count > 0 ? (
   <div style={CARD}>
     <div style={CARD_HEADER}>
       <span style={{ fontWeight: 600, fontSize: 13, color: colors.text }}>{label}</span>
-      <span style={{ fontSize: 11, color: colors.gray }}>{count}</span>
+      <span style={{ fontSize: 11, color: colors.gray }}>{countLabel ?? count}</span>
     </div>
     <div style={{ padding: '4px 14px 8px' }}>{children}</div>
   </div>
 ) : (
   <div style={SUCCESS_MSG}>{emptyMsg}</div>
-);
-
-const SuccessBox = ({ text }: { text: string }) => (
-  <div style={SUCCESS_MSG}>{text}</div>
 );
 
 // ── 主组件 ──────────────────────────────────────────────
@@ -105,12 +102,12 @@ const AIAnalysisPanel: React.FC<AIAnalysisPanelProps> = ({ caseIds, autoCaseIds,
     try {
       const res = await api.analyzeCollection(collectionId, ['quality', 'redundancy', 'coverage']);
       setResult(res.data);
-    } catch (err: any) {
-      setError(err.message || 'AI分析请求失败');
+    } catch (err) {
+      setError(getErrorMessage(err, 'AI分析请求失败'));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [collectionId]);
 
   const toggle = () => {
     const next = !open;
@@ -155,14 +152,24 @@ const AIAnalysisPanel: React.FC<AIAnalysisPanelProps> = ({ caseIds, autoCaseIds,
         </div>
 
         {/* 质量分析 */}
-        <CardSection label="质量分析" count={`${result.quality.issues.length} 项问题`} emptyMsg="质量分析通过，未发现问题">
+        <CardSection
+          label="质量分析"
+          count={result.quality.issues.length}
+          countLabel={`${result.quality.issues.length} 项问题`}
+          emptyMsg="质量分析通过，未发现问题"
+        >
           {result.quality.issues.map((issue, i) => (
             <IssueItem key={i} severity={issue.severity} caseId={issue.case_id} message={issue.message} />
           ))}
         </CardSection>
 
         {/* 冗余检测 */}
-        <CardSection label="冗余检测" count={`${result.redundancy.duplicates.length} 对`} emptyMsg="未检测到冗余用例">
+        <CardSection
+          label="冗余检测"
+          count={result.redundancy.duplicates.length}
+          countLabel={`${result.redundancy.duplicates.length} 对`}
+          emptyMsg="未检测到冗余用例"
+        >
           {result.redundancy.duplicates.map((dup, i) => (
             <div key={i}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 0', borderBottom: `1px solid ${colors.grayBorder}` }}>
@@ -185,7 +192,12 @@ const AIAnalysisPanel: React.FC<AIAnalysisPanelProps> = ({ caseIds, autoCaseIds,
         </CardSection>
 
         {/* 覆盖率分析 */}
-        <CardSection label="覆盖率分析" count={`${result.coverage.gaps.length} 项盲区`} emptyMsg="覆盖率良好，未发现明显盲区">
+        <CardSection
+          label="覆盖率分析"
+          count={result.coverage.gaps.length}
+          countLabel={`${result.coverage.gaps.length} 项盲区`}
+          emptyMsg="覆盖率良好，未发现明显盲区"
+        >
           {result.coverage.gaps.map((gap, i) => (
             <div key={i} style={{ display: 'flex', gap: 6, padding: '5px 0', borderBottom: `1px solid ${colors.grayBorder}`, fontSize: 13, color: colors.text }}>
               <span style={{ color: colors.amber, flexShrink: 0 }}>!</span>

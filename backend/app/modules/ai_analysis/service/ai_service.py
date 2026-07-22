@@ -68,6 +68,98 @@ class AIService:
     """AI分析服务"""
 
     @staticmethod
+    def _build_pending_prompt(payload: dict[str, Any]) -> str:
+        stats = payload.get("stats", {})
+        category_stats = payload.get("category_stats", [])
+        items = payload.get("items", [])
+        return (
+            "请分析以下我的待处理任务看板快照，判断当前待办结构是否健康，"
+            "识别异常积压、超期风险、分类失衡和优先级建议。\n\n"
+            f"统计摘要: {json.dumps(stats, ensure_ascii=False)}\n\n"
+            f"分类占比: {json.dumps(category_stats, ensure_ascii=False)}\n\n"
+            f"重点任务列表: {json.dumps(items, ensure_ascii=False)}\n\n"
+            "请只返回严格 JSON，字段如下：\n"
+            "{\n"
+            '  "summary": "一句话总结",\n'
+            '  "health_score": 0,\n'
+            '  "anomalies": [{"severity": "warning", "title": "...", "detail": "...", "related_ids": ["..."]}],\n'
+            '  "priority_items": [{"id": "...", "title": "...", "reason": "...", "priority": "P1"}],\n'
+            '  "recommendations": ["..."]\n'
+            "}"
+        )
+
+    @staticmethod
+    async def analyze_pending_tasks(payload: dict[str, Any]) -> dict[str, Any]:
+        """分析我的待处理任务。"""
+        client = AIClient.get_instance()
+        ai_config = await client.get_config()
+
+        if not ai_config.get("enabled", True):
+            stats = payload.get("stats", {})
+            return {
+                "summary": "AI 未启用，返回基于当前待办统计的静态分析。",
+                "health_score": 0,
+                "anomalies": [
+                    {
+                        "severity": "info",
+                        "title": "AI 未启用",
+                        "detail": "请在系统配置中开启 AI 后获得自动分析结果。",
+                        "related_ids": [],
+                    }
+                ],
+                "priority_items": [
+                    {
+                        "id": item.get("id", ""),
+                        "title": item.get("title", ""),
+                        "reason": "根据现有待处理清单优先展示",
+                        "priority": "P1" if item.get("period") == "overdue" else "P2",
+                    }
+                    for item in payload.get("items", [])[:5]
+                ],
+                "recommendations": [
+                    f"当前待处理总量 {stats.get('total', 0)}，请优先消化超期事项。",
+                    "AI功能关闭时仅展示结构化建议，不返回模型推理结果。",
+                ],
+            }
+
+        try:
+            prompt = AIService._build_pending_prompt(payload)
+            content = await client.simple_chat(
+                system_prompt=(
+                    "你是一个严谨的任务运营分析专家，擅长从待处理任务看板识别"
+                    "积压、异常和优先级建议。只能输出严格 JSON。"
+                ),
+                user_content=prompt,
+                temperature=float(ai_config.get("temperature", 0.3)),
+                max_tokens=int(ai_config.get("max_tokens", 2048)),
+            )
+            result = AIClient._parse_json(content)
+            if not isinstance(result, dict):
+                raise ValueError("AI 返回格式错误")
+            result.setdefault("summary", "待处理任务分析完成")
+            result.setdefault("health_score", 60)
+            result.setdefault("anomalies", [])
+            result.setdefault("priority_items", [])
+            result.setdefault("recommendations", [])
+            return result
+        except Exception as exc:
+            log.error("待处理任务AI分析失败: {}", exc)
+            return {
+                "summary": f"AI 分析失败：{exc}",
+                "health_score": 0,
+                "anomalies": [
+                    {
+                        "severity": "critical",
+                        "title": "AI 分析失败",
+                        "detail": str(exc),
+                        "related_ids": [],
+                    }
+                ],
+                "priority_items": [],
+                "recommendations": ["请检查 AI 配置和模型可用性后重试。"],
+            }
+
+    @staticmethod
     async def _fetch_collection_cases(collection_id: str) -> list[dict]:
         """根据集合ID获取用例数据"""
         from fastapi import HTTPException
