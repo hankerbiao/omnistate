@@ -1,6 +1,7 @@
 """AuditLogMiddleware 单元测试。"""
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.shared.middleware.audit_log import AuditLogMiddleware
@@ -162,11 +163,12 @@ def test_audit_log_collection_name():
     assert AuditLogDoc.Settings.name == "audit_logs"
 
 
-def test_audit_log_has_ttl_index():
+def test_audit_log_has_no_ttl_index():
+    """审计日志不再设置 TTL 过期，永久保存。"""
     from app.modules.audit.repository.models.audit_log import AuditLogDoc
     indexes = AuditLogDoc.Settings.indexes
-    ttl = indexes[-1]
-    assert ttl.document.get("expireAfterSeconds") == 90 * 24 * 60 * 60
+    for idx in indexes:
+        assert idx.document.get("expireAfterSeconds") is None, f"不应存在 TTL 索引: {idx.document}"
 
 
 def test_audit_log_has_compound_indexes():
@@ -211,7 +213,7 @@ async def test_write_audit_log_skips_unauthenticated():
             get_trace.return_value = trace
 
             with patch("app.modules.audit.repository.models.audit_log.AuditLogDoc") as MockDoc:
-                await mw._write_audit_log(mock_request, mock_response, b'{"title":"x"}', 50)
+                await mw._write_audit_log(mock_request, 201, b'{"title":"x"}', 50)
                 MockDoc.assert_not_called()
 
 
@@ -241,7 +243,7 @@ async def test_write_audit_log_writes_for_authenticated():
 
             with patch("app.modules.audit.repository.models.audit_log.AuditLogDoc") as MockDoc:
                 MockDoc.return_value = mock_doc_instance
-                await mw._write_audit_log(mock_request, mock_response, b'{"title":"test"}', 120)
+                await mw._write_audit_log(mock_request, 201, b'{"title":"test"}', 120)
 
                 MockDoc.assert_called_once()
                 call_kwargs = MockDoc.call_args.kwargs
@@ -284,7 +286,7 @@ async def test_write_audit_log_skips_body_for_system_configs_and_redacts_query()
             with patch("app.modules.audit.repository.models.audit_log.AuditLogDoc") as MockDoc:
                 MockDoc.return_value = mock_doc_instance
                 body = b'{"config_key": "ai.api_key", "config_value": "sk-real-secret"}'
-                await mw._write_audit_log(mock_request, mock_response, body, 30)
+                await mw._write_audit_log(mock_request, 200, body, 30)
 
                 MockDoc.assert_called_once()
                 call_kwargs = MockDoc.call_args.kwargs
@@ -293,8 +295,68 @@ async def test_write_audit_log_skips_body_for_system_configs_and_redacts_query()
                 # 查询串敏感参数应被脱敏
                 assert call_kwargs["query_params"]["token"] == "***REDACTED***"
 
+
 def test_audit_log_actor_type_default():
     """AuditLogDoc 的 actor_type 默认值为 human。"""
     from app.modules.audit.repository.models.audit_log import AuditLogDoc
     assert AuditLogDoc.model_fields["actor_type"].default == "human"
 
+
+# ═══════════════════════════════════════════════════════════════════════
+#  端到端：纯 ASGI 中间件可捕获下游路由设置的操作者上下文
+# ═══════════════════════════════════════════════════════════════════════
+
+async def test_audit_log_middleware_captures_actor_from_downstream_context():
+    """回归测试：下游路由（认证依赖）在 contextvars 中设置 actor_id 后，
+    纯 ASGI 中间件必须能在同任务内读到并写入审计日志。
+
+    若中间件误用 BaseHTTPMiddleware（call_next 把下游跑在独立子任务），
+    contextvars 无法回传，actor_id 恒为 '-'，audit_logs 永不创建。
+    """
+    from app.shared.context import set_operation_context
+    from app.shared.middleware.audit_log import AuditLogMiddleware
+
+    captured: dict = {}
+
+    async def downstream_app(scope, receive, send):
+        # 模拟认证依赖：在中间件同任务内设置操作者上下文
+        set_operation_context("user-001", "张三", ["ADMIN"])
+        await send({"type": "http.response.start", "status": 201, "headers": []})
+        await send({"type": "http.response.body", "body": b"", "more_body": False})
+
+    middleware = AuditLogMiddleware(downstream_app)
+
+    scope = {
+        "type": "http",
+        "method": "POST",
+        "path": "/api/v1/test-cases",
+        "query_string": b"",
+        "headers": [],
+    }
+
+    async def receive():
+        return {"type": "http.request", "body": b'{"title": "x"}', "more_body": False}
+
+    sent_messages = []
+
+    async def send(message):
+        sent_messages.append(message)
+
+    with patch("app.modules.audit.repository.models.audit_log.AuditLogDoc") as MockDoc:
+        mock_instance = MagicMock()
+        mock_instance.insert = AsyncMock()
+        MockDoc.return_value = mock_instance
+
+        await middleware(scope, receive, send)
+
+        # 等待后台写入任务完成
+        await asyncio.sleep(0)
+
+        MockDoc.assert_called_once()
+        captured.update(MockDoc.call_args.kwargs)
+
+    assert captured["actor_id"] == "user-001"
+    assert captured["username"] == "张三"
+    assert captured["action"] == "create"
+    assert captured["resource_type"] == "test_case"
+    assert captured["status_code"] == 201

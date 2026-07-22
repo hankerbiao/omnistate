@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -13,6 +14,7 @@ from app.shared.auth.jwt_auth import (
     _sign_hs256,
     create_access_token,
     decode_token,
+    decode_open_platform_gateway_token,
     is_admin_role,
     _normalize_role_id,
     require_permission,
@@ -221,6 +223,29 @@ class TestDecodeToken:
         assert exc.value.status_code == 401
         assert "invalid audience" in str(exc.value.detail)
 
+    def test_decode_rejects_non_hs256_algorithm_header(self):
+        """JWT header 不能声明非 HS256 算法。"""
+        header_b64 = _b64url_encode(json.dumps({"alg": "none", "typ": "JWT"}).encode())
+        now = 2000000000
+        payload = {
+            "sub": "user-001",
+            "iat": now,
+            "exp": now + 3600,
+            "iss": "tcm-backend",
+            "aud": "tcm-frontend",
+        }
+        payload_b64 = _b64url_encode(json.dumps(payload).encode())
+        from app.shared.config import get_settings
+
+        signing_input = f"{header_b64}.{payload_b64}".encode("utf-8")
+        sig = _sign_hs256(signing_input, get_settings().jwt.secret_key)
+        token = f"{header_b64}.{payload_b64}.{sig}"
+
+        with pytest.raises(HTTPException) as exc:
+            decode_token(token)
+        assert exc.value.status_code == 401
+        assert "invalid token" in str(exc.value.detail)
+
     def test_decode_invalid_format(self):
         """非三段式 token"""
         with pytest.raises(HTTPException) as exc:
@@ -264,6 +289,85 @@ class TestDecodeToken:
     def test_decode_empty_token(self):
         with pytest.raises(HTTPException):
             decode_token("")
+
+    def test_decode_valid_open_platform_gateway_token(self):
+        from datetime import datetime, timedelta, timezone
+
+        settings = SimpleNamespace(
+            enabled=True,
+            secret_key="unit-test-open-platform-secret",
+            algorithm="HS256",
+            issuer="dml-open-platform",
+            audience="dml-backend",
+            required_token_use="open_platform_gateway",
+        )
+        now = datetime.now(timezone.utc)
+        header_b64 = _b64url_encode(json.dumps({"alg": "HS256", "typ": "JWT"}).encode())
+        payload = {
+            "sub": "user_admin",
+            "iat": int(now.timestamp()),
+            "exp": int((now + timedelta(minutes=5)).timestamp()),
+            "iss": settings.issuer,
+            "aud": settings.audience,
+            "token_use": settings.required_token_use,
+            "client_id": "key_demo",
+            "scope": "execution:read",
+        }
+        payload_b64 = _b64url_encode(json.dumps(payload).encode())
+        signing_input = f"{header_b64}.{payload_b64}".encode("utf-8")
+        sig = _sign_hs256(signing_input, settings.secret_key)
+        token = f"{header_b64}.{payload_b64}.{sig}"
+
+        with patch(
+            "app.shared.auth.jwt_auth.get_settings",
+            return_value=SimpleNamespace(open_platform_gateway_jwt=settings),
+        ):
+            decoded = decode_open_platform_gateway_token(token)
+
+        assert decoded["sub"] == "user_admin"
+        assert decoded["client_id"] == "key_demo"
+        assert decoded["scope"] == "execution:read"
+
+    def test_decode_open_platform_gateway_token_rejects_wrong_token_use(self):
+        from datetime import datetime, timedelta, timezone
+
+        settings = SimpleNamespace(
+            enabled=True,
+            secret_key="unit-test-open-platform-secret",
+            algorithm="HS256",
+            issuer="dml-open-platform",
+            audience="dml-backend",
+            required_token_use="open_platform_gateway",
+        )
+        now = datetime.now(timezone.utc)
+        header_b64 = _b64url_encode(json.dumps({"alg": "HS256", "typ": "JWT"}).encode())
+        payload = {
+            "sub": "user_admin",
+            "iat": int(now.timestamp()),
+            "exp": int((now + timedelta(minutes=5)).timestamp()),
+            "iss": settings.issuer,
+            "aud": settings.audience,
+            "token_use": "access",
+        }
+        payload_b64 = _b64url_encode(json.dumps(payload).encode())
+        signing_input = f"{header_b64}.{payload_b64}".encode("utf-8")
+        sig = _sign_hs256(signing_input, settings.secret_key)
+        token = f"{header_b64}.{payload_b64}.{sig}"
+
+        with pytest.raises(HTTPException) as exc:
+            with patch(
+                "app.shared.auth.jwt_auth.get_settings",
+                return_value=SimpleNamespace(open_platform_gateway_jwt=settings),
+            ):
+                decode_open_platform_gateway_token(token)
+        assert exc.value.status_code == 401
+        assert "invalid token use" in str(exc.value.detail)
+
+    def test_decode_open_platform_gateway_token_disabled_by_default(self):
+        with pytest.raises(HTTPException) as exc:
+            decode_open_platform_gateway_token("a.b.c")
+        assert exc.value.status_code == 401
+        assert "invalid token" in str(exc.value.detail)
 
 
 # =============================================================================

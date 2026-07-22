@@ -58,15 +58,35 @@ def create_access_token(subject: str, expires_minutes: Optional[int] = None) -> 
     return f"{header_b64}.{payload_b64}.{signature_b64}"
 
 
-def decode_token(token: str) -> Dict[str, Any]:
-    """校验并解析 JWT，返回 payload"""
+def _decode_hs256_token(
+        token: str,
+        *,
+        secret_key: str,
+        issuer: str,
+        audience: str,
+        required_token_use: str | None = None,
+) -> Dict[str, Any]:
+    """Verify and decode a HS256 JWT payload."""
     try:
         header_b64, payload_b64, signature_b64 = token.split(".")
     except ValueError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid token")
 
+    try:
+        header = json.loads(_b64url_decode(header_b64))
+    except (
+            binascii.Error,
+            UnicodeDecodeError,
+            json.JSONDecodeError,
+            TypeError,
+            ValueError,
+    ):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid token")
+    if not isinstance(header, dict) or header.get("alg") != "HS256":
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid token")
+
     signing_input = f"{header_b64}.{payload_b64}".encode("utf-8")
-    expected_sig = _sign_hs256(signing_input, get_settings().jwt.secret_key)
+    expected_sig = _sign_hs256(signing_input, secret_key)
     if not hmac.compare_digest(signature_b64, expected_sig):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid token")
 
@@ -93,13 +113,43 @@ def decode_token(token: str) -> Dict[str, Any]:
 
     if now_ts >= exp_ts:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="token expired")
-    _jwt = get_settings().jwt
-    if payload.get("iss") != _jwt.issuer:
+    if payload.get("iss") != issuer:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid issuer")
-    if payload.get("aud") != _jwt.audience:
+    if payload.get("aud") != audience:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid audience")
+    if required_token_use and payload.get("token_use") != required_token_use:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid token use")
 
     return payload
+
+
+def decode_token(token: str) -> Dict[str, Any]:
+    """校验并解析普通用户 JWT，返回 payload。"""
+    _jwt = get_settings().jwt
+    if _jwt.algorithm != "HS256":
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid token")
+    return _decode_hs256_token(
+        token,
+        secret_key=_jwt.secret_key,
+        issuer=_jwt.issuer,
+        audience=_jwt.audience,
+    )
+
+
+def decode_open_platform_gateway_token(token: str) -> Dict[str, Any]:
+    """校验并解析 Open Platform 网关签发的内部 JWT。"""
+    config = get_settings().open_platform_gateway_jwt
+    if not config.enabled:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid token")
+    if config.algorithm != "HS256":
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid token")
+    return _decode_hs256_token(
+        token,
+        secret_key=config.secret_key,
+        issuer=config.issuer,
+        audience=config.audience,
+        required_token_use=config.required_token_use,
+    )
 
 
 # ===== FastAPI 依赖 =====
@@ -124,7 +174,10 @@ async def get_current_user(
         )
 
     token = credentials.credentials
-    payload = decode_token(token)
+    try:
+        payload = decode_token(token)
+    except HTTPException:
+        payload = decode_open_platform_gateway_token(token)
     user_id = payload.get("sub")
     if not user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid token")

@@ -7,6 +7,7 @@ AI 友好注释说明：
 from .jwt_auth import (
     create_access_token,
     decode_token,
+    decode_open_platform_gateway_token,
     get_current_user,
     get_user_permissions,
     is_admin_role,
@@ -18,6 +19,7 @@ from .password import hash_password, verify_password
 __all__ = [
     "create_access_token",
     "decode_token",
+    "decode_open_platform_gateway_token",
     "get_current_user",
     "get_user_permissions",
     "is_admin_role",

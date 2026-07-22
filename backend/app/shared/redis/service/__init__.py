@@ -15,71 +15,17 @@ from typing import Any
 
 from redis.sentinel import Sentinel
 
-from app.shared.redis.service.constants import DEFAULT_EVENT_CHANNEL, DEFAULT_SENTINEL_PORT, HEARTBEAT_INTERVAL_SEC, KEY_NAMESPACE, PUBLISH_QUEUE_MAXSIZE, SERVICE_REGISTRY_TTL_SEC
-from app.shared.redis.service.exceptions import RedisConnectionError
 from app.shared.config import get_settings
-from app.shared.config.settings import RedisConfig
 from app.shared.core.logger import log as logger
-
-
-# ── 动态配置（启动时从 MongoDB 加载，覆盖 config/config.yaml）─────────
-_dynamic_config: dict[str, Any] | None = None
-
-
-def override_redis_config(config: dict[str, Any]) -> None:
-    """设置动态 Redis 配置（从 MongoDB 加载的覆盖值）。
-
-    必须在 RedisManager 首次初始化之前调用，由 lifespan 中的
-    load_redis_config_from_db() 触发。
-    """
-    global _dynamic_config
-    _dynamic_config = config
-    logger.info("Redis 动态配置已设置: {}", list(config.keys()))
-
-
-def _parse_db_value(value: str, config_type: str) -> Any:
-    """解析 MongoDB 中存储的配置值为 Python 类型。"""
-    if config_type == "integer":
-        return int(value)
-    elif config_type == "float":
-        return float(value)
-    elif config_type == "boolean":
-        return value.lower() in ("true", "1", "yes", "on")
-    elif config_type == "json":
-        return json.loads(value)
-    return value
-
-
-async def load_redis_config_from_db() -> None:
-    """从 MongoDB system_configs 集合加载 Redis 配置覆盖。
-
-    生命周期调用顺序：先连 MongoDB → 初始化 Beanie → 初始化默认配置
-    → 加载 Redis 数据库配置 → 初始化 Redis 连接池。
-
-    仅在数据库中有 redis.* 配置项且 is_active=True 时生效，
-    否则静默跳过，使用 config/config.yaml 中的配置。
-    """
-    try:
-        from app.modules.system_config.repository.models import SystemConfigDoc
-
-        docs = await SystemConfigDoc.find(
-            {"config_key": {"$regex": r"^redis\."}, "is_active": True}
-        ).to_list()
-
-        if not docs:
-            return
-
-        config: dict[str, Any] = {}
-        for doc in docs:
-            key = doc.config_key[len("redis."):]
-            value = _parse_db_value(doc.config_value, doc.config_type)
-            if value is not None:
-                config[key] = value
-
-        if config:
-            override_redis_config(config)
-    except Exception as exc:
-        logger.warning("从数据库加载 Redis 配置失败（使用 config/config.yaml 默认值）: {}", exc)
+from app.shared.redis.service.constants import (
+    DEFAULT_EVENT_CHANNEL,
+    DEFAULT_SENTINEL_PORT,
+    HEARTBEAT_INTERVAL_SEC,
+    KEY_NAMESPACE,
+    PUBLISH_QUEUE_MAXSIZE,
+    SERVICE_REGISTRY_TTL_SEC,
+)
+from app.shared.redis.service.exceptions import RedisConnectionError
 
 
 class RedisManager:
@@ -99,12 +45,7 @@ class RedisManager:
             return
 
         try:
-            # 优先使用从数据库加载的动态配置，否则回退到 config/config.yaml
-            if _dynamic_config is not None:
-                cfg = RedisConfig(**_dynamic_config)
-                logger.info("Redis 使用数据库动态配置: {}", cfg.model_dump(exclude={"password"}))
-            else:
-                cfg = get_settings().redis
+            cfg = get_settings().redis
             sentinel_hosts: list[tuple[str, int]] = []
             for host_str in cfg.sentinel_hosts:
                 parts = host_str.split(":")
@@ -147,12 +88,10 @@ class RedisManager:
         return RedisManager._slave
 
 
-# ── 模块级引用（初始为 None，由 lifespan 触发初始化）───────────────
 redis_mgr: RedisManager | None = None
 redis_conn: Any = None
 redis_read: Any = None
 
-# ── 发布队列（独立于连接池初始化，可以提前创建）──────────────────
 _publish_queue: queue.Queue = queue.Queue(maxsize=PUBLISH_QUEUE_MAXSIZE)
 _publish_thread: threading.Thread | None = None
 
@@ -172,31 +111,19 @@ def init_redis() -> None:
     _publish_thread.start()
     logger.info("Redis 后台发布线程已启动")
 
-    # 注册服务实例并启动心跳续期
     register_service()
     _start_heartbeat()
 
 
 def build_key(domain: str, entity: str, key_id: str) -> str:
-    """构建符合命名规范的 Redis Key。
-
-    Args:
-        domain: 业务域，如 "cache"、"user"、"order"
-        entity: 实体名，如 "session"、"profile"
-        key_id: 实体标识，如用户 ID、订单 ID
-
-    Returns:
-        格式: dmlv4:{domain}:{entity}:{id}
-    """
+    """构建符合命名规范的 Redis Key。"""
     return f"{KEY_NAMESPACE}:{domain}:{entity}:{key_id}"
-
-
-# ── 异步 Pub/Sub 发布（后台线程消费，不阻塞主业务线程）─────────────
 
 
 def _bg_publisher() -> None:
     """后台线程：独立长连接消费发布队列。"""
     import app.shared.redis.service as svc
+
     while True:
         try:
             channel, message = _publish_queue.get()
@@ -213,8 +140,6 @@ def publish_event(message: str, channel: str = DEFAULT_EVENT_CHANNEL) -> None:
         logger.warning("Redis 发布队列已满，消息已丢弃")
 
 
-# ── 服务注册心跳续期 ──────────────────────────────────────────────
-
 _heartbeat_thread: threading.Thread | None = None
 _heartbeat_stop = threading.Event()
 
@@ -227,6 +152,7 @@ def _heartbeat_loop() -> None:
             break
         try:
             import app.shared.redis.service as svc
+
             info = _build_instance_info(include_registered_at=False)
             logger.debug("Redis heartbeat: key={} info={}", f"{SERVICE_REGISTRY_KEY}:{info['service_name']}", info)
             svc.redis_conn.setex(
@@ -235,7 +161,6 @@ def _heartbeat_loop() -> None:
                 json.dumps(info),
             )
         except Exception as exc:
-            # 心跳失败不中断循环，下次重试；记录日志以便定位网络/Redis 抖动
             logger.warning("Redis 心跳续期失败: {}", exc)
 
 
@@ -273,8 +198,6 @@ def stop_heartbeat() -> None:
     _heartbeat_stop.set()
 
 
-# ── 服务注册/发现（将本服务实例信息上报到 Redis）───────────────────
-
 SERVICE_REGISTRY_KEY: str = get_settings().redis.service_registry_key
 
 
@@ -283,7 +206,7 @@ def _get_local_ip() -> str:
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.settimeout(0.5)
-        s.connect(("10.0.0.1", 80))  # 不需要真正可达
+        s.connect(("10.0.0.1", 80))
         ip = s.getsockname()[0]
         s.close()
         return ip

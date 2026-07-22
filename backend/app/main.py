@@ -1,14 +1,15 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
-from fastapi.responses import PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import PlainTextResponse
 from pathlib import Path
+from urllib.parse import urlparse
 
 from pymongo import AsyncMongoClient
 
 from app.shared.api.errors.handlers import setup_exception_handlers
 from app.shared.api.main import api_router
-from app.shared.api.routes import health_router
+from app.shared.api.routes import health_router, metrics_router
 from app.shared.config import get_settings
 from app.shared.core.logger import log
 from app.shared.core.mongo_client import set_mongo_client
@@ -18,12 +19,47 @@ from app.shared.kafka.health import check_kafka_health
 from app.shared.middleware import RequestLoggingMiddleware, AuditLogMiddleware
 
 
+def _describe_mongo(uri: str) -> dict:
+    """解析 MongoDB URI 并脱敏凭证，返回连接信息字典（供 debug 日志使用）。"""
+    parsed = urlparse(uri)
+    if "@" in parsed.netloc:
+        # 按最后一个 @ 分割，密码即使含 @ 也不会泄漏
+        _userinfo, _, _hostpart = parsed.netloc.rpartition("@")
+        masked_netloc = f"***:***@{_hostpart}"
+    else:
+        masked_netloc = parsed.netloc
+    masked_uri = f"{parsed.scheme}://{masked_netloc}{parsed.path}"
+    try:
+        port = parsed.port
+    except ValueError:
+        # 副本集（多 host）无法解析单一端口
+        port = "-"
+    return {
+        "uri": masked_uri,
+        "host": parsed.hostname or "-",
+        "port": port,
+        "auth_db": parsed.path.lstrip("/") or "admin",
+    }
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # 应用生命周期钩子：统一管理 Mongo 连接和 Beanie 初始化
     log.info("正在连接 MongoDB...")
 
-    client = AsyncMongoClient(get_settings().mongodb.uri)
+    mongo_cfg = get_settings().mongodb
+    client = AsyncMongoClient(mongo_cfg.uri)
+
+    # 记录 MongoDB 连接详情（debug 级别，凭证已脱敏）
+    _mongo_info = _describe_mongo(mongo_cfg.uri)
+    log.debug(
+        "MongoDB 连接信息 | uri={} | host={} | port={} | db={} | auth_db={}",
+        _mongo_info["uri"],
+        _mongo_info["host"],
+        _mongo_info["port"],
+        mongo_cfg.db_name,
+        _mongo_info["auth_db"],
+    )
 
     try:
         await client.admin.command('ping')
@@ -62,22 +98,6 @@ async def lifespan(app: FastAPI):
         from app.modules.system_config.service import ConfigService
         await ConfigService.init_default_configs()
         log.success("系统默认配置初始化完成")
-
-        # 从数据库加载 Redis 配置覆盖（必须在 init_redis 之前调用）
-        try:
-            from app.shared.redis.service import load_redis_config_from_db
-            await load_redis_config_from_db()
-            log.success("Redis 数据库配置加载完成")
-        except Exception as e:
-            log.warning("Redis 数据库配置加载失败（使用 config/config.yaml 默认值）: {}", e)
-
-        # 从数据库加载 Kafka 配置覆盖（Kafka 是惰性初始化，提前加载以便后续使用）
-        try:
-            from app.shared.kafka.config import load_kafka_config_from_db
-            await load_kafka_config_from_db()
-            log.success("Kafka 数据库配置加载完成")
-        except Exception as e:
-            log.warning("Kafka 数据库配置加载失败（使用 config/config.yaml 默认值）: {}", e)
 
         # 初始化 Redis 连接池（非阻塞：超时或失败不阻断服务启动）
         try:
@@ -159,6 +179,7 @@ setup_exception_handlers(app)
 
 app.include_router(api_router)
 app.include_router(health_router, prefix="/health", tags=["Health"])
+app.include_router(metrics_router, prefix="/health", tags=["Health"])
 
 
 # ── AI 发现文件 ──────────────────────────────────────────────

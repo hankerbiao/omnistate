@@ -13,7 +13,7 @@ class AuditLogDoc(Document):
     """操作审计日志。
 
     每条记录代表一次用户写操作（POST/PUT/PATCH/DELETE），
-    存储到 MongoDB audit_logs 集合，90 天后自动过期。
+    存储到 MongoDB audit_logs 集合，永久保存。
     """
 
     # ── 操作者信息 ──
@@ -51,8 +51,5 @@ class AuditLogDoc(Document):
             IndexModel("action"),
             IndexModel([("actor_id", 1), ("created_at", -1)]),
             IndexModel([("resource_type", 1), ("resource_id", 1)]),
-            IndexModel(
-                "created_at",
-                expireAfterSeconds=90 * 24 * 60 * 60,  # 90 天 TTL
-            ),
+            # TTL 索引已移除，审计日志永久保存
         ]

@@ -119,6 +119,16 @@ jwt:
   issuer: "tcm-backend"
   audience: "tcm-frontend"
 
+# Open Platform 网关调用后端时使用的内部短期 JWT。
+# 生产环境必须与 open-platform/backend 的 DML_GATEWAY_UPSTREAM_AUTH_* 配置保持一致。
+open_platform_gateway_jwt:
+  enabled: false
+  secret_key: ""  # 启用时使用 openssl rand -hex 32 生成，并与网关配置保持一致
+  algorithm: "HS256"
+  issuer: "dml-open-platform"
+  audience: "dml-backend"
+  required_token_use: "open_platform_gateway"
+
 # =============================================================================
 # 敏感系统配置写入前需设置 Fernet 密钥：
 # export DML_SYSTEM_CONFIG_ENCRYPTION_KEY="$(python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')"
@@ -142,3 +152,5 @@ logging:
     info_days: 7
     error_days: 30
     debug_days: 3
+  # 超过该阈值的 HTTP 请求会输出 http_slow_request 结构化 WARNING 日志
+  slow_request_threshold_ms: 800

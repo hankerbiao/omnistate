@@ -7,7 +7,7 @@ from typing import Any
 
 import yaml
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 # =============================================================================
@@ -164,6 +164,25 @@ class JWTConfig(BaseModel):
     audience: str = "tcm-frontend"
 
 
+class OpenPlatformGatewayJWTConfig(BaseModel):
+    """Open Platform gateway-to-backend JWT trust configuration."""
+
+    enabled: bool = False
+    secret_key: str = ""
+    algorithm: str = "HS256"
+    issuer: str = "dml-open-platform"
+    audience: str = "dml-backend"
+    required_token_use: str = "open_platform_gateway"
+
+    @model_validator(mode="after")
+    def validate_enabled_secret(self) -> "OpenPlatformGatewayJWTConfig":
+        if self.enabled and not self.secret_key:
+            raise ValueError("open_platform_gateway_jwt.secret_key must be set when enabled")
+        if self.enabled and self.secret_key == "dev-open-platform-gateway-secret-change-me":
+            raise ValueError("open_platform_gateway_jwt.secret_key must not use the development placeholder")
+        return self
+
+
 class ExecutionConfig(BaseModel):
     """任务执行配置。"""
 
@@ -172,7 +191,6 @@ class ExecutionConfig(BaseModel):
     kafka_worker_agent_id: str = "execution-kafka-worker"
     kafka_worker_heartbeat_ttl_sec: int = 30
     kafka_worker_heartbeat_interval_sec: int = 10
-
 
 
 class LoggingRetentionConfig(BaseModel):
@@ -202,6 +220,9 @@ class LoggingConfig(BaseModel):
 
     slow_query_threshold_ms: int = 200
     """慢查询阈值（毫秒，预留字段）。"""
+
+    slow_request_threshold_ms: int = 800
+    """慢请求阈值（毫秒），超过后输出 http_slow_request 结构化日志。"""
 
     module_levels: dict[str, str] = Field(default_factory=dict)
     """按模块路径独立控制日志级别，如 {"app.modules.auth": "WARNING"}。"""
@@ -256,6 +277,9 @@ class Settings(BaseModel):
     redis: RedisConfig = Field(default_factory=RedisConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     notification: NotificationConfig = Field(default_factory=NotificationConfig)
+    open_platform_gateway_jwt: OpenPlatformGatewayJWTConfig = Field(
+        default_factory=OpenPlatformGatewayJWTConfig
+    )
 
 
 # =============================================================================

@@ -1,4 +1,4 @@
-"""操作审计日志中间件。
+"""操作审计日志中间件（纯 ASGI 实现）。
 
 记录所有写操作（POST/PUT/PATCH/DELETE）的完整审计信息：
 - 操作者（actor_id / username / roles）
@@ -7,6 +7,13 @@
 - 响应信息（status_code / duration_ms）
 
 异步写入 MongoDB，不阻塞请求响应。
+
+重要：本中间件必须实现为纯 ASGI 中间件，不能继承 Starlette 的
+BaseHTTPMiddleware。原因：BaseHTTPMiddleware 的 call_next 会把下游路由（含认证
+依赖注入）跑在一个独立的 asyncio 子任务里，导致认证依赖内 set_operation_context
+设置的 contextvars 无法回传到中间件的任务上下文（经典 contextvars 隔离坑）。
+纯 ASGI 中间件中下游与中间件运行在同一任务，contextvars 正常传播，中间件才能正确
+读到操作者信息；否则 audit_logs 集合永远不会被创建（actor_id 恒为默认值 "-"）。
 """
 from __future__ import annotations
 
@@ -16,8 +23,8 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
-from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.shared.context import get_operation_context, get_trace_context
 from app.shared.core.logger import log
@@ -88,41 +95,66 @@ PATH_ACTION_OVERRIDES: dict[str, str] = {
 }
 
 
-class AuditLogMiddleware(BaseHTTPMiddleware):
-    """操作审计日志中间件。
+class AuditLogMiddleware:
+    """操作审计日志中间件（纯 ASGI 实现）。
 
-    注册顺序：在 RequestLoggingMiddleware 之后（此时 TraceContext 已填充）。
-    OperationContext 在路由依赖注入阶段填充，中间件在 call_next 之后读取。
+    注册顺序：在 RequestLoggingMiddleware 之后（此时 TraceContext 已填充）；
+    由于是纯 ASGI，下游路由与中间件同任务运行，OperationContext 在路由依赖注入
+    阶段填充后，中间件在 await self.app(...) 之后可直接读到。
     """
 
-    async def dispatch(self, request: Request, call_next):
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        request = Request(scope, receive=receive)
         path = request.url.path
 
         # 跳过非审计路径
         if path in SKIP_PATHS or request.method not in AUDITED_METHODS:
-            return await call_next(request)
+            await self.app(scope, receive, send)
+            return
 
         # 读取请求体（需在路由前读，因为 body 是流式的）
         body_bytes = await request.body()
 
         # 重新注入 body 供路由读取
         if body_bytes:
-            async def _receive():
-                return {"type": "http.request", "body": body_bytes, "more_body": False}
-            request._receive = _receive
+            saved_body = body_bytes
+
+            async def _receive() -> Message:
+                return {"type": "http.request", "body": saved_body, "more_body": False}
+        else:
+            _receive = receive
 
         start_time = time.monotonic()
-        response = await call_next(request)
-        duration_ms = int((time.monotonic() - start_time) * 1000)
 
-        # 异步写入审计日志
+        # 捕获响应状态码（纯 ASGI 中需从 send 消息里取）
+        response_status: dict[str, int] = {}
+
+        async def _send(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                response_status["status"] = message["status"]
+            await send(message)
+
+        # 纯 ASGI：下游与中间件同任务运行，contextvars（含操作者上下文）可传播
+        await self.app(scope, _receive, _send)
+
+        duration_ms = int((time.monotonic() - start_time) * 1000)
+        status_code = response_status.get("status", 0)
+
+        # 异步写入审计日志（此时操作者上下文已就绪）
         asyncio.create_task(
-            self._write_audit_log(request, response, body_bytes, duration_ms)
+            self._write_audit_log(request, status_code, body_bytes, duration_ms)
         )
 
-        return response
-
-    async def _write_audit_log(self, request: Request, response, body_bytes: bytes, duration_ms: int):
+    async def _write_audit_log(
+        self, request: Request, status_code: int, body_bytes: bytes, duration_ms: int
+    ):
         """写入审计日志（异步，不阻塞响应）。"""
         try:
             from app.modules.audit.repository.models.audit_log import AuditLogDoc
@@ -158,7 +190,7 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
                 resource_type=resource_type,
                 resource_id=resource_id,
                 request_body=request_body,
-                status_code=response.status_code,
+                status_code=status_code,
                 duration_ms=duration_ms,
                 created_at=datetime.now(timezone.utc),
             )
