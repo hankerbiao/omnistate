@@ -6,6 +6,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      network: host
       args: *python-uv-index
     image: dml-open-platform-gateway:local
     container_name: dml-open-platform-gateway
@@ -45,6 +46,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      network: host
       args: *python-uv-index
     image: dml-open-platform-gateway:local
     container_name: dml-open-platform-mcp
