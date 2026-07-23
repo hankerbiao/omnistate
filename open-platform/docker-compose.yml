@@ -7,6 +7,15 @@ x-python-proxy-args: &python-proxy-args
   NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1,host.docker.internal,::1}
   ALL_PROXY: ${ALL_PROXY:-socks5://10.2.48.65:7897}
 
+x-frontend-build-args: &frontend-build-args
+  HTTP_PROXY: ${HTTP_PROXY:-http://10.2.48.65:7897}
+  HTTPS_PROXY: ${HTTPS_PROXY:-http://10.2.48.65:7897}
+  NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1,host.docker.internal,::1}
+  ALL_PROXY: ${ALL_PROXY:-socks5://10.2.48.65:7897}
+  VITE_OPEN_PLATFORM_API_BASE_URL: ${VITE_OPEN_PLATFORM_API_BASE_URL:-}
+  VITE_OPEN_PLATFORM_CONSOLE_TOKEN: ${VITE_OPEN_PLATFORM_CONSOLE_TOKEN:-dev-console-token}
+  VITE_OPEN_PLATFORM_USE_MOCK: ${VITE_OPEN_PLATFORM_USE_MOCK:-false}
+
 services:
   open-platform-gateway:
     build:
@@ -82,6 +91,21 @@ services:
       - python
       - -m
       - mcp_server.server
+    depends_on:
+      open-platform-gateway:
+        condition: service_healthy
+
+  open-platform-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      network: host
+      args: *frontend-build-args
+    image: dml-open-platform-frontend:local
+    container_name: dml-open-platform-frontend
+    restart: unless-stopped
+    ports:
+      - "8808:80"
     depends_on:
       open-platform-gateway:
         condition: service_healthy
