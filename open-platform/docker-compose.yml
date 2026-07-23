@@ -2,10 +2,10 @@ x-python-uv-index: &python-uv-index
   UV_DEFAULT_INDEX: ${UV_DEFAULT_INDEX:-https://mirrors.aliyun.com/pypi/simple/}
 
 x-python-proxy-args: &python-proxy-args
-  HTTP_PROXY: ${HTTP_PROXY:-}
-  HTTPS_PROXY: ${HTTPS_PROXY:-}
-  NO_PROXY: ${NO_PROXY:-}
-  ALL_PROXY: ${ALL_PROXY:-}
+  HTTP_PROXY: ${HTTP_PROXY:-http://10.2.48.65:7897}
+  HTTPS_PROXY: ${HTTPS_PROXY:-http://10.2.48.65:7897}
+  NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1,host.docker.internal,::1}
+  ALL_PROXY: ${ALL_PROXY:-socks5://10.2.48.65:7897}
 
 services:
   open-platform-gateway:

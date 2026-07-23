@@ -1,9 +1,9 @@
 FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
 
-ARG HTTP_PROXY
-ARG HTTPS_PROXY
-ARG NO_PROXY
-ARG ALL_PROXY
+ARG HTTP_PROXY=http://10.2.48.65:7897
+ARG HTTPS_PROXY=http://10.2.48.65:7897
+ARG NO_PROXY=localhost,127.0.0.1,host.docker.internal,::1
+ARG ALL_PROXY=socks5://10.2.48.65:7897
 ARG UV_DEFAULT_INDEX=https://mirrors.aliyun.com/pypi/simple/
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
