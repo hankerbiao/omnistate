@@ -1,5 +1,5 @@
 x-python-uv-index: &python-uv-index
-  UV_DEFAULT_INDEX: ${UV_DEFAULT_INDEX:-https://pypi.tuna.tsinghua.edu.cn/simple/}
+  UV_DEFAULT_INDEX: ${UV_DEFAULT_INDEX:-https://mirrors.aliyun.com/pypi/simple/}
 
 services:
   open-platform-gateway:

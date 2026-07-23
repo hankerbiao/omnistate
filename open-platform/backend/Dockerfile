@@ -1,6 +1,6 @@
 FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
 
-ARG UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple/
+ARG UV_DEFAULT_INDEX=https://mirrors.aliyun.com/pypi/simple/
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
