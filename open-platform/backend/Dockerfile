@@ -12,7 +12,7 @@ WORKDIR /app
 
 COPY pyproject.toml uv.lock ./
 
-RUN uv sync --frozen --no-dev --no-install-project
+RUN uv sync --no-dev --no-install-project --default-index "${UV_DEFAULT_INDEX}"
 
 COPY gateway_service ./gateway_service
 COPY mcp_server ./mcp_server
