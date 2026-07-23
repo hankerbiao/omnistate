@@ -1,8 +1,13 @@
+x-python-pip-mirror: &python-pip-mirror
+  PIP_INDEX_URL: ${PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}
+  PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-mirrors.aliyun.com}
+
 services:
   open-platform-gateway:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      args: *python-pip-mirror
     image: dml-open-platform-gateway:local
     container_name: dml-open-platform-gateway
     restart: unless-stopped
@@ -41,6 +46,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      args: *python-pip-mirror
     image: dml-open-platform-gateway:local
     container_name: dml-open-platform-mcp
     restart: unless-stopped
