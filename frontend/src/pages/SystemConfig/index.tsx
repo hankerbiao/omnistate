@@ -7,7 +7,7 @@ const SystemConfigPage = () => {
     <div className="system-config-page">
       <div className="system-config-header">
         <h2>运行时配置</h2>
-        <p className="system-config-subtitle">管理可热更新的LLM服务配置</p>
+        <p className="system-config-subtitle">管理当前环境的后端运行配置</p>
       </div>
 
       <ConfigList />

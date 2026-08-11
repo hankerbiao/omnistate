@@ -65,13 +65,14 @@ sequenceDiagram
 
 ## 配置项（摘录）
 
-见 `backend/config/config.yaml` 中 `execution:` 段：
+见“系统配置”页面的 `execution` 分类：
 
 - `scheduler_interval_sec`：定时任务扫描间隔
 - `default_repo_url`：默认代码仓库地址
 - `kafka_worker_*`：Kafka Worker 心跳相关
 
-RabbitMQ 连接与队列见 `rabbitmq:` 段。日志相关见 `logging.module_levels.app.modules.execution` 与 [日志与排障](./logging.md)。
+RabbitMQ 连接与队列见系统配置的 `rabbitmq` 分类。日志启动配置见
+`logging.module_levels.app.modules.execution` 与 [日志与排障](./logging.md)。
 
 ## 去重与快照
 
@@ -273,4 +274,3 @@ POST /tasks/dispatch
 | 自动推进用了错误脚本 | 查 `request_payload.cases[n].script_path`，不是当前 automation_test_cases 表 |
 
 相关代码：`task_command_helpers.py`（dedup / request_payload）、`task_case_coordinator.py`（case_snapshot）、`task_dispatch_service.py`（创建流程）。
-

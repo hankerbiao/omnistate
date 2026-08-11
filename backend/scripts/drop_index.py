@@ -11,11 +11,11 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from motor.motor_asyncio import AsyncIOMotorClient
-from app.shared.config import get_settings
+from app.shared.config import get_bootstrap_settings
 
 
 async def main():
-    settings = get_settings()
+    settings = get_bootstrap_settings()
     mongo_uri = settings.mongodb.uri
     db_name = settings.mongodb.db_name
 

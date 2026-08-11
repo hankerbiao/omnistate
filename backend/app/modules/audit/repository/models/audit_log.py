@@ -51,5 +51,4 @@ class AuditLogDoc(Document):
             IndexModel("action"),
             IndexModel([("actor_id", 1), ("created_at", -1)]),
             IndexModel([("resource_type", 1), ("resource_id", 1)]),
-            # TTL 索引已移除，审计日志永久保存
         ]

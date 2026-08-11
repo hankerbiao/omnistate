@@ -18,7 +18,7 @@
 | Web 框架 | FastAPI |
 | 数据访问 | Beanie ODM |
 | 数据库 | MongoDB |
-| 配置 | `pydantic-settings` + `.env` |
+| 配置 | YAML 启动配置 + MongoDB `system_configs` 运行配置 |
 | 鉴权 | JWT |
 | 执行分发 | RabbitMQ + Kafka |
 | 测试 | pytest |
@@ -76,12 +76,12 @@ dmlv4/
 
 服务入口是 `backend/app/main.py`。启动时按顺序执行：
 
-1. 连接 MongoDB。
-2. 初始化全部 Beanie 文档模型。
-3. 校验 workflow 基础配置一致性。
-4. 预检 execution Kafka worker 心跳。
-5. 初始化应用级基础设施。
-6. 挂载异常处理器和统一 API 路由。
+1. 从所选 YAML 加载 `app`、`mongodb`、`logging` 启动配置。
+2. 连接 MongoDB并初始化全部 Beanie 文档模型。
+3. 从 `system_configs` 严格读取并校验完整运行配置，安装进程内不可变快照。
+4. 校验 workflow 基础配置一致性。
+5. 预检 execution Kafka worker 心跳。
+6. 初始化 RabbitMQ、Kafka、Redis 等应用级基础设施。
 
 关闭时会：
 
@@ -244,9 +244,14 @@ dmlv4/
 
 ## 9. 配置项
 
-核心配置定义在 `backend/app/shared/config/settings.py`，运行时从 `backend/config/config.yaml` 加载。
+核心配置定义在 `backend/app/shared/config/settings.py`，采用两阶段加载：
 
-常用项包括：
+- YAML 只保存启动 MongoDB 前必须知道的 `app`、`mongodb`、`logging`。
+- RabbitMQ、Kafka、MinIO、JWT、execution、Redis、notification 和
+  `open_platform_gateway_jwt` 只从当前数据库的 `system_configs` 加载。
+- 运行配置在进程启动时形成不可变快照；系统配置页面修改后标记为“待重启”，重启后生效。
+
+MongoDB 运行项包括：
 
 - `mongodb.uri`
 - `mongodb.db_name`
@@ -261,8 +266,10 @@ dmlv4/
 
 说明：
 
-- 默认值中包含开发环境示例，不应直接视为生产配置。
-- 真实部署应复制 `backend/config/config.yaml.example` 为 `backend/config/config.yaml` 后按环境修改。
+- 启动不会创建缺失配置，也不会读取 YAML 运行项或使用代码默认值兜底。
+- `DML_ENV=production` 使用 `config/config.yaml`；`DML_ENV=dev` 必须存在并加载
+  `config/config_dev.yaml`，缺失时直接失败，绝不退回生产数据库。
+- 新数据库必须通过 `scripts/migrations/migrate_runtime_config_to_db.py` 显式导入一份完整配置。
 
 ## 10. 数据与约束
 

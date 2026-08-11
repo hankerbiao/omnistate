@@ -8,11 +8,11 @@
 
 ## 配置来源
 
-模块只认一套配置来源：`backend/config/config.yaml`。
+模块只认一套配置来源：当前 MongoDB 的 `system_configs`。
 
-`app/shared/config/settings.py` 负责读取和校验 YAML，`app/shared/kafka/config.py`
-只把统一配置对象转换成 Kafka runtime 需要的结构，并派生 consumer subscription
-元数据。
+API 或 Worker 启动时先严格加载完整的 MongoDB 运行配置快照，
+`app/shared/kafka/config.py` 只把该统一配置对象转换成 Kafka runtime 需要的结构，并派生
+consumer subscription 元数据。缺失配置不会从 YAML 或代码默认值补齐。
 
 ## 使用方式
 

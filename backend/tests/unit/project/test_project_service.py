@@ -10,7 +10,6 @@ from __future__ import annotations
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -287,3 +286,32 @@ class TestToProjectResponse:
         assert response.description == doc.description
         assert response.status == doc.status
         assert response.created_by == doc.created_by
+
+
+class TestProjectServiceFacades:
+
+    @patch(
+        "app.modules.project.service.project_service.ProjectDashboardService.get_project_stats",
+        new_callable=AsyncMock,
+    )
+    async def test_stats_delegate_to_dashboard_service(self, mock_get_stats):
+        expected = MagicMock()
+        mock_get_stats.return_value = expected
+
+        result = await ProjectService.get_project_stats("PRJ-2026-00001")
+
+        assert result is expected
+        mock_get_stats.assert_awaited_once_with("PRJ-2026-00001")
+
+    @patch(
+        "app.modules.project.service.project_service.ProjectDemoService.generate",
+        new_callable=AsyncMock,
+    )
+    async def test_demo_generation_delegates_to_demo_service(self, mock_generate):
+        expected = MagicMock()
+        mock_generate.return_value = expected
+
+        result = await ProjectService.generate_demo_data("PRJ-2026-00001")
+
+        assert result is expected
+        mock_generate.assert_awaited_once_with("PRJ-2026-00001")

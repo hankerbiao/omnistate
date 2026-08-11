@@ -27,7 +27,9 @@
 
 ## 常见配置项与基础字段
 
-运行配置由 `backend/config/config.yaml` 加载，结构定义在 `app/shared/config/settings.py`。复制 `backend/config/config.yaml.example` 后按环境调整，不再按旧的单个 `.env` 键维护核心后端配置。
+配置结构定义在 `app/shared/config/settings.py`。`backend/config/*.yaml` 只负责应用、MongoDB
+和日志启动配置，其余运行配置严格从当前 MongoDB 的 `system_configs` 加载，并通过“系统配置”
+页面维护。
 
 ### 数据库与服务启动
 

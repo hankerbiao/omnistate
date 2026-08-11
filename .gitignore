@@ -12,6 +12,8 @@ eggs/
 .eggs/
 lib/
 lib64/
+!frontend/src/lib/
+!frontend/src/lib/**
 parts/
 sdist/
 var/
@@ -26,6 +28,7 @@ venv/
 ENV/
 env/
 .env
+.env.docker
 
 # Database
 *.db
@@ -67,6 +70,7 @@ htmlcov/
 **/.workbuddy/
 
 # Runtime artifacts
+nohup.out
 frontend/nohup.out
 frontend/test-results/
 
@@ -76,3 +80,8 @@ docs/.vitepress/cache/
 docs/.vitepress/dist/
 backend/docs/.vitepress/cache/
 backend/docs/.vitepress/dist/
+
+# Docker deployment secrets
+backend/config/runtime.full.yaml
+backend/config/runtime.*.yaml
+backend/config/config.docker.yaml

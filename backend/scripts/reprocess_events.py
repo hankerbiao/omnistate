@@ -18,13 +18,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from pymongo import MongoClient
-from app.shared.config import get_settings
+from app.shared.config import get_bootstrap_settings
 
 
 def main():
-    settings = get_settings()
-    client = MongoClient(settings.MONGO_URI)
-    db = client[settings.MONGO_DB_NAME]
+    settings = get_bootstrap_settings()
+    client = MongoClient(settings.mongodb.uri)
+    db = client[settings.mongodb.db_name]
 
     # 找到所有 processed=true 但 case 状态还是 QUEUED 的事件所属 task
     # （即事件被归档了但 case 没被更新的 task）

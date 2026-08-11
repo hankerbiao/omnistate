@@ -18,6 +18,7 @@ from app.modules.system_config.schemas import (
 from app.modules.system_config.service import ConfigService, ConfigValidator
 from app.shared.api.schemas.base import APIResponse
 from app.shared.auth import get_current_user, require_permission
+from app.shared.config import get_environment
 
 require_system_config_permission = require_permission("system:config")
 
@@ -42,6 +43,7 @@ def _doc_to_response(doc) -> SystemConfigResponse:
         created_at=doc.created_at,
         updated_at=doc.updated_at,
         updated_by=doc.updated_by,
+        pending_restart=ConfigService.is_pending_restart(doc),
     )
 
 
@@ -58,7 +60,13 @@ async def get_configs(
         search=search,
     )
     items = [_doc_to_response(doc) for doc in docs]
-    return APIResponse(data=SystemConfigListResponse(items=items, total=total))
+    return APIResponse(
+        data=SystemConfigListResponse(
+            items=items,
+            total=total,
+            environment=get_environment(),
+        )
+    )
 
 
 @router.get("/categories", response_model=APIResponse[list[str]], summary="获取配置分类列表")
@@ -110,6 +118,12 @@ async def batch_update_configs(
         is_valid, error_msg = ConfigValidator.validate(item["config_key"], item["config_value"])
         if not is_valid:
             raise HTTPException(status_code=400, detail=error_msg)
+    try:
+        await ConfigService.validate_runtime_updates(
+            {item["config_key"]: item["config_value"] for item in items}
+        )
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     updated_count = await ConfigService.batch_update(
         items=items,
@@ -133,6 +147,10 @@ async def update_config(
     is_valid, error_msg = ConfigValidator.validate(config_key, data.config_value)
     if not is_valid:
         raise HTTPException(status_code=400, detail=error_msg)
+    try:
+        await ConfigService.validate_runtime_updates({config_key: data.config_value})
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     # 更新配置
     doc = await ConfigService.set_config(

@@ -1,7 +1,7 @@
 """Kafka 模块配置适配层。
 
-Kafka 属于 BOOTSTRAP 配置，只从 YAML/环境变量加载。
-本模块仅把统一 Settings 模型转换为 Kafka 运行时结构。
+Kafka 配置来自进程启动时安装的 MongoDB 运行配置快照。本模块仅把统一
+Settings 模型转换为 Kafka 运行时结构。
 """
 
 from dataclasses import dataclass, field
@@ -71,7 +71,7 @@ def _to_runtime_config(base_config: BaseKafkaConfig) -> KafkaConfig:
 
 
 def load_kafka_config() -> KafkaConfig:
-    """从 BOOTSTRAP Settings 加载 Kafka 配置。"""
+    """从已安装的 MongoDB 运行配置快照加载 Kafka 配置。"""
     return _to_runtime_config(get_settings().kafka)
 
 

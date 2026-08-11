@@ -1,0 +1,124 @@
+name: ${COMPOSE_PROJECT_NAME:-dmlv4}
+
+x-backend-common: &backend-common
+  build:
+    context: .
+    dockerfile: backend/Dockerfile
+    args:
+      PYTHON_BASE_IMAGE: ${PYTHON_BASE_IMAGE:-python:3.13-slim-bookworm}
+      UV_VERSION: ${UV_VERSION:-0.11.14}
+  image: ${DML_BACKEND_IMAGE:-dmlv4-backend:local}
+  environment: &backend-environment
+    CONFIG_PATH: /run/dml/config.yaml
+    DML_ENV: ${DML_ENV:-production}
+    DML_APP_PORT: "8801"
+    SKIP_INDEX_SYNC: "1"
+    PYTHONUNBUFFERED: "1"
+    TZ: ${TZ:-Asia/Shanghai}
+  volumes:
+    - type: bind
+      source: ${DML_BOOTSTRAP_CONFIG:-./backend/config/config.yaml}
+      target: /run/dml/config.yaml
+      read_only: true
+  networks:
+    - dml
+  init: true
+  restart: unless-stopped
+  stop_grace_period: 30s
+  security_opt:
+    - no-new-privileges:true
+  tmpfs:
+    - /tmp:size=256m,mode=1777
+  logging:
+    driver: json-file
+    options:
+      max-size: ${DML_LOG_MAX_SIZE:-20m}
+      max-file: ${DML_LOG_MAX_FILES:-5}
+
+services:
+  api:
+    <<: *backend-common
+    command: ["python", "-m", "app.main"]
+    ports:
+      - "${DML_API_BIND_ADDRESS:-127.0.0.1}:${DML_API_PORT:-8801}:8801"
+
+  kafka-worker:
+    <<: *backend-common
+    command: ["python", "-m", "app.workers.kafka_worker_main"]
+    healthcheck:
+      disable: true
+    depends_on:
+      api:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        NODE_BASE_IMAGE: ${NODE_BASE_IMAGE:-node:22-alpine}
+        NGINX_BASE_IMAGE: ${NGINX_BASE_IMAGE:-nginx:1.28-alpine}
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api/v1}
+    image: ${DML_FRONTEND_IMAGE:-dmlv4-frontend:local}
+    ports:
+      - "${DML_FRONTEND_BIND_ADDRESS:-0.0.0.0}:${DML_FRONTEND_PORT:-8080}:80"
+    networks:
+      - dml
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /var/cache/nginx:size=64m,mode=0755
+      - /var/run:size=16m,mode=0755
+      - /tmp:size=64m,mode=1777
+    logging:
+      driver: json-file
+      options:
+        max-size: ${DML_LOG_MAX_SIZE:-20m}
+        max-file: ${DML_LOG_MAX_FILES:-5}
+
+  runtime-config-migrate:
+    <<: *backend-common
+    profiles: ["ops"]
+    restart: "no"
+    healthcheck:
+      disable: true
+    environment:
+      <<: *backend-environment
+    volumes:
+      - type: bind
+        source: ${DML_BOOTSTRAP_CONFIG:-./backend/config/config.yaml}
+        target: /run/dml/config.yaml
+        read_only: true
+      - type: bind
+        source: ${DML_RUNTIME_CONFIG_FILE:-./backend/config/runtime.full.yaml}
+        target: /run/dml/runtime.full.yaml
+        read_only: true
+    command:
+      - python
+      - scripts/migrations/migrate_runtime_config_to_db.py
+      - --base
+      - /run/dml/runtime.full.yaml
+      - --environment
+      - ${DML_ENV:-production}
+
+  init:
+    <<: *backend-common
+    profiles: ["ops"]
+    restart: "no"
+    healthcheck:
+      disable: true
+    environment:
+      <<: *backend-environment
+      DML_ADMIN_PASSWORD: ${DML_ADMIN_PASSWORD:-}
+      DML_ADMIN_USER_ID: ${DML_ADMIN_USER_ID:-admin}
+      DML_ADMIN_USERNAME: ${DML_ADMIN_USERNAME:-系统管理员}
+      DML_ADMIN_EMAIL: ${DML_ADMIN_EMAIL:-}
+    command: ["sh", "scripts/docker/init.sh"]
+
+networks:
+  dml:
+    driver: bridge

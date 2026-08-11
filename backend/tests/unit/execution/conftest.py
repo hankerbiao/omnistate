@@ -1,8 +1,10 @@
-from __future__ import annotations
+import pytest
 
-import sys
-from pathlib import Path
+from app.shared.config import RuntimeSettings, clear_runtime_settings, install_runtime_settings
 
-ROOT = Path(__file__).resolve().parents[3]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+
+@pytest.fixture(autouse=True)
+def _runtime_settings_snapshot():
+    install_runtime_settings(RuntimeSettings())
+    yield
+    clear_runtime_settings()

@@ -1,156 +1,30 @@
-# =============================================================================
-# dmlv4 后端服务配置示例
-# =============================================================================
-# 复制此文件为 config/config.yaml 并修改实际值
-# cp config/config.yaml.example config/config.yaml
-
-# =============================================================================
-# 应用基础配置
-# =============================================================================
+# Bootstrap-only production configuration.
+# Runtime settings are managed in MongoDB through the System Config page.
 app:
   debug: false
-  host: "0.0.0.0"
-  port: 8000
-  service_name: "dmlv4-backend"
+  host: 0.0.0.0
+  port: 8801
+  service_name: dmlv4-backend
   cors_origins:
-    - "http://localhost:3000"
-  # 只有来自这些代理 IP/CIDR 的请求才信任 X-Forwarded-For
+  - http://localhost:3000
   trusted_proxies: []
+  dev_bypass_auth: false
+  dev_user_id: dev_admin
 
-# =============================================================================
-# MongoDB 配置
-# =============================================================================
 mongodb:
-  uri: "mongodb://localhost:27017"
-  db_name: "workflow_db"
+  uri: mongodb://localhost:27017
+  db_name: workflow_db
 
-# =============================================================================
-# RabbitMQ 配置
-# =============================================================================
-rabbitmq:
-  host: "localhost"
-  port: 5672
-  username: "guest"
-  password: "guest"
-  virtual_host: "/"
-  heartbeat: 60
-  blocked_connection_timeout: 30
-  connection_attempts: 3
-  retry_delay: 2.0
-  ssl_enabled: false
-
-  task_queue: "dml_task_queue"
-  task_exchange: ""
-  task_routing_key: "dml_task_queue"
-
-  prefetch_count: 10
-
-# =============================================================================
-# Kafka 配置（惰性初始化）
-# =============================================================================
-# 初次部署时设置，之后可以通过 system_config 模块在运行时管理。
-# 如果 system_configs 集合中有 kafka.* 配置项，会优先使用数据库中的值。
-#
-# bootstrap_servers / client_id 修改后需要**重启服务**才能生效。
-# 其余 topic / group / option 参数支持热加载（新 Producer/Consumer 自动使用新值）。
-# -----------------------------------------------------------------------------
-kafka:
-  bootstrap_servers:
-    - "localhost:9092"
-  client_id: "dmlv4-shard"
-
-  result_topic: "dmlv4.results"
-  dead_letter_topic: "dmlv4.deadletter"
-  test_events_topic: "test-events"
-
-  execution_result_group_id: "dmlv4-execution-result-consumers"
-  test_events_group_id: "dmlv4-test-events-consumers"
-
-  producer_options:
-    acks: "all"
-    retries: 3
-    batch_size: 16384
-    linger_ms: 10
-
-  consumer_options:
-    auto_offset_reset: "earliest"
-    enable_auto_commit: true
-    session_timeout_ms: 30000
-    heartbeat_interval_ms: 3000
-    max_poll_records: 100
-    consumer_timeout_ms: 1000
-
-# =============================================================================
-# Redis 配置（Sentinel 高可用模式）
-# =============================================================================
-# 初次部署时设置，之后可以通过 system_config 模块在运行时管理。
-# 如果 system_configs 集合中有 redis.* 配置项，会优先使用数据库中的值。
-# 修改 Redis 配置需要**重启服务**才能生效（连接池只初始化一次）。
-# -----------------------------------------------------------------------------
-redis:
-  sentinel_hosts:
-  - "localhost:26379"
-  master_name: "redis_master"
-  username: ""
-  password: ""
-  db: 0
-  socket_timeout: 2
-  max_connections: 100
-  service_registry_key: "dmlv4:service_registry"
-
-# =============================================================================
-# MinIO 配置
-# =============================================================================
-minio:
-  endpoint: "localhost:9000"
-  access_key: "minioadmin"
-  secret_key: "minioadmin"
-  bucket: "attachments"
-  secure: false
-  presigned_url_expires_seconds: 604800
-
-# =============================================================================
-# JWT 认证配置（重要：生产环境必须修改 secret_key）
-# =============================================================================
-jwt:
-  secret_key: "REPLACE_WITH_SECURE_SECRET_KEY"  # 使用 openssl rand -hex 32 生成
-  algorithm: "HS256"
-  expire_minutes: 480
-  issuer: "tcm-backend"
-  audience: "tcm-frontend"
-
-# Open Platform 网关调用后端时使用的内部短期 JWT。
-# 生产环境必须与 open-platform/backend 的 DML_GATEWAY_UPSTREAM_AUTH_* 配置保持一致。
-open_platform_gateway_jwt:
-  enabled: false
-  secret_key: ""  # 启用时使用 openssl rand -hex 32 生成，并与网关配置保持一致
-  algorithm: "HS256"
-  issuer: "dml-open-platform"
-  audience: "dml-backend"
-  required_token_use: "open_platform_gateway"
-
-# =============================================================================
-# 敏感系统配置写入前需设置 Fernet 密钥：
-# export DML_SYSTEM_CONFIG_ENCRYPTION_KEY="$(python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')"
-
-# =============================================================================
-# 任务执行配置
-# =============================================================================
-execution:
-  scheduler_interval_sec: 60
-  kafka_worker_agent_id: "execution-kafka-worker"
-  kafka_worker_heartbeat_ttl_sec: 30
-  kafka_worker_heartbeat_interval_sec: 10
-
-# =============================================================================
-# 日志配置
-# =============================================================================
 logging:
-  console_level: "DEBUG"
-  log_dir: "logs"
+  console_level: INFO
+  log_dir: logs
   retention:
     info_days: 7
     error_days: 30
     debug_days: 3
-  # 超过该阈值的 HTTP 请求会输出 http_slow_request 结构化 WARNING 日志
+  json_format: true
+  enable_compress: true
+  trace_enabled: true
+  slow_query_threshold_ms: 200
   slow_request_threshold_ms: 800
+  module_levels: {}

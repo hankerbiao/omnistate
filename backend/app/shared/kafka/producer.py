@@ -120,7 +120,7 @@ class KafkaProducerManager:
         client_id: str | None = None,
         config: KafkaConfig | None = None,
     ) -> None:
-        # 允许测试或本地调试通过参数覆盖配置文件中的连接信息。
+        # 允许调用方在构造独立 producer 时显式注入连接信息。
         runtime_config = config or load_kafka_config()
         if bootstrap_servers is not None:
             runtime_config.bootstrap_servers = bootstrap_servers

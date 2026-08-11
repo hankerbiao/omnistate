@@ -174,8 +174,8 @@ def test_test_specs_projection_hook_only_handles_delete_side_effects() -> None:
 
 def test_test_specs_command_services_use_authorized_entity_helper() -> None:
     command_service_files = [
-        "app/modules/test_specs/application/requirement_command_service.py",
-        "app/modules/test_specs/application/test_case_command_service.py",
+    "app/modules/test_specs/application/requirement_command_service.py",
+    "app/modules/test_specs/application/test_case_command_service.py",
     ]
 
     for relative_path in command_service_files:
@@ -223,12 +223,18 @@ _ALLOWED_CROSS_MODULE_REPO_IMPORTS: dict[str, set[str]] = {
     "app/modules/terminal/api/routes.py": {"app.modules.auth.repository.models"},
     # ── ai_analysis ──────────────────────────────────────────
     "app/modules/ai_analysis/service/ai_service.py": {
-        "app.modules.test_case_collection.repository.models",
         "app.modules.test_specs.repository.models",
     },
     # ── project ──────────────────────────────────────────────
     "app/modules/project/service/project_service.py": {
         "app.modules.auth.repository.models",
+    },
+    "app/modules/project/service/project_dashboard_service.py": {
+        "app.modules.auth.repository.models",
+        "app.modules.execution_plan.repository.models",
+        "app.modules.workflow.repository.models",
+    },
+    "app/modules/project/service/project_demo_service.py": {
         "app.modules.execution_plan.repository.models",
         "app.modules.workflow.repository.models",
     },

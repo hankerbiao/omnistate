@@ -24,8 +24,12 @@ def _write_config(path: Path, service_name: str, db_name: str, debug: bool = Fal
 
 @pytest.fixture(autouse=True)
 def _clear_settings_cache():
+    settings_module.clear_runtime_settings()
+    settings_module.get_bootstrap_settings.cache_clear()
     settings_module.get_settings.cache_clear()
     yield
+    settings_module.clear_runtime_settings()
+    settings_module.get_bootstrap_settings.cache_clear()
     settings_module.get_settings.cache_clear()
 
 
@@ -36,7 +40,7 @@ def test_production_ignores_dev_overlay(tmp_path: Path, monkeypatch: pytest.Monk
     monkeypatch.setenv("CONFIG_PATH", str(base))
     monkeypatch.setenv("DML_ENV", "production")
 
-    loaded = settings_module.get_settings()
+    loaded = settings_module.get_bootstrap_settings()
 
     assert loaded.app.service_name == "backend"
     assert loaded.app.debug is False
@@ -48,9 +52,9 @@ def test_dev_environment_loads_dev_overlay(tmp_path: Path, monkeypatch: pytest.M
     _write_config(base, "backend", "production_db")
     _write_config(tmp_path / "config_dev.yaml", "backend-dev", "development_db", debug=True)
     monkeypatch.setenv("CONFIG_PATH", str(base))
-    monkeypatch.setenv("DML_ENV", "development")
+    monkeypatch.setenv("DML_ENV", "dev")
 
-    loaded = settings_module.get_settings()
+    loaded = settings_module.get_bootstrap_settings()
 
     assert loaded.app.service_name == "backend-dev"
     assert loaded.app.debug is True
@@ -64,4 +68,21 @@ def test_invalid_environment_is_rejected(tmp_path: Path, monkeypatch: pytest.Mon
     monkeypatch.setenv("DML_ENV", "../dev")
 
     with pytest.raises(ValueError, match="Invalid DML_ENV"):
+        settings_module.get_bootstrap_settings()
+
+
+def test_missing_environment_overlay_is_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    base = tmp_path / "config.yaml"
+    _write_config(base, "backend", "production_db")
+    monkeypatch.setenv("CONFIG_PATH", str(base))
+    monkeypatch.setenv("DML_ENV", "dev")
+
+    with pytest.raises(FileNotFoundError, match="禁止回退到生产配置"):
+        settings_module.get_bootstrap_settings()
+
+
+def test_effective_settings_require_runtime_activation() -> None:
+    with pytest.raises(RuntimeError, match="Runtime settings are not loaded"):
         settings_module.get_settings()

@@ -1,8 +1,10 @@
-# 开发环境配置（覆盖 config/config.yaml）
-# 设置 DML_ENV=dev 时自动加载此文件
-# 仅需填写与 config/config.yaml 不同的字段
-
+# Development bootstrap overrides selected by DML_ENV=dev.
 app:
   debug: true
-  dev_bypass_auth: true     # 跳过 JWT 验证，方便调试
+  service_name: dmlv4-backend_dev
+  dev_bypass_auth: true
   dev_user_id: dev_admin
+
+mongodb:
+  uri: mongodb://localhost:27017
+  db_name: workflow_db_dev

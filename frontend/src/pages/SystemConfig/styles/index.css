@@ -258,16 +258,135 @@
   margin: 0;
 }
 
+.config-list__title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.environment-badge {
+  padding: 2px 8px;
+  border: 1px solid #2f6f4e;
+  border-radius: 4px;
+  color: #24583e;
+  background: #e8f5ed;
+  font-size: 12px;
+  font-weight: 600;
+}
+
 .config-list__actions {
   display: flex;
   gap: 8px;
   align-items: center;
 }
 
+.config-search {
+  position: relative;
+  width: 300px;
+  height: 34px;
+}
+
+.config-search__icon {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  color: var(--text-secondary, #777);
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+.config-search__input {
+  width: 100%;
+  height: 100%;
+  padding: 0 34px 0 34px;
+  border: 1px solid var(--border-color, #d0d0d0);
+  border-radius: 6px;
+  color: var(--text-primary, #333);
+  background: var(--bg-primary, #fff);
+  font-size: 13px;
+  outline: none;
+}
+
+.config-search__input:focus {
+  border-color: var(--accent-primary, #0066cc);
+  box-shadow: 0 0 0 2px rgba(0, 102, 204, 0.12);
+}
+
+.config-search__input::-webkit-search-cancel-button {
+  appearance: none;
+}
+
+.config-search__clear {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  color: var(--text-secondary, #777);
+  background: transparent;
+  cursor: pointer;
+  transform: translateY(-50%);
+}
+
 .config-list__tabs {
   display: flex;
-  gap: 8px;
-  margin-bottom: 16px;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-bottom: 14px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--border-color, #e0e0e0);
+}
+
+.config-filter-button {
+  display: inline-flex;
+  min-height: 34px;
+  padding: 6px 9px;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border-color, #d8dde5);
+  border-radius: 6px;
+  color: var(--text-secondary, #5f6672);
+  background: var(--bg-primary, #fff);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.15s, background-color 0.15s, color 0.15s;
+}
+
+.config-filter-button:hover {
+  border-color: #8fb3e8;
+  color: #174f9c;
+  background: #f4f8fe;
+}
+
+.config-filter-button--active {
+  border-color: #2f6fce;
+  color: #174f9c;
+  background: #edf4ff;
+}
+
+.config-filter-button__count {
+  display: inline-flex;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  color: #5f6672;
+  background: #eef1f5;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.config-filter-button--active .config-filter-button__count {
+  color: #174f9c;
+  background: #d9e8ff;
 }
 
 .config-table-wrap {
@@ -276,9 +395,18 @@
 
 .config-table {
   width: 100%;
+  min-width: 1040px;
+  table-layout: fixed;
   border-collapse: collapse;
   font-size: 14px;
 }
+
+.config-table th:nth-child(1) { width: 30%; }
+.config-table th:nth-child(2) { width: 21%; }
+.config-table th:nth-child(3) { width: 7%; }
+.config-table th:nth-child(4) { width: 25%; }
+.config-table th:nth-child(5) { width: 10%; }
+.config-table th:nth-child(6) { width: 7%; }
 
 .config-table th {
   text-align: left;
@@ -309,6 +437,8 @@
   padding: 2px 6px;
   border-radius: 4px;
   color: var(--accent-primary, #0066cc);
+  white-space: normal;
+  word-break: break-word;
 }
 
 .config-value {
@@ -319,19 +449,36 @@
   word-break: break-all;
 }
 
+.config-json-editor {
+  min-width: 320px;
+  min-height: 76px;
+  resize: vertical;
+  font-family: 'Monaco', 'Menlo', monospace;
+}
+
 .config-desc {
   color: var(--text-secondary, #666);
   font-size: 13px;
 }
 
-.config-date {
-  font-size: 13px;
-  color: var(--text-secondary, #888);
+.config-actions {
   white-space: nowrap;
 }
 
-.config-actions {
-  white-space: nowrap;
+@media (max-width: 900px) {
+  .config-list__header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .config-list__actions {
+    width: 100%;
+  }
+
+  .config-search {
+    width: min(100%, 360px);
+  }
 }
 
 /* 配置键单元格（含重启标签） */
@@ -362,6 +509,7 @@
   font-size: 12px;
   background: var(--bg-secondary, #f5f5f5);
   color: var(--text-secondary, #666);
+  white-space: nowrap;
 }
 
 /* 状态标签 */
@@ -371,6 +519,7 @@
   border-radius: 4px;
   font-size: 12px;
   font-weight: 500;
+  white-space: nowrap;
 }
 
 .status-badge--active {

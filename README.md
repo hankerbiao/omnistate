@@ -45,7 +45,6 @@ dmlv4/
 │   │   │   ├── system_config/   # 系统配置与 AI 工具
 │   │   │   ├── ai_analysis/     # AI 分析
 │   │   │   ├── terminal/        # 终端管理
-│   │   │   ├── test_case_collection/ # 预制用例集
 │   │   └── shared/
 │   │       ├── api/             # 统一路由、错误处理、响应模型
 │   │       ├── auth/            # JWT 与权限依赖
@@ -146,10 +145,6 @@ AI 驱动的用例集质量分析。
 
 执行代理终端管理。
 
-### 11. `test_case_collection` — 预制用例集
-
-预制测试用例集合管理。
-
 ## API 路由
 
 统一前缀：`/api/v1`
@@ -167,7 +162,6 @@ AI 驱动的用例集质量分析。
 | `GET/POST /api/v1/execution/tasks` | Execution | 执行任务 |
 | `GET/POST /api/v1/execution-plans/plans` | ExecutionPlans | 执行计划 |
 | `GET /api/v1/search` | Search | 全局搜索 |
-| `GET /api/v1/collections` | TestCaseCollection | 预制用例集 |
 | `GET/PUT /api/v1/system-configs` | SystemConfig | 系统配置 |
 | `POST /api/v1/ai/polish` | AITools | AI 文本润色 |
 | `POST /api/v1/ai-analyze` | AIAnalysis | AI 用例分析 |
@@ -179,6 +173,9 @@ AI 驱动的用例集质量分析。
 ```
 
 ## 启动指南
+
+Docker Compose 部署（应用容器连接外部 MongoDB、Kafka、Redis、MinIO 等集群）见
+[Docker Compose 部署](docs/docker-deployment.md)。
 
 ### 环境要求
 

@@ -81,7 +81,6 @@ class ApiClient {
     }
   }
 
-
   async login(credentials: LoginRequest): Promise<LoginResponse> {
     return this.request<LoginResponse['data']>('/auth/login', {
       method: 'POST',
@@ -294,6 +293,10 @@ class ApiClient {
       console.error('Attachment upload failed:', error);
       throw error;
     }
+  }
+
+  async deleteAttachment(fileId: string): Promise<void> {
+    await this.request(`/attachments/${encodeURIComponent(fileId)}`, { method: 'DELETE' });
   }
 
   async dispatchTask(data: DispatchTaskRequest): Promise<ApiResponse<DispatchTaskResponse>> {
@@ -679,7 +682,6 @@ class ApiClient {
     return this.request<LineageGraphResponse>(`/lineage/graph?${params.toString()}`, { method: 'GET' });
   }
 
-
   // ══════════════════════════════════════════════════════════════
   //  执行计划 / My Tasks API
   // ══════════════════════════════════════════════════════════════
@@ -931,7 +933,6 @@ class ApiClient {
   // ═══════════════════════════════════════════════════════════════════
   //  AI 分析相关 API
   // ═══════════════════════════════════════════════════════════════════
-
 
   /** AI分析我的待处理任务 */
   async analyzePendingTasks(data: PendingTaskAnalysisRequest): Promise<ApiResponse<PendingTaskAnalysisResult>> {

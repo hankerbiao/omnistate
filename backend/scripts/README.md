@@ -86,6 +86,21 @@ DML_ENV=dev uv run python scripts/dev/seed_test_users.py --password MyPass@456
 
 ---
 
+## migrations/ — 配置迁移
+
+### `migrations/seed_ai_analysis_prompts.py` - AI 分析提示词初始化
+
+仅创建 MongoDB `system_configs` 中缺失的 AI 分析 prompt，不覆盖已通过系统配置修改的内容：
+
+```bash
+python scripts/migrations/seed_ai_analysis_prompts.py
+```
+
+当前会创建 `ai.pending_tasks.system_prompt` 与
+`ai.pending_tasks.user_prompt_template`。
+
+---
+
 ## `init/create_user.py` - 单个用户创建
 创建单个 RBAC 用户账号。
 
@@ -201,7 +216,7 @@ python scripts/mock/generate_mock_test_cases.py --dry-run
 
 **使用方法：**
 ```bash
-# 启动消费（自动从 config/config.yaml 读取配置）
+# 启动消费（先从 YAML 连接 MongoDB，再从 system_configs 读取消息配置）
 python scripts/mock/mock_rabbitmq_consumer.py
 ```
 

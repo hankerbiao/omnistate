@@ -18,7 +18,7 @@ from typing import Any
 
 from loguru import logger
 
-from app.shared.config import get_settings
+from app.shared.config import get_bootstrap_settings
 
 # =============================================================================
 # 敏感数据脱敏规则
@@ -38,38 +38,22 @@ PASSWORD_REPLACEMENT = r'\1=******'
 # =============================================================================
 # 日志目录
 # =============================================================================
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))))
-DEFAULT_LOG_DIR = os.path.join(BASE_DIR, "logs")
 
 
 def _load_log_config() -> dict[str, Any]:
-    """从配置加载日志设置，失败时使用默认值。"""
-    try:
-        settings = get_settings()
-        lc = settings.logging
-        return {
-            "console_level": lc.console_level,
-            "log_dir": lc.log_dir,
-            "json_format": getattr(lc, "json_format", True),
-            "enable_compress": getattr(lc, "enable_compress", True),
-            "info_days": lc.retention.info_days,
-            "error_days": lc.retention.error_days,
-            "debug_days": lc.retention.debug_days,
-            "slow_query_threshold_ms": getattr(lc, "slow_query_threshold_ms", 200),
-            "module_levels": getattr(lc, "module_levels", {}),
-        }
-    except Exception:
-        return {
-            "console_level": "DEBUG",
-            "log_dir": DEFAULT_LOG_DIR,
-            "json_format": True,
-            "enable_compress": True,
-            "info_days": 7,
-            "error_days": 30,
-            "debug_days": 3,
-            "slow_query_threshold_ms": 200,
-            "module_levels": {},
-        }
+    """从严格校验后的 YAML 启动配置加载日志设置。"""
+    lc = get_bootstrap_settings().logging
+    return {
+        "console_level": lc.console_level,
+        "log_dir": lc.log_dir,
+        "json_format": lc.json_format,
+        "enable_compress": lc.enable_compress,
+        "info_days": lc.retention.info_days,
+        "error_days": lc.retention.error_days,
+        "debug_days": lc.retention.debug_days,
+        "slow_query_threshold_ms": lc.slow_query_threshold_ms,
+        "module_levels": lc.module_levels,
+    }
 
 
 # =============================================================================

@@ -108,19 +108,14 @@ Open Platform 侧环境变量：
 | `DML_GATEWAY_UPSTREAM_AUTH_AUDIENCE` | JWT audience |
 | `DML_GATEWAY_UPSTREAM_AUTH_TTL_SECONDS` | 内部 JWT 有效期，单位秒 |
 
-DML 后端对应配置在 `backend/config/config.yaml`：
+DML 后端对应配置在“系统配置”页面的 `open_platform_gateway_jwt` 分类中：
 
-```yaml
-open_platform_gateway_jwt:
-  enabled: false
-  secret_key: ""  # 启用时使用 openssl rand -hex 32 生成
-  algorithm: "HS256"
-  issuer: "dml-open-platform"
-  audience: "dml-backend"
-  required_token_use: "open_platform_gateway"
-```
+包含 `enabled`、`secret_key`、`algorithm`、`issuer`、`audience` 和
+`required_token_use`。启用时可使用 `openssl rand -hex 32` 生成密钥。
 
-启用后，两侧的 `secret_key`、`algorithm`、`issuer`、`audience` 必须一致。DML 后端的统一鉴权依赖同时支持普通用户 JWT 与 Open Platform 内部 JWT，并继续加载 `sub` 对应的用户与权限。
+启用后，两侧的 `secret_key`、`algorithm`、`issuer`、`audience` 必须一致，保存后重启
+DML 后端。统一鉴权依赖同时支持普通用户 JWT 与 Open Platform 内部 JWT，并继续加载
+`sub` 对应的用户与权限。
 
 ## 扩展新能力
 

@@ -20,6 +20,21 @@ from app.shared.auth.jwt_auth import (
     require_permission,
     require_any_permission,
 )
+from app.shared.config import (
+    JWTConfig,
+    RuntimeSettings,
+    clear_runtime_settings,
+    install_runtime_settings,
+)
+
+
+@pytest.fixture(autouse=True)
+def _runtime_settings():
+    install_runtime_settings(
+        RuntimeSettings(jwt=JWTConfig(secret_key="unit-test-jwt-secret"))
+    )
+    yield
+    clear_runtime_settings()
 
 # =============================================================================
 # Base64 URL 编解码

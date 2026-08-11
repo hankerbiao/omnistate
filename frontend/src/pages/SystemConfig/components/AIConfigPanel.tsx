@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { api } from '../../../services/api';
 import type { SystemConfig, TestConnectionResponse } from '../../../types';
+import { getErrorMessage } from '../../../utils/errors';
 
 interface AIConfigPanelProps {
   onClose?: () => void;
@@ -10,7 +11,7 @@ interface AIConfigPanelProps {
  * AI 配置面板 — 动态表单
  *
  * 所有可配置字段由后端 GET /system-configs?category=ai 动态提供，
- * 前端根据 config_type/is_encrypted 自动选择表单控件。
+ * 前端根据 config_type 自动选择表单控件。
  * 后端增减 AI 配置字段时，前端无需修改。
  */
 const AIConfigPanel: React.FC<AIConfigPanelProps> = ({ onClose }) => {
@@ -30,8 +31,8 @@ const AIConfigPanel: React.FC<AIConfigPanelProps> = ({ onClose }) => {
     try {
       const res = await api.getSystemConfigs({ category: 'ai', active_only: true });
       setConfigs(res.data?.items || []);
-    } catch (err: any) {
-      setError('加载配置失败: ' + (err.message || '未知错误'));
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, '加载配置失败'));
     } finally {
       setLoading(false);
     }
@@ -91,7 +92,7 @@ const AIConfigPanel: React.FC<AIConfigPanelProps> = ({ onClose }) => {
       <div className="form-field" key={cfg.config_key}>
         <label className="form-field__label">{cfg.description}</label>
         <input
-          type={cfg.is_encrypted ? 'password' : isNumber ? 'number' : 'text'}
+          type={isNumber ? 'number' : 'text'}
           className="form-input"
           value={value}
           onChange={e => handleChange(cfg.config_key, e.target.value)}
@@ -144,8 +145,8 @@ const AIConfigPanel: React.FC<AIConfigPanelProps> = ({ onClose }) => {
         api_key: getValue('ai.api_key') || undefined,
       });
       setTestResult(res.data);
-    } catch (err: any) {
-      setError('连接测试失败: ' + (err.message || '未知错误'));
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, '连接测试失败'));
     } finally {
       setTesting(false);
     }
@@ -169,8 +170,8 @@ const AIConfigPanel: React.FC<AIConfigPanelProps> = ({ onClose }) => {
       setSuccessMsg('配置保存成功！');
       await loadConfig();
       onClose?.();
-    } catch (err: any) {
-      setError('保存配置失败: ' + (err.message || '未知错误'));
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, '保存配置失败'));
     } finally {
       setSaving(false);
     }

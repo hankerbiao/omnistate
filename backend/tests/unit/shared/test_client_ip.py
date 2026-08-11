@@ -18,7 +18,7 @@ def _settings(trusted_proxies: list[str]):
 
 
 def test_untrusted_direct_client_cannot_spoof_forwarded_for(monkeypatch):
-    monkeypatch.setattr(client_ip_mod, "get_settings", lambda: _settings([]))
+    monkeypatch.setattr(client_ip_mod, "get_bootstrap_settings", lambda: _settings([]))
 
     assert get_client_ip(_Request("203.0.113.5", "10.0.0.8")) == "203.0.113.5"
 
@@ -26,7 +26,7 @@ def test_untrusted_direct_client_cannot_spoof_forwarded_for(monkeypatch):
 def test_trusted_proxy_uses_forwarded_client(monkeypatch):
     monkeypatch.setattr(
         client_ip_mod,
-        "get_settings",
+        "get_bootstrap_settings",
         lambda: _settings(["10.0.0.0/8"]),
     )
 
@@ -36,7 +36,7 @@ def test_trusted_proxy_uses_forwarded_client(monkeypatch):
 def test_proxy_chain_skips_trusted_hops_from_right(monkeypatch):
     monkeypatch.setattr(
         client_ip_mod,
-        "get_settings",
+        "get_bootstrap_settings",
         lambda: _settings(["10.0.0.0/8", "192.168.0.0/16"]),
     )
 

@@ -884,7 +884,6 @@ export interface LineageGraphResponse {
   root_type: string;
 }
 
-
 // ═══════════════════════════════════════════════════════════════════════
 //  执行计划（ExecutionPlan / My Tasks）
 // ═══════════════════════════════════════════════════════════════════════
@@ -1004,15 +1003,15 @@ export interface BatchUpdateAssigneeRequest {
 // ═══════════════════════════════════════════════════════════════════════
 
 export interface SystemConfig {
-  id: number;
+  id: string;
   config_key: string;
   config_value: string;
   config_type: 'string' | 'integer' | 'float' | 'boolean' | 'json';
-  category: 'ai' | 'system' | 'general';
+  category: string;
   description: string;
-  is_encrypted: boolean;
   is_active: boolean;
   needs_restart: boolean;
+  pending_restart: boolean;
   created_at: string;
   updated_at: string;
   updated_by?: string;
@@ -1040,7 +1039,7 @@ export interface BatchUpdateConfigRequest {
 }
 
 export interface ConfigHistory {
-  id: number;
+  id: string;
   config_key: string;
   old_value: string;
   new_value: string;
@@ -1052,6 +1051,7 @@ export interface ConfigHistory {
 export interface SystemConfigListResponse {
   items: SystemConfig[];
   total: number;
+  environment: string;
 }
 
 export interface PendingTaskAnalysisItem {

@@ -37,7 +37,6 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
     """
 
     MAX_BODY_PREVIEW_CHARS = 500
-    DEFAULT_SLOW_REQUEST_THRESHOLD_MS = 800
 
     async def dispatch(self, request: Request, call_next):
         # ---- 请求前：创建追踪上下文 ----
@@ -147,12 +146,9 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
     @staticmethod
     def _slow_request_threshold_ms() -> int:
-        try:
-            from app.shared.config import get_settings
+        from app.shared.config import get_bootstrap_settings
 
-            return get_settings().logging.slow_request_threshold_ms
-        except Exception:
-            return RequestLoggingMiddleware.DEFAULT_SLOW_REQUEST_THRESHOLD_MS
+        return get_bootstrap_settings().logging.slow_request_threshold_ms
 
     def _record_request_metrics(
         self,

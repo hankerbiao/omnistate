@@ -8,7 +8,7 @@ from typing import Any, AsyncIterator, Sequence
 from beanie import init_beanie
 from pymongo import AsyncMongoClient
 
-from app.shared.config import get_settings
+from app.shared.config import get_bootstrap_settings
 from app.shared.infrastructure.bootstrap import initialize_beanie
 
 
@@ -26,7 +26,7 @@ async def database_runtime(
     sync_indexes: bool = False,
 ) -> AsyncIterator[Any]:
     """Connect, ping and initialize Beanie for a standalone script."""
-    settings = get_settings()
+    settings = get_bootstrap_settings()
     client = AsyncMongoClient(settings.mongodb.uri)
     try:
         await client.admin.command("ping")

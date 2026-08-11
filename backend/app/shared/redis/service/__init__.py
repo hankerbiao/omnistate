@@ -154,9 +154,10 @@ def _heartbeat_loop() -> None:
             import app.shared.redis.service as svc
 
             info = _build_instance_info(include_registered_at=False)
-            logger.debug("Redis heartbeat: key={} info={}", f"{SERVICE_REGISTRY_KEY}:{info['service_name']}", info)
+            service_registry_key = _get_service_registry_key()
+            logger.debug("Redis heartbeat: key={} info={}", f"{service_registry_key}:{info['service_name']}", info)
             svc.redis_conn.setex(
-                f"{SERVICE_REGISTRY_KEY}:{info['service_name']}",
+                f"{service_registry_key}:{info['service_name']}",
                 SERVICE_REGISTRY_TTL_SEC,
                 json.dumps(info),
             )
@@ -198,7 +199,8 @@ def stop_heartbeat() -> None:
     _heartbeat_stop.set()
 
 
-SERVICE_REGISTRY_KEY: str = get_settings().redis.service_registry_key
+def _get_service_registry_key() -> str:
+    return get_settings().redis.service_registry_key
 
 
 def _get_local_ip() -> str:
@@ -224,11 +226,12 @@ def register_service() -> None:
     service_name = cfg.app.service_name
 
     info = _build_instance_info(include_registered_at=True)
-    logger.debug("Redis register: key={} info={}", f"{SERVICE_REGISTRY_KEY}:{service_name}", info)
+    service_registry_key = _get_service_registry_key()
+    logger.debug("Redis register: key={} info={}", f"{service_registry_key}:{service_name}", info)
 
     try:
         redis_conn.setex(
-            f"{SERVICE_REGISTRY_KEY}:{service_name}",
+            f"{service_registry_key}:{service_name}",
             SERVICE_REGISTRY_TTL_SEC,
             json.dumps(info),
         )
@@ -246,7 +249,7 @@ def unregister_service() -> None:
     service_name = cfg.app.service_name
 
     try:
-        redis_conn.delete(f"{SERVICE_REGISTRY_KEY}:{service_name}")
+        redis_conn.delete(f"{_get_service_registry_key()}:{service_name}")
         logger.info(f"服务实例已从 Redis 注销: {service_name}")
     except Exception as exc:
         logger.warning(f"服务从 Redis 注销失败: {exc}")

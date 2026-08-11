@@ -26,9 +26,11 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app.shared.config import get_settings
+from app.shared.config import get_bootstrap_settings
 from app.shared.auth.jwt_auth import create_access_token
 from app.modules.auth.repository.models import UserDoc
+from app.modules.system_config.repository.models import SystemConfigDoc, SystemConfigHistoryDoc
+from app.modules.system_config.service import ConfigService
 
 
 def parse_args() -> argparse.Namespace:
@@ -77,12 +79,14 @@ async def main() -> None:
     args = parse_args()
 
     # 连接 MongoDB 并初始化 Beanie
-    client = AsyncMongoClient(get_settings().mongodb.uri)
+    mongo_config = get_bootstrap_settings().mongodb
+    client = AsyncMongoClient(mongo_config.uri)
     try:
         await init_beanie(
-            database=client[get_settings().mongodb.db_name],
-            document_models=[UserDoc],
+            database=client[mongo_config.db_name],
+            document_models=[UserDoc, SystemConfigDoc, SystemConfigHistoryDoc],
         )
+        await ConfigService.load_runtime_settings()
 
         # 校验用户存在性
         if not await validate_user(args.user_id):

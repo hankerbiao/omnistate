@@ -28,7 +28,7 @@ if str(ROOT) not in sys.path:
 from beanie import init_beanie
 from pymongo import AsyncMongoClient
 
-from app.shared.config import get_settings
+from app.shared.config import get_bootstrap_settings
 from app.modules.auth.repository.models import UserDoc
 from app.modules.project.repository.models.project import ProjectDoc
 from app.modules.test_specs.repository.models.requirement import TestRequirementDoc
@@ -474,7 +474,7 @@ async def main():
     args = parser.parse_args()
 
     # ── 连接数据库 ──
-    settings = get_settings()
+    settings = get_bootstrap_settings()
     client = AsyncMongoClient(settings.mongodb.uri)
     db = client[settings.mongodb.db_name]
 

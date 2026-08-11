@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Terminal } from 'xterm'
 import { FitAddon } from 'xterm-addon-fit'
+import { resolveWebSocketUrl } from '../utils/terminalUrl'
 import 'xterm/css/xterm.css'
 
 type ConnectionState = 'idle' | 'connecting' | 'connected' | 'closed' | 'error'
@@ -22,19 +23,6 @@ interface ConnectionForm {
 }
 
 const STORAGE_KEY = 'dml_terminal_ssh_credentials'
-
-function resolveWebSocketUrl(cols: number, rows: number): string {
-  const token = localStorage.getItem('jwt_token') || ''
-  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1'
-  const httpUrl = new URL(apiBaseUrl)
-  const protocol = httpUrl.protocol === 'https:' ? 'wss:' : 'ws:'
-  const socketUrl = new URL(`${protocol}//${httpUrl.host}/api/v1/terminal/ws`)
-
-  socketUrl.searchParams.set('token', token)
-  socketUrl.searchParams.set('cols', String(cols))
-  socketUrl.searchParams.set('rows', String(rows))
-  return socketUrl.toString()
-}
 
 function loadSavedForm(): ConnectionForm {
   try {

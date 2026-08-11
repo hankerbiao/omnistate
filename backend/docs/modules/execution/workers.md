@@ -54,7 +54,7 @@ python -m app.workers.kafka_worker_main
 
 ### 订阅 Topic（配置驱动）
 
-见 `config/config.yaml` 的 `kafka` 段，典型包括：
+见“系统配置”页面的 `kafka` 分类，典型包括：
 
 - **test-events**：细粒度测试事件（驱动状态机）
 - **result**（若配置）：任务级结果消息（当前多为日志留痕）
@@ -97,7 +97,7 @@ Handler 异常时：
 
 - **实现**：`service/task_dispatcher.py` → `_dispatch_via_rabbitmq`
 - **消息**：`TaskMessage(task_type="execution_task", task_data=...)`
-- **队列**：由 `config/config.yaml` `rabbitmq` 段配置（如 `dml_task_queue`）
+- **队列**：由系统配置 `rabbitmq.task_queue` 等运行项配置
 
 Agent 侧消费队列执行 case，并向 Kafka 回报事件（与 RabbitMQ 消费解耦）。
 
@@ -124,7 +124,7 @@ python scripts/mock_test_framework.py
 
 | 需求 | 文件 |
 |------|------|
-| 新 topic / schema | `kafka_handlers.py`、`config/config.yaml`、router 注册 |
+| 新 topic / schema | `kafka_handlers.py`、系统配置 `kafka.*`、router 注册 |
 | 改事件聚合 | `event_ingest_service.py` |
 | 改消费 trace | `app/shared/kafka/consumer.py` |
 | 改死信行为 | `consumer.py`、`dead_letter.py` |

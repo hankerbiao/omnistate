@@ -45,9 +45,11 @@ from app.modules.workflow.repository.models import (
     SysWorkflowStateDoc,
     SysWorkTypeDoc,
 )
+from app.modules.system_config.repository.models import SystemConfigDoc, SystemConfigHistoryDoc
+from app.modules.system_config.service import ConfigService
 from app.shared.core.logger import log
 from app.shared.core.mongo_client import set_mongo_client
-from app.shared.config import get_settings
+from app.shared.config import get_bootstrap_settings
 from app.shared.infrastructure import initialize_kafka_producer_only, shutdown_infrastructure
 from app.shared.kafka import KafkaConsumerRunner, KafkaTopicHandlerRegistry, load_kafka_config
 
@@ -86,6 +88,8 @@ DOCUMENT_MODELS = [
     ExecutionTaskCaseDoc,
     UserDoc,
     RoleDoc,
+    SystemConfigDoc,
+    SystemConfigHistoryDoc,
 ]
 
 _mongo_client: AsyncMongoClient | None = None
@@ -100,7 +104,8 @@ async def initialize_worker_runtime() -> None:
     log.info("Initializing Kafka worker runtime (debug=%s)", DEBUG_MODE)
 
     # 连接 MongoDB，并把客户端注入到全局上下文，供事务或底层访问使用。
-    client = AsyncMongoClient(get_settings().mongodb.uri)
+    mongo_config = get_bootstrap_settings().mongodb
+    client = AsyncMongoClient(mongo_config.uri)
     await client.admin.command("ping")
     set_mongo_client(client)
     log.info("MongoDB connected (%.0fms)", (time.time() - start_time) * 1000)
@@ -108,10 +113,12 @@ async def initialize_worker_runtime() -> None:
     # 初始化 Beanie ODM，注册 worker 会访问到的全部文档模型。
     beanie_start = time.time()
     await init_beanie(
-        database=client[get_settings().mongodb.db_name],
+        database=client[mongo_config.db_name],
         document_models=DOCUMENT_MODELS,
     )
     log.info("Beanie ODM initialized (%.0fms)", (time.time() - beanie_start) * 1000)
+
+    await ConfigService.load_runtime_settings()
 
     # 启动前校验 workflow 配置，避免 worker 消费到消息后才发现配置错误。
     await validate_workflow_consistency()

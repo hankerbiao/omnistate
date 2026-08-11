@@ -1,4 +1,9 @@
-"""统一配置模块 - 从 config/config.yaml 加载所有服务配置。"""
+"""Two-stage application configuration.
+
+Bootstrap settings are loaded from YAML before MongoDB is available. Runtime
+settings are loaded strictly from ``system_configs`` and installed once for
+the lifetime of the process.
+"""
 
 import os
 from functools import lru_cache
@@ -7,7 +12,7 @@ from typing import Any
 
 import yaml
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 # =============================================================================
@@ -19,7 +24,6 @@ def get_config_path() -> Path:
     查找顺序：
     1. 环境变量 CONFIG_PATH 指定的路径
     2. 项目根目录的 config/config.yaml
-    3. 兼容旧位置：项目根目录的 config.yaml
     """
     env_path = os.getenv("CONFIG_PATH")
     if env_path:
@@ -34,9 +38,6 @@ def get_config_path() -> Path:
         config_path = backend_root / "config" / "config.yaml"
         if config_path.exists():
             return config_path
-        legacy_config_path = backend_root / "config.yaml"
-        if legacy_config_path.exists():
-            return legacy_config_path
 
     # 默认使用当前工作目录
     cwd_config_path = Path.cwd() / "config" / "config.yaml"
@@ -265,7 +266,7 @@ class NotificationConfig(BaseModel):
 
 
 class Settings(BaseModel):
-    """应用统一配置。"""
+    """Validated effective settings for the current process."""
 
     app: AppConfig = Field(default_factory=AppConfig)
     mongodb: MongoDBConfig = Field(default_factory=MongoDBConfig)
@@ -276,6 +277,33 @@ class Settings(BaseModel):
     execution: ExecutionConfig = Field(default_factory=ExecutionConfig)
     redis: RedisConfig = Field(default_factory=RedisConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
+    notification: NotificationConfig = Field(default_factory=NotificationConfig)
+    open_platform_gateway_jwt: OpenPlatformGatewayJWTConfig = Field(
+        default_factory=OpenPlatformGatewayJWTConfig
+    )
+
+
+class BootstrapSettings(BaseModel):
+    """Settings required before MongoDB runtime configuration can be loaded."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    app: AppConfig
+    mongodb: MongoDBConfig
+    logging: LoggingConfig = Field(default_factory=LoggingConfig)
+
+
+class RuntimeSettings(BaseModel):
+    """Settings whose only source of truth is MongoDB."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    rabbitmq: RabbitMQConfig = Field(default_factory=RabbitMQConfig)
+    kafka: KafkaConfig = Field(default_factory=KafkaConfig)
+    minio: MinIOConfig = Field(default_factory=MinIOConfig)
+    jwt: JWTConfig = Field(default_factory=JWTConfig)
+    execution: ExecutionConfig = Field(default_factory=ExecutionConfig)
+    redis: RedisConfig = Field(default_factory=RedisConfig)
     notification: NotificationConfig = Field(default_factory=NotificationConfig)
     open_platform_gateway_jwt: OpenPlatformGatewayJWTConfig = Field(
         default_factory=OpenPlatformGatewayJWTConfig
@@ -313,27 +341,21 @@ def load_yaml_config(config_path: Path | str | None = None) -> dict[str, Any]:
         return yaml.safe_load(f) or {}
 
 
-@lru_cache
-def get_settings() -> Settings:
-    """获取应用配置单例。
-
-    配置加载顺序（后者覆盖前者）：
-    1. config/config.yaml（基础配置）
-    2. 非生产环境按 DML_ENV 加载同目录覆盖文件（例如 config_dev.yaml）
-    3. 环境变量覆盖（如 DML_APP_PORT）
-
-    Returns:
-        Settings: 应用配置实例
-    """
+def _load_environment_yaml() -> dict[str, Any]:
+    """Load base YAML plus the selected environment overlay."""
     config_data = load_yaml_config()
 
-    environment = _normalize_environment(os.getenv("DML_ENV", "production"))
+    environment = get_environment()
     if environment != "production":
         overlay_path = get_config_path().with_name(f"config_{environment}.yaml")
-        if overlay_path.exists():
-            with open(overlay_path, "r", encoding="utf-8") as f:
-                overlay_data = yaml.safe_load(f) or {}
-            config_data = _deep_merge(config_data, overlay_data)
+        if not overlay_path.exists():
+            raise FileNotFoundError(
+                f"环境配置文件不存在: {overlay_path}\n"
+                f"DML_ENV={environment} 必须提供独立的启动配置，禁止回退到生产配置"
+            )
+        with open(overlay_path, "r", encoding="utf-8") as f:
+            overlay_data = yaml.safe_load(f) or {}
+        config_data = _deep_merge(config_data, overlay_data)
 
     # 环境变量 DML_APP_PORT 优先级高于配置文件
     env_port = os.getenv("DML_APP_PORT")
@@ -342,18 +364,55 @@ def get_settings() -> Settings:
         app_config["port"] = int(env_port)
         config_data["app"] = app_config
 
-    return Settings(**config_data)
+    return config_data
+
+
+def get_environment() -> str:
+    """Return the normalized configuration environment name."""
+    return _normalize_environment(os.getenv("DML_ENV", "production"))
+
+
+@lru_cache
+def get_bootstrap_settings() -> BootstrapSettings:
+    """Load the strict YAML-only bootstrap configuration."""
+    return BootstrapSettings(**_load_environment_yaml())
+
+
+_effective_settings: Settings | None = None
+
+
+def install_runtime_settings(runtime: RuntimeSettings) -> Settings:
+    """Install the immutable effective settings snapshot for this process."""
+    global _effective_settings
+    bootstrap = get_bootstrap_settings()
+    _effective_settings = Settings(
+        **bootstrap.model_dump(),
+        **runtime.model_dump(),
+    )
+    get_settings.cache_clear()
+    return _effective_settings
+
+
+def clear_runtime_settings() -> None:
+    """Clear the process snapshot. Intended for shutdown and isolated tests."""
+    global _effective_settings
+    _effective_settings = None
+    get_settings.cache_clear()
+
+
+@lru_cache
+def get_settings() -> Settings:
+    """Return effective settings after strict MongoDB activation."""
+    if _effective_settings is None:
+        raise RuntimeError(
+            "Runtime settings are not loaded. Initialize MongoDB system configuration first."
+        )
+    return _effective_settings
 
 
 def _normalize_environment(value: str) -> str:
     """Normalize DML_ENV and keep overlay filenames constrained."""
     normalized = value.strip().lower()
-    aliases = {
-        "prod": "production",
-        "development": "dev",
-        "testing": "test",
-    }
-    normalized = aliases.get(normalized, normalized)
     if not normalized or any(char not in "abcdefghijklmnopqrstuvwxyz0123456789_-" for char in normalized):
         raise ValueError(f"Invalid DML_ENV value: {value!r}")
     return normalized

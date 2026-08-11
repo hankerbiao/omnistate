@@ -47,6 +47,7 @@ class SystemConfigResponse(SystemConfigBase):
     created_at: datetime = Field(..., description="创建时间")
     updated_at: datetime = Field(..., description="更新时间")
     updated_by: Optional[str] = Field(None, description="更新人")
+    pending_restart: bool = Field(default=False, description="数据库值是否尚未在当前进程生效")
 
     class Config:
         from_attributes = True
@@ -57,6 +58,7 @@ class SystemConfigListResponse(BaseModel):
 
     items: list[SystemConfigResponse] = Field(default_factory=list)
     total: int = Field(default=0, description="总数")
+    environment: str = Field(..., description="当前配置环境")
 
 
 class BatchUpdateResponse(BaseModel):
@@ -101,8 +103,8 @@ class ConfigHistoryResponse(BaseModel):
 class AIConfig(BaseModel):
     """AI配置完整结构
 
-    默认值全部设为空/零，由 ConfigService.get_ai_config() 从 MongoDB 或 DEFAULT_CONFIGS 填充。
-    避免与 DEFAULT_CONFIGS 不一致导致隐藏 bug。
+    模型默认值只用于结果对象初始化；ConfigService.get_ai_config() 要求 MongoDB 中的
+    AI 配置项真实存在，不会从默认目录补值。
     """
 
     base_url: str = ""

@@ -55,14 +55,14 @@ find_pid() {
 
 runtime_address() {
     "$PYTHON_BIN" -c \
-        'from app.shared.config import get_settings; s = get_settings(); print(s.app.host, s.app.port)'
+        'from app.shared.config import get_bootstrap_settings; s = get_bootstrap_settings(); print(s.app.host, s.app.port)'
 }
 
 cmd_run() {
     local host port
     read -r host port < <(runtime_address)
     local args=("$APP_MODULE" --host "$host" --port "$port")
-    if [[ "$DML_ENV" == "dev" || "$DML_ENV" == "development" ]]; then
+    if [[ "$DML_ENV" == "dev" ]]; then
         args+=(--reload)
     fi
     cd "$PROJECT_ROOT"
@@ -131,7 +131,7 @@ usage() {
     cat <<'EOF'
 Usage: ./server.sh {start|dev|run|stop|restart|status}
 
-  start    Start the API in production mode (background fallback)
+  start    Start the API in production mode as a background process
   dev      Start the API with the dev config overlay and hot reload
   run      Run the API in the foreground (used by systemd)
   stop     Gracefully stop the background API

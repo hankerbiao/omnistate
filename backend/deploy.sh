@@ -151,7 +151,7 @@ prepare_config() {
         cp "$PROJECT_ROOT/config/config.yaml.example" "$CONFIG_FILE"
         chmod 600 "$CONFIG_FILE"
         warn "Created $CONFIG_FILE from the template"
-        warn "Edit infrastructure addresses and secrets, then run ./deploy.sh install again"
+        warn "Edit app, MongoDB and logging bootstrap settings, provision system_configs, then run install again"
         exit 2
     fi
     chmod 600 "$CONFIG_FILE"
@@ -169,12 +169,25 @@ sync_dependencies() {
 validate_config() {
     local python="$PROJECT_ROOT/.venv/bin/python"
     [[ -x "$python" ]] || die "Python environment is missing; run ./deploy.sh install"
-    DML_ENV=production CONFIG_PATH="$CONFIG_FILE" "$python" - <<'PY'
+    if ! DML_ENV=production CONFIG_PATH="$CONFIG_FILE" "$python" - <<'PY'
 from urllib.parse import urlparse
 
-from app.shared.config import get_settings
+import asyncio
 
-s = get_settings()
+from app.modules.system_config.repository.models import SystemConfigDoc, SystemConfigHistoryDoc
+from app.modules.system_config.service import ConfigService
+from app.shared.config import clear_runtime_settings, get_settings
+from scripts.common.database import database_runtime
+
+
+async def load_settings():
+    async with database_runtime(
+        document_models=[SystemConfigDoc, SystemConfigHistoryDoc],
+    ):
+        await ConfigService.load_runtime_settings()
+        return get_settings()
+
+s = asyncio.run(load_settings())
 errors = []
 warnings = []
 
@@ -206,8 +219,12 @@ if errors:
     for error in errors:
         print(f"ERROR: {error}")
     raise SystemExit(2)
+clear_runtime_settings()
 PY
-    info "Production configuration validated"
+    then
+        return 1
+    fi
+    info "Production bootstrap and MongoDB runtime configuration validated"
 }
 
 initialize_data() {
@@ -412,9 +429,9 @@ wait_for_api() {
 import time
 import urllib.request
 
-from app.shared.config import get_settings
+from app.shared.config import get_bootstrap_settings
 
-port = get_settings().app.port
+port = get_bootstrap_settings().app.port
 url = f"http://127.0.0.1:{port}/health/ready"
 for _ in range(60):
     try:

@@ -15,9 +15,9 @@ Before running tests, ensure test_admin user exists in MongoDB (recommended: cd 
         salt = secrets.token_hex(16)
         pwd_hash = hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), 100000).hex()
         return salt, pwd_hash
-    from app.shared.config import get_settings
-    client = MongoClient(get_settings().mongodb.uri)
-    db = client[get_settings().mongodb.db_name]
+    from app.shared.config import get_bootstrap_settings
+    client = MongoClient(get_bootstrap_settings().mongodb.uri)
+    db = client[get_bootstrap_settings().mongodb.db_name]
     db['users'].delete_one({'user_id': 'test_admin'})
     salt, pwd_hash = hash_password('Admin@123')
     db['users'].insert_one({
@@ -49,7 +49,7 @@ from httpx import ASGITransport, AsyncClient
 os.environ.setdefault("DML_ENV", "dev")
 
 from app.main import app  # noqa: E402
-from app.shared.config import get_settings  # noqa: E402
+from app.shared.config import get_bootstrap_settings  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -103,8 +103,8 @@ class TestDataRegistry:
         from bson import ObjectId
         from pymongo import MongoClient
 
-        client = MongoClient(get_settings().mongodb.uri)
-        db = client[get_settings().mongodb.db_name]
+        client = MongoClient(get_bootstrap_settings().mongodb.uri)
+        db = client[get_bootstrap_settings().mongodb.db_name]
 
         def _warn(entity: str, entity_id: str, exc: Exception) -> None:
             logger.warning("Failed to cleanup %s %s: %s", entity, entity_id, exc)

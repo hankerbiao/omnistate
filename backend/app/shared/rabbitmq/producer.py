@@ -42,12 +42,12 @@ class RabbitMQProducerManager:
         """初始化生产者管理器。
 
         Args:
-            config: RabbitMQ 配置，若为 None 则从配置文件加载
+            config: RabbitMQ 配置，若为 None 则从已安装的 MongoDB 配置快照加载
         """
         self.config = config or load_rabbitmq_config()
         self.connection = None  # AMQP 连接对象
         self.channel = None     # AMQP 通道对象
-        self.is_running = False # 运行状态标志
+        self.is_running = False  # 运行状态标志
         self._lock = asyncio.Lock()  # 保护重连逻辑的锁
 
     def _create_connection(self):

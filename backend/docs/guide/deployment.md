@@ -10,7 +10,7 @@
 1. `uv sync --frozen --no-dev` 创建并锁定 `.venv`
 2. `deploy.sh` 初始化 MongoDB、RBAC 和管理员账号
 3. API 进程和 Kafka Worker 以 `systemd` 或后台脚本方式常驻
-4. 生产环境只读取 `config/config.yaml`
+4. YAML 只提供启动配置，运行配置从目标 MongoDB 的 `system_configs` 严格加载
 
 ### 运行模式
 
@@ -27,7 +27,7 @@
 - `uv` 可用，或允许脚本自动安装
 - 可以访问 MongoDB、RabbitMQ、Kafka、Redis 和 MinIO
 - 部署目录有写权限
-- 生产配置中的密钥、地址和账号已经准备好
+- `system_configs` 中的基础设施地址、密钥和账号已经准备好
 
 如果这是第一次部署，先把模板复制成正式配置：
 
@@ -36,7 +36,33 @@ cd backend
 cp config/config.yaml.example config/config.yaml
 ```
 
-然后把 `config/config.yaml` 中的基础设施地址、JWT 密钥和存储凭据改成真实值。
+然后只修改其中的应用监听、MongoDB 和日志配置。RabbitMQ、Kafka、Redis、MinIO、JWT、
+执行、通知和 Open Platform JWT 不允许写回该文件。
+
+### 新数据库配置
+
+应用不会自动创建或补齐运行配置。首次使用一个全新的数据库时，必须准备一份一次性的完整
+YAML，其中显式包含全部运行字段，然后执行：
+
+```bash
+uv run python scripts/migrations/migrate_runtime_config_to_db.py \
+  --base /secure/path/full-production-config.yaml \
+  --environment production
+```
+
+迁移脚本会严格检查字段完整性，任何缺项或未知项都会失败，不会采用代码默认值。迁移成功并
+确认目标数据库已有 72 个后端运行项后，删除一次性 YAML。精简后的
+`config/config.yaml` 只能用于 `--metadata-only`，不能再次作为普通迁移源：
+
+```bash
+uv run python scripts/migrations/migrate_runtime_config_to_db.py \
+  --base config/config.yaml \
+  --environment production \
+  --metadata-only
+```
+
+已有环境也可以先复制一套经审核的 `system_configs` 集合到新数据库，再通过“系统配置”页面
+修改环境差异并重启后端。无论采用哪种方式，缺少任意运行项都会阻断启动。
 
 ## 首次部署
 
@@ -53,7 +79,7 @@ unset DML_ADMIN_PASSWORD
 
 1. 检查 `uv`
 2. 使用 `uv.lock` 同步生产依赖
-3. 校验生产配置
+3. 校验 YAML 启动配置和 MongoDB 中全部运行配置
 4. 为全部已注册 Beanie 模型同步 MongoDB 索引
 5. 以 upsert 方式同步 workflow 基础数据（默认不删除既有记录）
 6. 同步 RBAC 角色
@@ -61,7 +87,8 @@ unset DML_ADMIN_PASSWORD
 8. 安装并启动 API 和 Kafka Worker
 9. 检查 `/health/ready`
 
-`config/config.yaml` 不会被覆盖，初始化脚本是幂等的，可以重复执行。
+`config/config.yaml` 和 `system_configs` 的值不会被部署脚本覆盖。workflow、索引和 RBAC
+初始化脚本是幂等的，可以重复执行。
 
 ## 升级发布
 
@@ -180,8 +207,17 @@ PID 文件位于：
 - `DML_WITH_WORKER`
   记录是否托管 Kafka Worker，`1` 或 `0`
 
-生产环境下，`DML_ENV=production` 只会加载 `config/config.yaml`。
-开发环境设置 `DML_ENV=dev` 时，才会额外加载 `config/config_dev.yaml`。
+生产环境使用 `DML_ENV=production`，加载 `config/config.yaml` 并连接其中指定的生产数据库。
+开发环境使用 `DML_ENV=dev`，强制加载 `config/config_dev.yaml` 并连接开发数据库。开发覆盖
+文件缺失时进程直接失败，不会回退到生产配置。两个数据库各自维护独立的 `system_configs`，
+所以切换环境只需要切换 `DML_ENV` 并重启对应进程。
+
+```bash
+DML_ENV=dev uv run python -m app.main
+DML_ENV=production uv run python -m app.main
+```
+
+`deploy.sh` 面向生产部署，会显式设置 `DML_ENV=production`。
 
 ## 初始化脚本边界
 
@@ -223,16 +259,24 @@ curl -fsS http://127.0.0.1:8801/health/ready
 ### 配置文件不存在
 
 第一次执行 `./deploy.sh install` 时，如果 `config/config.yaml` 不存在，脚本会先生成模板并退出。
-这是为了避免在未确认基础设施地址和密钥的情况下误启动。
+这是为了避免在未确认应用与 MongoDB 启动配置的情况下误启动。补好 YAML 后，还必须先将完整
+运行配置显式写入目标数据库。
+
+### MongoDB 运行配置不完整
+
+`./deploy.sh doctor`、`install`、API 和 Kafka Worker 都会报告缺少的配置键并失败。先执行显式
+迁移或修复目标数据库中的 `system_configs`，不要把运行项临时放回 YAML；YAML 不会被读取为
+运行配置源。
 
 ### API 已启动但健康检查失败
 
 优先检查：
 
 1. `config/config.yaml` 的 MongoDB 地址
-2. RabbitMQ、Kafka、Redis、MinIO 是否可达
-3. `./deploy.sh doctor` 的输出
-4. `backend/logs/server.log` 或 systemd journal
+2. 目标数据库的 72 个运行项是否完整、有效
+3. `system_configs` 中 RabbitMQ、Kafka、Redis、MinIO 地址是否可达
+4. `./deploy.sh doctor` 的输出
+5. `backend/logs/server.log` 或 systemd journal
 
 ### 更新后服务没起来
 

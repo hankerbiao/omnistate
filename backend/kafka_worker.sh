@@ -120,7 +120,7 @@ usage() {
     cat <<'EOF'
 Usage: ./kafka_worker.sh {start|dev|run|stop|restart|status}
 
-  start    Start the worker in production mode (background fallback)
+  start    Start the worker in production mode as a background process
   dev      Start the worker with the dev config overlay
   run      Run the worker in the foreground (used by systemd)
   stop     Gracefully stop the background worker

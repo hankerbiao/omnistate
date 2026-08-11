@@ -6,7 +6,7 @@ from typing import Iterable
 
 from starlette.requests import Request
 
-from app.shared.config import get_settings
+from app.shared.config import get_bootstrap_settings
 
 
 def _is_trusted(host: str, trusted_proxies: Iterable[str]) -> bool:
@@ -29,7 +29,7 @@ def get_client_ip(request: Request) -> str | None:
     if not direct_ip:
         return None
 
-    trusted_proxies = get_settings().app.trusted_proxies
+    trusted_proxies = get_bootstrap_settings().app.trusted_proxies
     forwarded = request.headers.get("X-Forwarded-For")
     if not forwarded or not _is_trusted(direct_ip, trusted_proxies):
         return direct_ip
