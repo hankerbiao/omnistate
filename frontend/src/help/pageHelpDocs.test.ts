@@ -15,7 +15,6 @@ const validPages: PageType[] = [
   'catalogLabs',
   'testPlanStudioDemo',
   'lineageView',
-  'collections',
   'projects',
   'systemConfig',
   'caseGovernance',
@@ -41,7 +40,6 @@ describe('pageHelpDocs', () => {
   it('resolves section overview docs for asset and execution pages', () => {
     expect(getSectionHelpDocForPage('requirements')?.title).toBe('测试资产');
     expect(getSectionHelpDocForPage('testCases')?.title).toBe('测试资产');
-    expect(getSectionHelpDocForPage('collections')?.title).toBe('测试资产');
     expect(getSectionHelpDocForPage('projects')?.title).toBe('测试资产');
     expect(getSectionHelpDocForPage('testPlanStudioDemo')?.title).toBe('执行');
     expect(getSectionHelpDocForPage('caseGovernance')?.title).toBe('执行');

@@ -41,7 +41,6 @@ src/
 | `dashboard` | DashboardPage | 数据统计 |
 | `requirements` | RequirementsPage | 测试需求 |
 | `testCases` | TestCaseBoardPage | 用例看板 |
-| `collections` | TestCaseCollectionPage | 预制用例集 |
 | `search` | SearchPage | 全局搜索（独立页面） |
 | `agents` | AgentList | 执行代理 |
 | `tasks` | TaskList | 执行任务 |

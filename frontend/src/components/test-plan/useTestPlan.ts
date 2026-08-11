@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../../services/api';
 import type { UserResponse } from '../../types';
 import type {
-  PlanSummary, PlanItemSummary, ViewMode, NewPlanData, CaseMapEntry, CollectionEntry,
+  PlanSummary, PlanItemSummary, ViewMode, NewPlanData, CaseMapEntry,
 } from './types';
 import { emptyNewPlan } from './types';
 
@@ -16,11 +16,6 @@ interface PlanListPayload {
 
 interface PlanDetailPayload {
   items?: PlanItemSummary[];
-}
-
-interface CollectionDetailPayload {
-  case_ids?: string[];
-  auto_case_ids?: string[];
 }
 
 type LoadedCaseEntry = CaseMapEntry & {
@@ -56,9 +51,8 @@ export function useTestPlan() {
   // ── Refresh ──
   const [refreshDetail, setRefreshDetail] = useState(0);
 
-  // ── Test cases & collections ──
+  // ── Test cases ──
   const [testCases, setTestCases] = useState<Record<string, LoadedCaseEntry>>({});
-  const [collections, setCollections] = useState<CollectionEntry[]>([]);
   const [casesLoading, setCasesLoading] = useState(false);
 
   // ── Wizard ──
@@ -181,7 +175,7 @@ export function useTestPlan() {
     setRefreshDetail(v => v + 1);
   }, [fetchPlans]);
 
-  // ── Fetch users & collections on mount ──
+  // ── Fetch users on mount ──
   useEffect(() => {
     api.listUsers({ limit: 200 })
       .then(res => {
@@ -193,24 +187,6 @@ export function useTestPlan() {
           if (u.data) { setUsers([u.data]); setCurrentUserId(u.data.user_id); }
         }).catch(() => setUsers([]));
       });
-    api.listCollections()
-      .then(async res => {
-        const list = res.data || [];
-        const detailed = await Promise.all(list.map(async col => {
-          try {
-            const detail = await api.getCollection(col.collection_id);
-            return {
-              ...col,
-              case_ids: detail.data?.case_ids || [],
-              auto_case_ids: detail.data?.auto_case_ids || [],
-            };
-          } catch {
-            return col;
-          }
-        }));
-        setCollections(detailed);
-      })
-      .catch(() => setCollections([]));
   }, []);
 
   // ── Fetch plan detail ──
@@ -463,24 +439,6 @@ export function useTestPlan() {
     }));
   }, []);
 
-  const toggleSelectCollection = useCallback(async (col: { collection_id: string; name: string }) => {
-    try {
-      const res = await api.getCollection(col.collection_id);
-      const data = res.data as CollectionDetailPayload | null;
-      const caseIds = [...(data?.case_ids || []), ...(data?.auto_case_ids || [])];
-      if (caseIds.length === 0) return;
-      setNewPlan(prev => {
-        const allSelected = caseIds.every((cid: string) => prev.selectedCases.includes(cid));
-        const ids = new Set(prev.selectedCases);
-        for (const cid of caseIds) {
-          if (allSelected) ids.delete(cid);
-          else ids.add(cid);
-        }
-        return { ...prev, selectedCases: Array.from(ids) };
-      });
-    } catch { /* ignore */ }
-  }, []);
-
   const setAssignment = useCallback((caseId: string, value: string) => {
     setNewPlan(prev => ({
       ...prev,
@@ -494,7 +452,7 @@ export function useTestPlan() {
     activePlanItems, detailLoading, viewMode,
     editingItems, selectedAddCaseIds, showAddCases, saving, isEditing,
     users, currentUserId,
-    collections, casesLoading, caseMap,
+    casesLoading, caseMap,
     showWizard, wizardStep, caseSearch, submittingPlan, newPlan,
     resultModal, rerunConfirm,
     activePlan, filteredPlans,
@@ -510,6 +468,6 @@ export function useTestPlan() {
     handleAddCaseToggle, handleAddSelectedCases, handleUpdateItemAssignee,
     handleBatchAssign, handleDeleteItem, handleDeletePlan,
     handleViewResult, handleRerunItem, confirmRerun,
-    resetWizard, handleCreatePlan, toggleSelectCase, toggleSelectCollection, setAssignment,
+    resetWizard, handleCreatePlan, toggleSelectCase, setAssignment,
   };
 }

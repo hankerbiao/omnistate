@@ -25,5 +25,4 @@ PROJECT_RELATED_MODEL_PATHS: List[Tuple[str, str]] = [
     ("app.modules.execution_plan.repository.models", "ExecutionPlanDoc"),
     ("app.modules.execution.repository.models", "ExecutionTaskDoc"),
     ("app.modules.workflow.repository.models", "BusWorkItemDoc"),
-    ("app.modules.test_case_collection.repository.models", "TestCaseCollectionDoc"),
 ]

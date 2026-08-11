@@ -173,7 +173,6 @@ class TestProjectCRUD:
         assert "task_count" in stats
         assert "task_done_count" in stats
         assert "task_progress" in stats
-        assert "collection_count" in stats
 
 
 # ═══════════════════════════════════════════════════════════════════════

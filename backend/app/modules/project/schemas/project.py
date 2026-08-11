@@ -113,7 +113,6 @@ class ProjectStatsResponse(BaseModel):
     auto_case_count: int = 0
     requirement_count: int = 0
     plan_count: int = 0
-    collection_count: int = 0
 
     # 执行进度
     task: ExecutionTaskBreakdown = Field(default_factory=ExecutionTaskBreakdown)

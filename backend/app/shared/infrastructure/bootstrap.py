@@ -18,7 +18,6 @@ _DOCUMENT_MODULE_PATHS = [
     "app.modules.auth.repository.models",
     "app.modules.attachments.repository.models",
     "app.modules.execution_plan.repository.models",
-    "app.modules.test_case_collection.repository.models",
     "app.modules.system_config.repository.models",
     "app.modules.project.repository.models",
     "app.modules.notification.repository.models",

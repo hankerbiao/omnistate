@@ -12,7 +12,6 @@ const DashboardPage = lazy(() => import('./components/DashboardPage'))
 const MyTasksPage = lazy(() => import('./components/MyTasksPage'))
 const TestCaseBoardPage = lazy(() => import('./components/TestCaseBoard').then(m => ({ default: m.TestCaseBoardPage })))
 const RequirementsPage = lazy(() => import('./components/RequirementsPage'))
-const TestCaseCollectionPage = lazy(() => import('./components/TestCaseCollectionPage'))
 const ProjectsPage = lazy(() => import('./components/ProjectsPage'))
 const SystemConfigPage = lazy(() => import('./pages/SystemConfig'))
 const AgentList = lazy(() => import('./components/AgentList'))
@@ -65,10 +64,6 @@ function RequirementsRoute() {
   const { requirementsFilter } = useNavigation()
   return <RequirementsPage key={`req-${currentUserId}-${requirementsFilter ?? ''}`} initialStatusFilter={requirementsFilter} />
 }
-function CollectionsRoute() {
-  const { currentUserId } = useAuth()
-  return <TestCaseCollectionPage key={currentUserId} currentUserId={currentUserId} />
-}
 function ProjectsRoute() {
   const { currentUserId } = useAuth()
   return <ProjectsPage key={currentUserId} />
@@ -113,7 +108,6 @@ function LineageRoute() {
   const { lineageEntityType, lineageEntityId } = useNavigation()
   return <LineageViewPage key={`${currentUserId}-${lineageEntityId}`} entityType={lineageEntityType} entityId={lineageEntityId} />
 }
-
 function AppContent() {
   const { isAuthenticated, handleLoginSuccess } = useAuth()
 
@@ -129,7 +123,6 @@ function AppContent() {
         <Route path={PAGE_ROUTES.myTasks} element={<MyTasksRoute />} />
         <Route path={PAGE_ROUTES.testCases} element={<TestCaseBoardRoute />} />
         <Route path={PAGE_ROUTES.requirements} element={<RequirementsRoute />} />
-        <Route path={PAGE_ROUTES.collections} element={<CollectionsRoute />} />
         <Route path={PAGE_ROUTES.projects} element={<ProjectsRoute />} />
         <Route path={PAGE_ROUTES.systemConfig} element={<SystemConfigRoute />} />
         <Route path={PAGE_ROUTES.agents} element={<AgentsRoute />} />

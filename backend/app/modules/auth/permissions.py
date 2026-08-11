@@ -49,8 +49,6 @@ _PERMISSION_ROWS: list[tuple[str, str, str]] = [
     ("projects:write", "项目创建编辑", "创建、编辑项目及修改项目配置。"),
     ("projects:delete", "项目删除", "删除项目及其关联数据。"),
     ("system:config", "系统配置管理", "访问系统配置页面，管理全局配置。"),
-    ("collections:read", "预制用例集查看", "查看预制测试用例集列表和详情。"),
-    ("collections:write", "预制用例集管理", "创建、编辑、删除预制测试用例集。"),
     ("case_governance:read", "用例治理查看", "访问用例治理页面。"),
     ("search:global", "全局搜索", "跨模块搜索测试资源。"),
 ]

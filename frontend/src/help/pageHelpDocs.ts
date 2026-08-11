@@ -23,7 +23,6 @@ export interface PageHelpDoc {
 const PAGE_SECTION_MAP: Partial<Record<PageType, HelpSectionName>> = {
   requirements: '测试资产',
   testCases: '测试资产',
-  collections: '测试资产',
   projects: '测试资产',
   testPlanStudioDemo: '执行',
   caseGovernance: '执行',
@@ -32,8 +31,8 @@ const PAGE_SECTION_MAP: Partial<Record<PageType, HelpSectionName>> = {
 export const sectionHelpDocs: Record<HelpSectionName, HelpSectionDoc> = {
   测试资产: {
     title: '测试资产',
-    summary: '测试资产分组承载从需求到用例、集合与项目归属的核心资料，帮助团队把“为什么测、测什么、如何复用、归属哪个项目”串起来。',
-    pages: ['测试用例编写需求', '用例看板', '预制用例集', '项目'],
+    summary: '测试资产分组承载从需求到用例与项目归属的核心资料，帮助团队把“为什么测、测什么、归属哪个项目”串起来。',
+    pages: ['测试用例编写需求', '用例看板', '项目'],
   },
   执行: {
     title: '执行',
@@ -131,37 +130,7 @@ export const pageHelpDocs: Partial<Record<PageType, PageHelpDoc>> = {
       '手工用例和自动化用例的数据来源不同，但会在看板中统一展示。',
       '目录和 Lab 信息缺失的用例可在用例治理页面继续补齐。',
     ],
-    relatedPages: ['测试用例编写需求', '预制用例集', '用例治理', '执行计划'],
-  },
-  collections: {
-    page: 'collections',
-    title: '预制用例集',
-    summary: '维护可复用的测试用例集合，便于在执行计划中批量选取稳定的测试范围。',
-    scenarios: [
-      '为回归、冒烟或专项测试准备固定用例集合。',
-      '维护集合内手工用例和自动化用例。',
-      '在创建执行计划前整理可复用的测试范围。',
-    ],
-    areas: [
-      '左侧列表展示集合名称、描述、用例数量和更新时间。',
-      '搜索和排序区用于快速定位目标集合。',
-      '右侧详情区展示集合统计、集合内用例表格和批量操作。',
-    ],
-    actions: [
-      '新建、编辑或删除预制用例集。',
-      '向集合添加用例，或从集合中移除用例。',
-      '在集合详情中搜索、批量选择和批量移除用例。',
-    ],
-    workflows: [
-      '新建集合并填写名称与描述。',
-      '打开集合详情，添加需要复用的用例。',
-      '在执行计划创建时选择该集合中的用例。',
-    ],
-    notes: [
-      '集合只组织用例范围，不直接触发执行。',
-      '删除集合不会等同于删除原始测试用例。',
-    ],
-    relatedPages: ['用例看板', '执行计划', '项目'],
+    relatedPages: ['测试用例编写需求', '用例治理', '执行计划'],
   },
   projects: {
     page: 'projects',
@@ -208,20 +177,20 @@ export const pageHelpDocs: Partial<Record<PageType, PageHelpDoc>> = {
       '新建计划向导包含基本信息、选择用例、分配执行人和排期确认。',
     ],
     actions: [
-      '新建计划并从用例库或预制集合选择用例。',
+      '新建计划并从用例库选择用例。',
       '编辑计划信息、添加用例、批量指派执行人。',
       '查看执行结果、重新执行条目或删除计划。',
     ],
     workflows: [
       '点击新建计划，填写计划名称、描述和周期。',
-      '选择测试用例或预制集合，确认执行范围。',
+      '选择测试用例，确认执行范围。',
       '分配执行人并创建计划，后续在详情中跟踪结果。',
     ],
     notes: [
       '自动化和手工条目的结果来源不同，详情弹窗会按类型展示。',
       '重新执行会重置条目状态并清理旧结果展示。',
     ],
-    relatedPages: ['我的任务', '用例看板', '预制用例集', '项目'],
+    relatedPages: ['我的任务', '用例看板', '项目'],
   },
   caseGovernance: {
     page: 'caseGovernance',
@@ -251,7 +220,7 @@ export const pageHelpDocs: Partial<Record<PageType, PageHelpDoc>> = {
       '治理动作会修改用例资产字段，请确认目标用例后再保存。',
       '自动化关联需要从候选自动化用例中选择匹配项。',
     ],
-    relatedPages: ['用例看板', '执行计划', '预制用例集'],
+    relatedPages: ['用例看板', '执行计划'],
   },
 };
 
@@ -259,7 +228,6 @@ export const targetHelpPages: PageType[] = [
   'myTasks',
   'requirements',
   'testCases',
-  'collections',
   'projects',
   'testPlanStudioDemo',
   'caseGovernance',

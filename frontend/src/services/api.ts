@@ -1,4 +1,4 @@
-import type { LoginRequest, LoginResponse, ApiResponse, CreateRequirementRequest, RequirementResponse, ListRequirementsParams, CreateTestCaseRequest, UpdateTestCaseRequest, TestCaseResponse, TestCaseChangeLogListResponse, ListTestCasesParams, CatalogLab, CreateCatalogLabRequest, UpdateCatalogLabRequest, CatalogTreeResponse, DispatchTaskRequest, DispatchTaskResponse, ExecutionAgent, AgentCleanupOfflineResponse, ListAgentsParams, CreateAutomationTestCaseRequest, AutomationTestCaseResponse, ListAutomationTestCasesParams, ExecutionTask, ListTasksParams, TaskStatus, RerunTaskRequest, AttachmentInfo, WorkflowTransitionRequest, WorkflowTransitionResponse, WorkflowTransitionsResponse, WorkflowTransitionLog, RoleResponse, PermissionResponse, CreateRoleRequest, UpdateRoleRequest, UpdateRolePermissionsRequest, CurrentUserPermissionsResponse, UserResponse, CreateUserRequest, UpdateUserRequest, UpdateUserRolesRequest, UpdateUserPasswordRequest, ListUsersParams, WorkItem, LineageGraphResponse, CommentListResponse, CreateCommentRequest, TestCaseComment, PlanTaskItemResponse, SubmitManualResultRequest, PlanItemDispatchRequest, PlanItemRerunRequest, BatchDispatchPlanItemsRequest, CreatePlanRequest, AddPlanItemsRequest, BatchUpdateAssigneeRequest, UserEffectivePermissionsResponse, SystemConfigListResponse, SystemConfig, BatchUpdateConfigRequest, TestConnectionRequest, TestConnectionResponse, ConfigHistory, ExecutionStatsResponse, CollectionResponse, CollectionListItem, CreateCollectionRequest, UpdateCollectionRequest, AddCasesRequest, RemoveCasesRequest, CopyCollectionRequest, CollectionChangeLogListResponse, CollectionValiditySummary, CollectionAnalysisResult, PendingTaskAnalysisRequest, PendingTaskAnalysisResult, TaskTimeline } from '../types';
+import type { LoginRequest, LoginResponse, ApiResponse, CreateRequirementRequest, RequirementResponse, ListRequirementsParams, CreateTestCaseRequest, UpdateTestCaseRequest, TestCaseResponse, TestCaseChangeLogListResponse, ListTestCasesParams, CatalogLab, CreateCatalogLabRequest, UpdateCatalogLabRequest, CatalogTreeResponse, DispatchTaskRequest, DispatchTaskResponse, ExecutionAgent, AgentCleanupOfflineResponse, ListAgentsParams, CreateAutomationTestCaseRequest, AutomationTestCaseResponse, ListAutomationTestCasesParams, ExecutionTask, ListTasksParams, TaskStatus, RerunTaskRequest, AttachmentInfo, WorkflowTransitionRequest, WorkflowTransitionResponse, WorkflowTransitionsResponse, WorkflowTransitionLog, RoleResponse, PermissionResponse, CreateRoleRequest, UpdateRoleRequest, UpdateRolePermissionsRequest, CurrentUserPermissionsResponse, UserResponse, CreateUserRequest, UpdateUserRequest, UpdateUserRolesRequest, UpdateUserPasswordRequest, ListUsersParams, WorkItem, LineageGraphResponse, CommentListResponse, CreateCommentRequest, TestCaseComment, PlanTaskItemResponse, SubmitManualResultRequest, PlanItemDispatchRequest, PlanItemRerunRequest, BatchDispatchPlanItemsRequest, CreatePlanRequest, AddPlanItemsRequest, BatchUpdateAssigneeRequest, UserEffectivePermissionsResponse, SystemConfigListResponse, SystemConfig, BatchUpdateConfigRequest, TestConnectionRequest, TestConnectionResponse, ConfigHistory, ExecutionStatsResponse, PendingTaskAnalysisRequest, PendingTaskAnalysisResult, TaskTimeline } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
 
@@ -81,21 +81,6 @@ class ApiClient {
     }
   }
 
-  private async download(endpoint: string): Promise<{ blob: Blob; filename?: string }> {
-    const url = `${this.baseUrl}${endpoint}`;
-    const headers: HeadersInit = {};
-    if (this.token) {
-      headers['Authorization'] = `Bearer ${this.token}`;
-    }
-    const response = await fetch(url, { method: 'GET', headers });
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    const disposition = response.headers.get('content-disposition') || '';
-    const match = disposition.match(/filename\*=UTF-8''([^;]+)/);
-    const filename = match ? decodeURIComponent(match[1]) : undefined;
-    return { blob: await response.blob(), filename };
-  }
 
   async login(credentials: LoginRequest): Promise<LoginResponse> {
     return this.request<LoginResponse['data']>('/auth/login', {
@@ -694,76 +679,6 @@ class ApiClient {
     return this.request<LineageGraphResponse>(`/lineage/graph?${params.toString()}`, { method: 'GET' });
   }
 
-  // ── TestCaseCollection ──────────────────────────────────────────
-
-  async listCollections(q?: string): Promise<ApiResponse<CollectionListItem[]>> {
-    const params = q ? `?${new URLSearchParams({ q }).toString()}` : '';
-    return this.request<CollectionListItem[]>(`/collections${params}`, { method: 'GET' });
-  }
-
-  async searchCollections(q: string, limit = 10): Promise<ApiResponse<CollectionListItem[]>> {
-    const params = new URLSearchParams({ q, limit: String(limit) });
-    return this.request<CollectionListItem[]>(`/collections/search?${params.toString()}`, { method: 'GET' });
-  }
-
-  async getCollection(id: string): Promise<ApiResponse<CollectionResponse>> {
-    return this.request<CollectionResponse>(`/collections/${id}`, { method: 'GET' });
-  }
-
-  async createCollection(data: CreateCollectionRequest): Promise<ApiResponse<CollectionResponse>> {
-    return this.request<CollectionResponse>('/collections', {
-      method: 'POST', body: JSON.stringify(data),
-    });
-  }
-
-  async updateCollection(id: string, data: UpdateCollectionRequest): Promise<ApiResponse<CollectionResponse>> {
-    return this.request<CollectionResponse>(`/collections/${id}`, {
-      method: 'PUT', body: JSON.stringify(data),
-    });
-  }
-
-  async copyCollection(id: string, data: CopyCollectionRequest): Promise<ApiResponse<CollectionResponse>> {
-    return this.request<CollectionResponse>(`/collections/${id}/copy`, {
-      method: 'POST', body: JSON.stringify(data),
-    });
-  }
-
-  async deleteCollection(id: string): Promise<ApiResponse<{ deleted: string }>> {
-    return this.request<{ deleted: string }>(`/collections/${id}`, { method: 'DELETE' });
-  }
-
-  async addCasesToCollection(id: string, data: AddCasesRequest): Promise<ApiResponse<CollectionResponse>> {
-    return this.request<CollectionResponse>(`/collections/${id}/cases`, {
-      method: 'POST', body: JSON.stringify(data),
-    });
-  }
-
-  async removeCasesFromCollection(id: string, data: RemoveCasesRequest): Promise<ApiResponse<CollectionResponse>> {
-    return this.request<CollectionResponse>(`/collections/${id}/cases`, {
-      method: 'DELETE', body: JSON.stringify(data),
-    });
-  }
-
-  async getCollectionHistory(
-    id: string,
-    params?: { limit?: number; offset?: number },
-  ): Promise<ApiResponse<CollectionChangeLogListResponse>> {
-    const query = new URLSearchParams();
-    if (params?.limit != null) query.set('limit', String(params.limit));
-    if (params?.offset != null) query.set('offset', String(params.offset));
-    const qs = query.toString();
-    return this.request<CollectionChangeLogListResponse>(`/collections/${id}/history${qs ? `?${qs}` : ''}`, {
-      method: 'GET',
-    });
-  }
-
-  async getCollectionValidity(id: string): Promise<ApiResponse<CollectionValiditySummary>> {
-    return this.request<CollectionValiditySummary>(`/collections/${id}/validity`, { method: 'GET' });
-  }
-
-  async exportCollection(id: string, format: 'csv' | 'xlsx'): Promise<{ blob: Blob; filename?: string }> {
-    return this.download(`/collections/${id}/export?${new URLSearchParams({ format }).toString()}`);
-  }
 
   // ══════════════════════════════════════════════════════════════
   //  执行计划 / My Tasks API
@@ -1017,21 +932,6 @@ class ApiClient {
   //  AI 分析相关 API
   // ═══════════════════════════════════════════════════════════════════
 
-  /** AI分析用例集 */
-  async analyzeCollection(
-    collectionId: string,
-    analysisTypes?: string[],
-  ): Promise<ApiResponse<CollectionAnalysisResult>> {
-    return this.request<CollectionAnalysisResult>(
-      `/ai-analyze/collections/${encodeURIComponent(collectionId)}`,
-      {
-        method: 'POST',
-        body: JSON.stringify({
-          analysis_types: analysisTypes ?? ['quality', 'redundancy', 'coverage'],
-        }),
-      },
-    );
-  }
 
   /** AI分析我的待处理任务 */
   async analyzePendingTasks(data: PendingTaskAnalysisRequest): Promise<ApiResponse<PendingTaskAnalysisResult>> {

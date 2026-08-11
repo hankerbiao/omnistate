@@ -63,7 +63,6 @@ class ProjectDoc(Document):
 | `execution_plans` | `project_ids: list[str] = []` | 执行计划归属（通常1个） |
 | `execution_tasks` | `project_ids: list[str] = []` | 从计划/请求透传 |
 | `bus_work_items` | `project_ids: list[str] = []` | 工作项关联 |
-| `test_case_collections` | `project_ids: list[str] = []` | 测试集归属 |
 
 > **不添加 project_ids 的集合**：`execution_plan_items`（通过 plan 关联）、`execution_task_cases`（通过 task 关联）、`manual_execution_results`（通过 item 关联）——避免数据冗余，通过父级间接关联。
 
@@ -145,8 +144,7 @@ GET    /api/v1/projects/:project_id/stats
   "plan_count": 5,
   "task_count": 42,
   "task_done_count": 30,
-  "task_progress": 71.4,
-  "collection_count": 3
+  "task_progress": 71.4
 }
 ```
 
@@ -159,7 +157,6 @@ GET /api/v1/test-cases?project_id=PRJ-2026-00001
 GET /api/v1/execution-plans?project_id=PRJ-2026-00001
 GET /api/v1/execution-tasks?project_id=PRJ-2026-00001
 GET /api/v1/work-items?project_id=PRJ-2026-00001
-GET /api/v1/test-case-collections?project_id=PRJ-2026-00001
 ```
 
 MongoDB 查询条件：`{ "project_ids": { "$in": [project_id] }, "is_deleted": false }`
@@ -257,7 +254,6 @@ async def delete_project(self, project_id: str) -> None:
     collections = [
         TestCaseDoc, AutomationTestCaseDoc, TestRequirementDoc,
         ExecutionPlanDoc, ExecutionTaskDoc, BusWorkItemDoc,
-        TestCaseCollectionDoc,
     ]
     for model in collections:
         await model.find(
@@ -306,14 +302,6 @@ async def delete_project(self, project_id: str) -> None:
 | `workflow/repository/models/work_item.py` | `project_ids: list[str] = []` |
 | `workflow/api/routes_items.py` | 列表查询增加 `project_id` 参数 |
 | `workflow/schemas/work_item.py` | 请求/响应增加 `project_ids` |
-
-### 7.5 测试集模块（test_case_collection）
-
-| 文件 | 修改内容 |
-|------|---------|
-| `test_case_collection/repository/models/collection.py` | `project_ids: list[str] = []` |
-| `test_case_collection/api/routes.py` | 列表查询增加 `project_id` 参数 |
-| `test_case_collection/schemas/collection.py` | 请求/响应增加 `project_ids` |
 
 ---
 
@@ -365,7 +353,6 @@ async def delete_project(self, project_id: str) -> None:
 | `TestExecutionPlanDemo.tsx` | 顶部增加项目筛选下拉框；计划详情显示关联项目 |
 | `RequirementsPage.tsx` | 需求列表增加项目筛选；详情显示关联项目 |
 | `CatalogLabsPage.tsx` | 用例详情增加"关联项目"多选器 |
-| `TestCaseCollectionPage.tsx` | 测试集详情增加项目筛选/关联 |
 
 ---
 
@@ -442,7 +429,6 @@ IndexModel("project_ids")  # 支持 $in 查询
 - [ ] 执行计划模块（ExecutionPlanDoc）
 - [ ] 执行模块（ExecutionTaskDoc）
 - [ ] 工作流模块（BusWorkItemDoc）
-- [ ] 测试集模块（TestCaseCollectionDoc）
 
 每个模块的修改范围：
 1. 模型新增 `project_ids` 字段 + 索引

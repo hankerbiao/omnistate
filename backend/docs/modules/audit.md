@@ -120,7 +120,6 @@ Auth 依赖注入              ← 注入 OperationContext（actor_id/username/r
 | `/api/v1/test-cases` | `test_case` |
 | `/api/v1/execution/tasks` | `execution_task` |
 | `/api/v1/execution-plans` | `execution_plan` |
-| `/api/v1/collections` | `test_case_collection` |
 | `/api/v1/projects` | `project` |
 | `/api/v1/auth/users` | `user` |
 | `/api/v1/ai/...` | `ai_*`（按具体端点） |

@@ -21,7 +21,6 @@ const PAGE_TITLES: Record<string, { title: string; description?: string }> = {
   caseGovernance: { title: '用例治理', description: '发现并补全不完整的测试用例' },
   projects: { title: '项目', description: '管理项目和关联资源' },
   lineageView: { title: '测试血缘', description: '从结果追溯完整测试链路' },
-  collections: { title: '预制用例集', description: '管理预制测试用例集' },
 }
 
 interface AppShellProps {

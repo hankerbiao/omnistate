@@ -62,8 +62,6 @@ Domain → （不依赖 API、Service、Infrastructure）
   AI 驱动的测试资产分析（质量、冗余、覆盖度）
 - `system_config`
   全局配置管理与 AI 连接测试
-- `test_case_collection`
-  预制用例集管理
 - `shared`
   横切基础设施和公共能力
 

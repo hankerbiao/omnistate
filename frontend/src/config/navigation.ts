@@ -1,6 +1,6 @@
 import type { ComponentType } from 'react'
 import {
-  ListTodo, ClipboardList, Zap, FolderKanban, Layers3,
+  ListTodo, ClipboardList, Zap, Layers3,
   Bot, CalendarClock, ShieldCheck, BarChart3, Users, Shield,
   FlaskConical, Settings,
 } from 'lucide-react'
@@ -19,7 +19,6 @@ const NAV_ITEM_DEFS: NavItemDef[] = [
 
   { key: 'requirements', label: '测试用例编写需求', section: '测试资产', icon: ClipboardList, permission: 'requirements:read' },
   { key: 'testCases',    label: '用例看板',         section: '测试资产', icon: Zap, permission: 'test_cases:read' },
-  { key: 'collections',  label: '预制用例集',       section: '测试资产', icon: FolderKanban, permission: 'collections:read' },
   { key: 'projects',     label: '项目',             section: '测试资产', icon: Layers3, permission: 'projects:read' },
 
   { key: 'testPlanStudioDemo',   label: '执行计划',   section: '执行', icon: CalendarClock, permission: 'execution_plans:read' },

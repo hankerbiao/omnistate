@@ -25,9 +25,6 @@ export const queryKeys = {
   catalogLabs: {
     all: ['catalogLabs'] as const,
   },
-  collections: {
-    all: ['collections'] as const,
-  },
   dashboard: {
     all: ['dashboard'] as const,
   },

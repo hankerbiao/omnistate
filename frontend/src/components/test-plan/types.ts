@@ -97,14 +97,3 @@ export interface CaseMapEntry {
   framework?: string;
   defaultOwnerId?: string;
 }
-
-export interface CollectionEntry {
-  collection_id: string;
-  name: string;
-  description?: string | null;
-  tags?: string[];
-  case_count: number;
-  auto_case_count?: number;
-  case_ids?: string[];
-  auto_case_ids?: string[];
-}

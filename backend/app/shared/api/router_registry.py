@@ -23,7 +23,6 @@ _API_MODULE_PATHS = [
     "app.modules.auth.api",
     "app.modules.attachments.api",
     "app.modules.execution_plan.api",
-    "app.modules.test_case_collection.api",
     "app.modules.system_config.api",
     "app.modules.ai_analysis.api",
     "app.modules.project.api",

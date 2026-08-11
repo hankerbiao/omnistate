@@ -8,7 +8,6 @@ export const PAGE_ROUTES: Record<PageType, string> = {
   myTasks:              '/my-tasks',
   requirements:         '/requirements',
   testCases:            '/test-cases',
-  collections:          '/collections',
   projects:             '/projects',
   agents:               '/agents',
   testPlanStudioDemo:   '/execution-plans',

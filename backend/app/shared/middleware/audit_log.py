@@ -55,7 +55,6 @@ PATH_RESOURCE_MAP: dict[str, str] = {
     "/api/v1/execution/tasks": "execution_task",
     "/api/v1/execution-plans": "execution_plan",
     "/api/v1/work-items": "work_item",
-    "/api/v1/collections": "test_case_collection",
     "/api/v1/auth/users": "user",
     "/api/v1/auth/roles": "role",
     "/api/v1/system-configs": "system_config",

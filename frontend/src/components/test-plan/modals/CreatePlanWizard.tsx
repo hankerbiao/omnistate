@@ -23,7 +23,7 @@ import {
   ListChecks,
 } from 'lucide-react';
 import { DateRangePicker } from '../DateRangePicker';
-import type { NewPlanData, CaseMapEntry, CollectionEntry } from '../types';
+import type { NewPlanData, CaseMapEntry } from '../types';
 import { PRIORITY_COLORS } from '../types';
 import type { UserResponse } from '../../../types';
 import AiRecommendCasesPanel from '../../ui/AiRecommendCasesPanel';
@@ -39,16 +39,14 @@ interface CreatePlanWizardProps {
   onCreatePlan: () => void;
   onClose: () => void;
   onToggleCase: (cid: string) => void;
-  onToggleCollection: (col: { collection_id: string; name: string }) => void;
   onSetAssignment: (caseId: string, value: string) => void;
   users: UserResponse[];
-  collections: CollectionEntry[];
   caseMap: Map<string, CaseMapEntry>;
   casesLoading: boolean;
   currentUserId: string;
 }
 
-type CaseTab = 'all' | 'collections' | 'manual' | 'auto' | 'high';
+type CaseTab = 'all' | 'manual' | 'auto' | 'high';
 type CaseFilter = { key: string; label: string; value: string };
 type AssignTypeFilter = 'all' | 'manual' | 'auto';
 
@@ -80,12 +78,10 @@ const getUserLabel = (users: UserResponse[], userId?: string) => {
   return u?.username || userId;
 };
 
-const getCollectionIds = (col: CollectionEntry) => [...(col.case_ids || []), ...(col.auto_case_ids || [])];
-
 export function CreatePlanWizard({
   wizardStep, onStepChange, newPlan, onNewPlanChange, caseSearch, onCaseSearchChange,
-  submittingPlan, onCreatePlan, onClose, onToggleCase, onToggleCollection, onSetAssignment,
-  users, collections, caseMap, casesLoading, currentUserId,
+  submittingPlan, onCreatePlan, onClose, onToggleCase, onSetAssignment,
+  users, caseMap, casesLoading, currentUserId,
 }: CreatePlanWizardProps) {
   const [showAiRecommend, setShowAiRecommend] = useState(false);
   const [activeCaseTab, setActiveCaseTab] = useState<CaseTab>('all');
@@ -107,23 +103,10 @@ export function CreatePlanWizard({
 
   const tabCounts = useMemo(() => ({
     all: allCases.length,
-    collections,
     manual: allCases.filter(tc => tc.type === 'manual').length,
     auto: allCases.filter(tc => tc.type === 'auto').length,
     high: allCases.filter(tc => tc.priority === 'P0' || tc.priority === 'P1').length,
-  }), [allCases, collections]);
-
-  const matchedCollections = useMemo(() => {
-    if (activeCaseTab !== 'all' && activeCaseTab !== 'collections') return [];
-    return collections.filter(col => {
-      if (!q) return true;
-      return [
-        col.name,
-        col.description || '',
-        ...(col.tags || []),
-      ].some(v => String(v || '').toLowerCase().includes(q));
-    });
-  }, [activeCaseTab, collections, q]);
+  }), [allCases]);
 
   const filterOptions = useMemo(() => {
     const makeOptions = (kind: string, labeler: (tc: CaseMapEntry) => string | undefined, limit = 8) => {
@@ -148,7 +131,6 @@ export function CreatePlanWizard({
 
   const filteredCases = useMemo(() => {
     return allCases.filter(tc => {
-      if (activeCaseTab === 'collections') return false;
       if (activeCaseTab === 'manual' && tc.type !== 'manual') return false;
       if (activeCaseTab === 'auto' && tc.type !== 'auto') return false;
       if (activeCaseTab === 'high' && tc.priority !== 'P0' && tc.priority !== 'P1') return false;
@@ -403,7 +385,6 @@ export function CreatePlanWizard({
                 <div className="flex flex-wrap gap-1.5">
                   {[
                     { key: 'all' as const, label: '全部', count: tabCounts.all },
-                    { key: 'collections' as const, label: '预置集合', count: tabCounts.collections.length },
                     { key: 'manual' as const, label: '手工用例', count: tabCounts.manual },
                     { key: 'auto' as const, label: '自动化用例', count: tabCounts.auto },
                     { key: 'high' as const, label: '高优先级', count: tabCounts.high },
@@ -425,7 +406,7 @@ export function CreatePlanWizard({
                     <Input
                       value={caseSearch}
                       onChange={e => onCaseSearchChange(e.target.value)}
-                      placeholder="搜索用例名称、ID、集合、标签、目录、Lab 或 Framework..."
+                      placeholder="搜索用例名称、ID、标签、目录、Lab 或 Framework..."
                       className="pl-8 text-sm bg-[var(--surface-secondary)]"
                     />
                   </div>
@@ -474,32 +455,6 @@ export function CreatePlanWizard({
                 <div className="py-10 text-center text-sm text-[var(--text-tertiary)]">加载用例中...</div>
               ) : (
                 <div className="grid grid-cols-1 gap-2">
-                  {matchedCollections.map(col => {
-                    const collectionIds = getCollectionIds(col);
-                    const selectedCount = collectionIds.filter(id => selectedSet.has(id)).length;
-                    const allSelected = collectionIds.length > 0 && selectedCount === collectionIds.length;
-                    return (
-                      <button
-                        type="button"
-                        key={col.collection_id}
-                        onClick={() => onToggleCollection(col)}
-                        className="flex items-center gap-3 px-3.5 py-2.5 rounded-lg cursor-pointer border border-[var(--border-subtle)] bg-[var(--surface-primary)] hover:bg-[var(--surface-hover)] hover:border-[var(--border-default)] transition-colors text-left"
-                      >
-                        <div className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 ${allSelected ? 'bg-[var(--accent-primary)] border-[var(--accent-primary)]' : 'border-[var(--border-default)]'}`}>
-                          {allSelected && <Check size={11} className="text-white" strokeWidth={3} />}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="text-sm font-medium truncate">{col.name}</div>
-                          {col.description && <div className="text-[11px] text-[var(--text-tertiary)] mt-0.5 truncate">{col.description}</div>}
-                        </div>
-                        <Badge variant="secondary">{col.case_count + (col.auto_case_count || 0)} 个用例</Badge>
-                        <span className="text-[11px] text-[var(--text-tertiary)] min-w-[70px] text-right">
-                          {collectionIds.length > 0 ? `${selectedCount}/${collectionIds.length}` : '点击选择'}
-                        </span>
-                      </button>
-                    );
-                  })}
-
                   {filteredCases.map(tc => {
                     const sel = selectedSet.has(tc.id);
                     return (
@@ -531,8 +486,8 @@ export function CreatePlanWizard({
                     );
                   })}
 
-                  {matchedCollections.length === 0 && filteredCases.length === 0 && (
-                    <div className="py-10 text-center text-sm text-[var(--text-tertiary)]">无匹配的用例或集合</div>
+                  {filteredCases.length === 0 && (
+                    <div className="py-10 text-center text-sm text-[var(--text-tertiary)]">无匹配的用例</div>
                   )}
                 </div>
               )}

@@ -118,10 +118,8 @@ export default function TestExecutionPlanDemo() {
           onCreatePlan={h.handleCreatePlan}
           onClose={() => h.setShowWizard(false)}
           onToggleCase={h.toggleSelectCase}
-          onToggleCollection={h.toggleSelectCollection}
           onSetAssignment={h.setAssignment}
           users={h.users}
-          collections={h.collections}
           caseMap={h.caseMap}
           casesLoading={h.casesLoading}
           currentUserId={h.currentUserId}
