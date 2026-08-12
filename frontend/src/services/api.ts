@@ -1,4 +1,4 @@
-import type { LoginRequest, LoginResponse, ApiResponse, CreateRequirementRequest, RequirementResponse, ListRequirementsParams, CreateTestCaseRequest, UpdateTestCaseRequest, TestCaseResponse, TestCaseChangeLogListResponse, ListTestCasesParams, CatalogLab, CreateCatalogLabRequest, UpdateCatalogLabRequest, CatalogTreeResponse, DispatchTaskRequest, DispatchTaskResponse, ExecutionAgent, AgentCleanupOfflineResponse, ListAgentsParams, CreateAutomationTestCaseRequest, AutomationTestCaseResponse, ListAutomationTestCasesParams, ExecutionTask, ListTasksParams, TaskStatus, RerunTaskRequest, AttachmentInfo, WorkflowTransitionRequest, WorkflowTransitionResponse, WorkflowTransitionsResponse, WorkflowTransitionLog, RoleResponse, PermissionResponse, CreateRoleRequest, UpdateRoleRequest, UpdateRolePermissionsRequest, CurrentUserPermissionsResponse, UserResponse, CreateUserRequest, UpdateUserRequest, UpdateUserRolesRequest, UpdateUserPasswordRequest, ListUsersParams, WorkItem, LineageGraphResponse, CommentListResponse, CreateCommentRequest, TestCaseComment, PlanTaskItemResponse, SubmitManualResultRequest, PlanItemDispatchRequest, PlanItemRerunRequest, BatchDispatchPlanItemsRequest, CreatePlanRequest, AddPlanItemsRequest, BatchUpdateAssigneeRequest, UserEffectivePermissionsResponse, SystemConfigListResponse, SystemConfig, BatchUpdateConfigRequest, TestConnectionRequest, TestConnectionResponse, ConfigHistory, ExecutionStatsResponse, PendingTaskAnalysisRequest, PendingTaskAnalysisResult, TaskTimeline } from '../types';
+import type { LoginRequest, LoginResponse, ApiResponse, CreateRequirementRequest, RequirementResponse, ListRequirementsParams, CreateTestCaseRequest, UpdateTestCaseRequest, TestCaseResponse, TestCaseChangeLogListResponse, ListTestCasesParams, CatalogLab, CreateCatalogLabRequest, UpdateCatalogLabRequest, CatalogTreeResponse, DispatchTaskRequest, DispatchTaskResponse, ExecutionAgent, AgentCleanupOfflineResponse, ListAgentsParams, CreateAutomationTestCaseRequest, AutomationTestCaseResponse, ListAutomationTestCasesParams, ExecutionTask, ListTasksParams, TaskStatus, RerunTaskRequest, AttachmentInfo, WorkflowTransitionRequest, WorkflowTransitionResponse, WorkflowTransitionsResponse, WorkflowTransitionLog, RoleResponse, PermissionResponse, CreateRoleRequest, UpdateRoleRequest, UpdateRolePermissionsRequest, CurrentUserPermissionsResponse, UserResponse, CreateUserRequest, UpdateUserRequest, UpdateUserRolesRequest, ListUsersParams, WorkItem, LineageGraphResponse, CommentListResponse, CreateCommentRequest, TestCaseComment, PlanTaskItemResponse, SubmitManualResultRequest, PlanItemDispatchRequest, PlanItemRerunRequest, BatchDispatchPlanItemsRequest, CreatePlanRequest, AddPlanItemsRequest, BatchUpdateAssigneeRequest, UserEffectivePermissionsResponse, SystemConfigListResponse, SystemConfig, BatchUpdateConfigRequest, ConfigHistory, TaskTimeline, TestCaseMetadataTypesResponse, TestCaseMetadataOption, CreateTestCaseMetadataRequest, UpdateTestCaseMetadataRequest } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
 
@@ -103,6 +103,29 @@ class ApiClient {
     return this.request<TestCaseResponse[]>(endpoint, {
       method: 'GET',
     });
+  }
+
+  async listTestCaseMetadataTypes(): Promise<ApiResponse<TestCaseMetadataTypesResponse>> {
+    return this.request<TestCaseMetadataTypesResponse>('/metadata/types', { method: 'GET' });
+  }
+
+  async listMetadata(params: { type_code?: string; active?: boolean; q?: string; limit?: number; offset?: number } = {}): Promise<ApiResponse<{ items: TestCaseMetadataOption[]; total: number; limit: number; offset: number }>> {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => { if (value !== undefined) query.set(key, String(value)); });
+    const qs = query.toString();
+    return this.request(`/metadata${qs ? `?${qs}` : ''}`, { method: 'GET' });
+  }
+
+  async createMetadata(data: CreateTestCaseMetadataRequest): Promise<ApiResponse<TestCaseMetadataOption>> {
+    return this.request<TestCaseMetadataOption>('/metadata', { method: 'POST', body: JSON.stringify(data) });
+  }
+
+  async updateMetadata(id: string, data: UpdateTestCaseMetadataRequest): Promise<ApiResponse<TestCaseMetadataOption>> {
+    return this.request<TestCaseMetadataOption>(`/metadata/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
+  }
+
+  async deactivateMetadata(id: string): Promise<ApiResponse<TestCaseMetadataOption>> {
+    return this.request<TestCaseMetadataOption>(`/metadata/${id}/deactivate`, { method: 'POST' });
   }
 
   async createTestCase(data: CreateTestCaseRequest): Promise<ApiResponse<TestCaseResponse>> {
@@ -211,6 +234,16 @@ class ApiClient {
 
   async getRequirement(reqId: string): Promise<ApiResponse<RequirementResponse>> {
     return this.request<RequirementResponse>(`/requirements/${reqId}`, {
+      method: 'GET',
+    });
+  }
+
+  async listRequirementTestCases(reqId: string, params: { limit?: number; offset?: number } = {}): Promise<ApiResponse<import('../types').RequirementTestCaseSummary[]>> {
+    const query = new URLSearchParams();
+    if (params.limit !== undefined) query.set('limit', String(params.limit));
+    if (params.offset !== undefined) query.set('offset', String(params.offset));
+    const suffix = query.toString() ? `?${query.toString()}` : '';
+    return this.request<import('../types').RequirementTestCaseSummary[]>(`/requirements/${reqId}/test-cases${suffix}`, {
       method: 'GET',
     });
   }
@@ -419,13 +452,13 @@ class ApiClient {
     });
   }
 
-  async unlinkAutomationCase(caseId: string): Promise<ApiResponse<{ unlinked: boolean }>> {
-    return this.request<{ unlinked: boolean }>(`/test-cases/${caseId}/automation-link`, {
+  async unlinkAutomationCase(caseId: string, autoCaseId: string): Promise<ApiResponse<{ unlinked: boolean }>> {
+    return this.request<{ unlinked: boolean }>(`/test-cases/${caseId}/automation-links/${autoCaseId}`, {
       method: 'DELETE',
     });
   }
 
-  async linkAutomationCase(caseId: string, req: { auto_case_id: string; version?: string }): Promise<ApiResponse<{ linked: boolean }>> {
+  async linkAutomationCase(caseId: string, req: { auto_case_id: string; relation_type?: string; coverage_type?: string; automation_status?: string; linked_script_version?: string; linked_commit_id?: string; owner_id?: string }): Promise<ApiResponse<unknown>> {
     return this.request<{ linked: boolean }>(`/test-cases/${caseId}/automation-link`, {
       method: 'POST',
       body: JSON.stringify(req),
@@ -549,14 +582,6 @@ class ApiClient {
     });
   }
 
-  /** 用户自助修改密码（需提供旧密码验证） */
-  async changePassword(oldPassword: string, newPassword: string): Promise<ApiResponse<UserResponse>> {
-    return this.request<UserResponse>('/auth/users/me/password', {
-      method: 'POST',
-      body: JSON.stringify({ old_password: oldPassword, new_password: newPassword }),
-    });
-  }
-
   // User APIs
   async listUsers(params: ListUsersParams = {}): Promise<ApiResponse<UserResponse[]>> {
     const queryParams = new URLSearchParams();
@@ -597,13 +622,6 @@ class ApiClient {
 
   async updateUserRoles(userId: string, data: UpdateUserRolesRequest): Promise<ApiResponse<UserResponse>> {
     return this.request<UserResponse>(`/auth/users/${userId}/roles`, {
-      method: 'PATCH',
-      body: JSON.stringify(data),
-    });
-  }
-
-  async updateUserPassword(userId: string, data: UpdateUserPasswordRequest): Promise<ApiResponse<UserResponse>> {
-    return this.request<UserResponse>(`/auth/users/${userId}/password`, {
       method: 'PATCH',
       body: JSON.stringify(data),
     });
@@ -900,14 +918,6 @@ class ApiClient {
     });
   }
 
-  /** 测试AI连接 */
-  async testAIConnection(data: TestConnectionRequest): Promise<ApiResponse<TestConnectionResponse>> {
-    return this.request<TestConnectionResponse>('/system-configs/ai/test-connection', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-  }
-
   /** 获取配置分类列表 */
   async getSystemConfigCategories(): Promise<ApiResponse<string[]>> {
     return this.request<string[]>('/system-configs/categories', {
@@ -928,67 +938,6 @@ class ApiClient {
     return this.request<ConfigHistory[]>(`/system-configs/history${query}`, {
       method: 'GET',
     });
-  }
-
-  // ═══════════════════════════════════════════════════════════════════
-  //  AI 分析相关 API
-  // ═══════════════════════════════════════════════════════════════════
-
-  /** AI分析我的待处理任务 */
-  async analyzePendingTasks(data: PendingTaskAnalysisRequest): Promise<ApiResponse<PendingTaskAnalysisResult>> {
-    return this.request<PendingTaskAnalysisResult>('/ai-analyze/my-tasks/pending', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-  }
-
-  /** AI 润色文本 */
-  async aiPolish(text: string): Promise<string> {
-    const res = await this.request<{ polished: string }>(
-      `/ai/polish`,
-      { method: 'POST', body: JSON.stringify({ text }) },
-    );
-    return res.data.polished;
-  }
-
-  /** AI 分析测试用例步骤 */
-  async analyzeTestSteps(data: import('../types/ai').AnalyzeTestStepsRequest): Promise<ApiResponse<import('../types/ai').StepAnalysisResult>> {
-    return this.request<import('../types/ai').StepAnalysisResult>('/ai/analyze-steps', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-  }
-
-  /** AI 根据需求生成测试用例 */
-  async generateCases(data: import('../types/ai').GenerateCasesRequest): Promise<ApiResponse<import('../types/ai').GenerateCasesResponse>> {
-    return this.request<import('../types/ai').GenerateCasesResponse>('/ai/generate-cases', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-  }
-
-  /** AI 评审单条测试用例 */
-  async reviewCase(caseId: string): Promise<ApiResponse<import('../types/ai').ReviewCaseResponse>> {
-    return this.request<import('../types/ai').ReviewCaseResponse>('/ai/review-case', {
-      method: 'POST',
-      body: JSON.stringify({ case_id: caseId }),
-    });
-  }
-
-  /** AI 智能推荐执行计划用例 */
-  async recommendCases(data: import('../types/ai').RecommendCasesRequest): Promise<ApiResponse<import('../types/ai').RecommendCasesResponse>> {
-    return this.request<import('../types/ai').RecommendCasesResponse>('/ai/recommend-cases', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-  }
-
-  /** 获取测试用例执行统计 */
-  async getCaseExecutionStats(caseId: string): Promise<ApiResponse<ExecutionStatsResponse>> {
-    return this.request<ExecutionStatsResponse>(
-      `/execution-plans/cases/${encodeURIComponent(caseId)}/execution-stats`,
-      { method: 'GET' },
-    );
   }
 
   // ── Project API ──────────────────────────────────────────────────
@@ -1029,6 +978,130 @@ class ApiClient {
   /** 删除项目 */
   async deleteProject(projectId: string): Promise<ApiResponse<void>> {
     return this.request(`/projects/${encodeURIComponent(projectId)}`, { method: 'DELETE' });
+  }
+
+  async listProjectMembers(projectId: string): Promise<ApiResponse<import('../types').ProjectMember[]>> {
+    return this.request(`/projects/${encodeURIComponent(projectId)}/members`, { method: 'GET' });
+  }
+
+  async upsertProjectMember(projectId: string, userId: string, roleCode: import('../types').ProjectMemberRole): Promise<ApiResponse<import('../types').ProjectMember>> {
+    return this.request(`/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(userId)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ user_id: userId, role_code: roleCode }),
+    });
+  }
+
+  async removeProjectMember(projectId: string, userId: string): Promise<ApiResponse<void>> {
+    return this.request(`/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(userId)}`, { method: 'DELETE' });
+  }
+
+  private async projectMultipart<T>(endpoint: string, formData: FormData, method = 'POST'): Promise<ApiResponse<T>> {
+    const headers: HeadersInit = {};
+    if (this.token) headers['Authorization'] = `Bearer ${this.token}`;
+    const response = await fetch(`${this.baseUrl}${endpoint}`, { method, headers, body: formData });
+    if (!response.ok) {
+      let detail = `HTTP error! status: ${response.status}`;
+      try {
+        const body = await response.json();
+        detail = body?.data?.detail || body?.message || detail;
+      } catch {
+        // Keep the HTTP status when the error response is not JSON.
+      }
+      throw new Error(detail);
+    }
+    return response.json();
+  }
+
+  async listProjectDocuments(projectId: string): Promise<ApiResponse<import('../types').ProjectDocument[]>> {
+    return this.request(`/projects/${encodeURIComponent(projectId)}/documents`, { method: 'GET' });
+  }
+
+  async createProjectDocument(projectId: string, input: { name: string; phase_code: import('../types').ProjectDocumentPhase; reviewer_ids: string[]; file: File }): Promise<ApiResponse<import('../types').ProjectDocument>> {
+    const form = new FormData();
+    form.append('name', input.name);
+    form.append('phase_code', input.phase_code);
+    form.append('reviewer_ids', JSON.stringify(input.reviewer_ids));
+    form.append('file', input.file);
+    return this.projectMultipart(`/projects/${encodeURIComponent(projectId)}/documents`, form);
+  }
+
+  async listProjectDocumentVersions(projectId: string, documentId: string): Promise<ApiResponse<import('../types').ProjectDocumentVersion[]>> {
+    return this.request(`/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}/versions`, { method: 'GET' });
+  }
+
+  async createProjectDocumentVersion(projectId: string, documentId: string, input: { phase_code: import('../types').ProjectDocumentPhase; reviewer_ids: string[]; file: File }): Promise<ApiResponse<import('../types').ProjectDocumentVersion>> {
+    const form = new FormData();
+    form.append('phase_code', input.phase_code);
+    form.append('reviewer_ids', JSON.stringify(input.reviewer_ids));
+    form.append('file', input.file);
+    return this.projectMultipart(`/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}/versions`, form);
+  }
+
+  async submitProjectDocumentVersion(projectId: string, documentId: string, version: number): Promise<ApiResponse<import('../types').ProjectDocumentVersion>> {
+    return this.request(`/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}/versions/${version}/submit`, { method: 'POST' });
+  }
+
+  async reviewProjectDocumentVersion(projectId: string, documentId: string, version: number, decision: 'APPROVE' | 'REQUEST_CHANGES', comment?: string): Promise<ApiResponse<import('../types').ProjectDocumentVersion>> {
+    const form = new FormData();
+    form.append('decision', decision);
+    if (comment) form.append('comment', comment);
+    return this.projectMultipart(`/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}/versions/${version}/reviews`, form);
+  }
+
+  async getProjectDocumentDownload(projectId: string, documentId: string, version: number): Promise<ApiResponse<{ attachment_id: string; download_url: string; expires_in: number }>> {
+    return this.request(`/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}/versions/${version}/download`, { method: 'GET' });
+  }
+
+  async listProjectFolders(projectId: string, parentFolderId?: string): Promise<ApiResponse<import('../types').ProjectFolder[]>> {
+    const query = parentFolderId ? `?parent_folder_id=${encodeURIComponent(parentFolderId)}` : '';
+    return this.request(`/projects/${encodeURIComponent(projectId)}/folders${query}`, { method: 'GET' });
+  }
+
+  async renameProjectFolder(projectId: string, folderId: string, name: string): Promise<ApiResponse<import('../types').ProjectFolder>> {
+    const form = new FormData(); form.append('name', name);
+    return this.projectMultipart(`/projects/${encodeURIComponent(projectId)}/folders/${encodeURIComponent(folderId)}`, form, 'PATCH');
+  }
+
+  async deleteProjectFolder(projectId: string, folderId: string): Promise<ApiResponse<void>> {
+    return this.request(`/projects/${encodeURIComponent(projectId)}/folders/${encodeURIComponent(folderId)}`, { method: 'DELETE' });
+  }
+
+  async createProjectFolder(projectId: string, name: string, parentFolderId?: string | null): Promise<ApiResponse<import('../types').ProjectFolder>> {
+    const form = new FormData();
+    form.append('name', name);
+    if (parentFolderId) form.append('parent_folder_id', parentFolderId);
+    return this.projectMultipart(`/projects/${encodeURIComponent(projectId)}/folders`, form);
+  }
+
+  async listProjectFiles(projectId: string, folderId?: string): Promise<ApiResponse<import('../types').ProjectFile[]>> {
+    const query = folderId ? `?folder_id=${encodeURIComponent(folderId)}` : '';
+    return this.request(`/projects/${encodeURIComponent(projectId)}/files${query}`, { method: 'GET' });
+  }
+
+  async uploadProjectFile(projectId: string, file: File, folderId?: string | null, name?: string): Promise<ApiResponse<import('../types').ProjectFile>> {
+    const form = new FormData();
+    form.append('file', file);
+    if (folderId) form.append('folder_id', folderId);
+    if (name) form.append('name', name);
+    return this.projectMultipart(`/projects/${encodeURIComponent(projectId)}/files`, form);
+  }
+
+  async getProjectFileDownload(projectId: string, projectFileId: string): Promise<ApiResponse<{ attachment_id: string; download_url: string; expires_in: number }>> {
+    return this.request(`/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(projectFileId)}/download`, { method: 'GET' });
+  }
+
+  async renameProjectFile(projectId: string, projectFileId: string, name: string): Promise<ApiResponse<import('../types').ProjectFile>> {
+    const form = new FormData(); form.append('name', name);
+    return this.projectMultipart(`/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(projectFileId)}`, form, 'PATCH');
+  }
+
+  async moveProjectFile(projectId: string, projectFileId: string, folderId?: string | null): Promise<ApiResponse<import('../types').ProjectFile>> {
+    const form = new FormData(); if (folderId) form.append('folder_id', folderId);
+    return this.projectMultipart(`/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(projectFileId)}/move`, form, 'PATCH');
+  }
+
+  async deleteProjectFile(projectId: string, projectFileId: string): Promise<ApiResponse<void>> {
+    return this.request(`/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(projectFileId)}`, { method: 'DELETE' });
   }
 
   /** 获取项目风险/阻塞项 */

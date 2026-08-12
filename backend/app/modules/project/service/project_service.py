@@ -7,8 +7,10 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from app.modules.project.domain.constants import PROJECT_ID_PREFIX, ProjectStatus
-from app.modules.project.domain.exceptions import ProjectKeyConflictError, ProjectNotFoundError
+from app.modules.project.domain.exceptions import ProjectKeyConflictError, ProjectNotFoundError, ProjectQueryError
 from app.modules.project.repository.models.project import ProjectDoc
+from app.modules.project.repository.models import ProjectMemberDoc
+from app.modules.project.domain.constants import ProjectMemberRole
 from app.modules.project.schemas.project import (
     BlockerItemResponse,
     GenerateDemoResponse,
@@ -105,8 +107,11 @@ class ProjectService(BaseService):
         page_size: int = 20,
         sort_by: str = "created_at",
         sort_order: str = "desc",
+        visible_project_ids: Optional[set[str]] = None,
     ) -> Dict[str, Any]:
         filters: list = [ProjectDoc.is_deleted == False]  # noqa: E712
+        if visible_project_ids is not None:
+            filters.append({"project_id": {"$in": list(visible_project_ids)}})
         if name:
             filters.append(ProjectDoc.name == {"$regex": name, "$options": "i"})
         if status:
@@ -136,6 +141,15 @@ class ProjectService(BaseService):
         data: Dict[str, Any],
         created_by: Optional[str] = None,
     ) -> ProjectDoc:
+        if data.get("priority", "P2") not in {"P0", "P1", "P2"}:
+            raise ProjectQueryError("优先级必须为 P0、P1 或 P2")
+        if data.get("start_date") and data.get("end_date") and data["start_date"] > data["end_date"]:
+            raise ProjectQueryError("项目开始时间不能晚于结束时间")
+        if data.get("owner_id"):
+            from app.modules.auth.repository.models import UserDoc
+            owner = await UserDoc.find_one({"user_id": data["owner_id"], "status": "ACTIVE"})
+            if not owner:
+                raise ProjectQueryError("项目负责人不存在或已停用")
         existing = await ProjectDoc.find_one({"key": data["key"], "is_deleted": False})
         if existing:
             raise ProjectKeyConflictError(data["key"])
@@ -156,6 +170,19 @@ class ProjectService(BaseService):
             created_by=created_by,
         )
         await doc.insert()
+        if created_by:
+            # Project creator owns the initial project-level administration scope.
+            try:
+                await ProjectMemberDoc(
+                    project_id=project_id,
+                    user_id=created_by,
+                    role_code=ProjectMemberRole.PROJECT_ADMIN.value,
+                ).insert()
+            except Exception:
+                doc.is_deleted = True
+                doc.updated_at = datetime.now(timezone.utc)
+                await doc.save()
+                raise
         logger.info("Project created: {} ({})", project_id, data["key"])
         return doc
 
@@ -178,6 +205,16 @@ class ProjectService(BaseService):
         doc = await ProjectDoc.find_one({"project_id": project_id, "is_deleted": False})
         if not doc:
             raise ProjectNotFoundError(f"项目不存在: {project_id}")
+        if doc.status == ProjectStatus.ARCHIVED.value and data.get("status") != ProjectStatus.ACTIVE.value:
+            raise ProjectQueryError("归档项目为只读，只允许恢复为 active")
+        if "status" in data and data["status"] not in {item.value for item in ProjectStatus}:
+            raise ProjectQueryError("无效的项目状态")
+        if "priority" in data and data["priority"] not in {"P0", "P1", "P2"}:
+            raise ProjectQueryError("优先级必须为 P0、P1 或 P2")
+        start_date = data.get("start_date", doc.start_date)
+        end_date = data.get("end_date", doc.end_date)
+        if start_date and end_date and start_date > end_date:
+            raise ProjectQueryError("项目开始时间不能晚于结束时间")
 
         if "key" in data and data["key"] != doc.key:
             existing = await ProjectDoc.find_one({
@@ -207,6 +244,19 @@ class ProjectService(BaseService):
         doc.is_deleted = True
         doc.updated_at = datetime.now(timezone.utc)
         await doc.save()
+        # Keep project membership and asset metadata out of normal queries after a project is removed.
+        for model_name in (
+            ProjectMemberDoc,
+        ):
+            await model_name.find({"project_id": project_id, "is_deleted": False}).update_many({"$set": {"is_deleted": True, "updated_at": datetime.now(timezone.utc)}})
+        try:
+            from app.modules.project.repository.models import (
+                ProjectDocumentDoc, ProjectDocumentVersionDoc, ProjectFileDoc, ProjectFolderDoc,
+            )
+            for model in (ProjectDocumentDoc, ProjectDocumentVersionDoc, ProjectFolderDoc, ProjectFileDoc):
+                await model.find({"project_id": project_id, "is_deleted": False}).update_many({"$set": {"is_deleted": True, "updated_at": datetime.now(timezone.utc)}})
+        except Exception as exc:
+            logger.warning("Failed to clean project assets for {}: {}", project_id, exc)
         for model in get_related_models():
             try:
                 await model.find({

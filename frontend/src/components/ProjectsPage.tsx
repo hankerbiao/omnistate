@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigation } from '../providers/NavigationProvider'
 import { api } from '../services/api'
-import type { Project, ProjectDetail, ProjectStats, BlockerItem, ProjectActivity, CreateProjectRequest, UpdateProjectRequest } from '../types'
+import type { Project, ProjectDetail, ProjectStats, BlockerItem, ProjectActivity, CreateProjectRequest, UpdateProjectRequest, ProjectMember, ProjectDocument, ProjectFolder, ProjectFile, ProjectDocumentPhase } from '../types'
 
 // ── 样式 ─────────────────────────────────────────────────────────────
 
@@ -124,6 +124,13 @@ export default function ProjectsPage() {
   const [blockers, setBlockers] = useState<BlockerItem[]>([])
   const [activities, setActivities] = useState<ProjectActivity[]>([])
   const [detailLoading, setDetailLoading] = useState(false)
+  const [workspace, setWorkspace] = useState<'overview' | 'members' | 'documents' | 'files'>('overview')
+  const [members, setMembers] = useState<ProjectMember[]>([])
+  const [documents, setDocuments] = useState<ProjectDocument[]>([])
+  const [folders, setFolders] = useState<ProjectFolder[]>([])
+  const [files, setFiles] = useState<ProjectFile[]>([])
+  const [assetError, setAssetError] = useState('')
+  const [assetBusy, setAssetBusy] = useState(false)
 
   // data fetch
   const fetchProjects = useCallback(async () => {
@@ -164,6 +171,23 @@ export default function ProjectsPage() {
     })
 
     return () => { active = false }
+  }, [selectedId])
+
+  useEffect(() => {
+    if (!selectedId) return
+    setWorkspace('overview')
+    setAssetError('')
+    Promise.allSettled([
+      api.listProjectMembers(selectedId),
+      api.listProjectDocuments(selectedId),
+      api.listProjectFolders(selectedId),
+      api.listProjectFiles(selectedId),
+    ]).then(([memberRes, documentRes, folderRes, fileRes]) => {
+      setMembers(memberRes.status === 'fulfilled' ? memberRes.value.data || [] : [])
+      setDocuments(documentRes.status === 'fulfilled' ? documentRes.value.data || [] : [])
+      setFolders(folderRes.status === 'fulfilled' ? folderRes.value.data || [] : [])
+      setFiles(fileRes.status === 'fulfilled' ? fileRes.value.data || [] : [])
+    })
   }, [selectedId])
 
   const selectedProject = projectDetail || projects.find(p => p.project_id === selectedId) || null
@@ -215,6 +239,49 @@ export default function ProjectsPage() {
     if (!selectedId || !selectedProject) return
     const ns = selectedProject.status === 'active' ? 'archived' : 'active'
     try { await api.updateProject(selectedId, { status: ns }); await fetchProjects() } catch { setError('状态更新失败') }
+  }
+
+  const refreshAssets = async () => {
+    if (!selectedId) return
+    const [memberRes, documentRes, folderRes, fileRes] = await Promise.all([
+      api.listProjectMembers(selectedId), api.listProjectDocuments(selectedId),
+      api.listProjectFolders(selectedId), api.listProjectFiles(selectedId),
+    ])
+    setMembers(memberRes.data || []); setDocuments(documentRes.data || [])
+    setFolders(folderRes.data || []); setFiles(fileRes.data || [])
+  }
+
+  const handleDocumentUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file || !selectedId) return
+    const name = window.prompt('文档名称', file.name)?.trim()
+    if (!name) return
+    const phase = (window.prompt('阶段：ECT / DVT / PVT', 'DVT') || 'DVT').toUpperCase() as ProjectDocumentPhase
+    const reviewerText = window.prompt('审核人 user_id，多个用逗号分隔', '') || ''
+    const reviewer_ids = reviewerText.split(',').map(item => item.trim()).filter(Boolean)
+    setAssetBusy(true); setAssetError('')
+    try { await api.createProjectDocument(selectedId, { name, phase_code: phase, reviewer_ids, file }); await refreshAssets() }
+    catch (err) { setAssetError(err instanceof Error ? err.message : '文档上传失败') }
+    finally { setAssetBusy(false); event.target.value = '' }
+  }
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file || !selectedId) return
+    setAssetBusy(true); setAssetError('')
+    try { await api.uploadProjectFile(selectedId, file); await refreshAssets() }
+    catch (err) { setAssetError(err instanceof Error ? err.message : '文件上传失败') }
+    finally { setAssetBusy(false); event.target.value = '' }
+  }
+
+  const handleCreateFolder = async () => {
+    if (!selectedId) return
+    const name = window.prompt('文件夹名称')?.trim()
+    if (!name) return
+    setAssetBusy(true); setAssetError('')
+    try { await api.createProjectFolder(selectedId, name); await refreshAssets() }
+    catch (err) { setAssetError(err instanceof Error ? err.message : '文件夹创建失败') }
+    finally { setAssetBusy(false) }
   }
 
   // 使用后端真实统计数据
@@ -301,8 +368,44 @@ export default function ProjectsPage() {
                 <div style={{ marginBottom: 14, padding: 10, fontSize: 12, color: 'var(--text-secondary)' }}>刷新项目详情中...</div>
               )}
 
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, borderBottom: '1px solid var(--border-subtle)', marginBottom: 14 }}>
+                {([['overview', '概览'], ['members', '成员与权限'], ['documents', '项目文档'], ['files', '项目文件']] as const).map(([key, label]) => (
+                  <button key={key} onClick={() => setWorkspace(key)} style={{ border: 'none', borderBottom: workspace === key ? '2px solid var(--accent-primary)' : '2px solid transparent', background: 'transparent', color: workspace === key ? 'var(--accent-primary)' : 'var(--text-secondary)', padding: '7px 10px', fontSize: 12, cursor: 'pointer', fontWeight: workspace === key ? 700 : 400 }}>{label}</button>
+                ))}
+              </div>
+
+              {assetError && <div style={{ marginBottom: 12, padding: 8, borderRadius: 6, background: '#f8514911', color: '#f85149', fontSize: 12 }}>{assetError}</div>}
+
+              {workspace === 'members' && (
+                <section style={{ marginBottom: 14 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}><strong style={{ fontSize: 13 }}>项目成员与权限</strong><span style={{ color: 'var(--text-secondary)', fontSize: 11 }}>权限在项目内配置</span></div>
+                  <div style={{ border: '1px solid var(--border-subtle)', borderRadius: 6, overflow: 'hidden' }}>
+                    {members.map(member => <div key={member.user_id} style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 12px', borderBottom: '1px solid var(--border-subtle)', fontSize: 12 }}><span>{member.user_id}</span><span style={pillStyle('var(--surface-secondary)', 'var(--text-secondary)')}>{member.role_code}</span></div>)}
+                    {members.length === 0 && <div style={{ padding: 14, color: 'var(--text-secondary)', fontSize: 12 }}>暂无项目成员</div>}
+                  </div>
+                </section>
+              )}
+
+              {workspace === 'documents' && (
+                <section style={{ marginBottom: 14 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}><strong style={{ fontSize: 13 }}>受控项目文档</strong><label className="btn btn--primary btn--sm" style={{ fontSize: 11, cursor: assetBusy ? 'wait' : 'pointer' }}>上传文档<input type="file" hidden disabled={assetBusy} onChange={e => void handleDocumentUpload(e)} /></label></div>
+                  <div style={{ border: '1px solid var(--border-subtle)', borderRadius: 6, overflow: 'hidden' }}>
+                    {documents.map(doc => <div key={doc.document_id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderBottom: '1px solid var(--border-subtle)', fontSize: 12 }}><span style={{ flex: 1, fontWeight: 600 }}>{doc.name}</span><span>{doc.phase_code}</span><span>v{doc.current_version}</span><span style={pillStyle(doc.status === 'APPROVED' ? '#3fb95022' : '#d2992222', doc.status === 'APPROVED' ? '#3fb950' : '#d29922')}>{doc.status}</span><button className="btn btn--ghost btn--sm" onClick={() => void api.getProjectDocumentDownload(selectedId, doc.document_id, doc.current_version).then(res => window.open(res.data?.download_url, '_blank'))}>下载</button></div>)}
+                    {documents.length === 0 && <div style={{ padding: 14, color: 'var(--text-secondary)', fontSize: 12 }}>暂无项目文档</div>}
+                  </div>
+                </section>
+              )}
+
+              {workspace === 'files' && (
+                <section style={{ marginBottom: 14 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}><strong style={{ fontSize: 13 }}>项目文件库</strong><div style={{ display: 'flex', gap: 6 }}><button className="btn btn--secondary btn--sm" onClick={() => void handleCreateFolder()} disabled={assetBusy}>新建文件夹</button><label className="btn btn--primary btn--sm" style={{ fontSize: 11, cursor: assetBusy ? 'wait' : 'pointer' }}>上传文件<input type="file" hidden disabled={assetBusy} onChange={e => void handleFileUpload(e)} /></label></div></div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>{folders.map(folder => <span key={folder.folder_id} style={{ padding: '4px 8px', border: '1px solid var(--border-subtle)', borderRadius: 4, fontSize: 11 }}>文件夹 / {folder.name}</span>)}</div>
+                  <div style={{ border: '1px solid var(--border-subtle)', borderRadius: 6, overflow: 'hidden' }}>{files.map(file => <div key={file.project_file_id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderBottom: '1px solid var(--border-subtle)', fontSize: 12 }}><span style={{ flex: 1 }}>{file.name}</span><button className="btn btn--ghost btn--sm" onClick={() => void api.getProjectFileDownload(selectedId, file.project_file_id).then(res => window.open(res.data?.download_url, '_blank'))}>下载</button></div>)}{files.length === 0 && <div style={{ padding: 14, color: 'var(--text-secondary)', fontSize: 12 }}>暂无项目文件</div>}</div>
+                </section>
+              )}
+
               {/* ── 项目进度 + 关联资源 ── */}
-              {stats && (
+              {workspace === 'overview' && stats && (
                 <div style={{ marginBottom: 14, padding: 14, background: 'var(--surface-primary)', borderRadius: 8, border: '1px solid var(--border-subtle)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
                     <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>项目进度</div>
@@ -311,7 +414,6 @@ export default function ProjectsPage() {
                         { label: '需求', count: stats.requirement_count, color: '#58a6ff', onClick: () => navigate('requirements') },
                         { label: '手工用例', count: stats.test_case_count, color: '#3fb950', onClick: () => navigate('testCases') },
                         { label: '自动化', count: stats.auto_case_count, color: '#d29922', onClick: () => navigate('testCases') },
-                        { label: '计划', count: stats.plan_count, color: '#a371f7', onClick: () => navigate('testPlanStudioDemo') },
                       ].map((item, i) => (
                         <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 7px', borderRadius: 4, fontSize: 11, fontWeight: 600, cursor: 'pointer', background: `${item.color}12`, color: item.color, border: `1px solid ${item.color}25` }}
                           onClick={item.onClick}>
@@ -330,7 +432,7 @@ export default function ProjectsPage() {
               )}
 
               {/* ── 风险/阻塞项 ── */}
-              {blockers.length > 0 && (
+              {workspace === 'overview' && blockers.length > 0 && (
                 <div style={{ marginBottom: 14, padding: 10, background: 'color-mix(in srgb, var(--status-error) 6%, transparent)', borderRadius: 6, border: '1px solid color-mix(in srgb, var(--status-error) 13%, transparent)' }}>
                   <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
                     <span style={{ color: 'var(--status-error)' }}>⚠</span>
@@ -354,7 +456,7 @@ export default function ProjectsPage() {
               )}
 
               {/* ── 统计数据 ── */}
-              {stats && (
+              {workspace === 'overview' && stats && (
                 <div style={{ marginBottom: 14 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>统计数据</div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
@@ -379,7 +481,7 @@ export default function ProjectsPage() {
               )}
 
               {/* ── 通过率 ── */}
-              {stats && (
+              {workspace === 'overview' && stats && (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 14 }}>
                   <PassCard label="手工通过率" stats={stats.manual_pass} color="#58a6ff" />
                   <PassCard label="自动化通过率" stats={stats.auto_pass} color="#d29922" />
@@ -393,7 +495,7 @@ export default function ProjectsPage() {
               )}
 
               {/* ── 任务细分 ── */}
-              {taskBreakdown && (
+              {workspace === 'overview' && taskBreakdown && (
                 <div style={{ marginBottom: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>任务细分</div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8, marginBottom: 14 }}>
@@ -407,7 +509,7 @@ export default function ProjectsPage() {
               )}
 
               {/* ── 执行人分布 + 最近动态 ── */}
-              {(assignees && assignees.length > 0) || activities.length > 0 ? (
+              {workspace === 'overview' && ((assignees && assignees.length > 0) || activities.length > 0) ? (
                 <div style={{ display: 'grid', gridTemplateColumns: '2fr 3fr', gap: 12, marginBottom: 14 }}>
                   {/* 左侧：执行人分布 */}
                   {assignees && assignees.length > 0 && (

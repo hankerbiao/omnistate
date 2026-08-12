@@ -8,7 +8,10 @@ export interface BaseTestCaseFields {
   priority?: string;
   tags?: string[];
   test_category?: string;
-  is_destructive?: boolean;
+  case_type?: string;
+  test_level?: string;
+  test_phase?: string;
+  business_domain?: string;
   pre_condition?: string;
   post_condition?: string;
   is_need_auto?: boolean;
@@ -17,18 +20,55 @@ export interface BaseTestCaseFields {
   script_entity_id?: string;
   automation_case_ref?: AutomationCaseRef;
   auto_case_ref?: AutomationCaseRef;
-  linked_auto_case_id?: string;
   risk_level?: string;
-  failure_analysis?: string;
   confidentiality?: string;
-  visibility_scope?: string;
   attachments?: Record<string, unknown>[];
   custom_fields?: Record<string, unknown>;
-  deprecation_reason?: string;
-  approval_history?: Record<string, unknown>[];
   steps?: TestCaseStep[];
   cleanup_steps?: TestCaseStep[];
 }
+
+export interface TestCaseMetadataOption {
+  id: string;
+  type_code: string;
+  code: string;
+  name: string;
+  description?: string | null;
+  color?: string | null;
+  sort_order: number;
+  is_active: boolean;
+  is_default: boolean;
+  is_legacy: boolean;
+  usage_count?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MetadataTypeDefinition {
+  type_code: string;
+  label: string;
+  field_name: string;
+  multiple: boolean;
+  required: boolean;
+}
+
+export interface TestCaseMetadataTypesResponse {
+  definitions: MetadataTypeDefinition[];
+  options: Record<string, TestCaseMetadataOption[]>;
+}
+
+export interface CreateTestCaseMetadataRequest {
+  type_code: string;
+  code: string;
+  name: string;
+  description?: string;
+  color?: string;
+  sort_order?: number;
+  is_active?: boolean;
+  is_default?: boolean;
+}
+
+export type UpdateTestCaseMetadataRequest = Partial<Omit<CreateTestCaseMetadataRequest, 'type_code' | 'code'>>;
 
 /** 通用分页查询参数 */
 export interface PaginationParams {
@@ -87,6 +127,7 @@ export interface UserResponse {
   status: string;
   itcode?: string;
   subscribe_notifications?: boolean;
+  last_activity_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -118,10 +159,6 @@ export interface UserEffectivePermissionsResponse {
   role_ids: string[];
   role_permissions: string[];
   permissions: string[];
-}
-
-export interface UpdateUserPasswordRequest {
-  new_password: string;
 }
 
 export interface ListUsersParams extends PaginationParams {
@@ -260,9 +297,7 @@ export interface CreateTestCaseRequest extends BaseTestCaseFields {
   ref_req_id?: string;
   lab_id: string;
   catalog_path: string[];
-  version?: number;
   is_active?: boolean;
-  change_log?: string;
   owner_id?: string;
   reviewer_id?: string;
   auto_dev_id?: string;
@@ -279,11 +314,8 @@ export interface TestCaseResponse extends BaseTestCaseFields {
   lab_id: string;
   lab_name?: string | null;
   catalog_path: string[];
-  catalog_path_key?: string;
   catalog_breadcrumb?: string | null;
-  version: number;
   is_active: boolean;
-  change_log?: string;
   status: string;
   workflow_item_id?: string;
   owner_id?: string;
@@ -317,29 +349,6 @@ export interface TestCaseChangeLog {
 export interface TestCaseChangeLogListResponse {
   items: TestCaseChangeLog[];
   total: number;
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-//  测试用例执行统计
-// ═══════════════════════════════════════════════════════════════════════
-
-export interface ExecutionRecord {
-  result_id: string;
-  passed: boolean;
-  executed_by: string;
-  executed_at: string;
-  plan_id: string;
-  notes: string;
-}
-
-export interface ExecutionStatsResponse {
-  case_id: string;
-  total: number;
-  passed: number;
-  failed: number;
-  pass_rate: number;
-  last_executed_at: string | null;
-  recent: ExecutionRecord[];
 }
 
 export interface ListTestCasesParams extends PaginationParams {
@@ -391,20 +400,13 @@ export interface RequirementKeyParameter {
 export interface CreateRequirementRequest {
   title: string;
   description?: string;
-  category?: string;
   tags?: string[];
   source?: string;
   acceptance_criteria?: string;
-  baseline_version?: string;
   target_version?: string;
-  target_components?: string[];
-  firmware_version?: string;
-  priority?: string;
   key_parameters?: RequirementKeyParameter[];
   risk_points?: string;
   tpm_owner_id?: string;
-  manual_dev_id?: string;
-  auto_dev_id?: string;
   attachments?: Record<string, unknown>[];
   planned_start_date?: string;
   planned_end_date?: string;
@@ -416,24 +418,16 @@ export interface RequirementResponse {
   workflow_item_id?: string;
   title: string;
   description?: string;
-  category?: string;
   tags: string[];
   source?: string;
   acceptance_criteria?: string;
-  baseline_version?: string;
   target_version?: string;
-  target_components: string[];
-  firmware_version?: string;
-  priority: string;
   key_parameters: RequirementKeyParameter[];
   risk_points?: string;
   tpm_owner_id: string;
   tpm_owner_name?: string;
-  manual_dev_id?: string;
-  manual_dev_name?: string;
-  auto_dev_id?: string;
-  auto_dev_name?: string;
   case_count: number;
+  related_case_ids: string[];
   status: string;
   attachments: Record<string, unknown>[];
   planned_start_date?: string;
@@ -447,13 +441,22 @@ export interface RequirementResponse {
   current_owner_name?: string;
 }
 
+export interface RequirementTestCaseSummary {
+  id: string;
+  case_id: string;
+  title: string;
+  lab_id: string;
+  is_active: boolean;
+  owner_id?: string;
+  priority?: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ListRequirementsParams extends PaginationParams {
   status?: string;
-  category?: string;
   source?: string;
   tpm_owner_id?: string;
-  manual_dev_id?: string;
-  auto_dev_id?: string;
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -605,7 +608,7 @@ export interface CreateAutomationTestCaseRequest {
 export interface AutomationTestCaseResponse {
   id: string;
   auto_case_id: string;
-  linked_manual_case_id?: string;
+  manual_case_ids: string[];
   name: string;
   version: string;
   status: string;
@@ -649,7 +652,6 @@ export interface ListAutomationTestCasesParams extends PaginationParams {
   automation_type?: string;
   status?: string;
   maintainer_id?: string;
-  linked_manual_case_id?: string;
   q?: string;
   linkable_for_case_id?: string;
 }
@@ -911,7 +913,6 @@ export interface PlanTaskItemResponse {
   case_title: string;
   ref_type: string;       // 'manual' | 'auto'
   component: string;
-  priority: string;
   assignee_id: string | null;
   status: string;          // 'pending' | 'running' | 'done' | 'fail'
   order_no: number;
@@ -1017,19 +1018,6 @@ export interface SystemConfig {
   updated_by?: string;
 }
 
-export interface TestConnectionRequest {
-  base_url: string;
-  model: string;
-  api_key?: string;
-}
-
-export interface TestConnectionResponse {
-  success: boolean;
-  model?: string;
-  response_time_ms?: number;
-  error?: string;
-}
-
 export interface BatchUpdateConfigRequest {
   items: Array<{
     config_key: string;
@@ -1053,48 +1041,6 @@ export interface SystemConfigListResponse {
   total: number;
   environment: string;
 }
-
-export interface PendingTaskAnalysisItem {
-  id: string;
-  kind: 'plan' | 'workflow';
-  title: string;
-  category: string;
-  status: string;
-  next_step: string;
-  period: string;
-  period_label: string;
-  period_detail: string;
-}
-
-export interface PendingTaskAnalysisRequest {
-  user_id: string;
-  stats: {
-    total: number;
-    plan_count: number;
-    workflow_count: number;
-    risk_count: number;
-    risk_percent: number;
-    overdue_count: number;
-    today_count: number;
-    soon_count: number;
-    normal_count: number;
-    unset_count: number;
-  };
-  category_stats: Array<{ label: string; count: number; percent: number }>;
-  items: PendingTaskAnalysisItem[];
-}
-
-export interface PendingTaskAnalysisResult {
-  summary: string;
-  health_score: number;
-  anomalies: Array<{ severity: 'critical' | 'warning' | 'info' | string; title: string; detail: string; related_ids: string[] }>;
-  priority_items: Array<{ id: string; title: string; reason: string; priority: string }>;
-  recommendations: string[];
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-//  用例治理（Case Governance）
-// ═══════════════════════════════════════════════════════════════════════
 
 export interface GovernanceStats {
   total_manual: number;
@@ -1230,6 +1176,66 @@ export interface ProjectListResponse {
   total: number;
 }
 
+export type ProjectMemberRole = 'PROJECT_ADMIN' | 'PROJECT_MAINTAINER' | 'PROJECT_REVIEWER' | 'PROJECT_VIEWER';
+export type ProjectDocumentPhase = 'ECT' | 'EVT' | 'DVT' | 'PVT';
+export type ProjectDocumentStatus = 'DRAFT' | 'IN_REVIEW' | 'APPROVED' | 'CHANGES_REQUESTED';
+
+export interface ProjectMember {
+  user_id: string;
+  role_code: ProjectMemberRole;
+  joined_at: string;
+}
+
+export interface ProjectDocument {
+  document_id: string;
+  project_id: string;
+  name: string;
+  current_version: number;
+  phase_code: ProjectDocumentPhase;
+  status: ProjectDocumentStatus;
+  updated_by: string;
+  updated_at: string;
+}
+
+export interface ProjectDocumentReviewer {
+  user_id: string;
+  decision?: 'APPROVE' | 'REQUEST_CHANGES' | null;
+  comment?: string | null;
+  reviewed_at?: string | null;
+}
+
+export interface ProjectDocumentVersion {
+  document_id: string;
+  project_id: string;
+  version: number;
+  phase_code: ProjectDocumentPhase;
+  attachment_id: string;
+  submitted_by: string;
+  reviewers: ProjectDocumentReviewer[];
+  status: ProjectDocumentStatus;
+  submitted_at?: string | null;
+  completed_at?: string | null;
+}
+
+export interface ProjectFolder {
+  folder_id: string;
+  project_id: string;
+  name: string;
+  parent_folder_id?: string | null;
+  depth: number;
+}
+
+export interface ProjectFile {
+  project_file_id: string;
+  project_id: string;
+  folder_id?: string | null;
+  name: string;
+  attachment_id: string;
+  created_by: string;
+  updated_by: string;
+  updated_at: string;
+}
+
 export interface BlockerItem {
   id: string;
   title: string;
@@ -1298,12 +1304,10 @@ export interface EnumMap {
   workflow_states: string[];
   owner_strategies: string[];
   priority: string[];
-  requirement_category: string[];
   requirement_source: string[];
   automation_case_status: string[];
   manual_case_status: string[];
   confidentiality: string[];
-  visibility_scope: string[];
   risk_level: string[];
   test_category: string[];
   execution_overall_status: string[];

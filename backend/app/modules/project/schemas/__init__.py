@@ -9,6 +9,8 @@ from app.modules.project.schemas.project import (
     ProjectStatsResponse,
     StatsBreakdown,
     UpdateProjectRequest,
+    ProjectMemberRequest, ProjectMemberResponse, ProjectDocumentResponse, ProjectDocumentVersionResponse,
+    ProjectFolderResponse, ProjectFileResponse,
 )
 
 __all__ = [
@@ -22,4 +24,10 @@ __all__ = [
     "ProjectStatsResponse",
     "StatsBreakdown",
     "UpdateProjectRequest",
+    "ProjectMemberRequest",
+    "ProjectMemberResponse",
+    "ProjectDocumentResponse",
+    "ProjectDocumentVersionResponse",
+    "ProjectFolderResponse",
+    "ProjectFileResponse",
 ]

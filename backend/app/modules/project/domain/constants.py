@@ -13,6 +13,25 @@ class ProjectStatus(str, Enum):
     ARCHIVED = "archived"
 
 
+class ProjectMemberRole(str, Enum):
+    PROJECT_ADMIN = "PROJECT_ADMIN"
+    PROJECT_MAINTAINER = "PROJECT_MAINTAINER"
+    PROJECT_REVIEWER = "PROJECT_REVIEWER"
+    PROJECT_VIEWER = "PROJECT_VIEWER"
+
+
+class ProjectDocumentStatus(str, Enum):
+    DRAFT = "DRAFT"
+    IN_REVIEW = "IN_REVIEW"
+    APPROVED = "APPROVED"
+    CHANGES_REQUESTED = "CHANGES_REQUESTED"
+
+
+class ProjectReviewDecision(str, Enum):
+    APPROVE = "APPROVE"
+    REQUEST_CHANGES = "REQUEST_CHANGES"
+
+
 # project_id 前缀格式：PRJ-YYYY-XXXXX
 PROJECT_ID_PREFIX = "PRJ"
 
@@ -22,7 +41,5 @@ PROJECT_RELATED_MODEL_PATHS: List[Tuple[str, str]] = [
     ("app.modules.test_specs.repository.models", "TestCaseDoc"),
     ("app.modules.test_specs.repository.models", "AutomationTestCaseDoc"),
     ("app.modules.test_specs.repository.models", "TestRequirementDoc"),
-    ("app.modules.execution_plan.repository.models", "ExecutionPlanDoc"),
-    ("app.modules.execution.repository.models", "ExecutionTaskDoc"),
     ("app.modules.workflow.repository.models", "BusWorkItemDoc"),
 ]

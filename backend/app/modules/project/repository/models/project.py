@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import List, Optional
 
-from beanie import Document, Indexed
+from beanie import Document
 from pydantic import Field
 from pymongo import IndexModel
 
@@ -19,7 +19,7 @@ class ProjectDoc(Document, TimestampedDocumentMixin, SoftDeleteDocumentMixin):
     """项目文档模型。"""
 
     project_id: Indexed(str, unique=True)       # 格式: PRJ-2026-00001
-    key: Indexed(str, unique=True)             # 短标识: "RED-FISH-V3"
+    key: str                                   # 短标识: "RED-FISH-V3"
     name: str                                  # 显示名称
     description: Optional[str] = None
     status: str = "active"                     # active | archived
@@ -35,7 +35,7 @@ class ProjectDoc(Document, TimestampedDocumentMixin, SoftDeleteDocumentMixin):
         name = "projects"
         indexes = [
             IndexModel("project_id", unique=True),
-            IndexModel("key", unique=True),
+            IndexModel([('key', 1)], unique=True, partialFilterExpression={'is_deleted': False}),
             IndexModel("status"),
             IndexModel("owner_id"),
             IndexModel("priority"),

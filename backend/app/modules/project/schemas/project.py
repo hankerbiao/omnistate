@@ -44,6 +44,58 @@ class UpdateProjectRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class ProjectMemberRequest(BaseModel):
+    user_id: str = Field(..., min_length=1, max_length=100)
+    role_code: str = Field(..., description="PROJECT_ADMIN/PROJECT_MAINTAINER/PROJECT_REVIEWER/PROJECT_VIEWER")
+
+
+class ProjectMemberResponse(ProjectMemberRequest):
+    joined_at: datetime
+
+
+class ProjectDocumentResponse(BaseModel):
+    document_id: str
+    project_id: str
+    name: str
+    current_version: int
+    phase_code: str
+    status: str
+    updated_by: str
+    updated_at: datetime
+
+
+class ProjectDocumentVersionResponse(BaseModel):
+    document_id: str
+    project_id: str
+    version: int
+    phase_code: str
+    attachment_id: str
+    submitted_by: str
+    reviewers: list[dict]
+    status: str
+    submitted_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+
+
+class ProjectFolderResponse(BaseModel):
+    folder_id: str
+    project_id: str
+    name: str
+    parent_folder_id: Optional[str] = None
+    depth: int
+
+
+class ProjectFileResponse(BaseModel):
+    project_file_id: str
+    project_id: str
+    folder_id: Optional[str] = None
+    name: str
+    attachment_id: str
+    created_by: str
+    updated_by: str
+    updated_at: datetime
+
+
 # ── 响应模型 ──────────────────────────────────────────────────────────────
 
 class OwnerBrief(BaseModel):

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app.shared.domain.exceptions import ConflictError, NotFoundError, ValidationError
+from app.shared.domain.exceptions import ConflictError, NotFoundError, PermissionDeniedError, ValidationError
 
 
 class ProjectNotFoundError(NotFoundError):
@@ -20,4 +20,12 @@ class ProjectKeyConflictError(ConflictError):
 
 class ProjectQueryError(ValidationError):
     """项目查询/操作参数错误。"""
+    pass
+
+
+class ProjectPermissionError(PermissionDeniedError):
+    pass
+
+
+class ProjectAssetNotFoundError(NotFoundError):
     pass

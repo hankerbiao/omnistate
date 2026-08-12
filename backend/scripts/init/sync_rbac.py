@@ -26,22 +26,19 @@ _READ = [
     "catalog:labs:read",
     "work_items:read",
     "projects:read",
-    "search:global",
 ]
 _WORKFLOW = ["work_items:write", "work_items:transition"]
 _ATTACHMENT_WRITE = ["attachments:upload", "attachments:delete"]
-_EXEC_READ = ["execution_tasks:read", "execution_agents:read", "execution_plans:read"]
-_EXEC_WRITE = ["execution_tasks:write", "execution_agents:write", "execution_plans:write"]
 
 DEFAULT_ROLES = {
     "ADMIN": {
-        "name": "ADMIN",
+        "name": "系统管理员",
         "description": "系统管理员，拥有所有权限",
         "is_system": True,
         "permission_ids": sorted(PERMISSION_CODES),
     },
     "TPM": {
-        "name": "TPM",
+        "name": "测试项目经理",
         "description": "测试项目管理员，负责项目管理和协调",
         "is_system": True,
         "permission_ids": [
@@ -49,17 +46,13 @@ DEFAULT_ROLES = {
             "requirements:write",
             *_ATTACHMENT_WRITE,
             *_WORKFLOW,
-            *_EXEC_READ,
-            *_EXEC_WRITE,
             "catalog:labs:manage",
-            "terminal:connect",
             "projects:write",
-            "case_governance:read",
-            "system:config",
+            "projects:create",
         ],
     },
     "REVIEWER": {
-        "name": "REVIEWER",
+        "name": "评审人员",
         "description": "评审者，审核需求和测试用例",
         "is_system": True,
         "permission_ids": [
@@ -72,14 +65,11 @@ DEFAULT_ROLES = {
             *_ATTACHMENT_WRITE,
             "work_items:read",
             *_WORKFLOW,
-            "execution_tasks:read",
             "projects:read",
-            "search:global",
-            "case_governance:read",
         ],
     },
     "MANUAL_DEV": {
-        "name": "MANUAL_DEV",
+        "name": "手工测试开发",
         "description": "手动测试开发工程师",
         "is_system": True,
         "permission_ids": [
@@ -91,12 +81,10 @@ DEFAULT_ROLES = {
             *_ATTACHMENT_WRITE,
             "work_items:read",
             *_WORKFLOW,
-            *_EXEC_READ,
-            "search:global",
         ],
     },
     "QA": {
-        "name": "QA",
+        "name": "质量保证",
         "description": "质量保证工程师",
         "is_system": True,
         "permission_ids": [
@@ -105,13 +93,10 @@ DEFAULT_ROLES = {
             "test_cases:write",
             *_ATTACHMENT_WRITE,
             *_WORKFLOW,
-            *_EXEC_READ,
-            *_EXEC_WRITE,
-            "case_governance:read",
         ],
     },
     "TESTER": {
-        "name": "TESTER",
+        "name": "测试人员",
         "description": "测试执行工程师",
         "is_system": True,
         "permission_ids": [
@@ -119,15 +104,10 @@ DEFAULT_ROLES = {
             "test_cases:write",
             *_ATTACHMENT_WRITE,
             *_WORKFLOW,
-            *_EXEC_READ,
-            "execution_tasks:write",
-            "execution_plans:write",
-            "terminal:connect",
-            "case_governance:read",
         ],
     },
     "AUTO_DEV": {
-        "name": "AUTO_DEV",
+        "name": "自动化测试开发",
         "description": "自动化测试开发工程师",
         "is_system": True,
         "permission_ids": [
@@ -138,13 +118,10 @@ DEFAULT_ROLES = {
             *_ATTACHMENT_WRITE,
             "work_items:read",
             *_WORKFLOW,
-            *_EXEC_READ,
-            *_EXEC_WRITE,
-            "search:global",
         ],
     },
     "AUTOMATION": {
-        "name": "AUTOMATION",
+        "name": "自动化测试运行",
         "description": "自动化测试运行角色",
         "is_system": True,
         "permission_ids": [
@@ -152,9 +129,6 @@ DEFAULT_ROLES = {
             "test_cases:write",
             "attachments:upload",
             *_WORKFLOW,
-            *_EXEC_READ,
-            *_EXEC_WRITE,
-            "terminal:connect",
         ],
     },
 }
