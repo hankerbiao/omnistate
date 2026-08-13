@@ -26,6 +26,17 @@ async def load_workflow_states_for_entities(
     return await get_workflow_states(docs, id_field)
 
 
+def _is_transaction_not_supported_error(exc: Exception) -> bool:
+    """Detect MongoDB deployments that cannot run transactions."""
+    message = str(exc).lower()
+    return (
+        "transaction numbers are only allowed on a replica set member" in message
+        or "this mongodb deployment does not support retryable writes" in message
+        or "sessions are not supported" in message
+        or "transaction" in message and "support" in message
+    )
+
+
 def apply_workflow_status_projection(
     *,
     docs: list[Any],
@@ -123,38 +134,48 @@ async def create_with_workflow_transaction(
     redundant_fields: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Create business entity and workflow item in one transaction."""
-    async with client.start_session() as session:
-        async with await session.start_transaction():
-            if prepare_payload is not None:
-                await prepare_payload(payload, session)
+    try:
+        async with client.start_session() as session:
+            try:
+                async with await session.start_transaction():
+                    if prepare_payload is not None:
+                        await prepare_payload(payload, session)
 
-            existing = await doc_cls.find_one(unique_lookup(payload), session=session)
-            if existing:
-                raise ValueError(duplicate_error_message)
+                    existing = await doc_cls.find_one(unique_lookup(payload), session=session)
+                    if existing:
+                        raise ValueError(duplicate_error_message)
 
-            # 先验证 payload 合法性，再创建 workflow item，避免 orphan
-            doc = doc_cls(**payload)
+                    # 先验证 payload 合法性，再创建 workflow item，避免 orphan
+                    doc = doc_cls(**payload)
 
-            workflow_item = await workflow_gateway.create_work_item(
-                **workflow_item_factory(payload),
-                session=session,
-            )
-            payload["workflow_item_id"] = workflow_item["id"]
-            doc.workflow_item_id = workflow_item["id"]
+                    workflow_item = await workflow_gateway.create_work_item(
+                        **workflow_item_factory(payload),
+                        session=session,
+                    )
+                    payload["workflow_item_id"] = workflow_item["id"]
+                    doc.workflow_item_id = workflow_item["id"]
 
-            # 将冗余字段回填到 BusWorkItemDoc（如 req_id → BusWorkItemDoc.req_id）
-            if redundant_fields:
-                from app.modules.workflow.repository.models import BusWorkItemDoc
-                work_item_doc = await BusWorkItemDoc.get(workflow_item["id"], session=session)
-                if work_item_doc:
-                    for payload_key, doc_field in redundant_fields.items():
-                        if payload_key in payload and payload[payload_key] is not None:
-                            setattr(work_item_doc, doc_field, payload[payload_key])
-                    await work_item_doc.save(session=session)
+                    # 将冗余字段回填到 BusWorkItemDoc（如 req_id → BusWorkItemDoc.req_id）
+                    if redundant_fields:
+                        from app.modules.workflow.repository.models import BusWorkItemDoc
+                        work_item_doc = await BusWorkItemDoc.get(workflow_item["id"], session=session)
+                        if work_item_doc:
+                            for payload_key, doc_field in redundant_fields.items():
+                                if payload_key in payload and payload[payload_key] is not None:
+                                    setattr(work_item_doc, doc_field, payload[payload_key])
+                            await work_item_doc.save(session=session)
 
-            await doc.insert(session=session)
+                    await doc.insert(session=session)
 
-            result = enrich_result(doc)
-            if hasattr(result, "__await__"):
-                return await result
-            return result
+                    result = enrich_result(doc)
+                    if hasattr(result, "__await__"):
+                        return await result
+                    return result
+            except Exception as exc:
+                if _is_transaction_not_supported_error(exc):
+                    raise RuntimeError("MongoDB transaction support is required") from exc
+                raise
+    except Exception as exc:
+        if _is_transaction_not_supported_error(exc):
+            raise RuntimeError("MongoDB transaction support is required") from exc
+        raise

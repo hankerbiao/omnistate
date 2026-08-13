@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
+os.environ.setdefault("MINIO_ROOT_USER", "test-user")
+os.environ.setdefault("MINIO_ROOT_PASSWORD", "test-pass")
+os.environ.setdefault("DML_JWT_SECRET", "test-secret-value-please-change-1234567890")
 
 ROOT = Path(__file__).resolve().parents[3]
 if str(ROOT) not in sys.path:
@@ -81,6 +86,16 @@ class _FakeSession:
 class _FakeClient:
     def start_session(self) -> _FakeSession:
         return _FakeSession()
+
+
+class _UnsupportedSession(_FakeSession):
+    async def start_transaction(self):
+        raise RuntimeError("MongoDB transactions are not supported in this deployment")
+
+
+class _UnsupportedClient:
+    def start_session(self) -> _UnsupportedSession:
+        return _UnsupportedSession()
 
 
 class _FakeQuery:
@@ -197,6 +212,31 @@ def test_create_with_workflow_transaction_inserts_doc_with_workflow_item_id() ->
     assert workflow_gateway.calls[0]["type_code"] == "REQUIREMENT"
     # doc.workflow_item_id 已在 create_with_workflow_transaction 中被设置
     assert result["workflow_item_id"] == "wi-1"
+
+
+def test_create_with_workflow_transaction_maps_unsupported_transaction_to_runtime_error() -> None:
+    workflow_gateway = _FakeWorkflowGateway()
+
+    async def _run():
+        with pytest.raises(RuntimeError, match="MongoDB transaction support is required"):
+            await create_with_workflow_transaction(
+                client=_UnsupportedClient(),
+                payload={"req_id": "REQ-1", "title": "Requirement", "owner_id": "u-1"},
+                doc_cls=_FakeDoc,
+                unique_lookup=lambda payload: _FakeDoc.req_id == payload["req_id"],
+                duplicate_error_message="req_id already exists",
+                workflow_gateway=workflow_gateway,
+                workflow_item_factory=lambda payload: {
+                    "type_code": "REQUIREMENT",
+                    "title": payload["title"],
+                    "content": payload["title"],
+                    "creator_id": payload["owner_id"],
+                    "parent_item_id": None,
+                },
+                enrich_result=lambda doc: {"id": str(doc.id), **doc.model_dump()},
+            )
+
+    asyncio.run(_run())
 
 
 async def _async_value(value):
