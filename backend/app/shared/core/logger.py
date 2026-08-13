@@ -95,24 +95,13 @@ def _get_trace_extra() -> dict[str, str]:
 
 def _merge_execution_extra() -> dict[str, str]:
     """从 execution 业务上下文提取字段。"""
-    try:
-        from app.modules.execution.shared.execution_context import get_execution_context
-        ctx = get_execution_context()
-        return {
-            "task_id": ctx.task_id or "-",
-            "case_id": ctx.case_id or "-",
-            "event_id": ctx.event_id or "-",
-            "agent_id": ctx.agent_id or "-",
-            "node": ctx.node or "-",
-        }
-    except Exception:
-        return {
-            "task_id": "-",
-            "case_id": "-",
-            "event_id": "-",
-            "agent_id": "-",
-            "node": "-",
-        }
+    return {
+        "task_id": "-",
+        "case_id": "-",
+        "event_id": "-",
+        "agent_id": "-",
+        "node": "-",
+    }
 
 
 def _enrich_record(record: dict) -> None:
@@ -227,7 +216,7 @@ def _is_health_check(record: dict) -> bool:
 
 def _is_execution_domain(record: dict) -> bool:
     """仅保留 execution 域结构化日志。"""
-    return record["extra"].get("domain") == "execution"
+    return False
 
 
 def _build_module_level_filter(module_levels: dict[str, str]):

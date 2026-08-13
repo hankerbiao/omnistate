@@ -38,67 +38,11 @@ def test_test_specs_services_do_not_depend_on_workflow_service_implementation() 
     assert "app.modules.workflow.service.workflow_service" not in support_imports
 
 
-def test_event_ingest_service_does_not_instantiate_execution_service_directly() -> None:
-    source = (ROOT / "app/modules/execution/application/event_ingest_service.py").read_text()
-
-    assert "ExecutionService" not in source
-
-
-def test_progress_coordinator_does_not_instantiate_execution_service_directly() -> None:
-    source = (ROOT / "app/modules/execution/application/progress_coordinator.py").read_text()
-
-    assert "ExecutionService" not in source
-
-
-def test_task_scheduler_does_not_instantiate_execution_service_directly() -> None:
-    source = (ROOT / "app/modules/execution/service/task_scheduler.py").read_text()
-
-    assert "ExecutionService" not in source
-
-
 def test_workflow_api_dependencies_do_not_access_private_service_members() -> None:
     source = (ROOT / "app/modules/workflow/api/dependencies.py").read_text()
 
     assert "._query_service" not in source
     assert "._mutation_service" not in source
-
-
-def test_execution_helpers_do_not_call_private_dispatch_methods_across_services() -> None:
-    progress_source = (ROOT / "app/modules/execution/application/progress_coordinator.py").read_text()
-    scheduler_source = (ROOT / "app/modules/execution/service/task_scheduler.py").read_text()
-
-    assert "._build_task_dispatch_command" not in progress_source
-    assert "._dispatch_existing_task" not in progress_source
-    assert "._build_task_dispatch_command" not in scheduler_source
-    assert "._dispatch_existing_task" not in scheduler_source
-
-
-def test_execution_task_command_service_uses_case_resolver_collaborator() -> None:
-    source = (ROOT / "app/modules/execution/application/task_command_service.py").read_text()
-
-    assert "ExecutionTaskCaseMixin" not in source
-    assert "ExecutionCaseResolver" in source
-
-
-def test_execution_dispatch_service_uses_serializer_collaborator() -> None:
-    source = (ROOT / "app/modules/execution/application/task_dispatch_service.py").read_text()
-
-    assert "ExecutionTaskQueryMixin" not in source
-    assert "ExecutionTaskSerializer" in source
-
-
-def test_execution_dispatch_service_uses_dispatch_coordinator() -> None:
-    source = (ROOT / "app/modules/execution/application/task_dispatch_service.py").read_text()
-
-    assert "ExecutionTaskDispatchMixin" not in source
-    assert "ExecutionTaskDispatchCoordinator" in source
-
-
-def test_execution_dispatch_service_uses_case_coordinator() -> None:
-    source = (ROOT / "app/modules/execution/application/task_dispatch_service.py").read_text()
-
-    assert "ExecutionTaskCaseMixin" not in source
-    assert "ExecutionTaskCaseCoordinator" in source
 
 
 def test_terminal_routes_do_not_hold_module_level_terminal_service_singleton() -> None:
@@ -148,7 +92,6 @@ def test_workflow_command_service_does_not_use_facade_union_or_hasattr_dispatch(
 def test_removed_facade_modules_do_not_exist() -> None:
     removed_paths = [
         "app/modules/workflow/service/workflow_service.py",
-        "app/modules/execution/application/execution_service.py",
         "app/modules/auth/service/rbac_service.py",
     ]
 
@@ -158,11 +101,9 @@ def test_removed_facade_modules_do_not_exist() -> None:
 
 def test_application_exports_do_not_expose_removed_facades_or_adapters() -> None:
     workflow_application = (ROOT / "app/modules/workflow/application/__init__.py").read_text()
-    execution_application = (ROOT / "app/modules/execution/application/__init__.py").read_text()
     auth_services = (ROOT / "app/modules/auth/service/__init__.py").read_text()
 
     assert "AsyncWorkflowServiceAdapter" not in workflow_application
-    assert "ExecutionService" not in execution_application
     assert "RbacService" not in auth_services
 
 
@@ -205,53 +146,32 @@ _ALLOWED_CROSS_MODULE_REPO_IMPORTS: dict[str, set[str]] = {
     "app/modules/test_specs/domain/policies.py": {"app.modules.workflow.repository.models"},
     # ── workflow ────────────────────────────────────────────
     "app/modules/workflow/application/common.py": {"app.modules.test_specs.repository.models"},
-    # ── execution ───────────────────────────────────────────
-    "app/modules/execution/application/case_resolver.py": {"app.modules.test_specs.repository.models"},
-    "app/modules/execution/service/task_scheduler.py": {"app.modules.execution.repository.models"},
-    "app/modules/execution/application/task_case_coordinator.py": {"app.modules.test_specs.repository.models"},
-    # ── execution_plan ─────────────────────────────────────
-    "app/modules/execution_plan/service/execution_plan_service.py": {
-        "app.modules.test_specs.repository.models",
-        "app.modules.auth.repository.models",
-    },
     # ── lineage ──────────────────────────────────────────────
     "app/modules/lineage/service/lineage_service.py": {
-        "app.modules.execution.repository.models",
         "app.modules.test_specs.repository.models",
     },
     # ── terminal ─────────────────────────────────────────────
     "app/modules/terminal/api/routes.py": {"app.modules.auth.repository.models"},
-    # ── ai_analysis ──────────────────────────────────────────
-    "app/modules/ai_analysis/service/ai_service.py": {
-        "app.modules.test_specs.repository.models",
-    },
     # ── project ──────────────────────────────────────────────
     "app/modules/project/service/project_service.py": {
         "app.modules.auth.repository.models",
     },
     "app/modules/project/service/project_dashboard_service.py": {
         "app.modules.auth.repository.models",
-        "app.modules.execution_plan.repository.models",
         "app.modules.workflow.repository.models",
     },
     "app/modules/project/service/project_demo_service.py": {
-        "app.modules.execution_plan.repository.models",
         "app.modules.workflow.repository.models",
     },
     # ── notification ─────────────────────────────────────────
     "app/modules/notification/service.py": {
         "app.modules.auth.repository.models",
     },
-    # ── AI 工具（延迟导入需求/用例数据用于 AI 生成与分析） ───
-    "app/modules/system_config/api/ai_routes.py": {
-        "app.modules.test_specs.repository.models",
-    },
 }
 
 # API 层允许跨模块读 repository 的例外清单（应尽可能少）
 _API_ALLOWED_REPO_IMPORTS: set[str] = {
     "app/modules/terminal/api/routes.py",
-    "app/modules/system_config/api/ai_routes.py",
 }
 
 
@@ -366,43 +286,3 @@ def test_module_document_models_exported_consistently() -> None:
         assert len(doc_models_lines) > 0, (
             f"{models_init.relative_to(ROOT)} 需要定义 DOCUMENT_MODELS"
         )
-
-def test_execution_plan_does_not_own_execution_dispatch_adapter() -> None:
-    """execution 派发适配器归 execution 模块所有，execution_plan 只保留 Port。"""
-    assert not (ROOT / "app/modules/execution_plan/application/adapters.py").exists()
-    assert (ROOT / "app/modules/execution/application/plan_dispatch_adapter.py").exists()
-
-def test_execution_plan_service_does_not_read_execution_repository_models() -> None:
-    source = (ROOT / "app/modules/execution_plan/service/execution_plan_service.py").read_text()
-
-    assert "app.modules.execution.repository.models" not in source
-    assert "ExecutionTaskDoc" not in source
-
-
-def test_execution_plan_queries_do_not_sync_auto_item_status() -> None:
-    service_source = (ROOT / "app/modules/execution_plan/service/execution_plan_service.py").read_text()
-    query_source = (ROOT / "app/modules/execution_plan/application/plan_query_service.py").read_text()
-
-    assert "_sync_auto_item_status" not in service_source
-    assert "_sync_auto_item_status" not in query_source
-
-def test_execution_plan_has_explicit_execution_result_apply_entrypoint() -> None:
-    source = (ROOT / "app/modules/execution_plan/application/plan_command_service.py").read_text()
-
-    assert "def apply_execution_result" in source
-    assert "ExecutionPlanItemDoc.execution_task_id" in source
-
-def test_execution_plan_doc_does_not_store_derived_progress_fields() -> None:
-    source = (ROOT / "app/modules/execution_plan/repository/models/execution_plan.py").read_text()
-
-    assert "item_count:" not in source
-    assert "done_count:" not in source
-    assert "progress_percent:" not in source
-
-
-def test_execution_plan_status_refresh_does_not_write_derived_counts() -> None:
-    source = (ROOT / "app/modules/execution_plan/service/execution_plan_service.py").read_text()
-
-    assert "plan_doc.item_count" not in source
-    assert "plan_doc.done_count" not in source
-    assert "plan_doc.progress_percent" not in source

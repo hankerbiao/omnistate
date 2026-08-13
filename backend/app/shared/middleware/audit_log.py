@@ -52,18 +52,9 @@ PATH_RESOURCE_MAP: dict[str, str] = {
     "/api/v1/requirements": "requirement",
     "/api/v1/test-cases": "test_case",
     "/api/v1/automation-test-cases": "automation_test_case",
-    "/api/v1/execution/tasks": "execution_task",
-    "/api/v1/execution-plans": "execution_plan",
     "/api/v1/work-items": "work_item",
     "/api/v1/auth/users": "user",
     "/api/v1/auth/roles": "role",
-    "/api/v1/system-configs": "system_config",
-    "/api/v1/ai/polish": "ai_polish",
-    "/api/v1/ai/analyze-steps": "ai_analyze_steps",
-    "/api/v1/ai/generate-cases": "ai_generate_cases",
-    "/api/v1/ai/review-case": "ai_review_case",
-    "/api/v1/ai/recommend-cases": "ai_recommend_cases",
-    "/api/v1/ai-analyze": "ai_collection_analysis",
 }
 
 # 方法 → 默认操作类型
@@ -82,14 +73,7 @@ PATH_ACTION_OVERRIDES: dict[str, str] = {
     "/rerun": "rerun",
     "/archive": "archive",
     "/cancel": "cancel",
-    "/submit-result": "submit_result",
     "/transition": "transition",
-    "/polish": "ai_polish",
-    "/analyze-steps": "ai_analyze_steps",
-    "/generate-cases": "ai_generate_cases",
-    "/review-case": "ai_review_case",
-    "/recommend-cases": "ai_recommend_cases",
-    "/analyze": "ai_analyze",
     "/login": "login",
 }
 

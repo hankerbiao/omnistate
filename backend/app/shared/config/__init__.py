@@ -1,19 +1,23 @@
-"""统一配置加载模块。
+"""Single-source application configuration.
 
-启动配置来自 YAML，运行配置来自 MongoDB system_configs。
+The application only reads ``backend/config/config.yaml`` mounted as
+``/run/dml/config.yaml`` inside containers.
 """
 
 from app.shared.config.settings import (
     AppConfig,
     BootstrapSettings,
-    ExecutionConfig,
     JWTConfig,
-    KafkaConfig,
     LoggingConfig,
+    LoggingRetentionConfig,
     MinIOConfig,
     MongoDBConfig,
+    KafkaConfig,
+    NotificationConfig,
     RabbitMQConfig,
+    RedisConfig,
     RuntimeSettings,
+    OpenPlatformGatewayJWTConfig,
     Settings,
     clear_runtime_settings,
     get_bootstrap_settings,
@@ -26,13 +30,16 @@ from app.shared.config.settings import (
 __all__ = [
     "AppConfig",
     "BootstrapSettings",
-    "ExecutionConfig",
     "JWTConfig",
     "KafkaConfig",
     "LoggingConfig",
+    "LoggingRetentionConfig",
     "MinIOConfig",
     "MongoDBConfig",
+    "NotificationConfig",
+    "OpenPlatformGatewayJWTConfig",
     "RabbitMQConfig",
+    "RedisConfig",
     "RuntimeSettings",
     "Settings",
     "clear_runtime_settings",

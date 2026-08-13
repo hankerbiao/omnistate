@@ -33,10 +33,6 @@ from app.modules.auth.repository.models import UserDoc
 from app.modules.project.repository.models.project import ProjectDoc
 from app.modules.test_specs.repository.models.requirement import TestRequirementDoc
 from app.modules.test_specs.repository.models.test_case import TestCaseDoc, TestCaseStepEmbedded
-from app.modules.execution_plan.repository.models.execution_plan import (
-    ExecutionPlanDoc,
-    ExecutionPlanItemDoc,
-)
 
 
 # ──────────────────────────────────────────────
@@ -82,11 +78,8 @@ REQUIREMENTS_DATA = [
         "req_id": "TR-2026-00001",
         "title": "Redfish 基本资源模型查询",
         "description": "验证 Redfish 标准资源模型的 GET 操作，包括 /redfish/v1/, /Systems/, /Chassis/, /Managers/ 等入口点",
-        "category": "FUNCTIONAL",
-        "priority": "P0",
         "source": "SPEC",
         "tags": ["Redfish", "资源模型"],
-        "target_components": ["BMC", "Redfish Service"],
         "acceptance_criteria": "所有标准资源路径返回 200，JSON Schema 符合 Redfish 规范",
         "project_id": "PRJ-2026-00001",
     },
@@ -94,11 +87,8 @@ REQUIREMENTS_DATA = [
         "req_id": "TR-2026-00002",
         "title": "Redfish 事件订阅与推送",
         "description": "验证 EventService 的事件订阅、推送和重试机制",
-        "category": "FUNCTIONAL",
-        "priority": "P1",
         "source": "SPEC",
         "tags": ["Redfish", "事件"],
-        "target_components": ["BMC", "EventService"],
         "acceptance_criteria": "支持 SSE 和 SNMP 两种推送方式，断连后自动重试 3 次",
         "project_id": "PRJ-2026-00001",
     },
@@ -107,11 +97,8 @@ REQUIREMENTS_DATA = [
         "req_id": "TR-2026-00003",
         "title": "DDR5 基础功能读写验证",
         "description": "验证 DDR5 内存的基础读写功能，覆盖单通道和双通道模式",
-        "category": "FUNCTIONAL",
-        "priority": "P1",
         "source": "INTERNAL",
         "tags": ["DDR5", "功能"],
-        "target_components": ["Memory Controller", "DIMM"],
         "acceptance_criteria": "读写带宽不低于 4800 MT/s，数据一致性 100%",
         "project_id": "PRJ-2026-00002",
     },
@@ -119,11 +106,8 @@ REQUIREMENTS_DATA = [
         "req_id": "TR-2026-00004",
         "title": "DDR5 压力与稳定性测试",
         "description": "长时间压力负载下 DDR5 子系统的稳定性验证",
-        "category": "STABILITY",
-        "priority": "P1",
         "source": "INTERNAL",
         "tags": ["DDR5", "稳定性"],
-        "target_components": ["Memory Controller", "DIMM"],
         "acceptance_criteria": "72 小时压力测试无 ECC 错误，温度在规格范围内",
         "project_id": "PRJ-2026-00002",
     },
@@ -132,11 +116,8 @@ REQUIREMENTS_DATA = [
         "req_id": "TR-2026-00005",
         "title": "安全启动签名验证流程",
         "description": "验证固件启动过程中的数字签名验证机制",
-        "category": "SECURITY",
-        "priority": "P0",
         "source": "REGULATION",
         "tags": ["安全", "启动"],
-        "target_components": ["BootROM", "Flash"],
         "acceptance_criteria": "篡改固件签名后启动被阻止，正确签名正常启动",
         "project_id": "PRJ-2026-00003",
     },
@@ -292,11 +273,8 @@ async def create_requirements(owner_id: str, project_map: dict[str, str], reset:
             req_id=rid,
             title=rdata["title"],
             description=rdata.get("description", ""),
-            category=rdata.get("category", ""),
-            priority=rdata.get("priority", "P1"),
             source=rdata.get("source", ""),
             tags=rdata.get("tags", []),
-            target_components=rdata.get("target_components", []),
             acceptance_criteria=rdata.get("acceptance_criteria", ""),
             tpm_owner_id=owner_id,
             planned_start_date=start.date() if start else None,
@@ -361,10 +339,8 @@ async def create_test_cases(owner_id: str, reviewer_id: str, project_map: dict[s
                 case_id=case_id,
                 lab_id=lab,
                 catalog_path=catalog,
-                catalog_path_key="/".join(catalog).lower(),
                 ref_req_id=req.req_id,
                 title=title,
-                version=1,
                 is_active=True,
                 owner_id=owner_id,
                 reviewer_id=reviewer_id,
@@ -374,7 +350,6 @@ async def create_test_cases(owner_id: str, reviewer_id: str, project_map: dict[s
                 pre_condition=pre_cond,
                 post_condition=post_cond,
                 tags=tags,
-                is_destructive=destructive,
                 estimated_duration_sec=duration,
                 required_env=env,
                 steps=STEP_TEMPLATES,
@@ -391,79 +366,13 @@ async def create_test_cases(owner_id: str, reviewer_id: str, project_map: dict[s
     print(f"    共 {count} 个用例")
 
 
-async def create_execution_plans(owner_id: str, reset: bool):
-    """创建执行计划并关联用例。"""
-    cases = await TestCaseDoc.find(
-        TestCaseDoc.is_deleted == False  # noqa: E712
-    ).to_list()
-    if not cases:
-        print("\n  [执行计划]  ⚠ 没有找到测试用例，跳过")
-        return
-
-    print("\n  [执行计划]")
-    # 按 Lab 分组创建计划
-    from collections import defaultdict
-    by_lab: dict[str, list[TestCaseDoc]] = defaultdict(list)
-    for c in cases:
-        by_lab[c.lab_id].append(c)
-
-    for lab, lab_cases in by_lab.items():
-        plan_id = f"PLAN-{lab}-{datetime.now().strftime('%Y%m')}"
-        existing = await ExecutionPlanDoc.find_one(ExecutionPlanDoc.plan_id == plan_id)
-        if existing and not reset:
-            print(f"    ✓ {plan_id} 已存在，跳过")
-            continue
-
-        start, end = _make_dates(7, 14)
-        plan = ExecutionPlanDoc(
-            plan_id=plan_id,
-            title=f"{lab} Lab 月度执行计划 ({datetime.now().strftime('%Y-%m')})",
-            description=f"{lab} 实验室本月自动化执行计划，涵盖 {len(lab_cases)} 个用例",
-            status="active",
-            start_date=start.strftime("%Y-%m-%d"),
-            end_date=end.strftime("%Y-%m-%d"),
-            created_by=owner_id,
-            item_count=len(lab_cases),
-        )
-        if existing and reset:
-            plan.id = existing.id
-            await plan.replace()
-            print(f"    ~ {plan_id} ({plan.title}) 已覆盖")
-        else:
-            await plan.insert()
-            print(f"    + {plan_id} ({plan.title})")
-
-        # 创建计划条目
-        for idx, c in enumerate(lab_cases):
-            item_id = f"{plan_id}-ITEM-{idx + 1:03d}"
-            existing_item = await ExecutionPlanItemDoc.find_one(
-                ExecutionPlanItemDoc.item_id == item_id
-            )
-            if existing_item and not reset:
-                continue
-
-            item = ExecutionPlanItemDoc(
-                item_id=item_id,
-                plan_id=plan_id,
-                ref_type="manual",
-                case_id=c.case_id,
-                case_title=c.title,
-                priority=c.priority or "",
-                assignee_id=owner_id,
-                status="pending",
-                order_no=idx + 1,
-            )
-            await item.insert()
-        print(f"      ↳ {len(lab_cases)} 个计划条目")
-
-
 # ──────────────────────────────────────────────
 #  主流程
 # ──────────────────────────────────────────────
 
 async def main():
     parser = argparse.ArgumentParser(
-        description="模拟数据生成器 — 批量创建项目、需求、用例、执行计划",
+        description="模拟数据生成器 — 批量创建项目、需求、用例",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--reset", action="store_true", help="覆盖已存在数据")
@@ -486,8 +395,6 @@ async def main():
             "app.modules.project.repository.models.project.ProjectDoc",
             "app.modules.test_specs.repository.models.requirement.TestRequirementDoc",
             "app.modules.test_specs.repository.models.test_case.TestCaseDoc",
-            "app.modules.execution_plan.repository.models.execution_plan.ExecutionPlanDoc",
-            "app.modules.execution_plan.repository.models.execution_plan.ExecutionPlanItemDoc",
         ],
     )
 
@@ -512,7 +419,6 @@ async def main():
         await create_requirements(owner.user_id, project_map, args.reset)
         if not args.no_cases:
             await create_test_cases(owner.user_id, reviewer.user_id, project_map, args.reset)
-        await create_execution_plans(owner.user_id, args.reset)
 
     print("\n" + "=" * 60)
     print("  完成！")

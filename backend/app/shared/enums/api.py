@@ -8,23 +8,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from app.modules.execution.application.constants import (
-    FINAL_TASK_STATUSES,
-    AgentStatus,
-    CaseStatus,
-    ConsumeStatus,
-    DispatchStatus,
-    OverallStatus,
-    ScheduleStatus,
-)
-from app.modules.execution_plan.domain.constants import (
-    PlanItemStatus,
-    PlanStatus,
-)
-from app.modules.test_specs.repository.models.requirement import (
-    REQUIREMENT_CATEGORY_CHOICES,
-    REQUIREMENT_SOURCE_CHOICES,
-)
+from app.modules.test_specs.repository.models.requirement import REQUIREMENT_SOURCE_CHOICES
 from app.modules.workflow.repository.models.enums import (
     OwnerStrategy,
     WorkItemState,
@@ -48,31 +32,16 @@ async def get_all_enums():
 
         # 测试用例
         "priority": ["P0", "P1", "P2", "P3"],
-        "requirement_category": list(REQUIREMENT_CATEGORY_CHOICES),
         "requirement_source": list(REQUIREMENT_SOURCE_CHOICES),
         "automation_case_status": ["ACTIVE", "INACTIVE", "DRAFT", "DEPRECATED"],
         "manual_case_status": ["DRAFT", "PENDING_REVIEW", "IN_REVIEW", "REVISE", "DONE", "REJECTED"],
         "confidentiality": ["PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED"],
-        "visibility_scope": ["PUBLIC", "TEAM", "PRIVATE"],
         "risk_level": ["LOW", "MEDIUM", "HIGH", "CRITICAL"],
         "test_category": [
             "FUNCTIONAL", "PERFORMANCE", "STABILITY",
             "COMPATIBILITY", "SECURITY", "REGRESSION",
             "SMOKE", "STRESS",
         ],
-
-        # 执行任务
-        "execution_overall_status": [s.value for s in OverallStatus],
-        "execution_case_status": [s.value for s in CaseStatus],
-        "execution_dispatch_status": [s.value for s in DispatchStatus],
-        "execution_schedule_status": [s.value for s in ScheduleStatus],
-        "execution_consume_status": [s.value for s in ConsumeStatus],
-        "execution_agent_status": [s.value for s in AgentStatus],
-        "execution_final_statuses": [s.value for s in FINAL_TASK_STATUSES],
-
-        # 执行计划
-        "plan_item_status": [s.value for s in PlanItemStatus],
-        "plan_status": [s.value for s in PlanStatus],
 
         # 系统配置
         "config_types": ["string", "integer", "float", "boolean", "json"],

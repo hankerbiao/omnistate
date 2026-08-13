@@ -18,7 +18,7 @@ def test_shared_redaction_covers_audit_sensitive_fields():
         "old_password": "a1",
         "new_password": "b2",
         "current_password": "c3",
-        "config_key": "ai.api_key",
+        "config_key": "some.api_key",
         "config_value": "sk-real-secret",
         "normal": "keep",
     })
@@ -26,7 +26,7 @@ def test_shared_redaction_covers_audit_sensitive_fields():
     assert result["new_password"] == REDACTED
     assert result["current_password"] == REDACTED
     assert result["config_value"] == REDACTED
-    assert result["config_key"] == "ai.api_key"
+    assert result["config_key"] == "some.api_key"
     assert result["normal"] == "keep"
 
 
@@ -109,12 +109,6 @@ def test_infer_resource_unknown_path():
     assert rid is None
 
 
-def test_infer_resource_ai_endpoint():
-    mw = AuditLogMiddleware(app=MagicMock())
-    rtype, rid = mw._infer_resource("/api/v1/ai/generate-cases", {})
-    assert rtype == "ai_generate_cases"
-
-
 # ═══════════════════════════════════════════════════════════════════════
 #  _infer_action
 # ═══════════════════════════════════════════════════════════════════════
@@ -132,21 +126,6 @@ def test_infer_action_put():
 def test_infer_action_delete():
     mw = AuditLogMiddleware(app=MagicMock())
     assert mw._infer_action("DELETE", "/api/v1/test-cases/TC-001") == "delete"
-
-
-def test_infer_action_dispatch():
-    mw = AuditLogMiddleware(app=MagicMock())
-    assert mw._infer_action("POST", "/api/v1/execution-plans/items/EPI-1/dispatch") == "dispatch"
-
-
-def test_infer_action_ai_polish():
-    mw = AuditLogMiddleware(app=MagicMock())
-    assert mw._infer_action("POST", "/api/v1/ai/polish") == "ai_polish"
-
-
-def test_infer_action_ai_generate():
-    mw = AuditLogMiddleware(app=MagicMock())
-    assert mw._infer_action("POST", "/api/v1/ai/generate-cases") == "ai_generate_cases"
 
 
 def test_infer_action_transition():
@@ -264,7 +243,7 @@ async def test_write_audit_log_skips_body_for_system_configs_and_redacts_query()
     mw = AuditLogMiddleware(app=MagicMock())
 
     mock_request = MagicMock()
-    mock_request.url.path = "/api/v1/system-configs/ai.api_key"
+    mock_request.url.path = "/api/v1/system-configs/redis.password"
     mock_request.method = "PUT"
     mock_request.query_params = {"token": "leak-me"}
     mock_request.path_params = {}
@@ -285,7 +264,7 @@ async def test_write_audit_log_skips_body_for_system_configs_and_redacts_query()
 
             with patch("app.modules.audit.repository.models.audit_log.AuditLogDoc") as MockDoc:
                 MockDoc.return_value = mock_doc_instance
-                body = b'{"config_key": "ai.api_key", "config_value": "sk-real-secret"}'
+                body = b'{"config_key": "some.api_key", "config_value": "sk-real-secret"}'
                 await mw._write_audit_log(mock_request, 200, body, 30)
 
                 MockDoc.assert_called_once()

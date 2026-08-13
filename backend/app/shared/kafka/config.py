@@ -33,7 +33,6 @@ class KafkaConfig:
     result_topic: str
     dead_letter_topic: str
     test_events_topic: str
-    execution_result_group_id: str
     test_events_group_id: str
     producer_options: dict[str, Any]
     consumer_options: dict[str, Any]
@@ -42,11 +41,6 @@ class KafkaConfig:
     def __post_init__(self):
         if not self.consumer_subscriptions:
             self.consumer_subscriptions = {
-                "execution_result": ConsumerSubscription(
-                    topic=self.result_topic,
-                    group_id=self.execution_result_group_id,
-                    dead_letter_topic=self.dead_letter_topic,
-                ),
                 "test_events": ConsumerSubscription(
                     topic=self.test_events_topic,
                     group_id=self.test_events_group_id,
@@ -63,7 +57,6 @@ def _to_runtime_config(base_config: BaseKafkaConfig) -> KafkaConfig:
         result_topic=base_config.result_topic,
         dead_letter_topic=base_config.dead_letter_topic,
         test_events_topic=base_config.test_events_topic,
-        execution_result_group_id=base_config.execution_result_group_id,
         test_events_group_id=base_config.test_events_group_id,
         producer_options=base_config.producer_options.model_dump(),
         consumer_options=base_config.consumer_options.model_dump(),

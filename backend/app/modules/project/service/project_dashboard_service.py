@@ -5,7 +5,6 @@ from typing import Dict, List, Optional
 
 from app.modules.project.schemas.project import (
     BlockerItemResponse,
-    ExecutionTaskBreakdown,
     ProjectActivityResponse,
     ProjectStatsResponse,
     StatsBreakdown,
@@ -23,9 +22,6 @@ def _make_project_filter(project_id: str, extra_filters: Optional[list] = None) 
 
 async def _count_for_project(model, project_id: str, extra_filters: Optional[list] = None) -> int:
     return await model.find(_make_project_filter(project_id, extra_filters)).count()
-
-
-
 class ProjectDashboardService:
     DEFAULT_BLOCKER_LIMIT = 20
     DEFAULT_ACTIVITY_LIMIT = 20
@@ -40,8 +36,6 @@ class ProjectDashboardService:
         requirement_count = await _count_for_project(
             find_model(related, "TestRequirementDoc"), project_id
         )
-        plan_count = 0
-        task = ExecutionTaskBreakdown()
         manual_pass, auto_pass = StatsBreakdown(), StatsBreakdown()
         coverage_rate = (
             round(test_case_count / requirement_count * 100, 1)
@@ -51,9 +45,6 @@ class ProjectDashboardService:
             test_case_count=test_case_count,
             auto_case_count=auto_case_count,
             requirement_count=requirement_count,
-            plan_count=plan_count,
-            task=task,
-            task_progress=task.progress,
             manual_pass=manual_pass,
             auto_pass=auto_pass,
             coverage_rate=coverage_rate,

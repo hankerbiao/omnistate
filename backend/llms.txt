@@ -31,8 +31,6 @@
 
 - [app/modules/auth/](app/modules/auth/): 认证与 RBAC 权限控制（JWT、用户、角色、权限、导航页）
 - [app/modules/test_specs/](app/modules/test_specs/): 测试需求、测试用例、自动化测试用例库管理
-- [app/modules/execution/](app/modules/execution/): 测试任务编排与执行代理接入（RabbitMQ 下发 + Kafka 回传）
-- [app/modules/execution_plan/](app/modules/execution_plan/): 执行计划管理（计划条目、改派、状态流转）
 - [app/modules/workflow/](app/modules/workflow/): 配置驱动的工作流状态机（REQUIREMENT 8 状态 / TEST_CASE 5 状态）
 - [app/modules/ai_analysis/](app/modules/ai_analysis/): AI 分析能力（自然语言生成用例、步骤分析、用例评审等）
 - [app/modules/audit/](app/modules/audit/): 操作审计日志（中间件自动拦截所有写操作）

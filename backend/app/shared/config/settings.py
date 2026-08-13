@@ -1,88 +1,84 @@
-"""Two-stage application configuration.
+"""Single-source application configuration.
 
-Bootstrap settings are loaded from YAML before MongoDB is available. Runtime
-settings are loaded strictly from ``system_configs`` and installed once for
-the lifetime of the process.
+This branch keeps one runtime configuration entrypoint only:
+``backend/config/config.yaml`` mounted in containers as ``/run/dml/config.yaml``.
+No environment overlay, runtime database config, or secondary config file is used.
 """
 
+from __future__ import annotations
+
 import os
+import re
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
 import yaml
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-# =============================================================================
-# 配置路径
-# =============================================================================
-def get_config_path() -> Path:
-    """获取配置文件路径。
-
-    查找顺序：
-    1. 环境变量 CONFIG_PATH 指定的路径
-    2. 项目根目录的 config/config.yaml
-    """
-    env_path = os.getenv("CONFIG_PATH")
-    if env_path:
-        return Path(env_path)
-
-    # 向上查找项目根目录（包含 requirements.txt 的 backend 目录），优先使用 config/ 子目录。
-    current = Path(__file__).resolve()
-    for parent in [current.parent, *current.parents]:
-        backend_root = _find_backend_root(parent)
-        if backend_root is None:
-            continue
-        config_path = backend_root / "config" / "config.yaml"
-        if config_path.exists():
-            return config_path
-
-    # 默认使用当前工作目录
-    cwd_config_path = Path.cwd() / "config" / "config.yaml"
-    if cwd_config_path.exists():
-        return cwd_config_path
-    return Path.cwd() / "config" / "config.yaml"
+CONFIG_FILE_PATH = Path("/run/dml/config.yaml")
+ENVIRONMENT_VARIABLE_PATTERN = re.compile(r"^\$\{([A-Z][A-Z0-9_]*)\}$")
+INSECURE_SECRET_VALUES = frozenset({"CHANGE_ME", "CHANGEME", "SECRET", "DEFAULT"})
 
 
-def _find_backend_root(path: Path) -> Path | None:
-    """识别 backend 项目根目录。"""
-    candidates = [path, path.parent]
-    for candidate in candidates:
-        if (candidate / "app").is_dir() and (
-            (candidate / "pyproject.toml").exists() or (candidate / "requirements.txt").exists()
-        ):
-            return candidate
-    return None
+class StrictConfigModel(BaseModel):
+    """Base model that rejects misspelled configuration keys at every level."""
+
+    model_config = ConfigDict(extra="forbid")
 
 
-# =============================================================================
-# 子配置类
-# =============================================================================
-class AppConfig(BaseModel):
-    """应用基础配置。"""
-
+class AppConfig(StrictConfigModel):
     debug: bool = False
     host: str = "0.0.0.0"
     port: int = 8801
     service_name: str
-    cors_origins: list[str] = Field(default_factory=lambda: ["*"])
+    cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:8080"])
     trusted_proxies: list[str] = Field(default_factory=list)
     dev_bypass_auth: bool = False
     dev_user_id: str = "dev_admin"
 
 
-class MongoDBConfig(BaseModel):
-    """MongoDB 配置。"""
-
-    uri: str = "mongodb://localhost:27017"
-    db_name: str = "workflow_db"
+class MongoDBConfig(StrictConfigModel):
+    uri: str = "mongodb://mongo:27017"
+    db_name: str = "dmlv4_lite"
 
 
-class RabbitMQConfig(BaseModel):
-    """RabbitMQ 配置。"""
+class MinIOConfig(StrictConfigModel):
+    endpoint: str = "minio:9000"
+    access_key: str = Field(min_length=3)
+    secret_key: str = Field(min_length=8)
+    bucket: str = "attachments"
+    secure: bool = False
+    presigned_url_expires_seconds: int = 7 * 24 * 60 * 60
 
+    @field_validator("access_key", "secret_key")
+    @classmethod
+    def reject_default_credentials(cls, value: str) -> str:
+        normalized = value.strip()
+        if normalized.lower() == "minioadmin":
+            raise ValueError("MinIO default credentials are not permitted")
+        return normalized
+
+
+class JWTConfig(StrictConfigModel):
+    secret_key: str = Field(min_length=32)
+    algorithm: str = "HS256"
+    expire_minutes: int = 480
+    issuer: str = "dmlv4-lite"
+    audience: str = "dmlv4-lite-web"
+
+    @field_validator("secret_key")
+    @classmethod
+    def validate_secret_key(cls, value: str) -> str:
+        normalized = value.strip()
+        if normalized.upper() in INSECURE_SECRET_VALUES:
+            raise ValueError("jwt.secret_key must not use a default placeholder")
+        return normalized
+
+
+class RabbitMQConfig(StrictConfigModel):
     host: str = "localhost"
     port: int = 5672
     username: str = "guest"
@@ -93,32 +89,22 @@ class RabbitMQConfig(BaseModel):
     connection_attempts: int = 3
     retry_delay: float = 2.0
     ssl_enabled: bool = False
-
-    # 任务下发队列
     task_queue: str = "dml_task_queue"
     task_exchange: str = ""
     task_routing_key: str = "dml_task_queue"
-
-    # 死信队列配置（需与 RabbitMQ 服务端已存在的队列参数一致）
     dead_letter_exchange: str = "dml_dlx"
     dead_letter_routing_key: str = "dml_dead_letter"
-
-    # 消费者预取数量
     prefetch_count: int = 10
 
 
-class KafkaProducerOptions(BaseModel):
-    """Kafka Producer 选项。"""
-
+class KafkaProducerOptions(StrictConfigModel):
     acks: str = "all"
     retries: int = 3
     batch_size: int = 16384
     linger_ms: int = 10
 
 
-class KafkaConsumerOptions(BaseModel):
-    """Kafka Consumer 选项。"""
-
+class KafkaConsumerOptions(StrictConfigModel):
     auto_offset_reset: str = "earliest"
     enable_auto_commit: bool = True
     session_timeout_ms: int = 30000
@@ -127,114 +113,18 @@ class KafkaConsumerOptions(BaseModel):
     consumer_timeout_ms: int = 1000
 
 
-class KafkaConfig(BaseModel):
-    """Kafka 配置。"""
-
+class KafkaConfig(StrictConfigModel):
     bootstrap_servers: list[str] = Field(default_factory=lambda: ["localhost:9092"])
     client_id: str = "dmlv4-shard"
-
     result_topic: str = "dmlv4.results"
     dead_letter_topic: str = "dmlv4.deadletter"
     test_events_topic: str = "test-events"
-
-    execution_result_group_id: str = "dmlv4-execution-result-consumers"
     test_events_group_id: str = "dmlv4-test-events-consumers"
-
     producer_options: KafkaProducerOptions = Field(default_factory=KafkaProducerOptions)
     consumer_options: KafkaConsumerOptions = Field(default_factory=KafkaConsumerOptions)
 
 
-class MinIOConfig(BaseModel):
-    """MinIO 配置。"""
-
-    endpoint: str = "localhost:9000"
-    access_key: str = "minioadmin"
-    secret_key: str = "minioadmin"
-    bucket: str = "attachments"
-    secure: bool = False
-    presigned_url_expires_seconds: int = 7 * 24 * 60 * 60
-
-
-class JWTConfig(BaseModel):
-    """JWT 认证配置。"""
-
-    secret_key: str = "CHANGE_ME"
-    algorithm: str = "HS256"
-    expire_minutes: int = 480
-    issuer: str = "tcm-backend"
-    audience: str = "tcm-frontend"
-
-
-class OpenPlatformGatewayJWTConfig(BaseModel):
-    """Open Platform gateway-to-backend JWT trust configuration."""
-
-    enabled: bool = False
-    secret_key: str = ""
-    algorithm: str = "HS256"
-    issuer: str = "dml-open-platform"
-    audience: str = "dml-backend"
-    required_token_use: str = "open_platform_gateway"
-
-    @model_validator(mode="after")
-    def validate_enabled_secret(self) -> "OpenPlatformGatewayJWTConfig":
-        if self.enabled and not self.secret_key:
-            raise ValueError("open_platform_gateway_jwt.secret_key must be set when enabled")
-        if self.enabled and self.secret_key == "dev-open-platform-gateway-secret-change-me":
-            raise ValueError("open_platform_gateway_jwt.secret_key must not use the development placeholder")
-        return self
-
-
-class ExecutionConfig(BaseModel):
-    """任务执行配置。"""
-
-    scheduler_interval_sec: int = 60
-    default_repo_url: str = ""
-    kafka_worker_agent_id: str = "execution-kafka-worker"
-    kafka_worker_heartbeat_ttl_sec: int = 30
-    kafka_worker_heartbeat_interval_sec: int = 10
-
-
-class LoggingRetentionConfig(BaseModel):
-    """日志保留配置。"""
-
-    info_days: int = 7
-    error_days: int = 30
-    debug_days: int = 3
-
-
-class LoggingConfig(BaseModel):
-    """日志配置。"""
-
-    console_level: str = "DEBUG"
-    log_dir: str = "logs"
-    retention: LoggingRetentionConfig = Field(default_factory=LoggingRetentionConfig)
-
-    # ====== 新增：结构化日志 ======
-    json_format: bool = True
-    """文件日志使用 JSON Lines 格式输出。"""
-
-    enable_compress: bool = True
-    """轮转日志文件自动 .gz 压缩。"""
-
-    trace_enabled: bool = True
-    """启用全链路追踪（request_id / trace_id）。"""
-
-    slow_query_threshold_ms: int = 200
-    """慢查询阈值（毫秒，预留字段）。"""
-
-    slow_request_threshold_ms: int = 800
-    """慢请求阈值（毫秒），超过后输出 http_slow_request 结构化日志。"""
-
-    module_levels: dict[str, str] = Field(default_factory=dict)
-    """按模块路径独立控制日志级别，如 {"app.modules.auth": "WARNING"}。"""
-
-
-# =============================================================================
-# 主配置类
-# =============================================================================
-class RedisConfig(BaseModel):
-    """Redis 配置。"""
-
+class RedisConfig(StrictConfigModel):
     sentinel_hosts: list[str] = Field(default_factory=lambda: ["localhost:26379"])
     master_name: str = "redis_master"
     username: str = ""
@@ -248,61 +138,75 @@ class RedisConfig(BaseModel):
     service_registry_key: str = "dmlv4:service_registry"
 
 
-class GuangQuanConfig(BaseModel):
-    """光圈通知配置。"""
-
+class GuangQuanConfig(StrictConfigModel):
     api_url: str = "http://rdm.cooacloud.com/api/platform/notify/bot"
     component_name: str = "DML"
     timeout_sec: int = 5
 
 
-class NotificationConfig(BaseModel):
-    """通知配置。"""
-
+class NotificationConfig(StrictConfigModel):
     enabled: bool = False
     batch_window_seconds: int = 300
     max_detail_items: int = 10
     guangquan: GuangQuanConfig = Field(default_factory=GuangQuanConfig)
 
 
-class Settings(BaseModel):
-    """Validated effective settings for the current process."""
-
-    app: AppConfig = Field(default_factory=AppConfig)
-    mongodb: MongoDBConfig = Field(default_factory=MongoDBConfig)
-    rabbitmq: RabbitMQConfig = Field(default_factory=RabbitMQConfig)
-    kafka: KafkaConfig = Field(default_factory=KafkaConfig)
-    minio: MinIOConfig = Field(default_factory=MinIOConfig)
-    jwt: JWTConfig = Field(default_factory=JWTConfig)
-    execution: ExecutionConfig = Field(default_factory=ExecutionConfig)
-    redis: RedisConfig = Field(default_factory=RedisConfig)
-    logging: LoggingConfig = Field(default_factory=LoggingConfig)
-    notification: NotificationConfig = Field(default_factory=NotificationConfig)
-    open_platform_gateway_jwt: OpenPlatformGatewayJWTConfig = Field(
-        default_factory=OpenPlatformGatewayJWTConfig
-    )
+class OpenPlatformGatewayJWTConfig(StrictConfigModel):
+    enabled: bool = False
+    secret_key: str = ""
+    algorithm: str = "HS256"
+    issuer: str = "dml-open-platform"
+    audience: str = "dml-backend"
+    required_token_use: str = "open_platform_gateway"
 
 
-class BootstrapSettings(BaseModel):
-    """Settings required before MongoDB runtime configuration can be loaded."""
+class LoggingRetentionConfig(StrictConfigModel):
+    info_days: int = 7
+    error_days: int = 30
+    debug_days: int = 3
 
-    model_config = ConfigDict(extra="forbid")
+
+class LoggingConfig(StrictConfigModel):
+    console_level: str = "INFO"
+    log_dir: str = "logs"
+    retention: LoggingRetentionConfig = Field(default_factory=LoggingRetentionConfig)
+    json_format: bool = True
+    enable_compress: bool = True
+    trace_enabled: bool = True
+    slow_query_threshold_ms: int = 200
+    slow_request_threshold_ms: int = 800
+    module_levels: dict[str, str] = Field(default_factory=dict)
+
+
+class BootstrapSettings(StrictConfigModel):
 
     app: AppConfig
     mongodb: MongoDBConfig
+    minio: MinIOConfig = Field(default_factory=MinIOConfig)
+    jwt: JWTConfig
+    rabbitmq: RabbitMQConfig = Field(default_factory=RabbitMQConfig)
+    kafka: KafkaConfig = Field(default_factory=KafkaConfig)
+    redis: RedisConfig = Field(default_factory=RedisConfig)
+    notification: NotificationConfig = Field(default_factory=NotificationConfig)
+    open_platform_gateway_jwt: OpenPlatformGatewayJWTConfig = Field(
+        default_factory=OpenPlatformGatewayJWTConfig
+    )
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
 
 
-class RuntimeSettings(BaseModel):
-    """Settings whose only source of truth is MongoDB."""
+class Settings(BootstrapSettings):
+    pass
+
+
+class RuntimeSettings(StrictConfigModel):
+    """Compatibility placeholder for the removed runtime-config layer."""
 
     model_config = ConfigDict(extra="forbid")
 
     rabbitmq: RabbitMQConfig = Field(default_factory=RabbitMQConfig)
     kafka: KafkaConfig = Field(default_factory=KafkaConfig)
     minio: MinIOConfig = Field(default_factory=MinIOConfig)
-    jwt: JWTConfig = Field(default_factory=JWTConfig)
-    execution: ExecutionConfig = Field(default_factory=ExecutionConfig)
+    jwt: JWTConfig
     redis: RedisConfig = Field(default_factory=RedisConfig)
     notification: NotificationConfig = Field(default_factory=NotificationConfig)
     open_platform_gateway_jwt: OpenPlatformGatewayJWTConfig = Field(
@@ -310,120 +214,90 @@ class RuntimeSettings(BaseModel):
     )
 
 
-# =============================================================================
-# 配置加载
-# =============================================================================
+def _resolve_environment_variables(value: Any, *, path: str = "") -> Any:
+    """Resolve whole-value ${ENV_VAR} references without logging secret values."""
+    if isinstance(value, dict):
+        return {
+            key: _resolve_environment_variables(item, path=f"{path}.{key}" if path else key)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_resolve_environment_variables(item, path=f"{path}[{index}]") for index, item in enumerate(value)]
+    if not isinstance(value, str):
+        return value
+
+    match = ENVIRONMENT_VARIABLE_PATTERN.fullmatch(value)
+    if match is None:
+        return value
+
+    variable_name = match.group(1)
+    resolved = os.getenv(variable_name)
+    if not resolved:
+        raise ValueError(f"configuration value {path} requires environment variable {variable_name}")
+    return resolved
+
+
 def load_yaml_config(config_path: Path | str | None = None) -> dict[str, Any]:
-    """从 YAML 文件加载配置。
-
-    Args:
-        config_path: 配置文件路径，默认从环境变量或默认位置查找
-
-    Returns:
-        配置字典
-
-    Raises:
-        FileNotFoundError: 配置文件不存在
-        yaml.YAMLError: YAML 解析错误
-    """
-    if config_path is None:
-        config_path = get_config_path()
-    else:
-        config_path = Path(config_path)
-
-    if not config_path.exists():
+    path = Path(config_path) if config_path is not None else get_config_path()
+    if not path.exists():
         raise FileNotFoundError(
-            f"配置文件不存在: {config_path}\n"
-            f"请复制 config/config.yaml.example 为 config/config.yaml 并修改配置"
+            f"配置文件不存在: {path}\n请挂载 backend/config/config.yaml 到 /run/dml/config.yaml"
         )
+    with path.open("r", encoding="utf-8") as f:
+        config = yaml.safe_load(f) or {}
 
-    with open(config_path, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f) or {}
-
-
-def _load_environment_yaml() -> dict[str, Any]:
-    """Load base YAML plus the selected environment overlay."""
-    config_data = load_yaml_config()
-
-    environment = get_environment()
-    if environment != "production":
-        overlay_path = get_config_path().with_name(f"config_{environment}.yaml")
-        if not overlay_path.exists():
-            raise FileNotFoundError(
-                f"环境配置文件不存在: {overlay_path}\n"
-                f"DML_ENV={environment} 必须提供独立的启动配置，禁止回退到生产配置"
-            )
-        with open(overlay_path, "r", encoding="utf-8") as f:
-            overlay_data = yaml.safe_load(f) or {}
-        config_data = _deep_merge(config_data, overlay_data)
-
-    # 环境变量 DML_APP_PORT 优先级高于配置文件
-    env_port = os.getenv("DML_APP_PORT")
-    if env_port is not None:
-        app_config = config_data.get("app", {})
-        app_config["port"] = int(env_port)
-        config_data["app"] = app_config
-
-    return config_data
+    if not isinstance(config, dict):
+        raise ValueError(f"configuration root must be a mapping: {path}")
+    return _resolve_environment_variables(config)
 
 
-def get_environment() -> str:
-    """Return the normalized configuration environment name."""
-    return _normalize_environment(os.getenv("DML_ENV", "production"))
+def get_config_path() -> Path:
+    """Return the single supported config file path.
+
+    Preference order:
+    1. Explicit CONFIG_PATH, when provided.
+    2. The mounted container path /run/dml/config.yaml.
+    3. The repository-local backend/config/config.yaml for tests and local runs.
+    """
+
+    env_path = os.getenv("CONFIG_PATH")
+    if env_path:
+        return Path(env_path)
+
+    if CONFIG_FILE_PATH.exists():
+        return CONFIG_FILE_PATH
+
+    current = Path(__file__).resolve()
+    for parent in [current.parent, *current.parents]:
+        candidate = parent / "config" / "config.yaml"
+        if candidate.exists() and candidate.parent.name == "config":
+            return candidate
+
+    return Path.cwd() / "config" / "config.yaml"
 
 
 @lru_cache
 def get_bootstrap_settings() -> BootstrapSettings:
-    """Load the strict YAML-only bootstrap configuration."""
-    return BootstrapSettings(**_load_environment_yaml())
-
-
-_effective_settings: Settings | None = None
-
-
-def install_runtime_settings(runtime: RuntimeSettings) -> Settings:
-    """Install the immutable effective settings snapshot for this process."""
-    global _effective_settings
-    bootstrap = get_bootstrap_settings()
-    _effective_settings = Settings(
-        **bootstrap.model_dump(),
-        **runtime.model_dump(),
-    )
-    get_settings.cache_clear()
-    return _effective_settings
-
-
-def clear_runtime_settings() -> None:
-    """Clear the process snapshot. Intended for shutdown and isolated tests."""
-    global _effective_settings
-    _effective_settings = None
-    get_settings.cache_clear()
+    return BootstrapSettings(**load_yaml_config())
 
 
 @lru_cache
 def get_settings() -> Settings:
-    """Return effective settings after strict MongoDB activation."""
-    if _effective_settings is None:
-        raise RuntimeError(
-            "Runtime settings are not loaded. Initialize MongoDB system configuration first."
-        )
-    return _effective_settings
+    return Settings(**get_bootstrap_settings().model_dump())
 
 
-def _normalize_environment(value: str) -> str:
-    """Normalize DML_ENV and keep overlay filenames constrained."""
-    normalized = value.strip().lower()
-    if not normalized or any(char not in "abcdefghijklmnopqrstuvwxyz0123456789_-" for char in normalized):
-        raise ValueError(f"Invalid DML_ENV value: {value!r}")
-    return normalized
+def clear_runtime_settings() -> None:
+    get_bootstrap_settings.cache_clear()
+    get_settings.cache_clear()
 
 
-def _deep_merge(base: dict, override: dict) -> dict:
-    """递归合并两个 dict，override 的值覆盖 base。"""
-    result = dict(base)
-    for key, value in override.items():
-        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
-            result[key] = _deep_merge(result[key], value)
-        else:
-            result[key] = value
-    return result
+def get_environment() -> str:
+    return os.getenv("DML_ENV", "production").strip().lower() or "production"
+
+
+def install_runtime_settings(_runtime: object) -> Settings:
+    """Compatibility shim for removed runtime settings.
+
+    The single-config branch no longer installs runtime settings separately.
+    """
+    return get_settings()

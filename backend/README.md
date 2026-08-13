@@ -1,19 +1,19 @@
 # DML V4 Backend
-
-FastAPI 后端，提供测试需求、用例管理、执行编排、权限控制等统一服务。
+FastAPI 后端，提供测试需求、用例管理、权限控制等统一服务。
 
 ## 快速开始
 
 ```bash
 uv sync
-# 首次创建数据库时，先显式迁移完整运行配置（见下文）
+cp config/config.yaml.example config/config.yaml
+python -c 'import secrets; print(f"DML_JWT_SECRET={secrets.token_urlsafe(32)}"); print(f"MINIO_ROOT_USER={secrets.token_urlsafe(24)}"); print(f"MINIO_ROOT_PASSWORD={secrets.token_urlsafe(32)}")' > config/.env
+set -a; . config/.env; set +a
 uv run python scripts/init/sync_indexes.py
 uv run python scripts/init/sync_workflow.py
 uv run python scripts/init/sync_rbac.py
 uv run python scripts/init/create_user.py --help
 DML_ENV=dev uv run python -m app.main
 ```
-
 默认监听 `0.0.0.0:8801`，API 前缀 `/api/v1`。
 
 ## 无容器部署
@@ -23,7 +23,7 @@ DML_ENV=dev uv run python -m app.main
 ```bash
 cd backend
 cp config/config.yaml.example config/config.yaml  # 首次部署时执行
-# YAML 只填写 app、mongodb、logging；其余配置必须已存在于目标 MongoDB
+python -c 'import secrets; print(f"DML_JWT_SECRET={secrets.token_urlsafe(32)}"); print(f"MINIO_ROOT_USER={secrets.token_urlsafe(24)}"); print(f"MINIO_ROOT_PASSWORD={secrets.token_urlsafe(32)}")' > config/.env
 export DML_ADMIN_PASSWORD='replace-with-a-strong-password'
 ./deploy.sh install
 ```
@@ -32,17 +32,14 @@ Linux systemd 主机默认安装并启动 API、Kafka Worker 两个服务；其�
 后续更新执行 `./deploy.sh update`，部署前检查执行 `./deploy.sh doctor`。详细说明见
 [无容器部署指南](docs/guide/deployment.md)。
 
-运行配置分环境保存在各自 MongoDB 的 `system_configs` 集合中。新数据库必须先用包含全部
-运行项的一次性 YAML 显式迁移，迁移成功后立即删除该文件：
+应用只从一个 YAML 文件读取配置：容器使用挂载的 `/run/dml/config.yaml`，本地运行使用
+`backend/config/config.yaml`。`CONFIG_PATH` 可覆盖该路径。配置模型会拒绝未知字段；YAML 中
+以 `${VARIABLE_NAME}` 形式出现的完整值会从环境变量读取，缺失时启动失败。
 
-```bash
-uv run python scripts/migrations/migrate_runtime_config_to_db.py \
-  --base /secure/path/full-production-config.yaml \
-  --environment production
-```
-
-应用不会从精简 YAML、模型默认值或其他环境补齐缺失项；数据库配置不完整时启动直接失败。
-开发与生产切换分别使用 `DML_ENV=dev` 和 `DML_ENV=production`。
+`DML_JWT_SECRET`、`MINIO_ROOT_USER` 和 `MINIO_ROOT_PASSWORD` 是必填的高熵密钥，
+不能使用 `CHANGE_ME` 或 `minioadmin` 等默认值。生产环境应由 Secret Manager、容器 secret
+或编排平台注入，不应把真实密钥提交到仓库。本地 Docker Compose 会读取
+被忽略的 `config/.env`；非容器启动前执行 `set -a; . config/.env; set +a`。
 
 ## 项目结构
 
